@@ -1,0 +1,267 @@
+/**
+ * Tests for configuration schema
+ */
+
+import { describe, it, expect } from "vitest";
+import {
+  CocoConfigSchema,
+  ProviderConfigSchema,
+  QualityConfigSchema,
+  PersistenceConfigSchema,
+  StackConfigSchema,
+} from "./schema.js";
+
+describe("CocoConfigSchema", () => {
+  describe("valid configurations", () => {
+    it("should accept minimal valid config", () => {
+      const config = {
+        project: {
+          name: "test-project",
+        },
+      };
+
+      const result = CocoConfigSchema.safeParse(config);
+      expect(result.success).toBe(true);
+    });
+
+    it("should accept full valid config", () => {
+      const config = {
+        project: {
+          name: "test-project",
+          version: "1.0.0",
+          description: "A test project",
+        },
+        provider: {
+          type: "anthropic",
+          model: "claude-sonnet-4-20250514",
+          maxTokens: 8192,
+          temperature: 0,
+          timeout: 120000,
+        },
+        quality: {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minIterations: 2,
+          convergenceThreshold: 2,
+          securityThreshold: 100,
+        },
+        persistence: {
+          checkpointInterval: 300000,
+          maxCheckpoints: 50,
+          retentionDays: 7,
+          compressOldCheckpoints: true,
+        },
+        stack: {
+          language: "typescript",
+          framework: "express",
+        },
+      };
+
+      const result = CocoConfigSchema.safeParse(config);
+      expect(result.success).toBe(true);
+    });
+
+    it("should apply default values", () => {
+      const config = {
+        project: {
+          name: "test-project",
+        },
+      };
+
+      const result = CocoConfigSchema.parse(config);
+
+      // Check provider defaults
+      expect(result.provider.type).toBe("anthropic");
+      expect(result.provider.model).toBe("claude-sonnet-4-20250514");
+
+      // Check quality defaults
+      expect(result.quality.minScore).toBe(85);
+      expect(result.quality.minCoverage).toBe(80);
+      expect(result.quality.maxIterations).toBe(10);
+    });
+  });
+
+  describe("invalid configurations", () => {
+    it("should reject config without project name", () => {
+      const config = {
+        project: {},
+      };
+
+      const result = CocoConfigSchema.safeParse(config);
+      expect(result.success).toBe(false);
+    });
+
+    it("should reject invalid provider type", () => {
+      const config = {
+        project: { name: "test" },
+        provider: { type: "invalid-provider" },
+      };
+
+      const result = CocoConfigSchema.safeParse(config);
+      expect(result.success).toBe(false);
+    });
+
+    it("should reject quality score out of range", () => {
+      const config = {
+        project: { name: "test" },
+        quality: { minScore: 150 },
+      };
+
+      const result = CocoConfigSchema.safeParse(config);
+      expect(result.success).toBe(false);
+    });
+
+    it("should reject negative coverage", () => {
+      const config = {
+        project: { name: "test" },
+        quality: { minCoverage: -10 },
+      };
+
+      const result = CocoConfigSchema.safeParse(config);
+      expect(result.success).toBe(false);
+    });
+  });
+});
+
+describe("ProviderConfigSchema", () => {
+  it("should accept anthropic provider", () => {
+    const config = {
+      type: "anthropic",
+      model: "claude-sonnet-4-20250514",
+    };
+
+    const result = ProviderConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it("should accept openai provider", () => {
+    const config = {
+      type: "openai",
+      model: "gpt-4",
+    };
+
+    const result = ProviderConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it("should accept local provider", () => {
+    const config = {
+      type: "local",
+      model: "llama2",
+      baseUrl: "http://localhost:11434",
+    };
+
+    const result = ProviderConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it("should enforce maxTokens minimum", () => {
+    const config = {
+      type: "anthropic",
+      maxTokens: 0,
+    };
+
+    const result = ProviderConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  it("should enforce temperature range", () => {
+    const config = {
+      type: "anthropic",
+      temperature: 2.5,
+    };
+
+    const result = ProviderConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("QualityConfigSchema", () => {
+  it("should accept valid quality config", () => {
+    const config = {
+      minScore: 90,
+      minCoverage: 85,
+      maxIterations: 15,
+      minIterations: 3,
+      convergenceThreshold: 3,
+      securityThreshold: 100,
+    };
+
+    const result = QualityConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it("should enforce minScore range (0-100)", () => {
+    expect(QualityConfigSchema.safeParse({ minScore: -1 }).success).toBe(false);
+    expect(QualityConfigSchema.safeParse({ minScore: 101 }).success).toBe(false);
+    expect(QualityConfigSchema.safeParse({ minScore: 50 }).success).toBe(true);
+  });
+
+  it("should enforce minCoverage range (0-100)", () => {
+    expect(QualityConfigSchema.safeParse({ minCoverage: -1 }).success).toBe(false);
+    expect(QualityConfigSchema.safeParse({ minCoverage: 101 }).success).toBe(false);
+    expect(QualityConfigSchema.safeParse({ minCoverage: 80 }).success).toBe(true);
+  });
+
+  it("should enforce positive iterations", () => {
+    expect(QualityConfigSchema.safeParse({ maxIterations: 0 }).success).toBe(false);
+    expect(QualityConfigSchema.safeParse({ maxIterations: -5 }).success).toBe(false);
+    expect(QualityConfigSchema.safeParse({ maxIterations: 10 }).success).toBe(true);
+  });
+});
+
+describe("PersistenceConfigSchema", () => {
+  it("should accept valid persistence config", () => {
+    const config = {
+      checkpointInterval: 300000,
+      maxCheckpoints: 100,
+      retentionDays: 14,
+      compressOldCheckpoints: true,
+    };
+
+    const result = PersistenceConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it("should enforce positive checkpoint interval", () => {
+    expect(PersistenceConfigSchema.safeParse({ checkpointInterval: 0 }).success).toBe(false);
+    expect(PersistenceConfigSchema.safeParse({ checkpointInterval: -1000 }).success).toBe(false);
+  });
+
+  it("should enforce positive max checkpoints", () => {
+    expect(PersistenceConfigSchema.safeParse({ maxCheckpoints: 0 }).success).toBe(false);
+    expect(PersistenceConfigSchema.safeParse({ maxCheckpoints: -10 }).success).toBe(false);
+  });
+});
+
+describe("StackConfigSchema", () => {
+  it("should accept valid stack config", () => {
+    const config = {
+      language: "typescript",
+      framework: "express",
+      profile: "web-api",
+    };
+
+    const result = StackConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it("should accept stack without framework", () => {
+    const config = {
+      language: "python",
+    };
+
+    const result = StackConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it("should accept various languages", () => {
+    const languages = ["typescript", "python", "go", "rust", "java"];
+
+    for (const language of languages) {
+      const result = StackConfigSchema.safeParse({ language });
+      expect(result.success).toBe(true);
+    }
+  });
+});

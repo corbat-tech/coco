@@ -1,0 +1,29 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "out": "docs/api",
+  "name": "Corbat-Coco API Documentation",
+  "includeVersion": true,
+  "readme": "README.md",
+  "exclude": ["**/*.test.ts", "**/test/**"],
+  "excludePrivate": true,
+  "excludeProtected": false,
+  "excludeInternal": true,
+  "skipErrorChecking": true,
+  "plugin": [],
+  "navigation": {
+    "includeCategories": true,
+    "includeGroups": true
+  },
+  "categoryOrder": [
+    "Core",
+    "Phases",
+    "Tools",
+    "Config",
+    "Other"
+  ],
+  "visibilityFilters": {
+    "protected": true,
+    "@internal": false
+  }
+}

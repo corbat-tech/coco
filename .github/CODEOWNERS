@@ -1,0 +1,37 @@
+# CODEOWNERS file for Corbat-Coco
+# These owners will be requested for review when someone opens a PR
+
+# Default owners for everything in the repo
+* @corbat
+
+# Core source code
+/src/ @corbat
+
+# CLI commands
+/src/cli/ @corbat
+
+# Phase executors
+/src/phases/ @corbat
+
+# Configuration
+/src/config/ @corbat
+
+# Providers (LLM integrations)
+/src/providers/ @corbat
+
+# Quality system
+/src/quality/ @corbat
+
+# Tools
+/src/tools/ @corbat
+
+# Documentation
+/docs/ @corbat
+*.md @corbat
+
+# CI/CD configuration
+/.github/ @corbat
+
+# Package configuration
+package.json @corbat
+tsconfig.json @corbat

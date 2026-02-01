@@ -1,0 +1,157 @@
+/**
+ * Configuration schema for Corbat-Coco
+ */
+
+import { z } from "zod";
+
+/**
+ * Provider configuration schema
+ */
+export const ProviderConfigSchema = z.object({
+  type: z.enum(["anthropic", "openai", "local"]).default("anthropic"),
+  apiKey: z.string().optional(),
+  model: z.string().default("claude-sonnet-4-20250514"),
+  maxTokens: z.number().min(1).max(200000).default(8192),
+  temperature: z.number().min(0).max(2).default(0),
+  timeout: z.number().min(1000).default(120000),
+});
+
+export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
+
+/**
+ * Quality configuration schema
+ */
+export const QualityConfigSchema = z.object({
+  minScore: z.number().min(0).max(100).default(85),
+  minCoverage: z.number().min(0).max(100).default(80),
+  maxIterations: z.number().min(1).max(20).default(10),
+  minIterations: z.number().min(1).max(10).default(2),
+  convergenceThreshold: z.number().min(0).max(10).default(2),
+  securityThreshold: z.number().min(0).max(100).default(100),
+});
+
+export type QualityConfig = z.infer<typeof QualityConfigSchema>;
+
+/**
+ * Persistence configuration schema
+ */
+export const PersistenceConfigSchema = z.object({
+  checkpointInterval: z.number().min(60000).default(300000), // 5 min default
+  maxCheckpoints: z.number().min(1).max(100).default(50),
+  retentionDays: z.number().min(1).max(365).default(7),
+  compressOldCheckpoints: z.boolean().default(true),
+});
+
+export type PersistenceConfig = z.infer<typeof PersistenceConfigSchema>;
+
+/**
+ * Stack configuration schema
+ */
+export const StackConfigSchema = z.object({
+  language: z.enum(["typescript", "python", "go", "rust", "java"]),
+  framework: z.string().optional(),
+  profile: z.string().optional(), // Custom profile path
+});
+
+export type StackConfig = z.infer<typeof StackConfigSchema>;
+
+/**
+ * Project configuration schema
+ */
+export const ProjectConfigSchema = z.object({
+  name: z.string().min(1),
+  version: z.string().default("0.1.0"),
+  description: z.string().optional(),
+});
+
+export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
+
+/**
+ * GitHub integration configuration
+ */
+export const GitHubConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  token: z.string().optional(),
+  repo: z.string().optional(),
+  createPRs: z.boolean().default(true),
+  createIssues: z.boolean().default(true),
+});
+
+export type GitHubConfig = z.infer<typeof GitHubConfigSchema>;
+
+/**
+ * Integrations configuration schema
+ */
+export const IntegrationsConfigSchema = z.object({
+  github: GitHubConfigSchema.optional(),
+});
+
+export type IntegrationsConfig = z.infer<typeof IntegrationsConfigSchema>;
+
+/**
+ * Complete configuration schema
+ */
+export const CocoConfigSchema = z.object({
+  project: ProjectConfigSchema,
+  provider: ProviderConfigSchema.default({}),
+  quality: QualityConfigSchema.default({}),
+  persistence: PersistenceConfigSchema.default({}),
+  stack: StackConfigSchema.optional(),
+  integrations: IntegrationsConfigSchema.optional(),
+});
+
+export type CocoConfig = z.infer<typeof CocoConfigSchema>;
+
+/**
+ * Validate configuration object
+ */
+export function validateConfig(config: unknown): {
+  success: boolean;
+  data?: CocoConfig;
+  error?: z.ZodError;
+} {
+  const result = CocoConfigSchema.safeParse(config);
+  if (result.success) {
+    return { success: true, data: result.data };
+  }
+  return { success: false, error: result.error };
+}
+
+/**
+ * Create default configuration
+ */
+export function createDefaultConfigObject(
+  projectName: string,
+  language: "typescript" | "python" | "go" | "rust" | "java" = "typescript"
+): CocoConfig {
+  return {
+    project: {
+      name: projectName,
+      version: "0.1.0",
+    },
+    provider: {
+      type: "anthropic",
+      model: "claude-sonnet-4-20250514",
+      maxTokens: 8192,
+      temperature: 0,
+      timeout: 120000,
+    },
+    quality: {
+      minScore: 85,
+      minCoverage: 80,
+      maxIterations: 10,
+      minIterations: 2,
+      convergenceThreshold: 2,
+      securityThreshold: 100,
+    },
+    persistence: {
+      checkpointInterval: 300000,
+      maxCheckpoints: 50,
+      retentionDays: 7,
+      compressOldCheckpoints: true,
+    },
+    stack: {
+      language,
+    },
+  };
+}
