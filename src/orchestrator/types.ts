@@ -31,7 +31,7 @@ export interface Orchestrator {
 export interface OrchestratorConfig {
   projectPath: string;
   provider: {
-    type: "anthropic" | "openai" | "local";
+    type: "anthropic" | "openai" | "gemini" | "kimi";
     apiKey?: string;
     model: string;
     maxTokens?: number;

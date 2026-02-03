@@ -73,6 +73,34 @@ export {
   type FunctionComplexity,
 } from "./quality.js";
 
+// Search tools
+export {
+  grepTool,
+  findInFileTool,
+  searchTools,
+  type SearchMatch,
+  type SearchResult,
+} from "./search.js";
+
+// HTTP tools
+export {
+  httpFetchTool,
+  httpJsonTool,
+  httpTools,
+  type HttpResponse,
+} from "./http.js";
+
+// Build tools
+export {
+  runScriptTool,
+  installDepsTool,
+  makeTool,
+  tscTool,
+  buildTools,
+  type PackageManager,
+  type BuildResult,
+} from "./build.js";
+
 /**
  * Register all tools with a registry
  */
@@ -82,6 +110,9 @@ import { bashTools } from "./bash.js";
 import { gitTools } from "./git.js";
 import { testTools } from "./test.js";
 import { qualityTools } from "./quality.js";
+import { searchTools } from "./search.js";
+import { httpTools } from "./http.js";
+import { buildTools } from "./build.js";
 
 export function registerAllTools(registry: ToolRegistry): void {
   const allTools = [
@@ -90,6 +121,9 @@ export function registerAllTools(registry: ToolRegistry): void {
     ...gitTools,
     ...testTools,
     ...qualityTools,
+    ...searchTools,
+    ...httpTools,
+    ...buildTools,
   ];
 
   for (const tool of allTools) {

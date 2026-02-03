@@ -51,30 +51,6 @@ export class CocoError extends Error {
 }
 
 /**
- * Configuration error
- */
-export class ConfigError extends CocoError {
-  constructor(
-    message: string,
-    options: {
-      key?: string;
-      value?: unknown;
-      suggestion?: string;
-      cause?: Error;
-    } = {}
-  ) {
-    super(message, {
-      code: "CONFIG_ERROR",
-      context: { key: options.key, value: options.value },
-      recoverable: true,
-      suggestion: options.suggestion ?? "Check your .coco/config.json file",
-      cause: options.cause,
-    });
-    this.name = "ConfigError";
-  }
-}
-
-/**
  * File system error
  */
 export class FileSystemError extends CocoError {
@@ -126,6 +102,45 @@ export class ProviderError extends CocoError {
     this.provider = options.provider;
     this.statusCode = options.statusCode;
   }
+}
+
+/**
+ * Configuration error
+ */
+export class ConfigError extends CocoError {
+  readonly issues: ConfigIssue[];
+
+  constructor(
+    message: string,
+    options: {
+      issues?: ConfigIssue[];
+      configPath?: string;
+      cause?: Error;
+    } = {}
+  ) {
+    super(message, {
+      code: "CONFIG_ERROR",
+      context: { configPath: options.configPath, issues: options.issues },
+      recoverable: true,
+      suggestion: "Check your .coco/config.json for errors",
+      cause: options.cause,
+    });
+    this.name = "ConfigError";
+    this.issues = options.issues ?? [];
+  }
+
+  /**
+   * Format issues as a readable string
+   */
+  formatIssues(): string {
+    if (this.issues.length === 0) return "";
+    return this.issues.map((i) => `  - ${i.path}: ${i.message}`).join("\n");
+  }
+}
+
+export interface ConfigIssue {
+  path: string;
+  message: string;
 }
 
 /**

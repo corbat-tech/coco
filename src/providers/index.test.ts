@@ -10,12 +10,63 @@ vi.mock("@anthropic-ai/sdk", () => ({
   default: vi.fn().mockImplementation(() => ({
     messages: {
       create: vi.fn().mockResolvedValue({
+        id: "msg_123",
         content: [{ type: "text", text: "Mock response" }],
         stop_reason: "end_turn",
         usage: { input_tokens: 10, output_tokens: 20 },
+        model: "claude-sonnet-4-20250514",
       }),
     },
   })),
+}));
+
+// Mock OpenAI SDK
+vi.mock("openai", () => ({
+  default: vi.fn().mockImplementation(() => ({
+    chat: {
+      completions: {
+        create: vi.fn().mockResolvedValue({
+          id: "chatcmpl_123",
+          choices: [
+            {
+              message: { content: "Mock response", role: "assistant" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 20 },
+          model: "gpt-4o",
+        }),
+      },
+    },
+    models: {
+      list: vi.fn().mockResolvedValue({ data: [] }),
+    },
+  })),
+}));
+
+// Mock Google Generative AI SDK
+vi.mock("@google/generative-ai", () => ({
+  GoogleGenerativeAI: vi.fn().mockImplementation(() => ({
+    getGenerativeModel: vi.fn().mockReturnValue({
+      startChat: vi.fn().mockReturnValue({
+        sendMessage: vi.fn().mockResolvedValue({
+          response: {
+            text: () => "Mock response",
+            candidates: [{ finishReason: "STOP" }],
+            usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 },
+          },
+        }),
+      }),
+      generateContent: vi.fn().mockResolvedValue({
+        response: { text: () => "Mock response" },
+      }),
+    }),
+  })),
+  FunctionCallingMode: {
+    AUTO: "AUTO",
+    ANY: "ANY",
+    NONE: "NONE",
+  },
 }));
 
 describe("Providers module exports", () => {
@@ -39,6 +90,28 @@ describe("Providers module exports", () => {
     it("should be able to instantiate AnthropicProvider", () => {
       const provider = new ProviderExports.AnthropicProvider();
       expect(provider).toBeInstanceOf(ProviderExports.AnthropicProvider);
+    });
+  });
+
+  describe("OpenAIProvider", () => {
+    it("should export OpenAIProvider class", () => {
+      expect(ProviderExports.OpenAIProvider).toBeDefined();
+    });
+
+    it("should be able to instantiate OpenAIProvider", () => {
+      const provider = new ProviderExports.OpenAIProvider();
+      expect(provider).toBeInstanceOf(ProviderExports.OpenAIProvider);
+    });
+  });
+
+  describe("GeminiProvider", () => {
+    it("should export GeminiProvider class", () => {
+      expect(ProviderExports.GeminiProvider).toBeDefined();
+    });
+
+    it("should be able to instantiate GeminiProvider", () => {
+      const provider = new ProviderExports.GeminiProvider();
+      expect(provider).toBeInstanceOf(ProviderExports.GeminiProvider);
     });
   });
 
@@ -69,16 +142,31 @@ describe("Providers module exports", () => {
       expect(typeof provider.chat).toBe("function");
     });
 
-    it("should throw for openai provider (not implemented)", async () => {
-      await expect(ProviderExports.createProvider("openai")).rejects.toThrow(
-        "OpenAI provider not yet implemented"
-      );
+    it("should create openai provider", async () => {
+      const provider = await ProviderExports.createProvider("openai", {
+        apiKey: "test-key",
+      });
+
+      expect(provider).toBeDefined();
+      expect(typeof provider.chat).toBe("function");
     });
 
-    it("should throw for local provider (not implemented)", async () => {
-      await expect(ProviderExports.createProvider("local")).rejects.toThrow(
-        "Local provider not yet implemented"
-      );
+    it("should create gemini provider", async () => {
+      const provider = await ProviderExports.createProvider("gemini", {
+        apiKey: "test-key",
+      });
+
+      expect(provider).toBeDefined();
+      expect(typeof provider.chat).toBe("function");
+    });
+
+    it("should create kimi provider", async () => {
+      const provider = await ProviderExports.createProvider("kimi", {
+        apiKey: "test-key",
+      });
+
+      expect(provider).toBeDefined();
+      expect(typeof provider.chat).toBe("function");
     });
 
     it("should throw for unknown provider type", async () => {
@@ -105,11 +193,34 @@ describe("Providers module exports", () => {
     });
   });
 
+  describe("listProviders", () => {
+    it("should export listProviders function", () => {
+      expect(ProviderExports.listProviders).toBeDefined();
+      expect(typeof ProviderExports.listProviders).toBe("function");
+    });
+
+    it("should return list of providers", () => {
+      const providers = ProviderExports.listProviders();
+      expect(providers).toHaveLength(4);
+      expect(providers.map((p) => p.id)).toEqual([
+        "anthropic",
+        "openai",
+        "gemini",
+        "kimi",
+      ]);
+    });
+  });
+
   describe("ProviderType", () => {
     it("should define valid provider types", () => {
       // Test that the type constraints work by using valid values
-      const validTypes: ProviderExports.ProviderType[] = ["anthropic", "openai", "local"];
-      expect(validTypes).toHaveLength(3);
+      const validTypes: ProviderExports.ProviderType[] = [
+        "anthropic",
+        "openai",
+        "gemini",
+        "kimi",
+      ];
+      expect(validTypes).toHaveLength(4);
     });
   });
 });

@@ -41,9 +41,10 @@ const mockFs = {
   }),
 };
 
-// Mock all external dependencies with default export
+// Mock all external dependencies with both default and named exports
 vi.mock("node:fs/promises", () => ({
   default: mockFs,
+  ...mockFs,
 }));
 
 vi.mock("execa", () => ({

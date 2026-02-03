@@ -413,7 +413,169 @@ async function createPhaseContext(
 }
 
 /**
- * Execute a phase with real executors
+ * Create a state snapshot for rollback
+ */
+async function createSnapshot(state: ProjectState): Promise<ProjectState> {
+  // Deep clone the state
+  return JSON.parse(JSON.stringify(state)) as ProjectState;
+}
+
+/**
+ * Maximum number of checkpoint versions to keep per phase
+ */
+const MAX_CHECKPOINT_VERSIONS = 5;
+
+/**
+ * Get all checkpoint files for a phase
+ */
+async function getCheckpointFiles(state: ProjectState, phase: string): Promise<string[]> {
+  try {
+    const fs = await import("node:fs/promises");
+    const checkpointDir = `${state.path}/.coco/checkpoints`;
+    const files = await fs.readdir(checkpointDir);
+
+    // Filter files matching the phase pattern and sort by timestamp (newest first)
+    const phaseFiles = files
+      .filter(f => f.startsWith(`snapshot-pre-${phase}-`) && f.endsWith(".json"))
+      .sort((a, b) => {
+        // Extract timestamp from filename: snapshot-pre-phase-TIMESTAMP.json
+        const tsA = parseInt(a.split("-").pop()?.replace(".json", "") ?? "0", 10);
+        const tsB = parseInt(b.split("-").pop()?.replace(".json", "") ?? "0", 10);
+        return tsB - tsA; // Newest first
+      });
+
+    return phaseFiles.map(f => `${checkpointDir}/${f}`);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Clean up old checkpoint versions, keeping only the N most recent
+ */
+async function cleanupOldCheckpoints(state: ProjectState, phase: string): Promise<void> {
+  try {
+    const fs = await import("node:fs/promises");
+    const files = await getCheckpointFiles(state, phase);
+
+    // Delete files beyond the max versions
+    if (files.length > MAX_CHECKPOINT_VERSIONS) {
+      const filesToDelete = files.slice(MAX_CHECKPOINT_VERSIONS);
+      await Promise.all(filesToDelete.map(f => fs.unlink(f).catch(() => {})));
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
+}
+
+/**
+ * Save snapshot to disk for recovery with version management
+ */
+async function saveSnapshot(state: ProjectState, snapshotId: string): Promise<void> {
+  try {
+    const fs = await import("node:fs/promises");
+    const snapshotPath = `${state.path}/.coco/checkpoints/snapshot-${snapshotId}.json`;
+
+    const snapshotDir = `${state.path}/.coco/checkpoints`;
+    await fs.mkdir(snapshotDir, { recursive: true });
+
+    // Handle both Date objects and ISO strings
+    const createdAt = state.createdAt instanceof Date
+      ? state.createdAt.toISOString()
+      : String(state.createdAt);
+    const updatedAt = state.updatedAt instanceof Date
+      ? state.updatedAt.toISOString()
+      : String(state.updatedAt);
+
+    await fs.writeFile(
+      snapshotPath,
+      JSON.stringify({
+        ...state,
+        createdAt,
+        updatedAt,
+        snapshotVersion: snapshotId,
+        snapshotTimestamp: new Date().toISOString(),
+      }, null, 2),
+      "utf-8"
+    );
+
+    // Extract phase from snapshotId (format: pre-PHASE-TIMESTAMP)
+    const phaseMatch = snapshotId.match(/^pre-(\w+)-/);
+    if (phaseMatch && phaseMatch[1]) {
+      await cleanupOldCheckpoints(state, phaseMatch[1]);
+    }
+  } catch {
+    // Silently fail in test environment or if checkpoints can't be saved
+    // The in-memory snapshot will still be used for rollback
+  }
+}
+
+/**
+ * List available checkpoint versions for a phase
+ */
+export async function listCheckpointVersions(
+  projectPath: string,
+  phase: string
+): Promise<Array<{ id: string; timestamp: Date; path: string }>> {
+  try {
+    const fs = await import("node:fs/promises");
+    const checkpointDir = `${projectPath}/.coco/checkpoints`;
+    const files = await fs.readdir(checkpointDir);
+
+    const versions: Array<{ id: string; timestamp: Date; path: string }> = [];
+
+    for (const file of files) {
+      if (file.startsWith(`snapshot-pre-${phase}-`) && file.endsWith(".json")) {
+        const id = file.replace("snapshot-", "").replace(".json", "");
+        const tsStr = id.split("-").pop();
+        const timestamp = tsStr ? new Date(parseInt(tsStr, 10)) : new Date();
+        versions.push({
+          id,
+          timestamp,
+          path: `${checkpointDir}/${file}`,
+        });
+      }
+    }
+
+    // Sort by timestamp, newest first
+    return versions.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Load a specific checkpoint version
+ */
+export async function loadCheckpointVersion(
+  projectPath: string,
+  snapshotId: string
+): Promise<ProjectState | null> {
+  try {
+    const fs = await import("node:fs/promises");
+    const snapshotPath = `${projectPath}/.coco/checkpoints/snapshot-${snapshotId}.json`;
+    const content = await fs.readFile(snapshotPath, "utf-8");
+    const data = JSON.parse(content) as ProjectState;
+
+    // Convert date strings back to Date objects
+    data.createdAt = new Date(data.createdAt);
+    data.updatedAt = new Date(data.updatedAt);
+
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Restore state from snapshot
+ */
+function restoreFromSnapshot(target: ProjectState, snapshot: ProjectState): void {
+  Object.assign(target, snapshot);
+}
+
+/**
+ * Execute a phase with real executors and rollback support
  */
 async function executePhase(
   phase: Phase,
@@ -431,6 +593,11 @@ async function executePhase(
     };
   }
 
+  // Create snapshot before execution for rollback
+  const snapshotId = `pre-${phase}-${Date.now()}`;
+  const snapshot = await createSnapshot(state);
+  await saveSnapshot(state, snapshotId);
+
   try {
     const context = await createPhaseContext(config, state);
 
@@ -447,16 +614,32 @@ async function executePhase(
     // Execute the phase
     const result = await executor.execute(context);
 
-    // Save state after execution
+    // If phase failed, rollback to snapshot
+    if (!result.success) {
+      console.warn(`Phase ${phase} failed, rolling back to snapshot ${snapshotId}`);
+      restoreFromSnapshot(state, snapshot);
+      await saveState(state);
+      return {
+        ...result,
+        error: `${result.error || "Phase failed"} (rolled back to pre-${phase} state)`,
+      };
+    }
+
+    // Save state after successful execution
     await saveState(state);
 
     return result;
   } catch (error) {
+    // Rollback on exception
+    console.error(`Phase ${phase} threw exception, rolling back:`, error);
+    restoreFromSnapshot(state, snapshot);
+    await saveState(state);
+
     return {
       phase,
       success: false,
       artifacts: [],
-      error: error instanceof Error ? error.message : String(error),
+      error: `${error instanceof Error ? error.message : String(error)} (rolled back)`,
     };
   }
 }
@@ -469,11 +652,16 @@ function calculateProgress(state: ProjectState): Progress {
   const currentIndex = phaseOrder.indexOf(state.currentPhase);
   const overallProgress = currentIndex >= 0 ? currentIndex / phaseOrder.length : 0;
 
+  // Ensure startedAt is a Date object (may be string after JSON parsing)
+  const startedAt = state.createdAt instanceof Date
+    ? state.createdAt
+    : new Date(state.createdAt);
+
   return {
     phase: state.currentPhase,
     phaseProgress: 0, // TODO: Calculate based on phase-specific progress
     overallProgress,
-    startedAt: state.createdAt,
+    startedAt,
     task: state.currentTask
       ? {
           id: state.currentTask.id,

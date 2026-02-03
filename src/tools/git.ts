@@ -33,7 +33,11 @@ export const gitStatusTool: ToolDefinition<
   }
 > = defineTool({
   name: "git_status",
-  description: "Get the current git repository status",
+  description: `Get the current git repository status including branch, staged, modified, and untracked files.
+
+Examples:
+- Current dir: {} → { "branch": "main", "isClean": false, "modified": ["src/app.ts"] }
+- Specific repo: { "cwd": "/path/to/repo" }`,
   category: "git",
   parameters: z.object({
     cwd: z.string().optional().describe("Repository directory"),
@@ -71,7 +75,12 @@ export const gitDiffTool: ToolDefinition<
   { diff: string; filesChanged: number; insertions: number; deletions: number }
 > = defineTool({
   name: "git_diff",
-  description: "Get git diff for changes",
+  description: `Get git diff showing file changes.
+
+Examples:
+- All changes: {} → { "diff": "...", "filesChanged": 3, "insertions": 42, "deletions": 10 }
+- Staged only: { "staged": true }
+- Specific files: { "files": ["src/app.ts", "package.json"] }`,
   category: "git",
   parameters: z.object({
     cwd: z.string().optional().describe("Repository directory"),
@@ -115,7 +124,12 @@ export const gitAddTool: ToolDefinition<
   { added: string[] }
 > = defineTool({
   name: "git_add",
-  description: "Stage files for commit",
+  description: `Stage files for commit.
+
+Examples:
+- Stage all: { "files": ["."] }
+- Specific files: { "files": ["src/app.ts", "package.json"] }
+- Pattern: { "files": ["src/*.ts"] }`,
   category: "git",
   parameters: z.object({
     cwd: z.string().optional().describe("Repository directory"),
@@ -144,7 +158,11 @@ export const gitCommitTool: ToolDefinition<
   { hash: string; summary: string }
 > = defineTool({
   name: "git_commit",
-  description: "Create a git commit",
+  description: `Create a git commit with the staged changes.
+
+Examples:
+- Simple commit: { "message": "fix: resolve auth bug" }
+- With author: { "message": "feat: add login", "author": "Bot <bot@example.com>" }`,
   category: "git",
   parameters: z.object({
     cwd: z.string().optional().describe("Repository directory"),
@@ -192,7 +210,12 @@ export const gitLogTool: ToolDefinition<
   }
 > = defineTool({
   name: "git_log",
-  description: "Get git commit history",
+  description: `Get git commit history.
+
+Examples:
+- Last 10 commits: {} (default)
+- Last 5: { "maxCount": 5 }
+- File history: { "file": "src/app.ts", "maxCount": 20 }`,
   category: "git",
   parameters: z.object({
     cwd: z.string().optional().describe("Repository directory"),
@@ -237,7 +260,12 @@ export const gitBranchTool: ToolDefinition<
   { branches: string[]; current: string }
 > = defineTool({
   name: "git_branch",
-  description: "Manage git branches",
+  description: `Manage git branches (list, create, delete).
+
+Examples:
+- List branches: {} → { "branches": ["main", "feature/x"], "current": "main" }
+- Create branch: { "create": "feature/new-feature" }
+- Delete branch: { "delete": "old-branch" }`,
   category: "git",
   parameters: z.object({
     cwd: z.string().optional().describe("Repository directory"),
@@ -287,7 +315,11 @@ export const gitCheckoutTool: ToolDefinition<
   { branch: string }
 > = defineTool({
   name: "git_checkout",
-  description: "Switch branches",
+  description: `Switch branches or create and switch to a new branch.
+
+Examples:
+- Switch branch: { "branch": "main" }
+- Create and switch: { "branch": "feature/new", "create": true }`,
   category: "git",
   parameters: z.object({
     cwd: z.string().optional().describe("Repository directory"),
@@ -322,7 +354,12 @@ export const gitPushTool: ToolDefinition<
   { pushed: boolean; remote: string; branch: string }
 > = defineTool({
   name: "git_push",
-  description: "Push commits to remote",
+  description: `Push commits to remote repository.
+
+Examples:
+- Push current: {} → pushes to origin
+- Set upstream: { "setUpstream": true }
+- Specific remote: { "remote": "upstream", "branch": "main" }`,
   category: "git",
   parameters: z.object({
     cwd: z.string().optional().describe("Repository directory"),
@@ -365,7 +402,12 @@ export const gitPullTool: ToolDefinition<
   { updated: boolean; summary: string }
 > = defineTool({
   name: "git_pull",
-  description: "Pull changes from remote",
+  description: `Pull changes from remote repository.
+
+Examples:
+- Pull current: {} → pulls from origin
+- With rebase: { "rebase": true }
+- Specific branch: { "remote": "origin", "branch": "develop" }`,
   category: "git",
   parameters: z.object({
     cwd: z.string().optional().describe("Repository directory"),
@@ -407,7 +449,12 @@ export const gitInitTool: ToolDefinition<
   { initialized: boolean; path: string }
 > = defineTool({
   name: "git_init",
-  description: "Initialize a new git repository",
+  description: `Initialize a new git repository.
+
+Examples:
+- Init current dir: {}
+- Specific directory: { "cwd": "/path/to/project" }
+- Bare repository: { "bare": true }`,
   category: "git",
   parameters: z.object({
     cwd: z.string().optional().describe("Directory to initialize"),

@@ -20,6 +20,7 @@ import type {
   ToolResultContent,
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
+import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 
 /**
  * Default model
@@ -48,6 +49,7 @@ export class AnthropicProvider implements LLMProvider {
 
   private client: Anthropic | null = null;
   private config: ProviderConfig = {};
+  private retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
 
   /**
    * Initialize the provider
@@ -75,29 +77,34 @@ export class AnthropicProvider implements LLMProvider {
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
 
-    try {
-      const response = await this.client!.messages.create({
-        model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-        temperature: options?.temperature ?? this.config.temperature ?? 0,
-        system: options?.system,
-        messages: this.convertMessages(messages),
-        stop_sequences: options?.stopSequences,
-      });
+    return withRetry(
+      async () => {
+        try {
+          const response = await this.client!.messages.create({
+            model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
+            max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+            temperature: options?.temperature ?? this.config.temperature ?? 0,
+            system: options?.system,
+            messages: this.convertMessages(messages),
+            stop_sequences: options?.stopSequences,
+          });
 
-      return {
-        id: response.id,
-        content: this.extractTextContent(response.content),
-        stopReason: this.mapStopReason(response.stop_reason),
-        usage: {
-          inputTokens: response.usage.input_tokens,
-          outputTokens: response.usage.output_tokens,
-        },
-        model: response.model,
-      };
-    } catch (error) {
-      throw this.handleError(error);
-    }
+          return {
+            id: response.id,
+            content: this.extractTextContent(response.content),
+            stopReason: this.mapStopReason(response.stop_reason),
+            usage: {
+              inputTokens: response.usage.input_tokens,
+              outputTokens: response.usage.output_tokens,
+            },
+            model: response.model,
+          };
+        } catch (error) {
+          throw this.handleError(error);
+        }
+      },
+      this.retryConfig
+    );
   }
 
   /**
@@ -109,35 +116,40 @@ export class AnthropicProvider implements LLMProvider {
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
 
-    try {
-      const response = await this.client!.messages.create({
-        model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-        temperature: options?.temperature ?? this.config.temperature ?? 0,
-        system: options?.system,
-        messages: this.convertMessages(messages),
-        tools: this.convertTools(options.tools),
-        tool_choice: options.toolChoice
-          ? this.convertToolChoice(options.toolChoice)
-          : undefined,
-      });
+    return withRetry(
+      async () => {
+        try {
+          const response = await this.client!.messages.create({
+            model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
+            max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+            temperature: options?.temperature ?? this.config.temperature ?? 0,
+            system: options?.system,
+            messages: this.convertMessages(messages),
+            tools: this.convertTools(options.tools),
+            tool_choice: options.toolChoice
+              ? this.convertToolChoice(options.toolChoice)
+              : undefined,
+          });
 
-      const toolCalls = this.extractToolCalls(response.content);
+          const toolCalls = this.extractToolCalls(response.content);
 
-      return {
-        id: response.id,
-        content: this.extractTextContent(response.content),
-        stopReason: this.mapStopReason(response.stop_reason),
-        usage: {
-          inputTokens: response.usage.input_tokens,
-          outputTokens: response.usage.output_tokens,
-        },
-        model: response.model,
-        toolCalls,
-      };
-    } catch (error) {
-      throw this.handleError(error);
-    }
+          return {
+            id: response.id,
+            content: this.extractTextContent(response.content),
+            stopReason: this.mapStopReason(response.stop_reason),
+            usage: {
+              inputTokens: response.usage.input_tokens,
+              outputTokens: response.usage.output_tokens,
+            },
+            model: response.model,
+            toolCalls,
+          };
+        } catch (error) {
+          throw this.handleError(error);
+        }
+      },
+      this.retryConfig
+    );
   }
 
   /**
@@ -174,11 +186,48 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   /**
-   * Count tokens (approximate)
+   * Count tokens (improved heuristic for Claude models)
+   *
+   * Claude uses a BPE tokenizer similar to GPT models. The average ratio varies:
+   * - English text: ~4.5 characters per token
+   * - Code: ~3.5 characters per token
+   * - Whitespace-heavy: ~5 characters per token
+   *
+   * This heuristic analyzes the text to provide a better estimate.
    */
   countTokens(text: string): number {
-    // Anthropic uses ~4 characters per token on average
-    return Math.ceil(text.length / 4);
+    if (!text) return 0;
+
+    // Count different character types
+    const codePatterns = /[{}[\]();=<>!&|+\-*/]/g;
+    const whitespacePattern = /\s/g;
+    const wordPattern = /\b\w+\b/g;
+
+    const codeChars = (text.match(codePatterns) || []).length;
+    const whitespace = (text.match(whitespacePattern) || []).length;
+    const words = (text.match(wordPattern) || []).length;
+
+    // Estimate if text is code-like
+    const isCodeLike = codeChars > text.length * 0.05;
+
+    // Calculate base ratio
+    let charsPerToken: number;
+    if (isCodeLike) {
+      charsPerToken = 3.5;
+    } else if (whitespace > text.length * 0.3) {
+      charsPerToken = 5.0;
+    } else {
+      charsPerToken = 4.5;
+    }
+
+    // Word-based estimate (backup)
+    const wordBasedEstimate = words * 1.3;
+
+    // Char-based estimate
+    const charBasedEstimate = text.length / charsPerToken;
+
+    // Use average of both methods for better accuracy
+    return Math.ceil((wordBasedEstimate + charBasedEstimate) / 2);
   }
 
   /**

@@ -1,17 +1,50 @@
 /**
  * LLM Adapter for the COMPLETE phase
  *
- * Creates an LLM provider adapter from phase context
+ * Creates an LLM provider adapter from phase context with token tracking
  */
 
 import type { PhaseContext } from "../types.js";
 import type { LLMProvider } from "../../providers/types.js";
 
 /**
- * Create LLM adapter from phase context
+ * Token usage tracker
  */
-export function createLLMAdapter(context: PhaseContext): LLMProvider {
+export interface TokenTracker {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  callCount: number;
+}
+
+/**
+ * LLM Provider with token tracking
+ */
+export interface TrackingLLMProvider extends LLMProvider {
+  getTokenUsage(): TokenTracker;
+  resetTokenUsage(): void;
+}
+
+/**
+ * Create LLM adapter from phase context with token tracking
+ */
+export function createLLMAdapter(context: PhaseContext): TrackingLLMProvider {
   const llmContext = context.llm;
+
+  // Token usage tracker
+  const tokenUsage: TokenTracker = {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    callCount: 0,
+  };
+
+  const trackUsage = (input: number, output: number) => {
+    tokenUsage.inputTokens += input;
+    tokenUsage.outputTokens += output;
+    tokenUsage.totalTokens += input + output;
+    tokenUsage.callCount++;
+  };
 
   return {
     id: "phase-adapter",
@@ -25,6 +58,10 @@ export function createLLMAdapter(context: PhaseContext): LLMProvider {
         content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
       }));
       const response = await llmContext.chat(adapted);
+
+      // Track token usage
+      trackUsage(response.usage.inputTokens, response.usage.outputTokens);
+
       return {
         id: `chat-${Date.now()}`,
         content: response.content,
@@ -48,6 +85,10 @@ export function createLLMAdapter(context: PhaseContext): LLMProvider {
         parameters: t.input_schema as Record<string, unknown>,
       }));
       const response = await llmContext.chatWithTools(adapted, tools);
+
+      // Track token usage
+      trackUsage(response.usage.inputTokens, response.usage.outputTokens);
+
       return {
         id: `chat-${Date.now()}`,
         content: response.content,
@@ -71,6 +112,10 @@ export function createLLMAdapter(context: PhaseContext): LLMProvider {
         content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
       }));
       const response = await llmContext.chat(adapted);
+
+      // Track token usage for stream
+      trackUsage(response.usage.inputTokens, response.usage.outputTokens);
+
       yield {
         type: "text" as const,
         text: response.content,
@@ -90,6 +135,18 @@ export function createLLMAdapter(context: PhaseContext): LLMProvider {
 
     async isAvailable(): Promise<boolean> {
       return true;
+    },
+
+    // Token tracking methods
+    getTokenUsage(): TokenTracker {
+      return { ...tokenUsage };
+    },
+
+    resetTokenUsage(): void {
+      tokenUsage.inputTokens = 0;
+      tokenUsage.outputTokens = 0;
+      tokenUsage.totalTokens = 0;
+      tokenUsage.callCount = 0;
     },
   };
 }

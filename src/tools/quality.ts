@@ -100,7 +100,13 @@ export const runLinterTool: ToolDefinition<
   LintResult
 > = defineTool({
   name: "run_linter",
-  description: "Run linter on the codebase",
+  description: `Run linter on the codebase (auto-detects eslint, oxlint, or biome).
+
+Examples:
+- Lint all: {} → { "errors": 0, "warnings": 5, "score": 90 }
+- Auto-fix: { "fix": true }
+- Specific files: { "files": ["src/app.ts", "src/utils.ts"] }
+- Force linter: { "linter": "eslint" }`,
   category: "quality",
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),
@@ -251,7 +257,12 @@ export const analyzeComplexityTool: ToolDefinition<
   ComplexityResult
 > = defineTool({
   name: "analyze_complexity",
-  description: "Analyze code complexity",
+  description: `Analyze cyclomatic complexity of code.
+
+Examples:
+- Analyze all: {} → { "averageComplexity": 5.2, "maxComplexity": 15, "score": 85 }
+- Custom threshold: { "threshold": 15 }
+- Specific files: { "files": ["src/complex-module.ts"] }`,
   category: "quality",
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),
@@ -389,7 +400,11 @@ export const calculateQualityTool: ToolDefinition<
   QualityScores
 > = defineTool({
   name: "calculate_quality",
-  description: "Calculate comprehensive quality scores",
+  description: `Calculate comprehensive quality scores across all dimensions (lint, complexity, coverage, etc.).
+
+Examples:
+- Full analysis: {} → { "overall": 85, "dimensions": { "complexity": 90, "style": 95, ... } }
+- Specific files: { "files": ["src/core/*.ts"] }`,
   category: "quality",
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),

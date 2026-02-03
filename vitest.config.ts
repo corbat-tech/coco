@@ -12,11 +12,11 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       exclude: ["src/**/*.test.ts", "src/**/*.d.ts"],
       thresholds: {
-        // TODO: Increase to 80% as more tests are added
-        lines: 55,
-        functions: 60,
-        branches: 65,
-        statements: 55,
+        // Phase 2 audit: stepping toward 80%+ target
+        lines: 72,
+        functions: 80,
+        branches: 76,
+        statements: 72,
       },
     },
     testTimeout: 30000,

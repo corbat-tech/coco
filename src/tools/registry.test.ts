@@ -333,3 +333,108 @@ describe("defineTool", () => {
     expect(tool.category).toBe("test");
   });
 });
+
+describe("zodFieldToJsonSchema edge cases", () => {
+  it("should handle ZodDefault fields", async () => {
+    const { ToolRegistry } = await import("./registry.js");
+
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "default_tool",
+      description: "Tool with defaults",
+      category: "test" as const,
+      parameters: z.object({
+        value: z.string().default("default-value"),
+      }),
+      execute: vi.fn(),
+    });
+
+    const definitions = registry.getToolDefinitionsForLLM();
+
+    expect(definitions[0].input_schema).toBeDefined();
+    expect(definitions[0].input_schema.properties).toHaveProperty("value");
+  });
+
+  it("should handle ZodEnum fields", async () => {
+    const { ToolRegistry } = await import("./registry.js");
+
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "enum_tool",
+      description: "Tool with enum",
+      category: "test" as const,
+      parameters: z.object({
+        status: z.enum(["active", "inactive", "pending"]),
+      }),
+      execute: vi.fn(),
+    });
+
+    const definitions = registry.getToolDefinitionsForLLM();
+
+    expect(definitions[0].input_schema).toBeDefined();
+    const props = definitions[0].input_schema.properties as Record<string, { type: string; enum?: string[] }>;
+    expect(props.status.type).toBe("string");
+    expect(props.status.enum).toEqual(["active", "inactive", "pending"]);
+  });
+
+  it("should handle unknown Zod types gracefully", async () => {
+    const { ToolRegistry } = await import("./registry.js");
+
+    const registry = new ToolRegistry();
+    // Use z.any() which doesn't have a specific typeName mapping
+    registry.register({
+      name: "any_tool",
+      description: "Tool with any type",
+      category: "test" as const,
+      parameters: z.object({
+        unknown: z.any(),
+      }),
+      execute: vi.fn(),
+    });
+
+    const definitions = registry.getToolDefinitionsForLLM();
+
+    // Should not throw, even if type is unknown
+    expect(definitions[0].input_schema).toBeDefined();
+  });
+
+  it("should handle ZodArray fields", async () => {
+    const { ToolRegistry } = await import("./registry.js");
+
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "array_tool",
+      description: "Tool with array",
+      category: "test" as const,
+      parameters: z.object({
+        items: z.array(z.string()),
+      }),
+      execute: vi.fn(),
+    });
+
+    const definitions = registry.getToolDefinitionsForLLM();
+
+    const props = definitions[0].input_schema.properties as Record<string, { type: string; items?: { type: string } }>;
+    expect(props.items.type).toBe("array");
+    expect(props.items.items).toEqual({ type: "string" });
+  });
+
+  it("should handle non-ZodObject schemas gracefully", async () => {
+    const { ToolRegistry } = await import("./registry.js");
+
+    const registry = new ToolRegistry();
+    // Use a primitive schema instead of object
+    registry.register({
+      name: "primitive_tool",
+      description: "Tool with primitive schema",
+      category: "test" as const,
+      parameters: z.string() as any, // Force a non-object schema
+      execute: vi.fn(),
+    });
+
+    const definitions = registry.getToolDefinitionsForLLM();
+
+    // Should return { type: "object" } for non-object schemas
+    expect(definitions[0].input_schema).toBeDefined();
+  });
+});

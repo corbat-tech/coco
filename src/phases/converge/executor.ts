@@ -498,6 +498,49 @@ export function createConvergeExecutor(
 }
 
 /**
+ * Create LLM adapter for phase context
+ * Converts between provider types and phase types
+ */
+export function createLLMAdapter(llm: LLMProvider): PhaseContext["llm"] {
+  return {
+    async chat(messages) {
+      // Convert phase Message to provider Message
+      const adapted = messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+      const response = await llm.chat(adapted);
+      return {
+        content: response.content,
+        usage: response.usage,
+      };
+    },
+    async chatWithTools(messages, tools) {
+      // Convert phase Message to provider Message
+      const adaptedMessages = messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+      // Convert phase ToolDefinition to provider ToolDefinition
+      const adaptedTools = tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.parameters as { type: "object"; properties: Record<string, unknown>; required?: string[] },
+      }));
+      const response = await llm.chatWithTools(adaptedMessages, { tools: adaptedTools });
+      return {
+        content: response.content,
+        usage: response.usage,
+        toolCalls: response.toolCalls?.map((tc) => ({
+          name: tc.name,
+          arguments: tc.input,
+        })),
+      };
+    },
+  };
+}
+
+/**
  * Run the CONVERGE phase directly (convenience function)
  */
 export async function runConvergePhase(
@@ -534,42 +577,7 @@ export async function runConvergePhase(
       checkpoint: null,
     },
     tools: {} as PhaseContext["tools"], // Not used in CONVERGE
-    llm: {
-      async chat(messages) {
-        // Convert phase Message to provider Message
-        const adapted = messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
-        const response = await llm.chat(adapted);
-        return {
-          content: response.content,
-          usage: response.usage,
-        };
-      },
-      async chatWithTools(messages, tools) {
-        // Convert phase Message to provider Message
-        const adaptedMessages = messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
-        // Convert phase ToolDefinition to provider ToolDefinition
-        const adaptedTools = tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          input_schema: t.parameters as { type: "object"; properties: Record<string, unknown>; required?: string[] },
-        }));
-        const response = await llm.chatWithTools(adaptedMessages, { tools: adaptedTools });
-        return {
-          content: response.content,
-          usage: response.usage,
-          toolCalls: response.toolCalls?.map((tc) => ({
-            name: tc.name,
-            arguments: tc.input,
-          })),
-        };
-      },
-    },
+    llm: createLLMAdapter(llm),
   };
 
   const result = await executor.execute(context);

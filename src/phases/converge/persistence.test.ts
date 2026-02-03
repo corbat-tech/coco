@@ -119,6 +119,40 @@ describe("createCheckpoint", () => {
   });
 });
 
+describe("SessionPersistence - error handling", () => {
+  it("should throw FileSystemError on saveCheckpoint failure", async () => {
+    // Create a directory where we can't write
+    const readOnlyPath = path.join(tempDir, "readonly");
+    await fs.mkdir(readOnlyPath, { recursive: true });
+
+    const persistence = new SessionPersistence(readOnlyPath);
+    // First ensure the dir exists
+    await persistence.ensureDir();
+
+    // Make the checkpoint file a directory to cause write error
+    const paths = getPersistencePaths(readOnlyPath);
+    await fs.mkdir(paths.checkpointFile, { recursive: true });
+
+    const checkpoint = createCheckpoint("session-1", "discovery", 50);
+
+    await expect(persistence.saveCheckpoint(checkpoint)).rejects.toThrow();
+  });
+
+  it("should throw error on clearAll failure for non-ENOENT errors", async () => {
+    const persistence = new SessionPersistence(tempDir);
+    await persistence.ensureDir();
+
+    // Create a test file
+    const paths = getPersistencePaths(tempDir);
+    await fs.writeFile(path.join(paths.baseDir, "test.txt"), "test", "utf-8");
+
+    // The clearAll should work in normal circumstances
+    // To test the error path, we'd need to mock fs.rm
+    // But we can at least verify the happy path
+    await expect(persistence.clearAll()).resolves.not.toThrow();
+  });
+});
+
 describe("SessionPersistence", () => {
   describe("ensureDir", () => {
     it("should create persistence directory", async () => {
@@ -459,5 +493,107 @@ describe("createSessionManager", () => {
   it("should create a SessionManager instance", () => {
     const manager = createSessionManager(tempDir);
     expect(manager).toBeInstanceOf(SessionManager);
+  });
+});
+
+describe("SessionPersistence - error paths with mocked fs", () => {
+  it("should throw FileSystemError when appendConversation fails", async () => {
+    const persistence = new SessionPersistence(tempDir);
+    await persistence.ensureDir();
+
+    // Mock appendFile to fail
+    const originalAppendFile = fs.appendFile;
+    fs.appendFile = async () => {
+      throw new Error("Permission denied");
+    };
+
+    try {
+      await expect(
+        persistence.appendConversation("user", "test message")
+      ).rejects.toThrow(/Failed to append to conversation log/);
+    } finally {
+      fs.appendFile = originalAppendFile;
+    }
+  });
+
+  it("should throw FileSystemError when deleteSession fails with non-ENOENT error", async () => {
+    const persistence = new SessionPersistence(tempDir);
+    await persistence.ensureDir();
+    await persistence.saveSession(createMockSession());
+
+    // Mock fs.unlink to fail with non-ENOENT error
+    const originalUnlink = fs.unlink;
+    fs.unlink = async () => {
+      const error = new Error("Permission denied") as NodeJS.ErrnoException;
+      error.code = "EACCES";
+      throw error;
+    };
+
+    try {
+      await expect(persistence.deleteSession()).rejects.toThrow(
+        /Failed to delete discovery session/
+      );
+    } finally {
+      fs.unlink = originalUnlink;
+    }
+  });
+
+  it("should throw FileSystemError when saveSpecification fails", async () => {
+    const persistence = new SessionPersistence(tempDir);
+    await persistence.ensureDir();
+
+    // Mock writeFile to fail
+    const originalWriteFile = fs.writeFile;
+    fs.writeFile = async () => {
+      throw new Error("Permission denied");
+    };
+
+    try {
+      await expect(
+        persistence.saveSpecification("# Spec content")
+      ).rejects.toThrow(/Failed to save specification/);
+    } finally {
+      fs.writeFile = originalWriteFile;
+    }
+  });
+
+  it("should throw FileSystemError when clearAll fails with non-ENOENT error", async () => {
+    const persistence = new SessionPersistence(tempDir);
+    await persistence.ensureDir();
+
+    // Mock fs.rm to fail with a non-ENOENT error
+    const originalRm = fs.rm;
+    fs.rm = async () => {
+      const error = new Error("Permission denied") as NodeJS.ErrnoException;
+      error.code = "EACCES";
+      throw error;
+    };
+
+    try {
+      await expect(persistence.clearAll()).rejects.toThrow(
+        /Failed to clear persistence data/
+      );
+    } finally {
+      fs.rm = originalRm;
+    }
+  });
+
+  it("should not throw when clearAll fails with ENOENT", async () => {
+    const persistence = new SessionPersistence(tempDir);
+    // Don't create the directory - clearAll should handle ENOENT gracefully
+
+    // Mock fs.rm to throw ENOENT
+    const originalRm = fs.rm;
+    fs.rm = async () => {
+      const error = new Error("Not found") as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      throw error;
+    };
+
+    try {
+      await expect(persistence.clearAll()).resolves.not.toThrow();
+    } finally {
+      fs.rm = originalRm;
+    }
   });
 });

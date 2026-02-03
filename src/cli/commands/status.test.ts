@@ -2,7 +2,11 @@
  * Tests for status command
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as p from "@clack/prompts";
+
+// Store original process.exit
+const originalExit = process.exit;
 
 vi.mock("@clack/prompts", () => ({
   intro: vi.fn(),
@@ -30,6 +34,13 @@ vi.mock("../../config/loader.js", () => ({
 describe("status command", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    process.exit = vi.fn() as unknown as typeof process.exit;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    process.exit = originalExit;
   });
 
   describe("runStatus", () => {
@@ -359,6 +370,78 @@ describe("status command", () => {
       expect(result.progress).toBe(0.5);
       expect(result.sprint?.completed).toBe(2);
       expect(result.sprint?.total).toBe(4);
+    });
+  });
+
+  describe("registerStatusCommand action handler", () => {
+    let actionHandler: ((options: any) => Promise<void>) | null = null;
+
+    beforeEach(async () => {
+      vi.clearAllMocks();
+      process.exit = vi.fn() as unknown as typeof process.exit;
+
+      const { registerStatusCommand } = await import("./status.js");
+
+      const mockProgram = {
+        command: vi.fn().mockReturnThis(),
+        description: vi.fn().mockReturnThis(),
+        option: vi.fn().mockReturnThis(),
+        action: vi.fn((handler) => {
+          actionHandler = handler;
+          return mockProgram;
+        }),
+      };
+
+      registerStatusCommand(mockProgram as any);
+    });
+
+    afterEach(() => {
+      process.exit = originalExit;
+      actionHandler = null;
+    });
+
+    it("should exit with error when exception is thrown", async () => {
+      const { loadConfig, findConfigPath } = await import("../../config/loader.js");
+
+      vi.mocked(findConfigPath).mockResolvedValue("/test/.coco/config.json");
+      vi.mocked(loadConfig).mockRejectedValue(new Error("Config load error"));
+
+      expect(actionHandler).not.toBeNull();
+      const promise = actionHandler!({});
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(p.log.error).toHaveBeenCalledWith("Config load error");
+      expect(process.exit).toHaveBeenCalledWith(1);
+    });
+
+    it("should handle non-Error exceptions", async () => {
+      const { loadConfig, findConfigPath } = await import("../../config/loader.js");
+
+      vi.mocked(findConfigPath).mockResolvedValue("/test/.coco/config.json");
+      vi.mocked(loadConfig).mockRejectedValue("String error");
+
+      expect(actionHandler).not.toBeNull();
+      const promise = actionHandler!({});
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(p.log.error).toHaveBeenCalledWith("An error occurred");
+      expect(process.exit).toHaveBeenCalledWith(1);
+    });
+
+    it("should pass cwd option from process.cwd()", async () => {
+      const { findConfigPath } = await import("../../config/loader.js");
+
+      vi.mocked(findConfigPath).mockResolvedValue(undefined);
+
+      expect(actionHandler).not.toBeNull();
+      const promise = actionHandler!({});
+      await vi.runAllTimersAsync();
+      await promise;
+
+      // Should call findConfigPath with process.cwd()
+      expect(findConfigPath).toHaveBeenCalled();
     });
   });
 });

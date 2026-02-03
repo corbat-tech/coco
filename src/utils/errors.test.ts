@@ -91,22 +91,29 @@ describe("ConfigError", () => {
     expect(error.suggestion).toContain("config.json");
   });
 
-  it("should include key and value in context", () => {
+  it("should include issues and configPath in context", () => {
     const error = new ConfigError("Invalid value", {
-      key: "provider.model",
-      value: "invalid-model",
+      issues: [{ path: "provider.model", message: "Invalid model" }],
+      configPath: "/path/to/config.json",
     });
 
-    expect(error.context.key).toBe("provider.model");
-    expect(error.context.value).toBe("invalid-model");
+    expect(error.context.configPath).toBe("/path/to/config.json");
+    expect(error.issues).toHaveLength(1);
+    expect(error.issues[0]?.path).toBe("provider.model");
   });
 
-  it("should allow custom suggestion", () => {
-    const error = new ConfigError("Invalid value", {
-      suggestion: "Custom suggestion",
+  it("should format issues", () => {
+    const error = new ConfigError("Invalid config", {
+      issues: [
+        { path: "provider.model", message: "Invalid model" },
+        { path: "quality.minScore", message: "Must be positive" },
+      ],
     });
 
-    expect(error.suggestion).toBe("Custom suggestion");
+    const formatted = error.formatIssues();
+    expect(formatted).toContain("provider.model");
+    expect(formatted).toContain("Invalid model");
+    expect(formatted).toContain("quality.minScore");
   });
 
   it("should accept cause", () => {

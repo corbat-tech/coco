@@ -130,42 +130,40 @@ export async function retry<T>(
 
 /**
  * Run promises in parallel with concurrency limit
+ * Uses proper async tracking without race conditions
  */
 export async function parallel<T, R>(
   items: T[],
   fn: (item: T, index: number) => Promise<R>,
   concurrency: number = 5
 ): Promise<R[]> {
-  const results: R[] = [];
-  const executing: Promise<void>[] = [];
+  const results: R[] = new Array(items.length);
+  const executing = new Map<number, Promise<void>>();
+  let nextId = 0;
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (item === undefined) continue;
 
-    const promise = fn(item, i).then((result) => {
-      results[i] = result;
-    });
-
-    executing.push(promise);
-
-    if (executing.length >= concurrency) {
-      await Promise.race(executing);
-      // Remove completed promises
-      const completed = executing.filter((p) => {
-        // Check if promise is settled by racing it with an immediately resolved promise
-        let settled = false;
-        Promise.race([p, Promise.resolve()]).then(() => {
-          settled = true;
-        });
-        return !settled;
+    const id = nextId++;
+    const promise = fn(item, i)
+      .then((result) => {
+        results[i] = result;
+      })
+      .finally(() => {
+        executing.delete(id);
       });
-      executing.length = 0;
-      executing.push(...completed);
+
+    executing.set(id, promise);
+
+    // Wait for one to complete if at concurrency limit
+    if (executing.size >= concurrency) {
+      await Promise.race(executing.values());
     }
   }
 
-  await Promise.all(executing);
+  // Wait for remaining promises
+  await Promise.all(executing.values());
   return results;
 }
 

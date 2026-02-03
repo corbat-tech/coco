@@ -9,6 +9,8 @@ import {
   QualityConfigSchema,
   PersistenceConfigSchema,
   StackConfigSchema,
+  validateConfig,
+  createDefaultConfigObject,
 } from "./schema.js";
 
 describe("CocoConfigSchema", () => {
@@ -145,11 +147,20 @@ describe("ProviderConfigSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("should accept local provider", () => {
+  it("should accept kimi provider", () => {
     const config = {
-      type: "local",
-      model: "llama2",
-      baseUrl: "http://localhost:11434",
+      type: "kimi",
+      model: "moonshot-v1-8k",
+    };
+
+    const result = ProviderConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it("should accept gemini provider", () => {
+    const config = {
+      type: "gemini",
+      model: "gemini-2.0-flash",
     };
 
     const result = ProviderConfigSchema.safeParse(config);
@@ -263,5 +274,114 @@ describe("StackConfigSchema", () => {
       const result = StackConfigSchema.safeParse({ language });
       expect(result.success).toBe(true);
     }
+  });
+});
+
+describe("validateConfig", () => {
+  it("should return success true for valid config", () => {
+    const config = {
+      project: { name: "test-project" },
+    };
+
+    const result = validateConfig(config);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toBeDefined();
+    expect(result.data?.project.name).toBe("test-project");
+    expect(result.error).toBeUndefined();
+  });
+
+  it("should return success false for invalid config", () => {
+    const config = {
+      project: {}, // missing name
+    };
+
+    const result = validateConfig(config);
+
+    expect(result.success).toBe(false);
+    expect(result.data).toBeUndefined();
+    expect(result.error).toBeDefined();
+    expect(result.error?.issues.length).toBeGreaterThan(0);
+  });
+
+  it("should return ZodError with issues for invalid config", () => {
+    const config = {
+      project: { name: "test" },
+      quality: { minScore: 200 }, // out of range
+    };
+
+    const result = validateConfig(config);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toBeDefined();
+  });
+});
+
+describe("createDefaultConfigObject", () => {
+  it("should create default config with project name", () => {
+    const config = createDefaultConfigObject("my-project");
+
+    expect(config.project.name).toBe("my-project");
+    expect(config.project.version).toBe("0.1.0");
+  });
+
+  it("should use typescript as default language", () => {
+    const config = createDefaultConfigObject("test");
+
+    expect(config.stack.language).toBe("typescript");
+  });
+
+  it("should accept custom language", () => {
+    const config = createDefaultConfigObject("test", "python");
+
+    expect(config.stack.language).toBe("python");
+  });
+
+  it("should accept go language", () => {
+    const config = createDefaultConfigObject("test", "go");
+
+    expect(config.stack.language).toBe("go");
+  });
+
+  it("should accept rust language", () => {
+    const config = createDefaultConfigObject("test", "rust");
+
+    expect(config.stack.language).toBe("rust");
+  });
+
+  it("should accept java language", () => {
+    const config = createDefaultConfigObject("test", "java");
+
+    expect(config.stack.language).toBe("java");
+  });
+
+  it("should set correct provider defaults", () => {
+    const config = createDefaultConfigObject("test");
+
+    expect(config.provider.type).toBe("anthropic");
+    expect(config.provider.model).toBe("claude-sonnet-4-20250514");
+    expect(config.provider.maxTokens).toBe(8192);
+    expect(config.provider.temperature).toBe(0);
+    expect(config.provider.timeout).toBe(120000);
+  });
+
+  it("should set correct quality defaults", () => {
+    const config = createDefaultConfigObject("test");
+
+    expect(config.quality.minScore).toBe(85);
+    expect(config.quality.minCoverage).toBe(80);
+    expect(config.quality.maxIterations).toBe(10);
+    expect(config.quality.minIterations).toBe(2);
+    expect(config.quality.convergenceThreshold).toBe(2);
+    expect(config.quality.securityThreshold).toBe(100);
+  });
+
+  it("should set correct persistence defaults", () => {
+    const config = createDefaultConfigObject("test");
+
+    expect(config.persistence.checkpointInterval).toBe(300000);
+    expect(config.persistence.maxCheckpoints).toBe(50);
+    expect(config.persistence.retentionDays).toBe(7);
+    expect(config.persistence.compressOldCheckpoints).toBe(true);
   });
 });

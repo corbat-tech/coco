@@ -10,6 +10,7 @@ import {
   createDefaultConfigObject,
   type CocoConfig,
 } from "./schema.js";
+import { ConfigError } from "../utils/errors.js";
 
 /**
  * Load configuration from file
@@ -23,19 +24,29 @@ export async function loadConfig(configPath?: string): Promise<CocoConfig> {
 
     const result = CocoConfigSchema.safeParse(parsed);
     if (!result.success) {
-      const issues = result.error.issues
-        .map((i) => `  - ${i.path.join(".")}: ${i.message}`)
-        .join("\n");
-      throw new Error(`Invalid configuration:\n${issues}`);
+      const issues = result.error.issues.map((i) => ({
+        path: i.path.join("."),
+        message: i.message,
+      }));
+      throw new ConfigError("Invalid configuration", {
+        issues,
+        configPath: resolvedPath,
+      });
     }
 
     return result.data;
   } catch (error) {
+    if (error instanceof ConfigError) {
+      throw error;
+    }
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       // Config file doesn't exist, return defaults
       return createDefaultConfig("my-project");
     }
-    throw error;
+    throw new ConfigError("Failed to load configuration", {
+      configPath: resolvedPath,
+      cause: error instanceof Error ? error : undefined,
+    });
   }
 }
 
@@ -46,12 +57,25 @@ export async function saveConfig(
   config: CocoConfig,
   configPath?: string
 ): Promise<void> {
+  // Validate configuration before saving
+  const result = CocoConfigSchema.safeParse(config);
+  if (!result.success) {
+    const issues = result.error.issues.map((i) => ({
+      path: i.path.join("."),
+      message: i.message,
+    }));
+    throw new ConfigError("Cannot save invalid configuration", {
+      issues,
+      configPath: configPath || findConfigPathSync(),
+    });
+  }
+
   const resolvedPath = configPath || findConfigPathSync();
   const dir = path.dirname(resolvedPath);
 
   await fs.mkdir(dir, { recursive: true });
 
-  const content = JSON.stringify(config, null, 2);
+  const content = JSON.stringify(result.data, null, 2);
   await fs.writeFile(resolvedPath, content, "utf-8");
 }
 

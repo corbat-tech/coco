@@ -21,22 +21,28 @@ const mockMessagesStream = vi.fn().mockReturnValue({
   },
 });
 
+// Create a mock APIError class that we can reference
+class MockAPIError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "APIError";
+    this.status = status;
+  }
+}
+
 // Mock @anthropic-ai/sdk
-vi.mock("@anthropic-ai/sdk", () => ({
-  default: vi.fn().mockImplementation(() => ({
-    messages: {
-      create: mockMessagesCreate,
-      stream: mockMessagesStream,
-    },
-  })),
-  APIError: class APIError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
-}));
+vi.mock("@anthropic-ai/sdk", () => {
+  return {
+    default: vi.fn().mockImplementation(() => ({
+      messages: {
+        create: mockMessagesCreate,
+        stream: mockMessagesStream,
+      },
+    })),
+    APIError: MockAPIError,
+  };
+});
 
 describe("AnthropicProvider", () => {
   beforeEach(() => {
@@ -363,6 +369,407 @@ describe("AnthropicProvider", () => {
 
       expect(available).toBe(false);
     });
+  });
+});
+
+describe("stream", () => {
+  it("should stream text chunks", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const chunks: { type: string; text?: string }[] = [];
+    for await (const chunk of provider.stream([{ role: "user", content: "Hello" }])) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.some((c) => c.type === "text")).toBe(true);
+    expect(chunks[chunks.length - 1]?.type).toBe("done");
+  });
+
+  it("should throw if not initialized", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+
+    const iterator = provider.stream([{ role: "user", content: "Hello" }]);
+    await expect(iterator.next()).rejects.toThrow(/not initialized/);
+  });
+
+  it("should handle stream errors", async () => {
+    mockMessagesStream.mockReturnValueOnce({
+      async *[Symbol.asyncIterator]() {
+        throw new Error("Stream error");
+      },
+    });
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const iterator = provider.stream([{ role: "user", content: "Hello" }]);
+    await expect(iterator.next()).rejects.toThrow();
+  });
+
+  it("should handle non-text delta events", async () => {
+    mockMessagesStream.mockReturnValueOnce({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "content_block_delta", delta: { type: "other_delta" } };
+        yield { type: "content_block_delta", delta: { type: "text_delta", text: "Hi" } };
+        yield { type: "message_start" }; // Non content_block_delta event
+      },
+    });
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const chunks: { type: string; text?: string }[] = [];
+    for await (const chunk of provider.stream([{ role: "user", content: "Hello" }])) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.filter((c) => c.type === "text").length).toBe(1);
+    expect(chunks[chunks.length - 1]?.type).toBe("done");
+  });
+});
+
+describe("token counting edge cases", () => {
+  it("should return 0 for empty string", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+
+    expect(provider.countTokens("")).toBe(0);
+  });
+
+  it("should handle code-heavy text", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+
+    const codeText = "function foo() { return bar(x + y) * z[i]; }";
+    const count = provider.countTokens(codeText);
+
+    expect(count).toBeGreaterThan(0);
+  });
+
+  it("should handle whitespace-heavy text", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+
+    // Text with > 30% whitespace
+    const whitespaceText = "a   b   c   d   e   f   g   h   i   j";
+    const count = provider.countTokens(whitespaceText);
+
+    expect(count).toBeGreaterThan(0);
+  });
+});
+
+describe("message content conversion", () => {
+  it("should handle array content with text blocks", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await provider.chat([
+      {
+        role: "user",
+        content: [{ type: "text", text: "Hello" }],
+      },
+    ]);
+
+    expect(mockMessagesCreate).toHaveBeenCalled();
+  });
+
+  it("should handle tool_use content blocks", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await provider.chat([
+      {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "tool-1", name: "readFile", input: { path: "/test.txt" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tool-1", content: "file contents" }],
+      },
+    ]);
+
+    expect(mockMessagesCreate).toHaveBeenCalled();
+  });
+
+  it("should handle unknown content block types", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await provider.chat([
+      {
+        role: "user",
+        content: [{ type: "unknown" as "text", text: "" }],
+      },
+    ]);
+
+    expect(mockMessagesCreate).toHaveBeenCalled();
+  });
+});
+
+describe("tool choice conversion", () => {
+  it("should handle auto tool choice", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await provider.chatWithTools(
+      [{ role: "user", content: "Hello" }],
+      { tools: [], toolChoice: "auto" }
+    );
+
+    expect(mockMessagesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool_choice: { type: "auto" },
+      })
+    );
+  });
+
+  it("should handle any tool choice", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await provider.chatWithTools(
+      [{ role: "user", content: "Hello" }],
+      { tools: [], toolChoice: "any" }
+    );
+
+    expect(mockMessagesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool_choice: { type: "any" },
+      })
+    );
+  });
+
+  it("should handle specific tool choice", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await provider.chatWithTools(
+      [{ role: "user", content: "Hello" }],
+      { tools: [], toolChoice: { type: "tool", name: "readFile" } }
+    );
+
+    expect(mockMessagesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool_choice: { type: "tool", name: "readFile" },
+      })
+    );
+  });
+});
+
+describe("stop reason mapping", () => {
+  it("should map max_tokens stop reason", async () => {
+    mockMessagesCreate.mockResolvedValueOnce({
+      id: "msg_123",
+      type: "message",
+      role: "assistant",
+      content: [{ type: "text", text: "Truncated..." }],
+      model: "claude-sonnet-4-20250514",
+      stop_reason: "max_tokens",
+      usage: { input_tokens: 10, output_tokens: 8192 },
+    });
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const response = await provider.chat([{ role: "user", content: "Hello" }]);
+
+    expect(response.stopReason).toBe("max_tokens");
+  });
+
+  it("should map stop_sequence stop reason", async () => {
+    mockMessagesCreate.mockResolvedValueOnce({
+      id: "msg_123",
+      type: "message",
+      role: "assistant",
+      content: [{ type: "text", text: "Hello" }],
+      model: "claude-sonnet-4-20250514",
+      stop_reason: "stop_sequence",
+      usage: { input_tokens: 10, output_tokens: 5 },
+    });
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const response = await provider.chat([{ role: "user", content: "Hello" }]);
+
+    expect(response.stopReason).toBe("stop_sequence");
+  });
+
+  it("should map tool_use stop reason", async () => {
+    mockMessagesCreate.mockResolvedValueOnce({
+      id: "msg_123",
+      type: "message",
+      role: "assistant",
+      content: [{ type: "tool_use", id: "t1", name: "test", input: {} }],
+      model: "claude-sonnet-4-20250514",
+      stop_reason: "tool_use",
+      usage: { input_tokens: 10, output_tokens: 20 },
+    });
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const response = await provider.chatWithTools(
+      [{ role: "user", content: "Hello" }],
+      { tools: [] }
+    );
+
+    expect(response.stopReason).toBe("tool_use");
+  });
+
+  it("should map unknown stop reason to end_turn", async () => {
+    mockMessagesCreate.mockResolvedValueOnce({
+      id: "msg_123",
+      type: "message",
+      role: "assistant",
+      content: [{ type: "text", text: "Hello" }],
+      model: "claude-sonnet-4-20250514",
+      stop_reason: "unknown_reason",
+      usage: { input_tokens: 10, output_tokens: 5 },
+    });
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const response = await provider.chat([{ role: "user", content: "Hello" }]);
+
+    expect(response.stopReason).toBe("end_turn");
+  });
+
+  it("should map null stop reason to end_turn", async () => {
+    mockMessagesCreate.mockResolvedValueOnce({
+      id: "msg_123",
+      type: "message",
+      role: "assistant",
+      content: [{ type: "text", text: "Hello" }],
+      model: "claude-sonnet-4-20250514",
+      stop_reason: null,
+      usage: { input_tokens: 10, output_tokens: 5 },
+    });
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const response = await provider.chat([{ role: "user", content: "Hello" }]);
+
+    expect(response.stopReason).toBe("end_turn");
+  });
+});
+
+describe("error handling", () => {
+  it("should handle Anthropic APIError with 429 status", async () => {
+    mockMessagesCreate.mockRejectedValueOnce(
+      new MockAPIError(429, "Rate limit exceeded")
+    );
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await expect(
+      provider.chat([{ role: "user", content: "Hello" }])
+    ).rejects.toThrow();
+  });
+
+  it("should handle Anthropic APIError with 500 status", async () => {
+    mockMessagesCreate.mockRejectedValueOnce(
+      new MockAPIError(500, "Internal server error")
+    );
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await expect(
+      provider.chat([{ role: "user", content: "Hello" }])
+    ).rejects.toThrow();
+  });
+
+  it("should handle Anthropic APIError with 400 status (non-retryable)", async () => {
+    mockMessagesCreate.mockRejectedValueOnce(
+      new MockAPIError(400, "Bad request")
+    );
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await expect(
+      provider.chat([{ role: "user", content: "Hello" }])
+    ).rejects.toThrow();
+  });
+
+  it("should handle non-Error thrown values", async () => {
+    mockMessagesCreate.mockRejectedValueOnce("string error");
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await expect(
+      provider.chat([{ role: "user", content: "Hello" }])
+    ).rejects.toThrow();
+  });
+
+  it("should handle chatWithTools errors", async () => {
+    mockMessagesCreate.mockRejectedValueOnce(
+      new MockAPIError(500, "Server error")
+    );
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await expect(
+      provider.chatWithTools(
+        [{ role: "user", content: "Hello" }],
+        { tools: [] }
+      )
+    ).rejects.toThrow();
+  });
+});
+
+describe("isAvailable", () => {
+  it("should return false when API call fails", async () => {
+    mockMessagesCreate.mockRejectedValueOnce(new Error("Network error"));
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const available = await provider.isAvailable();
+
+    expect(available).toBe(false);
+  });
+});
+
+describe("context window for different models", () => {
+  it("should return context window for unknown model", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key", model: "unknown-model" });
+
+    // Unknown models should get default context window
+    expect(provider.getContextWindow()).toBe(200000);
   });
 });
 

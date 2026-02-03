@@ -22,6 +22,7 @@ import type {
 } from "./types.js";
 import { DEFAULT_ORCHESTRATE_CONFIG } from "./types.js";
 import type { Specification } from "../converge/types.js";
+import { createLLMAdapter } from "../converge/executor.js";
 import type { Sprint } from "../../types/task.js";
 import {
   ArchitectureGenerator,
@@ -463,39 +464,7 @@ export async function runOrchestratePhase(
       checkpoint: null,
     },
     tools: {} as PhaseContext["tools"],
-    llm: {
-      async chat(messages) {
-        const adapted = messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
-        const response = await llm.chat(adapted);
-        return {
-          content: response.content,
-          usage: response.usage,
-        };
-      },
-      async chatWithTools(messages, tools) {
-        const adaptedMessages = messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
-        const adaptedTools = tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          input_schema: t.parameters as { type: "object"; properties: Record<string, unknown>; required?: string[] },
-        }));
-        const response = await llm.chatWithTools(adaptedMessages, { tools: adaptedTools });
-        return {
-          content: response.content,
-          usage: response.usage,
-          toolCalls: response.toolCalls?.map((tc) => ({
-            name: tc.name,
-            arguments: tc.input,
-          })),
-        };
-      },
-    },
+    llm: createLLMAdapter(llm),
   };
 
   const result = await executor.execute(context);

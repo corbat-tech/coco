@@ -28,6 +28,73 @@ const DANGEROUS_PATTERNS = [
   /\bdd\s+if=.*of=\/dev\//,  // dd to device
   /\bmkfs\./,                // Format filesystem
   /\bformat\s+/,             // Windows format
+  /`[^`]+`/,                 // Backtick command substitution
+  /\$\([^)]+\)/,             // $() command substitution
+  /\beval\s+/,               // eval command
+  /\bsource\s+/,             // source command (can execute arbitrary scripts)
+  />\s*\/etc\//,             // Write to /etc
+  />\s*\/root\//,            // Write to /root
+  /\bchmod\s+777/,           // Overly permissive chmod
+  /\bchown\s+root/,          // chown to root
+  /\bcurl\s+.*\|\s*(ba)?sh/, // curl | sh pattern
+  /\bwget\s+.*\|\s*(ba)?sh/, // wget | sh pattern
+];
+
+/**
+ * Environment variables safe to expose (whitelist)
+ */
+const SAFE_ENV_VARS = new Set([
+  // System info (non-sensitive)
+  "PATH",
+  "HOME",
+  "USER",
+  "SHELL",
+  "TERM",
+  "LANG",
+  "LC_ALL",
+  "PWD",
+  "OLDPWD",
+  "HOSTNAME",
+  "EDITOR",
+  "VISUAL",
+  // Node.js
+  "NODE_ENV",
+  "NODE_PATH",
+  "NODE_OPTIONS",
+  "NPM_CONFIG_REGISTRY",
+  // Project-specific (safe)
+  "COCO_CONFIG_PATH",
+  "COCO_LOG_LEVEL",
+  "COCO_DEBUG",
+  "CI",
+  "GITHUB_ACTIONS",
+  "GITLAB_CI",
+  "TRAVIS",
+  // XDG
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_CACHE_HOME",
+]);
+
+/**
+ * Sensitive env var patterns (blocklist)
+ */
+const SENSITIVE_ENV_PATTERNS = [
+  /^.*_KEY$/i,
+  /^.*_SECRET$/i,
+  /^.*_TOKEN$/i,
+  /^.*_PASSWORD$/i,
+  /^.*_CREDENTIALS$/i,
+  /^.*_API_KEY$/i,
+  /^ANTHROPIC_/i,
+  /^OPENAI_/i,
+  /^AWS_/i,
+  /^AZURE_/i,
+  /^GOOGLE_/i,
+  /^GITHUB_TOKEN$/i,
+  /^NPM_TOKEN$/i,
+  /^DATABASE_URL$/i,
+  /^REDIS_URL$/i,
 ];
 
 /**
@@ -48,7 +115,13 @@ export const bashExecTool: ToolDefinition<
   }
 > = defineTool({
   name: "bash_exec",
-  description: "Execute a bash/shell command",
+  description: `Execute a bash/shell command with safety controls.
+
+Examples:
+- List files: { "command": "ls -la" }
+- Run npm script: { "command": "npm run build" }
+- Check disk space: { "command": "df -h" }
+- Find process: { "command": "ps aux | grep node" }`,
   category: "bash",
   parameters: z.object({
     command: z.string().describe("Command to execute"),
@@ -119,7 +192,12 @@ export const bashBackgroundTool: ToolDefinition<
   }
 > = defineTool({
   name: "bash_background",
-  description: "Execute a command in the background (returns immediately)",
+  description: `Execute a command in the background (returns immediately with PID).
+
+Examples:
+- Start dev server: { "command": "npm run dev" }
+- Run watcher: { "command": "npx nodemon src/index.ts" }
+- Start database: { "command": "docker-compose up" }`,
   category: "bash",
   parameters: z.object({
     command: z.string().describe("Command to execute"),
@@ -138,9 +216,17 @@ export const bashBackgroundTool: ToolDefinition<
     }
 
     try {
+      // Create filtered environment for background process (security)
+      const filteredEnv: Record<string, string> = {};
+      for (const [key, value] of Object.entries(process.env)) {
+        if (value !== undefined && isEnvVarSafe(key)) {
+          filteredEnv[key] = value;
+        }
+      }
+
       const subprocess = execa(command, {
         cwd: cwd ?? process.cwd(),
-        env: { ...process.env, ...env },
+        env: { ...filteredEnv, ...env },
         shell: true,
         detached: true,
         stdio: "ignore",
@@ -170,7 +256,12 @@ export const commandExistsTool: ToolDefinition<
   { exists: boolean; path?: string }
 > = defineTool({
   name: "command_exists",
-  description: "Check if a command is available in PATH",
+  description: `Check if a command is available in PATH.
+
+Examples:
+- Check node: { "command": "node" } → { "exists": true, "path": "/usr/local/bin/node" }
+- Check git: { "command": "git" }
+- Check docker: { "command": "docker" }`,
   category: "bash",
   parameters: z.object({
     command: z.string().describe("Command name to check"),
@@ -197,19 +288,51 @@ export const commandExistsTool: ToolDefinition<
 });
 
 /**
- * Get environment variable tool
+ * Check if environment variable is safe to expose
+ */
+function isEnvVarSafe(name: string): boolean {
+  // Check whitelist first
+  if (SAFE_ENV_VARS.has(name)) {
+    return true;
+  }
+  // Check against sensitive patterns
+  for (const pattern of SENSITIVE_ENV_PATTERNS) {
+    if (pattern.test(name)) {
+      return false;
+    }
+  }
+  // Default: allow non-sensitive looking vars
+  return true;
+}
+
+/**
+ * Get environment variable tool (with security filtering)
  */
 export const getEnvTool: ToolDefinition<
   { name: string },
-  { value: string | null; exists: boolean }
+  { value: string | null; exists: boolean; blocked?: boolean }
 > = defineTool({
   name: "get_env",
-  description: "Get an environment variable value",
+  description: `Get an environment variable value (sensitive variables like API keys are blocked for security).
+
+Examples:
+- Get HOME: { "name": "HOME" } → { "value": "/home/user", "exists": true }
+- Get NODE_ENV: { "name": "NODE_ENV" } → { "value": "development", "exists": true }
+- Blocked var: { "name": "OPENAI_API_KEY" } → { "value": null, "exists": true, "blocked": true }`,
   category: "bash",
   parameters: z.object({
     name: z.string().describe("Environment variable name"),
   }),
   async execute({ name }) {
+    // Security check: block sensitive environment variables
+    if (!isEnvVarSafe(name)) {
+      return {
+        value: null,
+        exists: process.env[name] !== undefined,
+        blocked: true,
+      };
+    }
+
     const value = process.env[name];
     return {
       value: value ?? null,

@@ -87,7 +87,13 @@ export const runTestsTool: ToolDefinition<
   TestResult
 > = defineTool({
   name: "run_tests",
-  description: "Run tests in the project",
+  description: `Run tests in the project (auto-detects vitest, jest, or mocha).
+
+Examples:
+- Run all tests: {}
+- With coverage: { "coverage": true }
+- Specific pattern: { "pattern": "src/**/*.test.ts" }
+- Specific framework: { "framework": "vitest" }`,
   category: "test",
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),
@@ -289,7 +295,11 @@ export const getCoverageTool: ToolDefinition<
   CoverageResult & { report?: string }
 > = defineTool({
   name: "get_coverage",
-  description: "Get test coverage report",
+  description: `Get test coverage report (requires running tests with --coverage first).
+
+Examples:
+- Summary: {} → { "lines": 85.5, "branches": 72.3, "functions": 90.1, "statements": 84.2 }
+- Detailed: { "format": "detailed" }`,
   category: "test",
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),
@@ -354,7 +364,11 @@ export const runTestFileTool: ToolDefinition<
   TestResult
 > = defineTool({
   name: "run_test_file",
-  description: "Run tests in a specific file",
+  description: `Run tests in a specific file.
+
+Examples:
+- Single file: { "file": "src/utils.test.ts" }
+- With framework: { "file": "test/app.spec.js", "framework": "jest" }`,
   category: "test",
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),

@@ -201,3 +201,142 @@ describe("qualityTools", () => {
     expect(qualityTools.some((t) => t.name === "calculate_quality")).toBe(true);
   });
 });
+
+describe("calculateQualityTool error handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should handle coverage tool errors gracefully", async () => {
+    // The coverage tool throws an error - should still return valid result
+    const { calculateQualityTool } = await import("./quality.js");
+
+    const result = await calculateQualityTool.execute({ cwd: "/test" });
+
+    // Should succeed even if coverage fails
+    expect(result.overall).toBeGreaterThanOrEqual(0);
+    expect(result.dimensions.testCoverage).toBe(0); // Default when coverage unavailable
+  });
+
+  it("should throw ToolError when quality calculation fails", async () => {
+    // Force an error by making glob fail
+    const { glob } = await import("glob");
+    vi.mocked(glob).mockRejectedValueOnce(new Error("Glob failed"));
+
+    const { calculateQualityTool } = await import("./quality.js");
+
+    await expect(
+      calculateQualityTool.execute({ cwd: "/nonexistent" })
+    ).rejects.toThrow(/Quality calculation failed/);
+  });
+});
+
+describe("runLinterTool eslint and biome support", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should use eslint when detected", async () => {
+    mockReadFile.mockImplementationOnce(async (path: string) => {
+      if (path.includes("package.json")) {
+        return JSON.stringify({
+          devDependencies: { eslint: "^8.0.0" },
+        });
+      }
+      return "";
+    });
+
+    const { execa } = await import("execa");
+    const { runLinterTool } = await import("./quality.js");
+
+    await runLinterTool.execute({ cwd: "/test" });
+
+    expect(execa).toHaveBeenCalledWith(
+      "npx",
+      expect.arrayContaining(["eslint"]),
+      expect.any(Object)
+    );
+  });
+
+  it("should use biome when detected", async () => {
+    mockReadFile.mockImplementationOnce(async (path: string) => {
+      if (path.includes("package.json")) {
+        return JSON.stringify({
+          devDependencies: { "@biomejs/biome": "^1.0.0" },
+        });
+      }
+      return "";
+    });
+
+    const { execa } = await import("execa");
+    const { runLinterTool } = await import("./quality.js");
+
+    await runLinterTool.execute({ cwd: "/test" });
+
+    expect(execa).toHaveBeenCalledWith(
+      "npx",
+      expect.arrayContaining(["biome", "lint"]),
+      expect.any(Object)
+    );
+  });
+
+  it("should throw error for unsupported linter", async () => {
+    const { runLinterTool } = await import("./quality.js");
+
+    await expect(
+      runLinterTool.execute({ cwd: "/test", linter: "unsupported-linter" })
+    ).rejects.toThrow(/Unsupported linter/);
+  });
+
+  it("should handle linter execution errors", async () => {
+    mockReadFile.mockImplementationOnce(async (path: string) => {
+      if (path.includes("package.json")) {
+        return JSON.stringify({
+          devDependencies: { oxlint: "^0.1.0" },
+        });
+      }
+      return "";
+    });
+
+    const { execa } = await import("execa");
+    vi.mocked(execa).mockRejectedValueOnce(new Error("Command not found"));
+
+    const { runLinterTool } = await import("./quality.js");
+
+    await expect(
+      runLinterTool.execute({ cwd: "/test" })
+    ).rejects.toThrow(/Linting failed/);
+  });
+});
+
+describe("parseLintResults fallback parsing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should parse raw output when JSON parsing fails", async () => {
+    mockReadFile.mockImplementationOnce(async (path: string) => {
+      if (path.includes("package.json")) {
+        return JSON.stringify({
+          devDependencies: { oxlint: "^0.1.0" },
+        });
+      }
+      return "";
+    });
+
+    const { execa } = await import("execa");
+    // Use invalid JSON that starts with [ to trigger catch block for fallback parsing
+    vi.mocked(execa).mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: "[invalid json] 5 error 3 warning found",
+      stderr: "",
+    } as any);
+
+    const { runLinterTool } = await import("./quality.js");
+
+    const result = await runLinterTool.execute({ cwd: "/test" });
+
+    expect(result.errors).toBe(5);
+    expect(result.warnings).toBe(3);
+  });
+});

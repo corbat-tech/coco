@@ -41,6 +41,37 @@ export interface ToolResult<T = unknown> {
 }
 
 /**
+ * Progress callback for long-running operations
+ */
+export type ProgressCallback = (progress: ProgressInfo) => void;
+
+/**
+ * Progress information
+ */
+export interface ProgressInfo {
+  /** Current step or phase name */
+  phase: string;
+  /** Progress percentage (0-100), null if indeterminate */
+  percent: number | null;
+  /** Human-readable message */
+  message?: string;
+  /** Estimated time remaining in ms, null if unknown */
+  estimatedTimeRemaining?: number | null;
+  /** Additional metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Options for tool execution
+ */
+export interface ExecuteOptions {
+  /** Progress callback for long operations */
+  onProgress?: ProgressCallback;
+  /** Abort signal for cancellation */
+  signal?: AbortSignal;
+}
+
+/**
  * Tool registry
  */
 export class ToolRegistry {
@@ -104,7 +135,8 @@ export class ToolRegistry {
    */
   async execute<TInput, TOutput>(
     name: string,
-    params: TInput
+    params: TInput,
+    options?: ExecuteOptions
   ): Promise<ToolResult<TOutput>> {
     const startTime = performance.now();
     const tool = this.get<TInput, TOutput>(name);
@@ -117,9 +149,25 @@ export class ToolRegistry {
       };
     }
 
+    // Check if already aborted
+    if (options?.signal?.aborted) {
+      return {
+        success: false,
+        error: "Operation cancelled",
+        duration: performance.now() - startTime,
+      };
+    }
+
     try {
       // Validate parameters
       const validatedParams = tool.parameters.parse(params);
+
+      // Report progress: starting
+      options?.onProgress?.({
+        phase: "executing",
+        percent: 0,
+        message: `Starting ${name}...`,
+      });
 
       // Execute tool
       this.logger.debug(`Executing tool: ${name}`, { params: validatedParams });
@@ -127,6 +175,13 @@ export class ToolRegistry {
 
       const duration = performance.now() - startTime;
       this.logger.debug(`Tool '${name}' completed`, { duration: `${duration.toFixed(2)}ms` });
+
+      // Report progress: completed
+      options?.onProgress?.({
+        phase: "completed",
+        percent: 100,
+        message: `Completed ${name}`,
+      });
 
       return {
         success: true,
@@ -138,6 +193,13 @@ export class ToolRegistry {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       this.logger.error(`Tool '${name}' failed`, { error: errorMessage, duration });
+
+      // Report progress: failed
+      options?.onProgress?.({
+        phase: "failed",
+        percent: null,
+        message: `Failed: ${errorMessage}`,
+      });
 
       return {
         success: false,

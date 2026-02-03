@@ -25,11 +25,22 @@ import { DEFAULT_COMPLETE_CONFIG } from "./types.js";
 import type { Task, Sprint, Backlog } from "../../types/task.js";
 import { TaskIterator, createTaskIterator } from "./iterator.js";
 import { PhaseError } from "../../utils/errors.js";
-import { createLLMAdapter } from "./llm-adapter.js";
+import { createLLMAdapter, type TrackingLLMProvider } from "./llm-adapter.js";
 
 /**
  * COMPLETE phase executor
  */
+/**
+ * Checkpoint state for COMPLETE phase
+ */
+interface CompleteCheckpointState {
+  sprintId: string;
+  currentTaskIndex: number;
+  completedTaskIds: string[];
+  taskResults: TaskExecutionResult[];
+  startTime: number;
+}
+
 export class CompleteExecutor implements PhaseExecutor {
   readonly name = "complete";
   readonly description = "Execute tasks with quality iteration";
@@ -38,6 +49,11 @@ export class CompleteExecutor implements PhaseExecutor {
   private iterator: TaskIterator | null = null;
   private currentSprint: Sprint | null = null;
   private backlog: Backlog | null = null;
+  private llmAdapter: TrackingLLMProvider | null = null;
+
+  // Checkpoint state
+  private checkpointState: CompleteCheckpointState | null = null;
+  private completedTaskIds: Set<string> = new Set();
 
   constructor(config: Partial<CompleteConfig> = {}) {
     this.config = { ...DEFAULT_COMPLETE_CONFIG, ...config };
@@ -65,8 +81,8 @@ export class CompleteExecutor implements PhaseExecutor {
         throw new PhaseError("No sprint to execute", { phase: "complete" });
       }
 
-      const llm = createLLMAdapter(context);
-      this.iterator = createTaskIterator(llm, this.config.quality);
+      this.llmAdapter = createLLMAdapter(context);
+      this.iterator = createTaskIterator(this.llmAdapter, this.config.quality);
 
       const result = await this.executeSprint(context, this.currentSprint, this.backlog);
 
@@ -94,6 +110,9 @@ export class CompleteExecutor implements PhaseExecutor {
 
       const endTime = new Date();
 
+      // Get token usage from the LLM adapter
+      const tokenUsage = this.llmAdapter.getTokenUsage();
+
       return {
         phase: "complete",
         success: result.success,
@@ -102,8 +121,8 @@ export class CompleteExecutor implements PhaseExecutor {
           startTime,
           endTime,
           durationMs: endTime.getTime() - startTime.getTime(),
-          llmCalls: result.totalIterations * 2,
-          tokensUsed: 0,
+          llmCalls: tokenUsage.callCount,
+          tokensUsed: tokenUsage.totalTokens,
         },
       };
     } catch (error) {
@@ -126,13 +145,29 @@ export class CompleteExecutor implements PhaseExecutor {
   /**
    * Create a checkpoint
    */
-  async checkpoint(_context: PhaseContext): Promise<PhaseCheckpoint> {
+  async checkpoint(context: PhaseContext): Promise<PhaseCheckpoint> {
+    // Save checkpoint state to disk
+    if (this.checkpointState && this.currentSprint) {
+      const checkpointPath = path.join(
+        context.projectPath,
+        ".coco",
+        "checkpoints",
+        `complete-${this.currentSprint.id}.json`
+      );
+      await fs.mkdir(path.dirname(checkpointPath), { recursive: true });
+      await fs.writeFile(
+        checkpointPath,
+        JSON.stringify(this.checkpointState, null, 2),
+        "utf-8"
+      );
+    }
+
     return {
       phase: "complete",
       timestamp: new Date(),
       state: {
         artifacts: [],
-        progress: 0,
+        progress: this.calculateProgress(),
         checkpoint: null,
       },
       resumePoint: this.currentSprint?.id || "start",
@@ -142,60 +177,94 @@ export class CompleteExecutor implements PhaseExecutor {
   /**
    * Restore from checkpoint
    */
-  async restore(_checkpoint: PhaseCheckpoint, _context: PhaseContext): Promise<void> {
-    // Load state from checkpoint
+  async restore(checkpoint: PhaseCheckpoint, context: PhaseContext): Promise<void> {
+    const sprintId = checkpoint.resumePoint;
+    if (sprintId === "start") return;
+
+    try {
+      const checkpointPath = path.join(
+        context.projectPath,
+        ".coco",
+        "checkpoints",
+        `complete-${sprintId}.json`
+      );
+      const content = await fs.readFile(checkpointPath, "utf-8");
+      this.checkpointState = JSON.parse(content) as CompleteCheckpointState;
+      this.completedTaskIds = new Set(this.checkpointState.completedTaskIds);
+    } catch {
+      // No checkpoint to restore, start fresh
+      this.checkpointState = null;
+      this.completedTaskIds = new Set();
+    }
   }
 
   /**
-   * Execute a sprint
+   * Calculate current progress (0-100)
+   */
+  private calculateProgress(): number {
+    if (!this.checkpointState) return 0;
+    const total = this.checkpointState.completedTaskIds.length + 1;
+    return Math.round((this.checkpointState.currentTaskIndex / total) * 100);
+  }
+
+  /**
+   * Execute a sprint with dependency checking, checkpointing, and parallel execution
    */
   private async executeSprint(
     context: PhaseContext,
     sprint: Sprint,
     backlog: Backlog
   ): Promise<SprintExecutionResult> {
-    const startTime = Date.now();
-    const taskResults: TaskExecutionResult[] = [];
     const sprintTasks = this.getSprintTasks(sprint, backlog);
 
-    this.reportProgress({
-      phase: "executing",
-      sprintId: sprint.id,
-      tasksCompleted: 0,
-      tasksTotal: sprintTasks.length,
-      message: `Starting ${sprint.name}`,
-    });
+    // Restore from checkpoint if available
+    let taskResults: TaskExecutionResult[] = [];
+    let startTime = Date.now();
 
-    for (let i = 0; i < sprintTasks.length; i++) {
-      const task = sprintTasks[i];
-      if (!task) continue;
-
+    if (this.checkpointState && this.checkpointState.sprintId === sprint.id) {
+      taskResults = this.checkpointState.taskResults;
+      startTime = this.checkpointState.startTime;
+      this.completedTaskIds = new Set(this.checkpointState.completedTaskIds);
       this.reportProgress({
         phase: "executing",
         sprintId: sprint.id,
-        taskId: task.id,
-        taskTitle: task.title,
-        tasksCompleted: i,
+        tasksCompleted: taskResults.length,
         tasksTotal: sprintTasks.length,
-        message: `Executing task: ${task.title}`,
+        message: `Resuming ${sprint.name} with ${taskResults.length} tasks completed`,
       });
-
-      const result = await this.executeTask(context, task, sprint);
-      taskResults.push(result);
-
-      this.reportProgress({
-        phase: result.success ? "complete" : "iterating",
+    } else {
+      // Initialize new checkpoint state
+      this.checkpointState = {
         sprintId: sprint.id,
-        taskId: task.id,
-        taskTitle: task.title,
-        iteration: result.iterations,
-        currentScore: result.finalScore,
-        tasksCompleted: i + 1,
+        currentTaskIndex: 0,
+        completedTaskIds: [],
+        taskResults: [],
+        startTime,
+      };
+      this.completedTaskIds = new Set();
+      this.reportProgress({
+        phase: "executing",
+        sprintId: sprint.id,
+        tasksCompleted: 0,
         tasksTotal: sprintTasks.length,
-        message: result.success
-          ? `Task completed: ${task.title} (score: ${result.finalScore})`
-          : `Task failed: ${task.title}`,
+        message: `Starting ${sprint.name}`,
       });
+    }
+
+    // Get remaining tasks (not yet executed)
+    const executedTaskIds = new Set(taskResults.map(r => r.taskId));
+    const remainingTasks = sprintTasks.filter(t => !executedTaskIds.has(t.id));
+
+    // Execute tasks in parallel batches based on dependencies
+    if (this.config.parallelExecution && remainingTasks.length > 0) {
+      taskResults = await this.executeTasksParallel(
+        context, sprint, remainingTasks, taskResults, startTime
+      );
+    } else {
+      // Sequential execution
+      taskResults = await this.executeTasksSequential(
+        context, sprint, remainingTasks, taskResults, startTime
+      );
     }
 
     const duration = Date.now() - startTime;
@@ -203,6 +272,9 @@ export class CompleteExecutor implements PhaseExecutor {
     const avgQuality =
       taskResults.reduce((sum, r) => sum + r.finalScore, 0) / taskResults.length || 0;
     const totalIterations = taskResults.reduce((sum, r) => sum + r.iterations, 0);
+
+    // Clear checkpoint on completion
+    this.checkpointState = null;
 
     return {
       sprintId: sprint.id,
@@ -214,6 +286,196 @@ export class CompleteExecutor implements PhaseExecutor {
       taskResults,
       duration,
     };
+  }
+
+  /**
+   * Execute tasks sequentially (original behavior)
+   */
+  private async executeTasksSequential(
+    context: PhaseContext,
+    sprint: Sprint,
+    tasks: Task[],
+    previousResults: TaskExecutionResult[],
+    startTime: number
+  ): Promise<TaskExecutionResult[]> {
+    const taskResults = [...previousResults];
+    const totalTasks = tasks.length + previousResults.length;
+
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      if (!task) continue;
+
+      const completedCount = taskResults.length;
+
+      // Check dependencies are satisfied
+      if (!this.areDependenciesSatisfied(task, this.completedTaskIds)) {
+        this.reportProgress({
+          phase: "blocked",
+          sprintId: sprint.id,
+          taskId: task.id,
+          taskTitle: task.title,
+          tasksCompleted: completedCount,
+          tasksTotal: totalTasks,
+          message: `Task blocked: ${task.title} (dependencies not met)`,
+        });
+
+        const blockedResult: TaskExecutionResult = {
+          taskId: task.id,
+          success: false,
+          versions: [],
+          finalScore: 0,
+          converged: false,
+          iterations: 0,
+          error: `Dependencies not satisfied: ${task.dependencies.join(", ")}`,
+        };
+        taskResults.push(blockedResult);
+        continue;
+      }
+
+      this.reportProgress({
+        phase: "executing",
+        sprintId: sprint.id,
+        taskId: task.id,
+        taskTitle: task.title,
+        tasksCompleted: completedCount,
+        tasksTotal: totalTasks,
+        message: `Executing task: ${task.title}`,
+      });
+
+      const result = await this.executeTask(context, task, sprint);
+      taskResults.push(result);
+
+      if (result.success) {
+        this.completedTaskIds.add(task.id);
+      }
+
+      // Update and save checkpoint
+      this.checkpointState = {
+        sprintId: sprint.id,
+        currentTaskIndex: completedCount + 1,
+        completedTaskIds: Array.from(this.completedTaskIds),
+        taskResults,
+        startTime,
+      };
+      await this.checkpoint(context);
+
+      this.reportProgress({
+        phase: result.success ? "complete" : "iterating",
+        sprintId: sprint.id,
+        taskId: task.id,
+        taskTitle: task.title,
+        iteration: result.iterations,
+        currentScore: result.finalScore,
+        tasksCompleted: completedCount + 1,
+        tasksTotal: totalTasks,
+        message: result.success
+          ? `Task completed: ${task.title} (score: ${result.finalScore})`
+          : `Task failed: ${task.title}`,
+      });
+    }
+
+    return taskResults;
+  }
+
+  /**
+   * Execute tasks in parallel batches based on dependencies
+   */
+  private async executeTasksParallel(
+    context: PhaseContext,
+    sprint: Sprint,
+    tasks: Task[],
+    previousResults: TaskExecutionResult[],
+    startTime: number
+  ): Promise<TaskExecutionResult[]> {
+    const taskResults = [...previousResults];
+    const totalTasks = tasks.length + previousResults.length;
+    const remainingTasks = new Set(tasks.map(t => t.id));
+
+    while (remainingTasks.size > 0) {
+      // Find tasks that can be executed (dependencies satisfied)
+      const readyTasks = tasks.filter(t =>
+        remainingTasks.has(t.id) &&
+        this.areDependenciesSatisfied(t, this.completedTaskIds)
+      );
+
+      if (readyTasks.length === 0) {
+        // No tasks can run - remaining tasks have unmet dependencies
+        for (const taskId of remainingTasks) {
+          const task = tasks.find(t => t.id === taskId);
+          if (task) {
+            const blockedResult: TaskExecutionResult = {
+              taskId: task.id,
+              success: false,
+              versions: [],
+              finalScore: 0,
+              converged: false,
+              iterations: 0,
+              error: `Dependencies not satisfied: ${task.dependencies.join(", ")}`,
+            };
+            taskResults.push(blockedResult);
+          }
+        }
+        break;
+      }
+
+      // Limit parallel execution
+      const batchSize = Math.min(readyTasks.length, this.config.maxParallelTasks);
+      const batch = readyTasks.slice(0, batchSize);
+
+      this.reportProgress({
+        phase: "executing",
+        sprintId: sprint.id,
+        tasksCompleted: taskResults.length,
+        tasksTotal: totalTasks,
+        message: `Executing ${batch.length} tasks in parallel`,
+      });
+
+      // Execute batch in parallel
+      const batchPromises = batch.map(task =>
+        this.executeTask(context, task, sprint).then(result => ({
+          task,
+          result,
+        }))
+      );
+
+      const batchResults = await Promise.all(batchPromises);
+
+      // Process results
+      for (const { task, result } of batchResults) {
+        taskResults.push(result);
+        remainingTasks.delete(task.id);
+
+        if (result.success) {
+          this.completedTaskIds.add(task.id);
+        }
+
+        this.reportProgress({
+          phase: result.success ? "complete" : "iterating",
+          sprintId: sprint.id,
+          taskId: task.id,
+          taskTitle: task.title,
+          iteration: result.iterations,
+          currentScore: result.finalScore,
+          tasksCompleted: taskResults.length,
+          tasksTotal: totalTasks,
+          message: result.success
+            ? `Task completed: ${task.title} (score: ${result.finalScore})`
+            : `Task failed: ${task.title}`,
+        });
+      }
+
+      // Update checkpoint after each batch
+      this.checkpointState = {
+        sprintId: sprint.id,
+        currentTaskIndex: taskResults.length,
+        completedTaskIds: Array.from(this.completedTaskIds),
+        taskResults,
+        startTime,
+      };
+      await this.checkpoint(context);
+    }
+
+    return taskResults;
   }
 
   /**
@@ -314,12 +576,75 @@ export class CompleteExecutor implements PhaseExecutor {
   }
 
   /**
-   * Get tasks for a sprint
+   * Get tasks for a sprint, ordered by dependencies (topological sort)
    */
   private getSprintTasks(sprint: Sprint, backlog: Backlog): Task[] {
     const sprintStories = backlog.stories.filter((s) => sprint.stories.includes(s.id));
     const storyIds = sprintStories.map((s) => s.id);
-    return backlog.tasks.filter((t) => storyIds.includes(t.storyId));
+    const tasks = backlog.tasks.filter((t) => storyIds.includes(t.storyId));
+
+    // Topological sort based on dependencies
+    return this.topologicalSort(tasks);
+  }
+
+  /**
+   * Topological sort tasks by dependencies
+   */
+  private topologicalSort(tasks: Task[]): Task[] {
+    const taskMap = new Map<string, Task>();
+    const inDegree = new Map<string, number>();
+    const adjacency = new Map<string, string[]>();
+
+    // Initialize
+    for (const task of tasks) {
+      taskMap.set(task.id, task);
+      inDegree.set(task.id, 0);
+      adjacency.set(task.id, []);
+    }
+
+    // Build graph
+    for (const task of tasks) {
+      for (const depId of task.dependencies) {
+        if (taskMap.has(depId)) {
+          adjacency.get(depId)!.push(task.id);
+          inDegree.set(task.id, (inDegree.get(task.id) || 0) + 1);
+        }
+      }
+    }
+
+    // Kahn's algorithm
+    const queue: string[] = [];
+    for (const [id, degree] of inDegree) {
+      if (degree === 0) queue.push(id);
+    }
+
+    const sorted: Task[] = [];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      const task = taskMap.get(id);
+      if (task) sorted.push(task);
+
+      for (const neighbor of adjacency.get(id) || []) {
+        const newDegree = (inDegree.get(neighbor) || 0) - 1;
+        inDegree.set(neighbor, newDegree);
+        if (newDegree === 0) queue.push(neighbor);
+      }
+    }
+
+    // If there's a cycle, return unsorted tasks
+    if (sorted.length !== tasks.length) {
+      console.warn("Dependency cycle detected, falling back to original order");
+      return tasks;
+    }
+
+    return sorted;
+  }
+
+  /**
+   * Check if task dependencies are satisfied
+   */
+  private areDependenciesSatisfied(task: Task, completedTaskIds: Set<string>): boolean {
+    return task.dependencies.every((depId) => completedTaskIds.has(depId));
   }
 
   /**

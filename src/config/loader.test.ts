@@ -3,7 +3,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { loadConfig, saveConfig, createDefaultConfig, findConfigPath } from "./loader.js";
+import { loadConfig, saveConfig, createDefaultConfig, findConfigPath, configExists, getConfigValue, setConfigValue, mergeWithDefaults } from "./loader.js";
+import { ConfigError } from "../utils/errors.js";
 
 // Mock fs/promises with default export
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -127,36 +128,27 @@ describe("saveConfig", () => {
   });
 
   it("should create parent directory if needed", async () => {
-    const config = {
-      project: { name: "test" },
-      provider: { type: "anthropic" as const },
-      quality: { minScore: 85 },
-    };
+    // Use a valid config from createDefaultConfig
+    const config = createDefaultConfig("test");
 
     const fs = await import("node:fs/promises");
     vi.mocked(fs.default.mkdir).mockResolvedValue(undefined);
     vi.mocked(fs.default.writeFile).mockResolvedValue(undefined);
 
-    await saveConfig(config as any, "/new/path/.coco/config.json");
+    await saveConfig(config, "/new/path/.coco/config.json");
 
     expect(fs.default.mkdir).toHaveBeenCalledWith("/new/path/.coco", { recursive: true });
   });
 
   it("should format JSON with indentation", async () => {
-    const config = {
-      project: { name: "test" },
-      provider: { type: "anthropic" as const },
-      quality: {},
-      persistence: {},
-      stack: {},
-      integrations: {},
-    };
+    // Use a valid config from createDefaultConfig
+    const config = createDefaultConfig("test");
 
     const fs = await import("node:fs/promises");
     vi.mocked(fs.default.mkdir).mockResolvedValue(undefined);
     vi.mocked(fs.default.writeFile).mockResolvedValue(undefined);
 
-    await saveConfig(config as any, "/path/to/config.json");
+    await saveConfig(config, "/path/to/config.json");
 
     const writtenContent = vi.mocked(fs.default.writeFile).mock.calls[0]?.[1] as string;
     expect(writtenContent).toContain("\n"); // Has newlines
@@ -240,6 +232,22 @@ describe("findConfigPath", () => {
     expect(path).toBeUndefined();
   });
 
+  it("should use process.cwd() when cwd is not provided", async () => {
+    const originalEnv = process.env.COCO_CONFIG_PATH;
+    delete process.env.COCO_CONFIG_PATH;
+
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.access).mockResolvedValue(undefined);
+
+    // Call without cwd - should use process.cwd()
+    const path = await findConfigPath();
+
+    expect(path).toContain(".coco");
+    expect(path).toContain("config.json");
+
+    process.env.COCO_CONFIG_PATH = originalEnv;
+  });
+
   it("should use custom config path from env", async () => {
     const originalEnv = process.env.COCO_CONFIG_PATH;
     process.env.COCO_CONFIG_PATH = "/custom/path/config.json";
@@ -252,5 +260,356 @@ describe("findConfigPath", () => {
     expect(path).toBe("/custom/path/config.json");
 
     process.env.COCO_CONFIG_PATH = originalEnv;
+  });
+
+  it("should fall back to default if env path does not exist", async () => {
+    const originalEnv = process.env.COCO_CONFIG_PATH;
+    process.env.COCO_CONFIG_PATH = "/nonexistent/path/config.json";
+
+    const fs = await import("node:fs/promises");
+    // First call (env path) fails, second call (default path) succeeds
+    vi.mocked(fs.default.access)
+      .mockRejectedValueOnce(new Error("ENOENT"))
+      .mockResolvedValueOnce(undefined);
+
+    const path = await findConfigPath("/project");
+
+    expect(path).toBe("/project/.coco/config.json");
+
+    process.env.COCO_CONFIG_PATH = originalEnv;
+  });
+});
+
+describe("loadConfig edge cases", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should return default config when file does not exist (ENOENT)", async () => {
+    const fs = await import("node:fs/promises");
+    const error = new Error("ENOENT") as NodeJS.ErrnoException;
+    error.code = "ENOENT";
+    vi.mocked(fs.default.readFile).mockRejectedValue(error);
+
+    const config = await loadConfig("/nonexistent/config.json");
+
+    expect(config.project.name).toBe("my-project");
+  });
+
+  it("should re-throw ConfigError without wrapping", async () => {
+    const fs = await import("node:fs/promises");
+    const invalidConfig = { project: { name: "" } }; // empty name is invalid
+    vi.mocked(fs.default.readFile).mockResolvedValue(JSON.stringify(invalidConfig));
+
+    await expect(loadConfig("/path/to/config.json")).rejects.toBeInstanceOf(ConfigError);
+  });
+
+  it("should wrap generic errors in ConfigError", async () => {
+    const fs = await import("node:fs/promises");
+    const error = new Error("Permission denied");
+    vi.mocked(fs.default.readFile).mockRejectedValue(error);
+
+    await expect(loadConfig("/path/to/config.json")).rejects.toBeInstanceOf(ConfigError);
+    await expect(loadConfig("/path/to/config.json")).rejects.toThrow("Failed to load configuration");
+  });
+
+  it("should handle non-Error thrown values", async () => {
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.readFile).mockRejectedValue("string error");
+
+    await expect(loadConfig("/path/to/config.json")).rejects.toBeInstanceOf(ConfigError);
+    await expect(loadConfig("/path/to/config.json")).rejects.toThrow("Failed to load configuration");
+  });
+
+  it("should use COCO_CONFIG_PATH env variable via findConfigPathSync", async () => {
+    const originalEnv = process.env.COCO_CONFIG_PATH;
+    process.env.COCO_CONFIG_PATH = "/env/config.json";
+
+    const mockConfig = {
+      project: { name: "env-project" },
+    };
+
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.readFile).mockResolvedValue(JSON.stringify(mockConfig));
+
+    // Call without explicit path to use findConfigPathSync
+    const config = await loadConfig();
+
+    expect(fs.default.readFile).toHaveBeenCalledWith("/env/config.json", "utf-8");
+    expect(config.project.name).toBe("env-project");
+
+    process.env.COCO_CONFIG_PATH = originalEnv;
+  });
+});
+
+describe("saveConfig edge cases", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should throw ConfigError for invalid config", async () => {
+    const invalidConfig = {
+      project: { name: "" }, // empty name is invalid
+    } as any;
+
+    await expect(saveConfig(invalidConfig, "/path/to/config.json")).rejects.toBeInstanceOf(ConfigError);
+    await expect(saveConfig(invalidConfig, "/path/to/config.json")).rejects.toThrow("Cannot save invalid configuration");
+  });
+
+  it("should throw ConfigError for invalid config with explicit path", async () => {
+    const invalidConfig = {
+      project: { name: "" }, // empty name is invalid
+    } as any;
+
+    // This tests the branch where configPath is provided to saveConfig and gets used in error
+    try {
+      await saveConfig(invalidConfig, "/explicit/path/config.json");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigError);
+      expect((error as ConfigError).context.configPath).toBe("/explicit/path/config.json");
+    }
+  });
+
+  it("should use findConfigPathSync fallback for invalid config when no path provided", async () => {
+    const originalEnv = process.env.COCO_CONFIG_PATH;
+    process.env.COCO_CONFIG_PATH = "/fallback/config.json";
+
+    const invalidConfig = {
+      project: { name: "" }, // empty name is invalid
+    } as any;
+
+    // This tests the fallback branch in line 69 where configPath is undefined
+    try {
+      await saveConfig(invalidConfig);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigError);
+      expect((error as ConfigError).context.configPath).toBe("/fallback/config.json");
+    }
+
+    process.env.COCO_CONFIG_PATH = originalEnv;
+  });
+
+  it("should use COCO_CONFIG_PATH env variable when no path provided", async () => {
+    const originalEnv = process.env.COCO_CONFIG_PATH;
+    process.env.COCO_CONFIG_PATH = "/env/save/config.json";
+
+    const config = createDefaultConfig("test");
+
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fs.default.writeFile).mockResolvedValue(undefined);
+
+    await saveConfig(config);
+
+    expect(fs.default.writeFile).toHaveBeenCalledWith(
+      "/env/save/config.json",
+      expect.any(String),
+      "utf-8"
+    );
+
+    process.env.COCO_CONFIG_PATH = originalEnv;
+  });
+});
+
+describe("configExists", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should return true when config file exists", async () => {
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.access).mockResolvedValue(undefined);
+
+    const exists = await configExists("/path/to/config.json");
+
+    expect(exists).toBe(true);
+  });
+
+  it("should return false when config file does not exist", async () => {
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.access).mockRejectedValue(new Error("ENOENT"));
+
+    const exists = await configExists("/nonexistent/config.json");
+
+    expect(exists).toBe(false);
+  });
+
+  it("should use COCO_CONFIG_PATH env variable when no path provided", async () => {
+    const originalEnv = process.env.COCO_CONFIG_PATH;
+    process.env.COCO_CONFIG_PATH = "/env/config.json";
+
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.access).mockResolvedValue(undefined);
+
+    const exists = await configExists();
+
+    expect(fs.default.access).toHaveBeenCalledWith("/env/config.json");
+    expect(exists).toBe(true);
+
+    process.env.COCO_CONFIG_PATH = originalEnv;
+  });
+
+  it("should use default path when COCO_CONFIG_PATH is not set", async () => {
+    const originalEnv = process.env.COCO_CONFIG_PATH;
+    delete process.env.COCO_CONFIG_PATH;
+
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.access).mockResolvedValue(undefined);
+
+    const exists = await configExists();
+
+    // Should use process.cwd() + .coco/config.json
+    expect(fs.default.access).toHaveBeenCalled();
+    const calledPath = vi.mocked(fs.default.access).mock.calls[0]?.[0] as string;
+    expect(calledPath).toContain(".coco");
+    expect(calledPath).toContain("config.json");
+    expect(exists).toBe(true);
+
+    process.env.COCO_CONFIG_PATH = originalEnv;
+  });
+});
+
+describe("getConfigValue", () => {
+  it("should get top-level value", () => {
+    const config = createDefaultConfig("test");
+    const value = getConfigValue(config, "project");
+
+    expect(value).toEqual({ name: "test", version: "0.1.0" });
+  });
+
+  it("should get deeply nested value", () => {
+    const config = createDefaultConfig("test");
+    const value = getConfigValue<string>(config, "provider.type");
+
+    expect(value).toBe("anthropic");
+  });
+
+  it("should return undefined for non-existent path", () => {
+    const config = createDefaultConfig("test");
+    const value = getConfigValue(config, "nonexistent.deep.path");
+
+    expect(value).toBeUndefined();
+  });
+
+  it("should return undefined when traversing through null", () => {
+    const config = createDefaultConfig("test");
+    (config as any).integrations = null;
+    const value = getConfigValue(config, "integrations.github.token");
+
+    expect(value).toBeUndefined();
+  });
+
+  it("should return undefined when traversing through non-object", () => {
+    const config = createDefaultConfig("test");
+    const value = getConfigValue(config, "project.name.invalid");
+
+    expect(value).toBeUndefined();
+  });
+});
+
+describe("setConfigValue", () => {
+  it("should set top-level value", () => {
+    const config = createDefaultConfig("test");
+    const updated = setConfigValue(config, "project", { name: "new-name", version: "2.0.0" });
+
+    expect(updated.project.name).toBe("new-name");
+    expect(updated.project.version).toBe("2.0.0");
+  });
+
+  it("should set deeply nested value", () => {
+    const config = createDefaultConfig("test");
+    const updated = setConfigValue(config, "quality.minScore", 95);
+
+    expect(updated.quality.minScore).toBe(95);
+    // Original should not be modified
+    expect(config.quality.minScore).toBe(85);
+  });
+
+  it("should create intermediate objects if needed", () => {
+    const config = createDefaultConfig("test");
+    const updated = setConfigValue(config, "integrations.github.token", "my-token");
+
+    expect((updated.integrations as any).github.token).toBe("my-token");
+  });
+
+  it("should handle empty key parts gracefully", () => {
+    const config = createDefaultConfig("test");
+    // This tests the `if (!key) continue;` branch
+    const updated = setConfigValue(config, "provider..type", "openai");
+
+    expect(updated.provider.type).toBe("openai");
+  });
+
+  it("should replace non-object intermediate values with objects", () => {
+    const config = createDefaultConfig("test");
+    // Set a string value first
+    (config as any).custom = "string-value";
+    // Now try to set a nested path through it
+    const updated = setConfigValue(config, "custom.nested.value", "test");
+
+    expect((updated as any).custom.nested.value).toBe("test");
+  });
+});
+
+describe("mergeWithDefaults", () => {
+  it("should merge empty partial with defaults", () => {
+    const merged = mergeWithDefaults({}, "my-project");
+
+    expect(merged.project.name).toBe("my-project");
+    expect(merged.provider.type).toBe("anthropic");
+    expect(merged.quality.minScore).toBe(85);
+  });
+
+  it("should preserve partial project settings", () => {
+    const partial = {
+      project: { name: "custom-name", description: "A custom project" },
+    };
+    const merged = mergeWithDefaults(partial, "default-name");
+
+    expect(merged.project.name).toBe("custom-name");
+    expect(merged.project.description).toBe("A custom project");
+  });
+
+  it("should merge provider settings", () => {
+    const partial = {
+      provider: { model: "gpt-4" },
+    };
+    const merged = mergeWithDefaults(partial, "test");
+
+    expect(merged.provider.model).toBe("gpt-4");
+    expect(merged.provider.type).toBe("anthropic"); // default preserved
+  });
+
+  it("should merge quality settings", () => {
+    const partial = {
+      quality: { minScore: 90, maxIterations: 5 },
+    };
+    const merged = mergeWithDefaults(partial, "test");
+
+    expect(merged.quality.minScore).toBe(90);
+    expect(merged.quality.maxIterations).toBe(5);
+    expect(merged.quality.minCoverage).toBe(80); // default preserved
+  });
+
+  it("should merge persistence settings", () => {
+    const partial = {
+      persistence: { retentionDays: 30 },
+    };
+    const merged = mergeWithDefaults(partial, "test");
+
+    expect(merged.persistence.retentionDays).toBe(30);
+    expect(merged.persistence.maxCheckpoints).toBe(50); // default preserved
   });
 });

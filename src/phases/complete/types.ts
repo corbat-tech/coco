@@ -229,7 +229,7 @@ export const DEFAULT_COMPLETE_CONFIG: CompleteConfig = {
  * Progress update
  */
 export interface CompleteProgress {
-  phase: "executing" | "reviewing" | "iterating" | "complete";
+  phase: "executing" | "reviewing" | "iterating" | "complete" | "blocked";
   sprintId: string;
   taskId?: string;
   taskTitle?: string;

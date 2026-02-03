@@ -26,15 +26,46 @@ export type {
 // Anthropic provider
 export { AnthropicProvider, createAnthropicProvider } from "./anthropic.js";
 
+// OpenAI provider
+export { OpenAIProvider, createOpenAIProvider, createKimiProvider } from "./openai.js";
+
+// Gemini provider
+export { GeminiProvider, createGeminiProvider } from "./gemini.js";
+
+// Retry utilities
+export {
+  withRetry,
+  isRetryableError,
+  createRetryableMethod,
+  DEFAULT_RETRY_CONFIG,
+  type RetryConfig,
+} from "./retry.js";
+
+// Pricing and cost estimation
+export {
+  MODEL_PRICING,
+  DEFAULT_PRICING,
+  estimateCost,
+  formatCost,
+  getModelPricing,
+  hasKnownPricing,
+  listModelsWithPricing,
+  type ModelPricing,
+  type CostEstimate,
+} from "./pricing.js";
+
 // Provider registry
 import type { LLMProvider, ProviderConfig } from "./types.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { OpenAIProvider, createKimiProvider } from "./openai.js";
+import { GeminiProvider } from "./gemini.js";
 import { ProviderError } from "../utils/errors.js";
+import { getApiKey, getBaseUrl, getDefaultModel } from "../config/env.js";
 
 /**
  * Supported provider types
  */
-export type ProviderType = "anthropic" | "openai" | "local";
+export type ProviderType = "anthropic" | "openai" | "gemini" | "kimi";
 
 /**
  * Create a provider by type
@@ -45,22 +76,33 @@ export async function createProvider(
 ): Promise<LLMProvider> {
   let provider: LLMProvider;
 
+  // Merge config with environment defaults
+  const mergedConfig: ProviderConfig = {
+    apiKey: config.apiKey ?? getApiKey(type),
+    baseUrl: config.baseUrl ?? getBaseUrl(type),
+    model: config.model ?? getDefaultModel(type),
+    maxTokens: config.maxTokens,
+    temperature: config.temperature,
+    timeout: config.timeout,
+  };
+
   switch (type) {
     case "anthropic":
       provider = new AnthropicProvider();
       break;
 
     case "openai":
-      // TODO: Implement OpenAI provider
-      throw new ProviderError("OpenAI provider not yet implemented", {
-        provider: "openai",
-      });
+      provider = new OpenAIProvider();
+      break;
 
-    case "local":
-      // TODO: Implement local provider (Ollama)
-      throw new ProviderError("Local provider not yet implemented", {
-        provider: "local",
-      });
+    case "gemini":
+      provider = new GeminiProvider();
+      break;
+
+    case "kimi":
+      provider = createKimiProvider(mergedConfig);
+      await provider.initialize(mergedConfig);
+      return provider;
 
     default:
       throw new ProviderError(`Unknown provider type: ${type}`, {
@@ -68,15 +110,49 @@ export async function createProvider(
       });
   }
 
-  await provider.initialize(config);
+  await provider.initialize(mergedConfig);
   return provider;
 }
 
 /**
- * Get default provider (Anthropic)
+ * Get default provider (from environment or Anthropic)
  */
 export async function getDefaultProvider(
   config: ProviderConfig = {}
 ): Promise<LLMProvider> {
-  return createProvider("anthropic", config);
+  const { getDefaultProvider: getEnvProvider } = await import("../config/env.js");
+  const providerType = getEnvProvider();
+  return createProvider(providerType, config);
+}
+
+/**
+ * List available providers with their status
+ */
+export function listProviders(): Array<{
+  id: ProviderType;
+  name: string;
+  configured: boolean;
+}> {
+  return [
+    {
+      id: "anthropic",
+      name: "Anthropic Claude",
+      configured: !!getApiKey("anthropic"),
+    },
+    {
+      id: "openai",
+      name: "OpenAI",
+      configured: !!getApiKey("openai"),
+    },
+    {
+      id: "gemini",
+      name: "Google Gemini",
+      configured: !!getApiKey("gemini"),
+    },
+    {
+      id: "kimi",
+      name: "Kimi (Moonshot)",
+      configured: !!getApiKey("kimi"),
+    },
+  ];
 }
