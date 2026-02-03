@@ -1,6 +1,6 @@
 {
   "name": "corbat-coco",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Autonomous Coding Agent with Self-Review, Quality Convergence, and Production-Ready Output",
   "type": "module",
   "main": "dist/index.js",
