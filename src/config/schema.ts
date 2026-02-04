@@ -89,6 +89,39 @@ export const IntegrationsConfigSchema = z.object({
 export type IntegrationsConfig = z.infer<typeof IntegrationsConfigSchema>;
 
 /**
+ * MCP server configuration in coco config
+ */
+export const MCPServerConfigEntrySchema = z.object({
+  name: z.string(),
+  transport: z.enum(['stdio', 'http']),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  url: z.string().optional(),
+  env: z.record(z.string()).optional(),
+  auth: z.object({
+    type: z.enum(['oauth', 'bearer', 'apikey']),
+    token: z.string().optional(),
+    tokenEnv: z.string().optional(),
+    headerName: z.string().optional(),
+  }).optional(),
+  enabled: z.boolean().default(true),
+  description: z.string().optional(),
+});
+
+export type MCPServerConfigEntry = z.infer<typeof MCPServerConfigEntrySchema>;
+
+/**
+ * MCP configuration schema
+ */
+export const MCPConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  configFile: z.string().optional(), // Path to external MCP config file
+  servers: z.array(MCPServerConfigEntrySchema).default([]),
+});
+
+export type MCPConfig = z.infer<typeof MCPConfigSchema>;
+
+/**
  * Complete configuration schema
  */
 export const CocoConfigSchema = z.object({
@@ -98,6 +131,7 @@ export const CocoConfigSchema = z.object({
   persistence: PersistenceConfigSchema.default({}),
   stack: StackConfigSchema.optional(),
   integrations: IntegrationsConfigSchema.optional(),
+  mcp: MCPConfigSchema.optional(),
 });
 
 export type CocoConfig = z.infer<typeof CocoConfigSchema>;

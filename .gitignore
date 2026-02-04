@@ -39,3 +39,6 @@ yarn.lock
 # Corbat-Coco project data (when testing locally)
 .coco/
 !.coco/README.md
+
+# Development plans (internal, not published)
+.dev/

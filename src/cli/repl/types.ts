@@ -3,6 +3,9 @@
  */
 
 import type { Message, ToolCall, StreamChunk } from "../../providers/types.js";
+import type { ContextManager } from "./context/manager.js";
+import type { ProgressTracker } from "./progress/tracker.js";
+import type { MemoryContext } from "./memory/types.js";
 
 /**
  * REPL session state
@@ -15,6 +18,12 @@ export interface ReplSession {
   config: ReplConfig;
   /** Tools trusted for this session (skip confirmation) */
   trustedTools: Set<string>;
+  /** Context window manager for tracking token usage */
+  contextManager?: ContextManager;
+  /** Progress tracker for todo-like task tracking */
+  progressTracker?: ProgressTracker;
+  /** Memory context from COCO.md/CLAUDE.md files */
+  memoryContext?: MemoryContext;
 }
 
 /**

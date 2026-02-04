@@ -6,9 +6,12 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import type { Message } from "../../providers/types.js";
+import type { Message, LLMProvider } from "../../providers/types.js";
 import type { ReplSession, ReplConfig } from "./types.js";
 import { getDefaultProvider, getDefaultModel } from "../../config/env.js";
+import { createContextManager } from "./context/manager.js";
+import { createContextCompactor, type CompactionResult } from "./context/compactor.js";
+import { createMemoryLoader, type MemoryContext } from "./memory/index.js";
 
 /**
  * Trust settings file location
@@ -109,11 +112,18 @@ export function addMessage(session: ReplSession, message: Message): void {
 }
 
 /**
- * Get conversation context for LLM (with system prompt)
+ * Get conversation context for LLM (with system prompt and memory)
  */
 export function getConversationContext(session: ReplSession): Message[] {
+  // Build system prompt with memory if available
+  let systemPrompt = session.config.agent.systemPrompt;
+
+  if (session.memoryContext?.combinedContent) {
+    systemPrompt = `${systemPrompt}\n\n# Project Instructions (from COCO.md/CLAUDE.md)\n\n${session.memoryContext.combinedContent}`;
+  }
+
   return [
-    { role: "system", content: session.config.agent.systemPrompt },
+    { role: "system", content: systemPrompt },
     ...session.messages,
   ];
 }
@@ -252,3 +262,153 @@ export async function initializeSessionTrust(session: ReplSession): Promise<void
     session.trustedTools.add(tool);
   }
 }
+
+/**
+ * Initialize context manager for the session
+ */
+export function initializeContextManager(
+  session: ReplSession,
+  provider: LLMProvider
+): void {
+  const contextWindow = provider.getContextWindow();
+  session.contextManager = createContextManager(contextWindow, {
+    compactionThreshold: 0.8,
+    reservedTokens: 4096,
+  });
+}
+
+/**
+ * Update context token count after a turn
+ */
+export function updateContextTokens(
+  session: ReplSession,
+  provider: LLMProvider
+): void {
+  if (!session.contextManager) return;
+
+  // Calculate total tokens from all messages
+  let totalTokens = 0;
+
+  // Include system prompt
+  totalTokens += provider.countTokens(session.config.agent.systemPrompt);
+
+  // Include all messages
+  for (const message of session.messages) {
+    const content = typeof message.content === "string"
+      ? message.content
+      : JSON.stringify(message.content);
+    totalTokens += provider.countTokens(content);
+  }
+
+  session.contextManager.setUsedTokens(totalTokens);
+}
+
+/**
+ * Check if context compaction is needed and perform if necessary
+ * Returns true if compaction was performed
+ */
+export async function checkAndCompactContext(
+  session: ReplSession,
+  provider: LLMProvider
+): Promise<CompactionResult | null> {
+  if (!session.contextManager) {
+    initializeContextManager(session, provider);
+  }
+
+  // Update token count
+  updateContextTokens(session, provider);
+
+  // Check if compaction needed
+  if (!session.contextManager!.shouldCompact()) {
+    return null;
+  }
+
+  // Perform compaction
+  const compactor = createContextCompactor({
+    preserveLastN: 4,
+    summaryMaxTokens: 1000,
+  });
+
+  const result = await compactor.compact(session.messages, provider);
+
+  if (result.wasCompacted) {
+    // Update session messages with compacted version
+    // Extract non-system messages from compacted result
+    const compactedNonSystem = result.messages.filter(m => m.role !== "system");
+    session.messages = compactedNonSystem;
+
+    // Update token count
+    session.contextManager!.setUsedTokens(result.compactedTokens);
+  }
+
+  return result;
+}
+
+/**
+ * Get context usage percentage for display
+ */
+export function getContextUsagePercent(session: ReplSession): number {
+  return session.contextManager?.getUsagePercent() ?? 0;
+}
+
+/**
+ * Get formatted context usage string
+ */
+export function getContextUsageFormatted(session: ReplSession): string {
+  return session.contextManager?.formatUsage() ?? "N/A";
+}
+
+/**
+ * Initialize session memory from COCO.md/CLAUDE.md files
+ *
+ * Loads memory from:
+ * - User level: ~/.config/corbat-coco/COCO.md
+ * - Project level: ./COCO.md or ./CLAUDE.md
+ * - Local level: ./COCO.local.md or ./CLAUDE.local.md
+ */
+export async function initializeSessionMemory(session: ReplSession): Promise<void> {
+  const loader = createMemoryLoader();
+  try {
+    session.memoryContext = await loader.loadMemory(session.projectPath);
+  } catch (error) {
+    // Log error but don't fail session initialization
+    console.error("Warning: Failed to load memory files:", error);
+    session.memoryContext = {
+      files: [],
+      combinedContent: "",
+      totalSize: 0,
+      errors: [{
+        file: session.projectPath,
+        level: "project",
+        error: error instanceof Error ? error.message : String(error),
+        recoverable: true,
+      }],
+    };
+  }
+}
+
+/**
+ * Get the memory context for a session
+ */
+export function getSessionMemory(session: ReplSession): MemoryContext | undefined {
+  return session.memoryContext;
+}
+
+/**
+ * Reload memory for a session (useful after editing memory files)
+ */
+export async function reloadSessionMemory(session: ReplSession): Promise<void> {
+  await initializeSessionMemory(session);
+}
+
+/**
+ * Export context manager for direct access if needed
+ */
+export { ContextManager, createContextManager } from "./context/manager.js";
+export { ContextCompactor, createContextCompactor } from "./context/compactor.js";
+export type { CompactionResult } from "./context/compactor.js";
+
+/**
+ * Export memory types
+ */
+export type { MemoryContext } from "./memory/index.js";

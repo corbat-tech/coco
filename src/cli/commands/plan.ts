@@ -111,16 +111,16 @@ async function createCliPhaseContext(
         };
       },
     };
-  } catch {
-    // Create a mock LLM for when no API key is available
-    llm = {
-      async chat() {
-        return { content: "{}", usage: { inputTokens: 0, outputTokens: 0 } };
-      },
-      async chatWithTools() {
-        return { content: "{}", usage: { inputTokens: 0, outputTokens: 0 } };
-      },
-    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    p.log.error(`Failed to initialize LLM provider: ${errorMessage}`);
+    p.log.info("Make sure you have set your API key:");
+    p.log.info("  export ANTHROPIC_API_KEY=your-api-key");
+    p.log.info("Or for other providers:");
+    p.log.info("  export OPENAI_API_KEY=your-api-key");
+    p.log.info("  export GEMINI_API_KEY=your-api-key");
+    p.log.info("  export KIMI_API_KEY=your-api-key");
+    throw new Error("API key required. Configure your provider API key and try again.");
   }
 
   return {

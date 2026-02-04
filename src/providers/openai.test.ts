@@ -157,7 +157,10 @@ describe("OpenAIProvider", () => {
     });
 
     it("should return false when API call fails", async () => {
+      // Both list and chat must fail for isAvailable to return false
+      // (isAvailable has a fallback to chat.completions.create)
       mockList.mockRejectedValue(new Error("Network error"));
+      mockCreate.mockRejectedValue(new Error("Network error"));
 
       const { OpenAIProvider } = await import("./openai.js");
 

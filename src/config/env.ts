@@ -41,7 +41,7 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
     case "openai":
       return process.env["OPENAI_BASE_URL"];
     case "kimi":
-      return process.env["KIMI_BASE_URL"] ?? "https://api.moonshot.cn/v1";
+      return process.env["KIMI_BASE_URL"] ?? "https://api.moonshot.ai/v1";
     default:
       return undefined;
   }
@@ -59,7 +59,7 @@ export function getDefaultModel(provider: ProviderType): string {
     case "gemini":
       return process.env["GEMINI_MODEL"] ?? "gemini-2.0-flash";
     case "kimi":
-      return process.env["KIMI_MODEL"] ?? "moonshot-v1-8k";
+      return process.env["KIMI_MODEL"] ?? "kimi-k2.5";
     default:
       return "gpt-4o";
   }

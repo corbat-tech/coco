@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   renderStreamChunk,
+  renderStreamChunkImmediate,
   renderToolStart,
   renderToolEnd,
   renderUsageStats,
@@ -13,6 +14,8 @@ import {
   renderSuccess,
   renderWarning,
   highlightCode,
+  resetTypewriter,
+  getTypewriter,
 } from "./renderer.js";
 import type { StreamChunk } from "../../../providers/types.js";
 import type { ExecutedToolCall } from "../types.js";
@@ -42,23 +45,44 @@ describe("renderStreamChunk", () => {
   let stdoutWriteSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    resetTypewriter(); // Reset typewriter state before each test
     stdoutWriteSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   });
 
   afterEach(() => {
+    resetTypewriter();
     vi.restoreAllMocks();
   });
 
-  it("should write text chunks to stdout", () => {
-    const chunk: StreamChunk = { type: "text", text: "Hello world" };
+  it("should write text chunks to stdout via typewriter", async () => {
+    const chunk: StreamChunk = { type: "text", text: "Hello" };
 
     renderStreamChunk(chunk);
 
-    expect(stdoutWriteSpy).toHaveBeenCalledWith("Hello world");
+    // Wait for typewriter to process
+    await getTypewriter().waitForComplete();
+
+    // Typewriter writes character by character
+    expect(stdoutWriteSpy).toHaveBeenCalled();
+    // All characters should have been written
+    const allWrites = stdoutWriteSpy.mock.calls.map(call => call[0]).join("");
+    expect(allWrites).toBe("Hello");
+  });
+
+  it("should flush on done chunk", () => {
+    const textChunk: StreamChunk = { type: "text", text: "Test" };
+    const doneChunk: StreamChunk = { type: "done" };
+
+    renderStreamChunk(textChunk);
+    renderStreamChunk(doneChunk);
+
+    // Should have written all characters after flush
+    const allWrites = stdoutWriteSpy.mock.calls.map(call => call[0]).join("");
+    expect(allWrites).toBe("Test");
   });
 
   it("should not write non-text chunks", () => {
-    const chunk: StreamChunk = { type: "tool_use" as any };
+    const chunk: StreamChunk = { type: "tool_use_start" };
 
     renderStreamChunk(chunk);
 
@@ -69,6 +93,34 @@ describe("renderStreamChunk", () => {
     const chunk: StreamChunk = { type: "text", text: "" };
 
     renderStreamChunk(chunk);
+
+    expect(stdoutWriteSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("renderStreamChunkImmediate", () => {
+  let stdoutWriteSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stdoutWriteSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should write text chunks immediately without typewriter", () => {
+    const chunk: StreamChunk = { type: "text", text: "Hello world" };
+
+    renderStreamChunkImmediate(chunk);
+
+    expect(stdoutWriteSpy).toHaveBeenCalledWith("Hello world");
+  });
+
+  it("should not write non-text chunks", () => {
+    const chunk: StreamChunk = { type: "tool_use_start" };
+
+    renderStreamChunkImmediate(chunk);
 
     expect(stdoutWriteSpy).not.toHaveBeenCalled();
   });

@@ -7,12 +7,23 @@ import { helpCommand } from "./help.js";
 import { clearCommand } from "./clear.js";
 import { exitCommand } from "./exit.js";
 import { modelCommand } from "./model.js";
+import { providerCommand } from "./provider.js";
 import { statusCommand } from "./status.js";
 import { diffCommand } from "./diff.js";
 import { commitCommand } from "./commit.js";
 import { compactCommand } from "./compact.js";
 import { costCommand } from "./cost.js";
 import { undoCommand } from "./undo.js";
+import { trustCommand } from "./trust.js";
+import { initCommand } from "./init.js";
+import { planCommand } from "./plan.js";
+import { buildCommand } from "./build.js";
+import { taskCommand } from "./task.js";
+import { outputCommand } from "./output.js";
+import { tasksCommand } from "./tasks.js";
+import { memoryCommand } from "./memory.js";
+import { rewindCommand } from "./rewind.js";
+import { resumeCommand } from "./resume.js";
 import { renderError } from "../output/renderer.js";
 
 /**
@@ -22,6 +33,7 @@ const commands: SlashCommand[] = [
   helpCommand,
   clearCommand,
   exitCommand,
+  providerCommand,
   modelCommand,
   statusCommand,
   diffCommand,
@@ -29,6 +41,16 @@ const commands: SlashCommand[] = [
   compactCommand,
   costCommand,
   undoCommand,
+  trustCommand,
+  initCommand,
+  planCommand,
+  buildCommand,
+  taskCommand,
+  outputCommand,
+  tasksCommand,
+  memoryCommand,
+  rewindCommand,
+  resumeCommand,
 ];
 
 /**

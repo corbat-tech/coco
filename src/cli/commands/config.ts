@@ -1,6 +1,12 @@
 import { Command } from "commander";
 import * as p from "@clack/prompts";
 import chalk from "chalk";
+import {
+  getAllProviders,
+  getProviderDefinition,
+  formatModelInfo,
+} from "../repl/providers-config.js";
+import type { ProviderType } from "../../providers/index.js";
 
 export function registerConfigCommand(program: Command): void {
   const configCmd = program
@@ -81,13 +87,29 @@ async function runConfigList(options: { json?: boolean }): Promise<void> {
 async function runConfigInit(): Promise<void> {
   p.intro(chalk.cyan("Corbat-Coco Configuration Setup"));
 
+  // Select provider
+  const allProviders = getAllProviders();
+  const providerChoice = await p.select({
+    message: "Select your AI provider:",
+    options: allProviders.map((provider) => ({
+      value: provider.id,
+      label: `${provider.emoji} ${provider.name}`,
+      hint: provider.description,
+    })),
+  });
+
+  if (p.isCancel(providerChoice)) {
+    p.cancel("Configuration cancelled.");
+    process.exit(0);
+  }
+
+  const selectedProvider = getProviderDefinition(providerChoice as ProviderType);
+
   // API Key
-  const apiKey = await p.text({
-    message: "Enter your Anthropic API key:",
-    placeholder: "sk-ant-...",
+  const apiKey = await p.password({
+    message: `Enter your ${selectedProvider.name} API key:`,
     validate: (value) => {
-      if (!value) return "API key is required";
-      if (!value.startsWith("sk-ant-")) return "Invalid API key format";
+      if (!value || value.length < 10) return "API key is required (min 10 chars)";
       return undefined;
     },
   });
@@ -97,14 +119,15 @@ async function runConfigInit(): Promise<void> {
     process.exit(0);
   }
 
-  // Model
+  // Model selection
+  const modelOptions = selectedProvider.models.map((m) => ({
+    value: m.id,
+    label: formatModelInfo(m),
+  }));
+
   const model = await p.select({
     message: "Select the default model:",
-    options: [
-      { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", hint: "Recommended for coding" },
-      { value: "claude-opus-4-20250514", label: "Claude Opus 4", hint: "Most capable" },
-      { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet", hint: "Fast and capable" },
-    ],
+    options: modelOptions,
   });
 
   if (p.isCancel(model)) {
@@ -132,7 +155,7 @@ async function runConfigInit(): Promise<void> {
   // Save configuration
   const config = {
     provider: {
-      type: "anthropic",
+      type: providerChoice as string,
       apiKey: apiKey as string,
       model: model as string,
     },

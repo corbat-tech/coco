@@ -175,6 +175,14 @@ export interface LLMProvider {
   ): AsyncIterable<StreamChunk>;
 
   /**
+   * Stream a chat response with tool use
+   */
+  streamWithTools(
+    messages: Message[],
+    options: ChatWithToolsOptions
+  ): AsyncIterable<StreamChunk>;
+
+  /**
    * Count tokens in text
    */
   countTokens(text: string): number;

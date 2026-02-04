@@ -21,6 +21,13 @@ import {
   createConfirmationState,
   type ConfirmationState,
 } from "./confirmation.js";
+import { ParallelToolExecutor } from "./parallel-executor.js";
+import {
+  type HookRegistryInterface,
+  type HookExecutor,
+  type HookExecutionResult,
+} from "./hooks/index.js";
+import { resetLineBuffer, flushLineBuffer } from "./output/renderer.js";
 
 /**
  * Options for executing an agent turn
@@ -32,9 +39,17 @@ export interface AgentTurnOptions {
   onThinkingStart?: () => void;
   onThinkingEnd?: () => void;
   onToolSkipped?: (toolCall: ToolCall, reason: string) => void;
+  /** Called when a tool is being prepared (parsed from stream) */
+  onToolPreparing?: (toolName: string) => void;
   signal?: AbortSignal;
   /** Skip confirmation prompts for destructive tools */
   skipConfirmation?: boolean;
+  /** Hook registry for lifecycle hooks */
+  hookRegistry?: HookRegistryInterface;
+  /** Hook executor for running hooks */
+  hookExecutor?: HookExecutor;
+  /** Callback when a hook executes */
+  onHookExecuted?: (event: string, result: HookExecutionResult) => void;
 }
 
 /**
@@ -47,6 +62,9 @@ export async function executeAgentTurn(
   toolRegistry: ToolRegistry,
   options: AgentTurnOptions = {}
 ): Promise<AgentTurnResult> {
+  // Reset line buffer at start of each turn
+  resetLineBuffer();
+
   // Add user message to context
   addMessage(session, { role: "user", content: userMessage });
 
@@ -80,45 +98,132 @@ export async function executeAgentTurn(
       };
     }
 
-    // Call LLM with tools
+    // Call LLM with tools using streaming
     const messages = getConversationContext(session);
 
     // Notify thinking started
     options.onThinkingStart?.();
 
-    const response = await provider.chatWithTools(messages, {
+    // Use streaming API for real-time text output
+    let responseContent = "";
+    const collectedToolCalls: ToolCall[] = [];
+    let thinkingEnded = false;
+
+    // Track tool call builders for streaming
+    const toolCallBuilders: Map<string, { id: string; name: string; input: Record<string, unknown> }> = new Map();
+
+    for await (const chunk of provider.streamWithTools(messages, {
       tools,
       maxTokens: session.config.provider.maxTokens,
-    });
+    })) {
+      // Check for abort
+      if (options.signal?.aborted) {
+        break;
+      }
 
-    // Notify thinking ended
-    options.onThinkingEnd?.();
+      // Handle text chunks - stream them immediately
+      if (chunk.type === "text" && chunk.text) {
+        // End thinking spinner on first text
+        if (!thinkingEnded) {
+          options.onThinkingEnd?.();
+          thinkingEnded = true;
+        }
+        responseContent += chunk.text;
+        finalContent += chunk.text;
+        options.onStream?.(chunk);
+      }
 
-    totalInputTokens += response.usage.inputTokens;
-    totalOutputTokens += response.usage.outputTokens;
+      // Handle tool call start
+      if (chunk.type === "tool_use_start" && chunk.toolCall) {
+        // Flush any buffered text before showing spinner
+        flushLineBuffer();
 
-    // Stream text content if present
-    if (response.content) {
-      finalContent += response.content;
-      options.onStream?.({ type: "text", text: response.content });
+        // End thinking spinner when tool starts (if no text came first)
+        if (!thinkingEnded) {
+          options.onThinkingEnd?.();
+          thinkingEnded = true;
+        }
+        const id = chunk.toolCall.id ?? `tool_${toolCallBuilders.size}`;
+        const toolName = chunk.toolCall.name ?? "";
+        toolCallBuilders.set(id, {
+          id,
+          name: toolName,
+          input: {},
+        });
+        // Notify that a tool is being prepared/parsed
+        if (toolName) {
+          options.onToolPreparing?.(toolName);
+        }
+      }
+
+      // Handle tool call end - finalize the tool call
+      if (chunk.type === "tool_use_end" && chunk.toolCall) {
+        const id = chunk.toolCall.id ?? "";
+        const builder = toolCallBuilders.get(id);
+        if (builder) {
+          const finalToolCall: ToolCall = {
+            id: builder.id,
+            name: chunk.toolCall.name ?? builder.name,
+            input: chunk.toolCall.input ?? builder.input,
+          };
+          collectedToolCalls.push(finalToolCall);
+        } else if (chunk.toolCall.id && chunk.toolCall.name) {
+          // Direct tool call without builder
+          collectedToolCalls.push({
+            id: chunk.toolCall.id,
+            name: chunk.toolCall.name,
+            input: chunk.toolCall.input ?? {},
+          });
+        }
+      }
+
+      // Handle done
+      if (chunk.type === "done") {
+        // Ensure thinking ended
+        if (!thinkingEnded) {
+          options.onThinkingEnd?.();
+          thinkingEnded = true;
+        }
+        break;
+      }
     }
 
+    // Estimate token usage (streaming doesn't provide exact counts)
+    // Use provider's token counting method for estimation
+    const inputText = messages.map(m =>
+      typeof m.content === "string" ? m.content : JSON.stringify(m.content)
+    ).join("\n");
+    const estimatedInputTokens = provider.countTokens(inputText);
+    const estimatedOutputTokens = provider.countTokens(responseContent + JSON.stringify(collectedToolCalls));
+
+    totalInputTokens += estimatedInputTokens;
+    totalOutputTokens += estimatedOutputTokens;
+
     // Check if we have tool calls
-    if (!response.toolCalls || response.toolCalls.length === 0) {
+    if (collectedToolCalls.length === 0) {
       // No more tool calls, we're done
-      addMessage(session, { role: "assistant", content: response.content });
+      addMessage(session, { role: "assistant", content: responseContent });
       break;
     }
 
-    // Execute each tool call
+    // Use collected tool calls for execution
+    const response = {
+      content: responseContent,
+      toolCalls: collectedToolCalls,
+    };
+
+    // Execute tool calls with parallel execution support
     const toolResults: ToolResultContent[] = [];
     const toolUses: ToolUseContent[] = [];
     let turnAborted = false;
     const totalTools = response.toolCalls.length;
-    let toolIndex = 0;
+
+    // Phase 1: Handle confirmations sequentially (user interaction required)
+    // Build list of confirmed tools and declined/skipped tools
+    const confirmedTools: ToolCall[] = [];
+    const declinedTools: Map<string, string> = new Map(); // toolCall.id -> decline reason
 
     for (const toolCall of response.toolCalls) {
-      toolIndex++;
       // Check for abort
       if (options.signal?.aborted || turnAborted) {
         break;
@@ -136,20 +241,9 @@ export async function executeAgentTurn(
 
         switch (confirmResult) {
           case "no":
-            // Skip this tool, report as skipped
+            // Mark as declined, will be reported after parallel execution
+            declinedTools.set(toolCall.id, "User declined");
             options.onToolSkipped?.(toolCall, "User declined");
-            toolUses.push({
-              type: "tool_use",
-              id: toolCall.id,
-              name: toolCall.name,
-              input: toolCall.input,
-            });
-            toolResults.push({
-              type: "tool_result",
-              tool_use_id: toolCall.id,
-              content: "Tool execution was declined by the user",
-              is_error: true,
-            });
             continue;
 
           case "abort":
@@ -176,32 +270,48 @@ export async function executeAgentTurn(
         }
       }
 
-      options.onToolStart?.(toolCall, toolIndex, totalTools);
+      // Tool is confirmed for execution
+      confirmedTools.push(toolCall);
+    }
 
-      const startTime = performance.now();
-      const result = await toolRegistry.execute(toolCall.name, toolCall.input);
-      const duration = performance.now() - startTime;
+    // Phase 2: Execute confirmed tools in parallel
+    if (!turnAborted && confirmedTools.length > 0) {
+      const executor = new ParallelToolExecutor();
+      const parallelResult = await executor.executeParallel(
+        confirmedTools,
+        toolRegistry,
+        {
+          maxConcurrency: 5,
+          onToolStart: (toolCall, _index, _total) => {
+            // Adjust index to account for declined tools for accurate progress
+            const originalIndex = response.toolCalls.findIndex(tc => tc.id === toolCall.id) + 1;
+            options.onToolStart?.(toolCall, originalIndex, totalTools);
+          },
+          onToolEnd: options.onToolEnd,
+          onToolSkipped: options.onToolSkipped,
+          signal: options.signal,
+        }
+      );
 
-      const output = result.success
-        ? JSON.stringify(result.data, null, 2)
-        : result.error ?? "Unknown error";
+      // Collect executed tools
+      for (const executed of parallelResult.executed) {
+        executedTools.push(executed);
+      }
 
-      const executedCall: ExecutedToolCall = {
-        id: toolCall.id,
-        name: toolCall.name,
-        input: toolCall.input,
-        result: {
-          success: result.success,
-          output,
-          error: result.error,
-        },
-        duration,
-      };
+      // Handle skipped tools from parallel execution (e.g., due to abort)
+      for (const { toolCall, reason } of parallelResult.skipped) {
+        declinedTools.set(toolCall.id, reason);
+      }
 
-      executedTools.push(executedCall);
-      options.onToolEnd?.(executedCall);
+      // Check if parallel execution was aborted
+      if (parallelResult.aborted) {
+        turnAborted = true;
+      }
+    }
 
-      // Build tool use content for assistant message
+    // Phase 3: Build tool uses and results in original order
+    for (const toolCall of response.toolCalls) {
+      // Build tool use content for assistant message (always include)
       toolUses.push({
         type: "tool_use",
         id: toolCall.id,
@@ -209,13 +319,28 @@ export async function executeAgentTurn(
         input: toolCall.input,
       });
 
-      // Build tool result for user message
-      toolResults.push({
-        type: "tool_result",
-        tool_use_id: toolCall.id,
-        content: output,
-        is_error: !result.success,
-      });
+      // Check if this tool was declined
+      const declineReason = declinedTools.get(toolCall.id);
+      if (declineReason) {
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: toolCall.id,
+          content: `Tool execution was declined: ${declineReason}`,
+          is_error: true,
+        });
+        continue;
+      }
+
+      // Find the executed result
+      const executedCall = executedTools.find((e) => e.id === toolCall.id);
+      if (executedCall) {
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: toolCall.id,
+          content: executedCall.result.output,
+          is_error: !executedCall.result.success,
+        });
+      }
     }
 
     // If turn was aborted, return early with partial content preserved

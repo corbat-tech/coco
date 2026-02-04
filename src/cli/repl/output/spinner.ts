@@ -1,12 +1,16 @@
 /**
- * Spinner for long operations
+ * Spinner for long operations using Ora
+ * Ora handles concurrent stdout output gracefully
  */
 
+import ora, { type Ora } from "ora";
 import chalk from "chalk";
 
 export type Spinner = {
   start(): void;
   stop(finalMessage?: string): void;
+  /** Stop spinner and clear the line without printing any message */
+  clear(): void;
   update(message: string): void;
   fail(message?: string): void;
   /** Update tool counter for multi-tool operations */
@@ -14,78 +18,104 @@ export type Spinner = {
 };
 
 /**
- * Create a spinner for showing progress
+ * Create a spinner using Ora for smooth non-blocking output
+ * Ora automatically handles writes to the same stream without corruption
  */
 export function createSpinner(message: string): Spinner {
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  let frameIndex = 0;
-  let interval: NodeJS.Timeout | null = null;
+  let spinner: Ora | null = null;
   let currentMessage = message;
   let startTime: number | null = null;
   let toolCurrent = 0;
   let toolTotal: number | undefined;
+  let elapsedInterval: NodeJS.Timeout | null = null;
 
   const formatToolCount = (): string => {
     if (toolCurrent <= 0) return "";
     if (toolTotal && toolTotal > 1) {
-      return chalk.dim(` [${toolCurrent}/${toolTotal}]`);
+      return ` [${toolCurrent}/${toolTotal}]`;
     }
     if (toolCurrent > 1) {
-      return chalk.dim(` [#${toolCurrent}]`);
+      return ` [#${toolCurrent}]`;
     }
     return "";
   };
 
+  const updateText = (): void => {
+    if (!spinner) return;
+    const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+    const elapsedStr = elapsed > 0 ? chalk.dim(` (${elapsed}s)`) : "";
+    const toolCountStr = formatToolCount();
+    spinner.text = `${currentMessage}${toolCountStr}${elapsedStr}`;
+  };
+
   return {
     start() {
-      if (interval) return;
+      if (spinner) return;
       startTime = Date.now();
-      interval = setInterval(() => {
-        const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
-        const elapsedStr = elapsed > 0 ? chalk.dim(` (${elapsed}s)`) : "";
-        const toolCountStr = formatToolCount();
-        process.stdout.write(
-          `\r\x1b[K${chalk.cyan(frames[frameIndex])} ${currentMessage}${toolCountStr}${elapsedStr}`
-        );
-        frameIndex = (frameIndex + 1) % frames.length;
-      }, 120); // 120ms = ~8 FPS, sufficient for human perception
+
+      spinner = ora({
+        text: currentMessage,
+        spinner: "dots",
+        color: "cyan",
+      }).start();
+
+      // Update elapsed time every second
+      elapsedInterval = setInterval(updateText, 1000);
     },
 
     stop(finalMessage?: string) {
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
+      if (elapsedInterval) {
+        clearInterval(elapsedInterval);
+        elapsedInterval = null;
       }
-      const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
-      const elapsedStr = elapsed > 0 ? chalk.dim(` (${elapsed}s)`) : "";
-      const toolCountStr = formatToolCount();
-      process.stdout.write(
-        `\r\x1b[K${chalk.green("✓")} ${finalMessage || currentMessage}${toolCountStr}${elapsedStr}\n`
-      );
+      if (spinner) {
+        const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+        const elapsedStr = elapsed > 0 ? chalk.dim(` (${elapsed}s)`) : "";
+        const toolCountStr = formatToolCount();
+        spinner.succeed(`${finalMessage || currentMessage}${toolCountStr}${elapsedStr}`);
+        spinner = null;
+      }
+      startTime = null;
+    },
+
+    clear() {
+      if (elapsedInterval) {
+        clearInterval(elapsedInterval);
+        elapsedInterval = null;
+      }
+      if (spinner) {
+        spinner.stop();
+        // Clear the line completely
+        process.stdout.write("\r\x1b[K");
+        spinner = null;
+      }
       startTime = null;
     },
 
     update(newMessage: string) {
       currentMessage = newMessage;
+      updateText();
     },
 
     fail(failMessage?: string) {
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
+      if (elapsedInterval) {
+        clearInterval(elapsedInterval);
+        elapsedInterval = null;
       }
-      const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
-      const elapsedStr = elapsed > 0 ? chalk.dim(` (${elapsed}s)`) : "";
-      const toolCountStr = formatToolCount();
-      process.stdout.write(
-        `\r\x1b[K${chalk.red("✗")} ${failMessage || currentMessage}${toolCountStr}${elapsedStr}\n`
-      );
+      if (spinner) {
+        const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+        const elapsedStr = elapsed > 0 ? chalk.dim(` (${elapsed}s)`) : "";
+        const toolCountStr = formatToolCount();
+        spinner.fail(`${failMessage || currentMessage}${toolCountStr}${elapsedStr}`);
+        spinner = null;
+      }
       startTime = null;
     },
 
     setToolCount(current: number, total?: number) {
       toolCurrent = current;
       toolTotal = total;
+      updateText();
     },
   };
 }

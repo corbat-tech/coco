@@ -31,10 +31,15 @@ const DEFAULT_MODEL = "claude-sonnet-4-20250514";
  * Context windows for models
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
+  // Claude 4 models (newest)
   "claude-sonnet-4-20250514": 200000,
   "claude-opus-4-20250514": 200000,
+  // Claude 3.7 models
+  "claude-3-7-sonnet-20250219": 200000,
+  // Claude 3.5 models
   "claude-3-5-sonnet-20241022": 200000,
   "claude-3-5-haiku-20241022": 200000,
+  // Claude 3 models (legacy)
   "claude-3-opus-20240229": 200000,
   "claude-3-sonnet-20240229": 200000,
   "claude-3-haiku-20240307": 200000,
@@ -175,6 +180,94 @@ export class AnthropicProvider implements LLMProvider {
           const delta = event.delta as { type: string; text?: string };
           if (delta.type === "text_delta" && delta.text) {
             yield { type: "text", text: delta.text };
+          }
+        }
+      }
+
+      yield { type: "done" };
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Stream a chat response with tool use
+   */
+  async *streamWithTools(
+    messages: Message[],
+    options: ChatWithToolsOptions
+  ): AsyncIterable<StreamChunk> {
+    this.ensureInitialized();
+
+    try {
+      const stream = await this.client!.messages.stream({
+        model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
+        max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+        temperature: options?.temperature ?? this.config.temperature ?? 0,
+        system: options?.system,
+        messages: this.convertMessages(messages),
+        tools: this.convertTools(options.tools),
+        tool_choice: options.toolChoice
+          ? this.convertToolChoice(options.toolChoice)
+          : undefined,
+      });
+
+      // Track current tool call being built
+      let currentToolCall: Partial<ToolCall> | null = null;
+      let currentToolInputJson = "";
+
+      for await (const event of stream) {
+        if (event.type === "content_block_start") {
+          const contentBlock = event.content_block as {
+            type: string;
+            id?: string;
+            name?: string;
+          };
+          if (contentBlock.type === "tool_use") {
+            currentToolCall = {
+              id: contentBlock.id,
+              name: contentBlock.name,
+            };
+            currentToolInputJson = "";
+            yield {
+              type: "tool_use_start",
+              toolCall: { ...currentToolCall },
+            };
+          }
+        } else if (event.type === "content_block_delta") {
+          const delta = event.delta as {
+            type: string;
+            text?: string;
+            partial_json?: string;
+          };
+          if (delta.type === "text_delta" && delta.text) {
+            yield { type: "text", text: delta.text };
+          } else if (delta.type === "input_json_delta" && delta.partial_json) {
+            currentToolInputJson += delta.partial_json;
+            yield {
+              type: "tool_use_delta",
+              toolCall: {
+                ...currentToolCall,
+              },
+              text: delta.partial_json,
+            };
+          }
+        } else if (event.type === "content_block_stop") {
+          if (currentToolCall) {
+            // Parse the accumulated JSON input
+            try {
+              currentToolCall.input = currentToolInputJson
+                ? JSON.parse(currentToolInputJson)
+                : {};
+            } catch {
+              currentToolCall.input = {};
+            }
+            yield {
+              type: "tool_use_end",
+              toolCall: { ...currentToolCall } as ToolCall,
+            };
+            currentToolCall = null;
+            currentToolInputJson = "";
           }
         }
       }

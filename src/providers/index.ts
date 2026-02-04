@@ -54,6 +54,23 @@ export {
   type CostEstimate,
 } from "./pricing.js";
 
+// Circuit breaker
+export {
+  CircuitBreaker,
+  CircuitOpenError,
+  createCircuitBreaker,
+  DEFAULT_CIRCUIT_BREAKER_CONFIG,
+  type CircuitState,
+  type CircuitBreakerConfig,
+} from "./circuit-breaker.js";
+
+// Provider fallback
+export {
+  ProviderFallback,
+  createProviderFallback,
+  type ProviderFallbackConfig,
+} from "./fallback.js";
+
 // Provider registry
 import type { LLMProvider, ProviderConfig } from "./types.js";
 import { AnthropicProvider } from "./anthropic.js";

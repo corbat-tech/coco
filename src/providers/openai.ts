@@ -30,6 +30,7 @@ const DEFAULT_MODEL = "gpt-4o";
  * Context windows for models
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
+  // OpenAI models
   "gpt-4o": 128000,
   "gpt-4o-mini": 128000,
   "gpt-4-turbo": 128000,
@@ -37,11 +38,39 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "gpt-3.5-turbo": 16385,
   "o1": 200000,
   "o1-mini": 128000,
+  "o3-mini": 200000,
   // Kimi/Moonshot models
+  "kimi-k2.5": 262144,
+  "kimi-k2-0324": 131072,
+  "kimi-latest": 131072,
   "moonshot-v1-8k": 8000,
   "moonshot-v1-32k": 32000,
   "moonshot-v1-128k": 128000,
 };
+
+/**
+ * Models that don't support temperature parameter or only support temperature=1
+ */
+const MODELS_WITHOUT_TEMPERATURE: string[] = [
+  "o1",
+  "o1-mini",
+  "o1-preview",
+  "o3-mini",
+  "kimi-k2.5",
+  "kimi-k2-0324",
+  "kimi-latest",
+];
+
+/**
+ * Models that have "thinking" mode enabled by default and need it disabled for tool use
+ * Kimi K2.5 has interleaved reasoning that requires reasoning_content to be passed back
+ * Disabling thinking mode avoids this complexity with tool calling
+ */
+const MODELS_WITH_THINKING_MODE: string[] = [
+  "kimi-k2.5",
+  "kimi-k2-0324",
+  "kimi-latest",
+];
 
 /**
  * OpenAI provider implementation
@@ -65,7 +94,16 @@ export class OpenAIProvider implements LLMProvider {
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
 
-    const apiKey = config.apiKey ?? process.env["OPENAI_API_KEY"];
+    // Get API key based on provider type (supports OpenAI-compatible providers like Kimi)
+    let apiKey = config.apiKey;
+    if (!apiKey) {
+      if (this.id === "kimi") {
+        apiKey = process.env["KIMI_API_KEY"] ?? process.env["MOONSHOT_API_KEY"];
+      } else {
+        apiKey = process.env["OPENAI_API_KEY"];
+      }
+    }
+
     if (!apiKey) {
       throw new ProviderError(`${this.name} API key not provided`, {
         provider: this.id,
@@ -80,6 +118,45 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   /**
+   * Check if a model supports temperature parameter
+   */
+  private supportsTemperature(model: string): boolean {
+    return !MODELS_WITHOUT_TEMPERATURE.some(
+      (m) => model.toLowerCase().includes(m.toLowerCase())
+    );
+  }
+
+  /**
+   * Check if a model needs thinking mode disabled for tool use
+   * Kimi models have thinking mode enabled by default which requires
+   * reasoning_content in multi-turn conversations with tools
+   */
+  private needsThinkingDisabled(model: string): boolean {
+    return MODELS_WITH_THINKING_MODE.some(
+      (m) => model.toLowerCase().includes(m.toLowerCase())
+    );
+  }
+
+  /**
+   * Get extra body parameters for API calls
+   * Used to disable thinking mode for Kimi models
+   * See: https://huggingface.co/moonshotai/Kimi-K2.5
+   *
+   * For Official Moonshot API: {'thinking': {'type': 'disabled'}}
+   * For vLLM/SGLang: {'chat_template_kwargs': {"thinking": False}}
+   */
+  private getExtraBody(model: string): Record<string, unknown> | undefined {
+    if (this.needsThinkingDisabled(model)) {
+      // For official Moonshot API, use thinking.type = disabled
+      // This enables "Instant mode" which doesn't require reasoning_content
+      return {
+        thinking: { type: "disabled" },
+      };
+    }
+    return undefined;
+  }
+
+  /**
    * Send a chat message
    */
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
@@ -88,12 +165,15 @@ export class OpenAIProvider implements LLMProvider {
     return withRetry(
       async () => {
         try {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const supportsTemp = this.supportsTemperature(model);
+
           const response = await this.client!.chat.completions.create({
-            model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
+            model,
             max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-            temperature: options?.temperature ?? this.config.temperature ?? 0,
             messages: this.convertMessages(messages, options?.system),
             stop: options?.stopSequences,
+            ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
           });
 
           const choice = response.choices[0];
@@ -128,14 +208,31 @@ export class OpenAIProvider implements LLMProvider {
     return withRetry(
       async () => {
         try {
-          const response = await this.client!.chat.completions.create({
-            model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const supportsTemp = this.supportsTemperature(model);
+          const extraBody = this.getExtraBody(model);
+
+          // Build request params
+          const requestParams: Record<string, unknown> = {
+            model,
             max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-            temperature: options?.temperature ?? this.config.temperature ?? 0,
             messages: this.convertMessages(messages, options?.system),
             tools: this.convertTools(options.tools),
             tool_choice: this.convertToolChoice(options.toolChoice),
-          });
+          };
+
+          if (supportsTemp) {
+            requestParams.temperature = options?.temperature ?? this.config.temperature ?? 0;
+          }
+
+          // For Kimi models, add chat_template_kwargs directly to disable thinking
+          if (extraBody) {
+            Object.assign(requestParams, extraBody);
+          }
+
+          const response = await this.client!.chat.completions.create(
+            requestParams as unknown as OpenAI.ChatCompletionCreateParamsNonStreaming
+          );
 
           const choice = response.choices[0];
           const toolCalls = this.extractToolCalls(choice?.message?.tool_calls);
@@ -169,12 +266,15 @@ export class OpenAIProvider implements LLMProvider {
     this.ensureInitialized();
 
     try {
+      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+      const supportsTemp = this.supportsTemperature(model);
+
       const stream = await this.client!.chat.completions.create({
-        model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
+        model,
         max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-        temperature: options?.temperature ?? this.config.temperature ?? 0,
         messages: this.convertMessages(messages, options?.system),
         stream: true,
+        ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
       });
 
       for await (const chunk of stream) {
@@ -182,6 +282,131 @@ export class OpenAIProvider implements LLMProvider {
         if (delta?.content) {
           yield { type: "text", text: delta.content };
         }
+      }
+
+      yield { type: "done" };
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Stream a chat response with tool use
+   */
+  async *streamWithTools(
+    messages: Message[],
+    options: ChatWithToolsOptions
+  ): AsyncIterable<StreamChunk> {
+    this.ensureInitialized();
+
+    try {
+      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+      const supportsTemp = this.supportsTemperature(model);
+      const extraBody = this.getExtraBody(model);
+
+      // Build request params
+      const requestParams: Record<string, unknown> = {
+        model,
+        max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+        messages: this.convertMessages(messages, options?.system),
+        tools: this.convertTools(options.tools),
+        tool_choice: this.convertToolChoice(options.toolChoice),
+        stream: true,
+      };
+
+      if (supportsTemp) {
+        requestParams.temperature = options?.temperature ?? this.config.temperature ?? 0;
+      }
+
+      // For Kimi models, add chat_template_kwargs directly to disable thinking
+      if (extraBody) {
+        Object.assign(requestParams, extraBody);
+      }
+
+      const stream = await this.client!.chat.completions.create(
+        requestParams as unknown as OpenAI.ChatCompletionCreateParamsStreaming
+      );
+
+      // Track tool calls being built (OpenAI can stream multiple tool calls)
+      const toolCallBuilders: Map<
+        number,
+        { id: string; name: string; arguments: string }
+      > = new Map();
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta;
+
+        // Handle text content
+        if (delta?.content) {
+          yield { type: "text", text: delta.content };
+        }
+
+        // Handle tool calls
+        if (delta?.tool_calls) {
+          for (const toolCallDelta of delta.tool_calls) {
+            const index = toolCallDelta.index;
+
+            if (!toolCallBuilders.has(index)) {
+              // New tool call starting
+              toolCallBuilders.set(index, {
+                id: toolCallDelta.id ?? "",
+                name: toolCallDelta.function?.name ?? "",
+                arguments: "",
+              });
+              yield {
+                type: "tool_use_start",
+                toolCall: {
+                  id: toolCallDelta.id,
+                  name: toolCallDelta.function?.name,
+                },
+              };
+            }
+
+            const builder = toolCallBuilders.get(index)!;
+
+            // Update id if provided
+            if (toolCallDelta.id) {
+              builder.id = toolCallDelta.id;
+            }
+
+            // Update name if provided
+            if (toolCallDelta.function?.name) {
+              builder.name = toolCallDelta.function.name;
+            }
+
+            // Accumulate arguments
+            if (toolCallDelta.function?.arguments) {
+              builder.arguments += toolCallDelta.function.arguments;
+              yield {
+                type: "tool_use_delta",
+                toolCall: {
+                  id: builder.id,
+                  name: builder.name,
+                },
+                text: toolCallDelta.function.arguments,
+              };
+            }
+          }
+        }
+      }
+
+      // Finalize all tool calls
+      for (const [, builder] of toolCallBuilders) {
+        let input: Record<string, unknown> = {};
+        try {
+          input = builder.arguments ? JSON.parse(builder.arguments) : {};
+        } catch {
+          // Invalid JSON, use empty object
+        }
+
+        yield {
+          type: "tool_use_end",
+          toolCall: {
+            id: builder.id,
+            name: builder.name,
+            input,
+          },
+        };
       }
 
       yield { type: "done" };
@@ -251,10 +476,26 @@ export class OpenAIProvider implements LLMProvider {
     if (!this.client) return false;
 
     try {
+      // Try to list models first (standard OpenAI)
       await this.client.models.list();
       return true;
     } catch {
-      return false;
+      // Fallback: try a simple chat completion
+      // This works better for OpenAI-compatible APIs like Kimi
+      try {
+        const model = this.config.model || DEFAULT_MODEL;
+        await this.client.chat.completions.create({
+          model,
+          messages: [{ role: "user", content: "Hi" }],
+          max_tokens: 1,
+        });
+        return true;
+      } catch (chatError) {
+        // If we get a 401/403, the key is invalid
+        // If we get a 404, the model might not exist
+        // If we get other errors, provider might be down
+        return false;
+      }
     }
   }
 
@@ -462,14 +703,19 @@ export function createOpenAIProvider(config?: ProviderConfig): OpenAIProvider {
 
 /**
  * Create a Kimi/Moonshot provider (OpenAI-compatible)
+ *
+ * Note: Moonshot has two API endpoints:
+ * - Global: https://api.moonshot.ai/v1 (default)
+ * - China: https://api.moonshot.cn/v1
+ * Use KIMI_BASE_URL env var to override if needed
  */
 export function createKimiProvider(config?: ProviderConfig): OpenAIProvider {
   const provider = new OpenAIProvider("kimi", "Kimi (Moonshot)");
   const kimiConfig: ProviderConfig = {
     ...config,
-    baseUrl: config?.baseUrl ?? "https://api.moonshot.cn/v1",
+    baseUrl: config?.baseUrl ?? process.env["KIMI_BASE_URL"] ?? "https://api.moonshot.ai/v1",
     apiKey: config?.apiKey ?? process.env["KIMI_API_KEY"] ?? process.env["MOONSHOT_API_KEY"],
-    model: config?.model ?? "moonshot-v1-8k",
+    model: config?.model ?? "kimi-k2.5",
   };
   if (kimiConfig.apiKey) {
     provider.initialize(kimiConfig).catch(() => {});

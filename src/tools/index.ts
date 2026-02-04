@@ -22,6 +22,9 @@ export {
   fileExistsTool,
   listDirTool,
   deleteFileTool,
+  copyFileTool,
+  moveFileTool,
+  treeTool,
   fileTools,
 } from "./file.js";
 

@@ -584,6 +584,218 @@ Examples:
 });
 
 /**
+ * Copy file tool
+ */
+export const copyFileTool: ToolDefinition<
+  { source: string; destination: string; overwrite?: boolean },
+  { source: string; destination: string; size: number }
+> = defineTool({
+  name: "copy_file",
+  description: `Copy a file or directory to a new location.
+
+Examples:
+- Copy file: { "source": "config.json", "destination": "config.backup.json" }
+- Copy to dir: { "source": "src/utils.ts", "destination": "backup/utils.ts" }
+- Overwrite: { "source": "new.txt", "destination": "old.txt", "overwrite": true }`,
+  category: "file",
+  parameters: z.object({
+    source: z.string().describe("Source file path"),
+    destination: z.string().describe("Destination file path"),
+    overwrite: z.boolean().optional().default(false).describe("Overwrite if destination exists"),
+  }),
+  async execute({ source, destination, overwrite }) {
+    validatePath(source, "read");
+    validatePath(destination, "write");
+    try {
+      const srcPath = path.resolve(source);
+      const destPath = path.resolve(destination);
+
+      // Check if destination exists
+      if (!overwrite) {
+        try {
+          await fs.access(destPath);
+          throw new ToolError(`Destination already exists: ${destination}. Use overwrite: true to replace.`, {
+            tool: "copy_file",
+          });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw error;
+          }
+        }
+      }
+
+      // Create destination directory if needed
+      await fs.mkdir(path.dirname(destPath), { recursive: true });
+
+      // Copy file
+      await fs.copyFile(srcPath, destPath);
+      const stats = await fs.stat(destPath);
+
+      return {
+        source: srcPath,
+        destination: destPath,
+        size: stats.size,
+      };
+    } catch (error) {
+      if (error instanceof ToolError) throw error;
+      throw new FileSystemError(`Failed to copy file: ${source} -> ${destination}`, {
+        path: source,
+        operation: "read",
+        cause: error instanceof Error ? error : undefined,
+      });
+    }
+  },
+});
+
+/**
+ * Move/rename file tool
+ */
+export const moveFileTool: ToolDefinition<
+  { source: string; destination: string; overwrite?: boolean },
+  { source: string; destination: string }
+> = defineTool({
+  name: "move_file",
+  description: `Move or rename a file or directory.
+
+Examples:
+- Rename: { "source": "old.ts", "destination": "new.ts" }
+- Move to dir: { "source": "src/utils.ts", "destination": "lib/utils.ts" }
+- Overwrite: { "source": "new.txt", "destination": "old.txt", "overwrite": true }`,
+  category: "file",
+  parameters: z.object({
+    source: z.string().describe("Source file path"),
+    destination: z.string().describe("Destination file path"),
+    overwrite: z.boolean().optional().default(false).describe("Overwrite if destination exists"),
+  }),
+  async execute({ source, destination, overwrite }) {
+    validatePath(source, "delete");
+    validatePath(destination, "write");
+    try {
+      const srcPath = path.resolve(source);
+      const destPath = path.resolve(destination);
+
+      // Check if destination exists
+      if (!overwrite) {
+        try {
+          await fs.access(destPath);
+          throw new ToolError(`Destination already exists: ${destination}. Use overwrite: true to replace.`, {
+            tool: "move_file",
+          });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw error;
+          }
+        }
+      }
+
+      // Create destination directory if needed
+      await fs.mkdir(path.dirname(destPath), { recursive: true });
+
+      // Move file
+      await fs.rename(srcPath, destPath);
+
+      return {
+        source: srcPath,
+        destination: destPath,
+      };
+    } catch (error) {
+      if (error instanceof ToolError) throw error;
+      throw new FileSystemError(`Failed to move file: ${source} -> ${destination}`, {
+        path: source,
+        operation: "write",
+        cause: error instanceof Error ? error : undefined,
+      });
+    }
+  },
+});
+
+/**
+ * Tree tool - visualize directory structure
+ */
+export const treeTool: ToolDefinition<
+  { path?: string; depth?: number; showHidden?: boolean; dirsOnly?: boolean },
+  { tree: string; totalFiles: number; totalDirs: number }
+> = defineTool({
+  name: "tree",
+  description: `Display directory structure as a tree.
+
+Examples:
+- Current dir: { }
+- Specific dir: { "path": "src" }
+- Limited depth: { "path": ".", "depth": 2 }
+- Directories only: { "path": ".", "dirsOnly": true }
+- Show hidden: { "path": ".", "showHidden": true }`,
+  category: "file",
+  parameters: z.object({
+    path: z.string().optional().default(".").describe("Directory path (default: current)"),
+    depth: z.number().optional().default(4).describe("Maximum depth (default: 4)"),
+    showHidden: z.boolean().optional().default(false).describe("Show hidden files"),
+    dirsOnly: z.boolean().optional().default(false).describe("Show only directories"),
+  }),
+  async execute({ path: dirPath, depth, showHidden, dirsOnly }) {
+    try {
+      const absolutePath = path.resolve(dirPath ?? ".");
+      let totalFiles = 0;
+      let totalDirs = 0;
+      const lines: string[] = [path.basename(absolutePath) + "/"];
+
+      async function buildTree(dir: string, prefix: string, currentDepth: number) {
+        if (currentDepth > (depth ?? 4)) return;
+
+        let items = await fs.readdir(dir, { withFileTypes: true });
+
+        // Filter hidden files
+        if (!showHidden) {
+          items = items.filter((item) => !item.name.startsWith("."));
+        }
+
+        // Filter to directories only if requested
+        if (dirsOnly) {
+          items = items.filter((item) => item.isDirectory());
+        }
+
+        // Sort: directories first, then alphabetically
+        items.sort((a, b) => {
+          if (a.isDirectory() && !b.isDirectory()) return -1;
+          if (!a.isDirectory() && b.isDirectory()) return 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i]!;
+          const isLast = i === items.length - 1;
+          const connector = isLast ? "└── " : "├── ";
+          const childPrefix = isLast ? "    " : "│   ";
+
+          if (item.isDirectory()) {
+            totalDirs++;
+            lines.push(`${prefix}${connector}${item.name}/`);
+            await buildTree(path.join(dir, item.name), prefix + childPrefix, currentDepth + 1);
+          } else {
+            totalFiles++;
+            lines.push(`${prefix}${connector}${item.name}`);
+          }
+        }
+      }
+
+      await buildTree(absolutePath, "", 1);
+
+      return {
+        tree: lines.join("\n"),
+        totalFiles,
+        totalDirs,
+      };
+    } catch (error) {
+      throw new FileSystemError(`Failed to generate tree: ${dirPath}`, {
+        path: dirPath ?? ".",
+        operation: "read",
+        cause: error instanceof Error ? error : undefined,
+      });
+    }
+  },
+});
+
+/**
  * All file tools
  */
 export const fileTools = [
@@ -594,6 +806,9 @@ export const fileTools = [
   fileExistsTool,
   listDirTool,
   deleteFileTool,
+  copyFileTool,
+  moveFileTool,
+  treeTool,
 ];
 
 /**

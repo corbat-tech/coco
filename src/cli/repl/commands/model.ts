@@ -1,35 +1,119 @@
 /**
  * /model command - Change or view current model
+ * Interactive selection with arrow keys
  */
 
 import chalk from "chalk";
+import ansiEscapes from "ansi-escapes";
 import type { SlashCommand, ReplSession } from "../types.js";
+import { getProviderDefinition, getAllProviders } from "../providers-config.js";
+import type { ProviderType } from "../../../providers/index.js";
 
-const MODELS_BY_PROVIDER: Record<string, Array<{ id: string; name: string; desc: string }>> = {
-  anthropic: [
-    { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", desc: "Fast & capable (default)" },
-    { id: "claude-opus-4-20250514", name: "Claude Opus 4", desc: "Most capable" },
-    { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", desc: "Previous gen" },
-    { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", desc: "Fastest" },
-  ],
-  openai: [
-    { id: "gpt-4o", name: "GPT-4o", desc: "Most capable (default)" },
-    { id: "gpt-4o-mini", name: "GPT-4o Mini", desc: "Fast & cheap" },
-    { id: "gpt-4-turbo", name: "GPT-4 Turbo", desc: "Previous gen" },
-    { id: "o1", name: "o1", desc: "Reasoning model" },
-    { id: "o1-mini", name: "o1 Mini", desc: "Fast reasoning" },
-  ],
-  gemini: [
-    { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", desc: "Fast & capable (default)" },
-    { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", desc: "Previous gen fast" },
-    { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", desc: "Most capable" },
-  ],
-  kimi: [
-    { id: "moonshot-v1-8k", name: "Moonshot v1 8K", desc: "Fast (default)" },
-    { id: "moonshot-v1-32k", name: "Moonshot v1 32K", desc: "Medium context" },
-    { id: "moonshot-v1-128k", name: "Moonshot v1 128K", desc: "Large context" },
-  ],
-};
+/**
+ * Interactive model selector using arrow keys
+ */
+async function selectModelInteractively(
+  models: Array<{ id: string; name?: string; recommended?: boolean; contextWindow?: number }>,
+  currentModelId: string
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    let selectedIndex = models.findIndex((m) => m.id === currentModelId);
+    if (selectedIndex === -1) selectedIndex = 0;
+
+    const renderMenu = () => {
+      // Clear previous render and redraw
+      process.stdout.write(ansiEscapes.eraseDown);
+
+      for (let i = 0; i < models.length; i++) {
+        const model = models[i]!;
+        const isCurrent = model.id === currentModelId;
+        const isSelected = i === selectedIndex;
+
+        let line = "";
+
+        if (isSelected) {
+          line += chalk.bgBlue.white(" ▶ ");
+          line += chalk.bgBlue.white(model.id.padEnd(40));
+        } else {
+          const marker = isCurrent ? chalk.green(" ● ") : chalk.dim(" ○ ");
+          line += marker;
+          line += isCurrent ? chalk.green(model.id.padEnd(40)) : model.id.padEnd(40);
+        }
+
+        const star = model.recommended ? chalk.magenta(" ⭐") : "";
+        const ctx = model.contextWindow ? chalk.dim(` ${Math.round(model.contextWindow / 1000)}K`) : "";
+        line += star + ctx;
+
+        console.log(line);
+      }
+
+      console.log(chalk.dim("\n↑/↓ navigate • Enter select • Esc cancel"));
+
+      // Move cursor back up to top of menu
+      process.stdout.write(ansiEscapes.cursorUp(models.length + 2));
+    };
+
+    const cleanup = () => {
+      process.stdin.removeListener("data", onKeyPress);
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      // Clear the menu
+      process.stdout.write(ansiEscapes.eraseDown);
+    };
+
+    const onKeyPress = (data: Buffer) => {
+      const key = data.toString();
+
+      // Escape - cancel
+      if (key === "\x1b" && data.length === 1) {
+        cleanup();
+        resolve(null);
+        return;
+      }
+
+      // Ctrl+C - cancel
+      if (key === "\x03") {
+        cleanup();
+        resolve(null);
+        return;
+      }
+
+      // Enter - select
+      if (key === "\r" || key === "\n") {
+        cleanup();
+        resolve(models[selectedIndex]!.id);
+        return;
+      }
+
+      // Up arrow
+      if (key === "\x1b[A") {
+        selectedIndex = (selectedIndex - 1 + models.length) % models.length;
+        process.stdout.write(ansiEscapes.eraseDown);
+        renderMenu();
+        return;
+      }
+
+      // Down arrow
+      if (key === "\x1b[B") {
+        selectedIndex = (selectedIndex + 1) % models.length;
+        process.stdout.write(ansiEscapes.eraseDown);
+        renderMenu();
+        return;
+      }
+    };
+
+    // Enable raw mode
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    process.stdin.resume();
+    process.stdin.on("data", onKeyPress);
+
+    // Initial render
+    renderMenu();
+  });
+}
 
 export const modelCommand: SlashCommand = {
   name: "model",
@@ -38,58 +122,78 @@ export const modelCommand: SlashCommand = {
   usage: "/model [model-name]",
 
   async execute(args: string[], session: ReplSession): Promise<boolean> {
-    const currentProvider = session.config.provider.type;
+    const currentProvider = session.config.provider.type as ProviderType;
+    const providerDef = getProviderDefinition(currentProvider);
 
     if (args.length === 0) {
-      // Show current model and available options
-      console.log(chalk.cyan("\nCurrent provider: ") + chalk.bold(currentProvider));
-      console.log(chalk.cyan("Current model: ") + chalk.bold(session.config.provider.model));
+      // Interactive model selection
+      console.log(chalk.cyan("\n═══ Model Selection ═══"));
+      console.log(chalk.dim(`Provider: ${providerDef.emoji} ${providerDef.name}`));
+      console.log(chalk.dim(`Current: ${session.config.provider.model}\n`));
 
-      const models = MODELS_BY_PROVIDER[currentProvider] ?? [];
-      if (models.length > 0) {
-        console.log(chalk.dim(`\nAvailable models for ${currentProvider}:`));
-
-        for (const model of models) {
-          const isCurrent = model.id === session.config.provider.model;
-          const prefix = isCurrent ? chalk.green("● ") : "  ";
-          console.log(`${prefix}${chalk.yellow(model.id)}`);
-          console.log(`    ${chalk.dim(model.name)} - ${model.desc}`);
-        }
+      if (providerDef.models.length === 0) {
+        console.log(chalk.dim("No predefined models. Use: /model <model-name>\n"));
+        return false;
       }
 
-      console.log(chalk.dim("\nUsage: /model <model-id>"));
-      console.log(chalk.dim("To change provider, restart with: coco --provider <name>\n"));
+      const selectedModel = await selectModelInteractively(
+        providerDef.models,
+        session.config.provider.model
+      );
+
+      if (!selectedModel) {
+        console.log(chalk.dim("Cancelled\n"));
+        return false;
+      }
+
+      if (selectedModel === session.config.provider.model) {
+        console.log(chalk.dim(`Already using ${selectedModel}\n`));
+        return false;
+      }
+
+      session.config.provider.model = selectedModel;
+      const modelInfo = providerDef.models.find((m) => m.id === selectedModel);
+      console.log(chalk.green(`✓ Switched to ${modelInfo?.name ?? selectedModel}\n`));
+
       return false;
     }
 
-    const newModel = args[0];
+    // Direct model specification via argument
+    const newModel = args[0]!;
+
+    // Check if already using this model
+    if (newModel === session.config.provider.model) {
+      console.log(chalk.dim(`Already using ${newModel}\n`));
+      return false;
+    }
 
     // Find model in current provider or any provider
     let foundInProvider: string | null = null;
-    for (const [provider, models] of Object.entries(MODELS_BY_PROVIDER)) {
-      if (models.some((m) => m.id === newModel)) {
-        foundInProvider = provider;
+    for (const provider of getAllProviders()) {
+      if (provider.models.some((m) => m.id === newModel)) {
+        foundInProvider = provider.id;
         break;
       }
     }
 
-    if (!foundInProvider || !newModel) {
+    if (!foundInProvider) {
       // Allow custom model names (for fine-tunes, etc.)
       console.log(chalk.yellow(`Model "${newModel}" not in known list, setting anyway...`));
-      session.config.provider.model = newModel ?? session.config.provider.model;
+      session.config.provider.model = newModel;
       console.log(chalk.green(`✓ Model set to: ${newModel}\n`));
       return false;
     }
 
     if (foundInProvider !== currentProvider) {
-      console.log(chalk.yellow(`Note: "${newModel}" is a ${foundInProvider} model.`));
-      console.log(chalk.yellow(`Current provider is ${currentProvider}.`));
-      console.log(chalk.dim(`Restart with: coco --provider ${foundInProvider}\n`));
+      const otherProvider = getProviderDefinition(foundInProvider as ProviderType);
+      console.log(chalk.yellow(`\n⚠ "${newModel}" is a ${otherProvider.name} model.`));
+      console.log(chalk.dim(`Current provider is ${providerDef.name}.`));
+      console.log(chalk.dim(`Use /provider ${foundInProvider} first.\n`));
       return false;
     }
 
-    session.config.provider.model = newModel as string;
-    const modelInfo = MODELS_BY_PROVIDER[currentProvider]?.find((m) => m.id === newModel);
+    session.config.provider.model = newModel;
+    const modelInfo = providerDef.models.find((m) => m.id === newModel);
     console.log(chalk.green(`✓ Switched to ${modelInfo?.name ?? newModel}\n`));
 
     return false;

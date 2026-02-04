@@ -38,6 +38,10 @@ export {
   renderInfo,
   /** Display formatted success message */
   renderSuccess,
+  /** Flush remaining line buffer */
+  flushLineBuffer,
+  /** Reset line buffer for new session */
+  resetLineBuffer,
 } from "./renderer.js";
 
 export { createSpinner, type Spinner } from "./spinner.js";

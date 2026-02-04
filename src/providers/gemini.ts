@@ -174,6 +174,96 @@ export class GeminiProvider implements LLMProvider {
   }
 
   /**
+   * Stream a chat response with tool use
+   */
+  async *streamWithTools(
+    messages: Message[],
+    options: ChatWithToolsOptions
+  ): AsyncIterable<StreamChunk> {
+    this.ensureInitialized();
+
+    try {
+      const tools: Tool[] = [
+        {
+          functionDeclarations: this.convertTools(options.tools),
+        },
+      ];
+
+      const model = this.client!.getGenerativeModel({
+        model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
+        generationConfig: {
+          maxOutputTokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+          temperature: options?.temperature ?? this.config.temperature ?? 0,
+        },
+        systemInstruction: options?.system,
+        tools,
+        toolConfig: {
+          functionCallingConfig: {
+            mode: this.convertToolChoice(options.toolChoice),
+          },
+        },
+      });
+
+      const { history, lastMessage } = this.convertMessages(messages);
+
+      const chat = model.startChat({ history });
+      const result = await chat.sendMessageStream(lastMessage);
+
+      // Track emitted tool calls to avoid duplicates
+      const emittedToolCalls = new Set<string>();
+
+      for await (const chunk of result.stream) {
+        // Handle text content
+        const text = chunk.text();
+        if (text) {
+          yield { type: "text", text };
+        }
+
+        // Handle function calls in the chunk
+        const candidate = chunk.candidates?.[0];
+        if (candidate?.content?.parts) {
+          for (const part of candidate.content.parts) {
+            if ("functionCall" in part && part.functionCall) {
+              const funcCall = part.functionCall;
+              const callKey = `${funcCall.name}-${JSON.stringify(funcCall.args)}`;
+
+              // Only emit if we haven't seen this exact call before
+              if (!emittedToolCalls.has(callKey)) {
+                emittedToolCalls.add(callKey);
+
+                // For Gemini, function calls come complete in a single chunk
+                // We emit start, then immediately end with the full data
+                const toolCall: ToolCall = {
+                  id: funcCall.name, // Gemini uses name as ID
+                  name: funcCall.name,
+                  input: (funcCall.args ?? {}) as Record<string, unknown>,
+                };
+
+                yield {
+                  type: "tool_use_start",
+                  toolCall: {
+                    id: toolCall.id,
+                    name: toolCall.name,
+                  },
+                };
+
+                yield {
+                  type: "tool_use_end",
+                  toolCall,
+                };
+              }
+            }
+          }
+        }
+      }
+
+      yield { type: "done" };
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
    * Count tokens (approximate)
    */
   countTokens(text: string): number {
@@ -196,7 +286,9 @@ export class GeminiProvider implements LLMProvider {
     if (!this.client) return false;
 
     try {
-      const model = this.client.getGenerativeModel({ model: DEFAULT_MODEL });
+      // Use configured model or fallback to default
+      const modelName = this.config.model ?? DEFAULT_MODEL;
+      const model = this.client.getGenerativeModel({ model: modelName });
       await model.generateContent("hi");
       return true;
     } catch {

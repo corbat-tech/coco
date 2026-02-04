@@ -12,7 +12,9 @@ import { registerBuildCommand } from "./commands/build.js";
 import { registerStatusCommand } from "./commands/status.js";
 import { registerResumeCommand } from "./commands/resume.js";
 import { registerConfigCommand } from "./commands/config.js";
+import { registerMCPCommand } from "./commands/mcp.js";
 import { startRepl } from "./repl/index.js";
+import { runOnboardingV2 } from "./repl/onboarding-v2.js";
 import { getDefaultProvider } from "../config/env.js";
 import type { ProviderType } from "../providers/index.js";
 
@@ -30,6 +32,20 @@ registerBuildCommand(program);
 registerStatusCommand(program);
 registerResumeCommand(program);
 registerConfigCommand(program);
+registerMCPCommand(program);
+
+// Setup command - configure provider
+program
+  .command("setup")
+  .description("Configure AI provider and API key")
+  .action(async () => {
+    const result = await runOnboardingV2();
+    if (result) {
+      console.log("\n✅ Configuration saved! Run `coco` to start coding.");
+    } else {
+      console.log("\n❌ Setup cancelled.");
+    }
+  });
 
 // Chat command (interactive REPL) - default when no command specified
 program
@@ -38,7 +54,17 @@ program
   .option("-m, --model <model>", "LLM model to use")
   .option("--provider <provider>", "LLM provider (anthropic, openai, gemini, kimi)")
   .option("-p, --path <path>", "Project path", process.cwd())
-  .action(async (options: { model?: string; provider?: string; path: string }) => {
+  .option("--setup", "Run setup wizard before starting")
+  .action(async (options: { model?: string; provider?: string; path: string; setup?: boolean }) => {
+    // Run setup if requested
+    if (options.setup) {
+      const result = await runOnboardingV2();
+      if (!result) {
+        console.log("\n❌ Setup cancelled.");
+        return;
+      }
+    }
+    
     const providerType = (options.provider as ProviderType) ?? getDefaultProvider();
     await startRepl({
       projectPath: options.path,

@@ -1,11 +1,40 @@
 /**
  * Output renderer for REPL
  * Handles streaming, markdown, and tool output formatting
+ *
+ * Uses line-buffered output for streaming - accumulates text until
+ * a newline is received, then flushes the complete line.
+ * This prevents partial/corrupted output with spinners.
+ *
+ * Following patterns from Aider/Continue: batch output, not char-by-char.
  */
 
 import chalk from "chalk";
 import type { StreamChunk } from "../../../providers/types.js";
 import type { ExecutedToolCall } from "../types.js";
+
+/**
+ * Line buffer for streaming output
+ * Accumulates text until newline, then flushes complete lines
+ */
+let lineBuffer = "";
+
+/**
+ * Flush any remaining content in the line buffer
+ */
+export function flushLineBuffer(): void {
+  if (lineBuffer) {
+    process.stdout.write(lineBuffer);
+    lineBuffer = "";
+  }
+}
+
+/**
+ * Reset the line buffer (for new sessions)
+ */
+export function resetLineBuffer(): void {
+  lineBuffer = "";
+}
 
 /**
  * Tool icons for visual distinction
@@ -44,11 +73,27 @@ function getToolIcon(toolName: string, input?: Record<string, unknown>): string 
 }
 
 /**
- * Render streaming text chunk
+ * Render streaming text chunk with line buffering
+ * Accumulates text until newline, then outputs complete lines
+ * This prevents partial output corruption with spinners
  */
 export function renderStreamChunk(chunk: StreamChunk): void {
   if (chunk.type === "text" && chunk.text) {
-    process.stdout.write(chunk.text);
+    // Add to buffer
+    lineBuffer += chunk.text;
+
+    // Check for complete lines
+    const lastNewline = lineBuffer.lastIndexOf("\n");
+    if (lastNewline !== -1) {
+      // Output complete lines
+      const completeLines = lineBuffer.slice(0, lastNewline + 1);
+      process.stdout.write(completeLines);
+      // Keep incomplete line in buffer
+      lineBuffer = lineBuffer.slice(lastNewline + 1);
+    }
+  } else if (chunk.type === "done") {
+    // Flush remaining buffer when stream ends
+    flushLineBuffer();
   }
 }
 
@@ -329,4 +374,16 @@ function highlightLine(line: string, keywords: Set<string>): string {
         return match;
       })
   );
+}
+
+// Legacy exports for backward compatibility (used in tests)
+export function resetTypewriter(): void {
+  // No-op - typewriter removed
+}
+
+export function getTypewriter(): { flush: () => void; waitForComplete: () => Promise<void> } {
+  return {
+    flush: () => {},
+    waitForComplete: () => Promise.resolve(),
+  };
 }

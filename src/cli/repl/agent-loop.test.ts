@@ -8,7 +8,60 @@ import type {
   LLMProvider,
   ChatWithToolsResponse,
   Message,
+  StreamChunk,
+  ToolCall,
 } from "../../providers/types.js";
+
+/**
+ * Create async iterable from generator
+ */
+function toAsyncIterable<T>(gen: Generator<T>): AsyncIterable<T> {
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        async next() {
+          const result = gen.next();
+          return result;
+        },
+      };
+    },
+  };
+}
+
+/**
+ * Create a streaming mock for a simple text response (no tools)
+ */
+function createTextStreamMock(content: string): () => AsyncIterable<StreamChunk> {
+  return () => toAsyncIterable(
+    (function* (): Generator<StreamChunk> {
+      if (content) {
+        yield { type: "text", text: content };
+      }
+      yield { type: "done" };
+    })()
+  );
+}
+
+/**
+ * Create a streaming mock that includes tool calls
+ */
+function createToolStreamMock(
+  content: string,
+  toolCalls: ToolCall[]
+): () => AsyncIterable<StreamChunk> {
+  return () => toAsyncIterable(
+    (function* (): Generator<StreamChunk> {
+      if (content) {
+        yield { type: "text", text: content };
+      }
+      for (const tc of toolCalls) {
+        yield { type: "tool_use_start", toolCall: { id: tc.id, name: tc.name } };
+        yield { type: "tool_use_end", toolCall: tc };
+      }
+      yield { type: "done" };
+    })()
+  );
+}
 import type { ToolRegistry, ToolResult } from "../../tools/registry.js";
 import type { ReplSession, ExecutedToolCall } from "./types.js";
 
@@ -51,6 +104,7 @@ describe("executeAgentTurn", () => {
       chat: vi.fn(),
       chatWithTools: vi.fn(),
       stream: vi.fn(),
+      streamWithTools: vi.fn().mockImplementation(createTextStreamMock("Mock response")),
       countTokens: vi.fn(() => 10),
       getContextWindow: vi.fn(() => 100000),
       isAvailable: vi.fn().mockResolvedValue(true),
@@ -115,16 +169,9 @@ describe("executeAgentTurn", () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
     const { addMessage } = await import("./session.js");
 
-    const mockResponse: ChatWithToolsResponse = {
-      id: "msg-1",
-      content: "Hello! How can I help you?",
-      stopReason: "end_turn",
-      usage: { inputTokens: 100, outputTokens: 50 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [],
-    };
-
-    (mockProvider.chatWithTools as Mock).mockResolvedValue(mockResponse);
+    (mockProvider.streamWithTools as Mock).mockImplementation(
+      createTextStreamMock("Hello! How can I help you?")
+    );
 
     const result = await executeAgentTurn(
       mockSession,
@@ -135,8 +182,9 @@ describe("executeAgentTurn", () => {
 
     expect(result.content).toBe("Hello! How can I help you?");
     expect(result.toolCalls).toEqual([]);
-    expect(result.usage.inputTokens).toBe(100);
-    expect(result.usage.outputTokens).toBe(50);
+    // Token usage is now estimated, so just check they're > 0
+    expect(result.usage.inputTokens).toBeGreaterThan(0);
+    expect(result.usage.outputTokens).toBeGreaterThan(0);
     expect(result.aborted).toBe(false);
     expect(addMessage).toHaveBeenCalledTimes(2); // user message + assistant response
   });
@@ -145,31 +193,16 @@ describe("executeAgentTurn", () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
     const { addMessage } = await import("./session.js");
 
-    // First response with tool call
-    const firstResponse: ChatWithToolsResponse = {
-      id: "msg-1",
-      content: "Let me read that file for you.",
-      stopReason: "tool_use",
-      usage: { inputTokens: 100, outputTokens: 50 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [
-        { id: "tool-1", name: "read_file", input: { path: "/test/file.ts" } },
-      ],
-    };
+    const toolCall: ToolCall = { id: "tool-1", name: "read_file", input: { path: "/test/file.ts" } };
 
-    // Second response after tool result
-    const secondResponse: ChatWithToolsResponse = {
-      id: "msg-2",
-      content: "The file contains your code.",
-      stopReason: "end_turn",
-      usage: { inputTokens: 150, outputTokens: 75 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [],
-    };
-
-    (mockProvider.chatWithTools as Mock)
-      .mockResolvedValueOnce(firstResponse)
-      .mockResolvedValueOnce(secondResponse);
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("Let me read that file for you.", [toolCall])();
+      }
+      return createTextStreamMock("The file contains your code.")();
+    });
 
     const toolResult: ToolResult = {
       success: true,
@@ -189,38 +222,26 @@ describe("executeAgentTurn", () => {
     expect(result.toolCalls.length).toBe(1);
     expect(result.toolCalls[0]?.name).toBe("read_file");
     expect(result.toolCalls[0]?.result.success).toBe(true);
-    expect(result.usage.inputTokens).toBe(250); // 100 + 150
-    expect(result.usage.outputTokens).toBe(125); // 50 + 75
-    expect(mockToolRegistry.execute).toHaveBeenCalledWith("read_file", { path: "/test/file.ts" });
+    // Token usage is estimated now
+    expect(result.usage.inputTokens).toBeGreaterThan(0);
+    expect(result.usage.outputTokens).toBeGreaterThan(0);
+    expect(mockToolRegistry.execute).toHaveBeenCalledWith("read_file", { path: "/test/file.ts" }, expect.anything());
     expect(addMessage).toHaveBeenCalled();
   });
 
   it("should handle tool execution errors", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
-    const firstResponse: ChatWithToolsResponse = {
-      id: "msg-1",
-      content: "",
-      stopReason: "tool_use",
-      usage: { inputTokens: 100, outputTokens: 50 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [
-        { id: "tool-1", name: "read_file", input: { path: "/nonexistent" } },
-      ],
-    };
+    const toolCall: ToolCall = { id: "tool-1", name: "read_file", input: { path: "/nonexistent" } };
 
-    const secondResponse: ChatWithToolsResponse = {
-      id: "msg-2",
-      content: "The file does not exist.",
-      stopReason: "end_turn",
-      usage: { inputTokens: 150, outputTokens: 75 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [],
-    };
-
-    (mockProvider.chatWithTools as Mock)
-      .mockResolvedValueOnce(firstResponse)
-      .mockResolvedValueOnce(secondResponse);
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("", [toolCall])();
+      }
+      return createTextStreamMock("The file does not exist.")();
+    });
 
     const toolResult: ToolResult = {
       success: false,
@@ -244,16 +265,9 @@ describe("executeAgentTurn", () => {
   it("should call onStream callback when content is received", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
-    const mockResponse: ChatWithToolsResponse = {
-      id: "msg-1",
-      content: "Hello!",
-      stopReason: "end_turn",
-      usage: { inputTokens: 100, outputTokens: 50 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [],
-    };
-
-    (mockProvider.chatWithTools as Mock).mockResolvedValue(mockResponse);
+    (mockProvider.streamWithTools as Mock).mockImplementation(
+      createTextStreamMock("Hello!")
+    );
 
     const onStream = vi.fn();
 
@@ -272,29 +286,16 @@ describe("executeAgentTurn", () => {
   it("should call onToolStart and onToolEnd callbacks", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
-    const firstResponse: ChatWithToolsResponse = {
-      id: "msg-1",
-      content: "",
-      stopReason: "tool_use",
-      usage: { inputTokens: 100, outputTokens: 50 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [
-        { id: "tool-1", name: "read_file", input: { path: "/test.ts" } },
-      ],
-    };
+    const toolCall: ToolCall = { id: "tool-1", name: "read_file", input: { path: "/test.ts" } };
 
-    const secondResponse: ChatWithToolsResponse = {
-      id: "msg-2",
-      content: "Done",
-      stopReason: "end_turn",
-      usage: { inputTokens: 150, outputTokens: 75 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [],
-    };
-
-    (mockProvider.chatWithTools as Mock)
-      .mockResolvedValueOnce(firstResponse)
-      .mockResolvedValueOnce(secondResponse);
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("", [toolCall])();
+      }
+      return createTextStreamMock("Done")();
+    });
 
     (mockToolRegistry.execute as Mock).mockResolvedValue({
       success: true,
@@ -327,16 +328,9 @@ describe("executeAgentTurn", () => {
   it("should call onThinkingStart and onThinkingEnd callbacks", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
-    const mockResponse: ChatWithToolsResponse = {
-      id: "msg-1",
-      content: "Response",
-      stopReason: "end_turn",
-      usage: { inputTokens: 100, outputTokens: 50 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [],
-    };
-
-    (mockProvider.chatWithTools as Mock).mockResolvedValue(mockResponse);
+    (mockProvider.streamWithTools as Mock).mockImplementation(
+      createTextStreamMock("Response")
+    );
 
     const onThinkingStart = vi.fn();
     const onThinkingEnd = vi.fn();
@@ -368,25 +362,20 @@ describe("executeAgentTurn", () => {
     );
 
     expect(result.aborted).toBe(true);
-    expect(mockProvider.chatWithTools).not.toHaveBeenCalled();
+    expect(mockProvider.streamWithTools).not.toHaveBeenCalled();
   });
 
   it("should abort when signal is aborted during tool execution loop", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
-    const firstResponse: ChatWithToolsResponse = {
-      id: "msg-1",
-      content: "",
-      stopReason: "tool_use",
-      usage: { inputTokens: 100, outputTokens: 50 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [
-        { id: "tool-1", name: "read_file", input: { path: "/file1.ts" } },
-        { id: "tool-2", name: "read_file", input: { path: "/file2.ts" } },
-      ],
-    };
+    const toolCalls: ToolCall[] = [
+      { id: "tool-1", name: "read_file", input: { path: "/file1.ts" } },
+      { id: "tool-2", name: "read_file", input: { path: "/file2.ts" } },
+    ];
 
-    (mockProvider.chatWithTools as Mock).mockResolvedValue(firstResponse);
+    (mockProvider.streamWithTools as Mock).mockImplementation(
+      createToolStreamMock("", toolCalls)
+    );
 
     const abortController = new AbortController();
 
@@ -412,18 +401,11 @@ describe("executeAgentTurn", () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
     // Always return tool calls to force loop
-    const infiniteToolResponse: ChatWithToolsResponse = {
-      id: "msg-1",
-      content: "",
-      stopReason: "tool_use",
-      usage: { inputTokens: 10, outputTokens: 5 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [
-        { id: "tool-1", name: "read_file", input: { path: "/file.ts" } },
-      ],
-    };
+    const toolCall: ToolCall = { id: "tool-1", name: "read_file", input: { path: "/file.ts" } };
 
-    (mockProvider.chatWithTools as Mock).mockResolvedValue(infiniteToolResponse);
+    (mockProvider.streamWithTools as Mock).mockImplementation(
+      createToolStreamMock("", [toolCall])
+    );
     (mockToolRegistry.execute as Mock).mockResolvedValue({
       success: true,
       data: "content",
@@ -442,37 +424,26 @@ describe("executeAgentTurn", () => {
 
     // Should stop after 3 iterations
     expect(result.toolCalls.length).toBe(3);
-    expect(mockProvider.chatWithTools).toHaveBeenCalledTimes(3);
+    expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(3);
   });
 
   it("should handle multiple tool calls in one response", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
-    const firstResponse: ChatWithToolsResponse = {
-      id: "msg-1",
-      content: "Reading files...",
-      stopReason: "tool_use",
-      usage: { inputTokens: 100, outputTokens: 50 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [
-        { id: "tool-1", name: "read_file", input: { path: "/file1.ts" } },
-        { id: "tool-2", name: "read_file", input: { path: "/file2.ts" } },
-        { id: "tool-3", name: "read_file", input: { path: "/file3.ts" } },
-      ],
-    };
+    const toolCalls: ToolCall[] = [
+      { id: "tool-1", name: "read_file", input: { path: "/file1.ts" } },
+      { id: "tool-2", name: "read_file", input: { path: "/file2.ts" } },
+      { id: "tool-3", name: "read_file", input: { path: "/file3.ts" } },
+    ];
 
-    const secondResponse: ChatWithToolsResponse = {
-      id: "msg-2",
-      content: "Done reading all files.",
-      stopReason: "end_turn",
-      usage: { inputTokens: 150, outputTokens: 75 },
-      model: "claude-sonnet-4-20250514",
-      toolCalls: [],
-    };
-
-    (mockProvider.chatWithTools as Mock)
-      .mockResolvedValueOnce(firstResponse)
-      .mockResolvedValueOnce(secondResponse);
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("Reading files...", toolCalls)();
+      }
+      return createTextStreamMock("Done reading all files.")();
+    });
 
     (mockToolRegistry.execute as Mock).mockResolvedValue({
       success: true,
@@ -501,29 +472,16 @@ describe("executeAgentTurn", () => {
       // Trust the write_file tool
       mockSession.trustedTools.add("write_file");
 
-      const firstResponse: ChatWithToolsResponse = {
-        id: "msg-1",
-        content: "",
-        stopReason: "tool_use",
-        usage: { inputTokens: 100, outputTokens: 50 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [
-          { id: "tool-1", name: "write_file", input: { path: "/test.ts", content: "code" } },
-        ],
-      };
+      const toolCall: ToolCall = { id: "tool-1", name: "write_file", input: { path: "/test.ts", content: "code" } };
 
-      const secondResponse: ChatWithToolsResponse = {
-        id: "msg-2",
-        content: "File written.",
-        stopReason: "end_turn",
-        usage: { inputTokens: 150, outputTokens: 75 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [],
-      };
-
-      (mockProvider.chatWithTools as Mock)
-        .mockResolvedValueOnce(firstResponse)
-        .mockResolvedValueOnce(secondResponse);
+      let callCount = 0;
+      (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return createToolStreamMock("", [toolCall])();
+        }
+        return createTextStreamMock("File written.")();
+      });
 
       (mockToolRegistry.execute as Mock).mockResolvedValue({
         success: true,
@@ -548,29 +506,16 @@ describe("executeAgentTurn", () => {
 
       (requiresConfirmation as Mock).mockReturnValue(true);
 
-      const firstResponse: ChatWithToolsResponse = {
-        id: "msg-1",
-        content: "",
-        stopReason: "tool_use",
-        usage: { inputTokens: 100, outputTokens: 50 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [
-          { id: "tool-1", name: "write_file", input: { path: "/test.ts", content: "code" } },
-        ],
-      };
+      const toolCall: ToolCall = { id: "tool-1", name: "write_file", input: { path: "/test.ts", content: "code" } };
 
-      const secondResponse: ChatWithToolsResponse = {
-        id: "msg-2",
-        content: "Done.",
-        stopReason: "end_turn",
-        usage: { inputTokens: 150, outputTokens: 75 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [],
-      };
-
-      (mockProvider.chatWithTools as Mock)
-        .mockResolvedValueOnce(firstResponse)
-        .mockResolvedValueOnce(secondResponse);
+      let callCount = 0;
+      (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return createToolStreamMock("", [toolCall])();
+        }
+        return createTextStreamMock("Done.")();
+      });
 
       (mockToolRegistry.execute as Mock).mockResolvedValue({
         success: true,
@@ -596,29 +541,16 @@ describe("executeAgentTurn", () => {
       (requiresConfirmation as Mock).mockReturnValue(true);
       (confirmToolExecution as Mock).mockResolvedValue("yes");
 
-      const firstResponse: ChatWithToolsResponse = {
-        id: "msg-1",
-        content: "",
-        stopReason: "tool_use",
-        usage: { inputTokens: 100, outputTokens: 50 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [
-          { id: "tool-1", name: "write_file", input: { path: "/test.ts", content: "code" } },
-        ],
-      };
+      const toolCall: ToolCall = { id: "tool-1", name: "write_file", input: { path: "/test.ts", content: "code" } };
 
-      const secondResponse: ChatWithToolsResponse = {
-        id: "msg-2",
-        content: "Done.",
-        stopReason: "end_turn",
-        usage: { inputTokens: 150, outputTokens: 75 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [],
-      };
-
-      (mockProvider.chatWithTools as Mock)
-        .mockResolvedValueOnce(firstResponse)
-        .mockResolvedValueOnce(secondResponse);
+      let callCount = 0;
+      (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return createToolStreamMock("", [toolCall])();
+        }
+        return createTextStreamMock("Done.")();
+      });
 
       (mockToolRegistry.execute as Mock).mockResolvedValue({
         success: true,
@@ -644,29 +576,16 @@ describe("executeAgentTurn", () => {
       (requiresConfirmation as Mock).mockReturnValue(true);
       (confirmToolExecution as Mock).mockResolvedValue("no");
 
-      const firstResponse: ChatWithToolsResponse = {
-        id: "msg-1",
-        content: "",
-        stopReason: "tool_use",
-        usage: { inputTokens: 100, outputTokens: 50 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [
-          { id: "tool-1", name: "write_file", input: { path: "/test.ts", content: "code" } },
-        ],
-      };
+      const toolCall: ToolCall = { id: "tool-1", name: "write_file", input: { path: "/test.ts", content: "code" } };
 
-      const secondResponse: ChatWithToolsResponse = {
-        id: "msg-2",
-        content: "Skipped.",
-        stopReason: "end_turn",
-        usage: { inputTokens: 150, outputTokens: 75 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [],
-      };
-
-      (mockProvider.chatWithTools as Mock)
-        .mockResolvedValueOnce(firstResponse)
-        .mockResolvedValueOnce(secondResponse);
+      let callCount = 0;
+      (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return createToolStreamMock("", [toolCall])();
+        }
+        return createTextStreamMock("Skipped.")();
+      });
 
       const onToolSkipped = vi.fn();
 
@@ -692,18 +611,11 @@ describe("executeAgentTurn", () => {
       (requiresConfirmation as Mock).mockReturnValue(true);
       (confirmToolExecution as Mock).mockResolvedValue("abort");
 
-      const firstResponse: ChatWithToolsResponse = {
-        id: "msg-1",
-        content: "Starting...",
-        stopReason: "tool_use",
-        usage: { inputTokens: 100, outputTokens: 50 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [
-          { id: "tool-1", name: "write_file", input: { path: "/test.ts", content: "code" } },
-        ],
-      };
+      const toolCall: ToolCall = { id: "tool-1", name: "write_file", input: { path: "/test.ts", content: "code" } };
 
-      (mockProvider.chatWithTools as Mock).mockResolvedValue(firstResponse);
+      (mockProvider.streamWithTools as Mock).mockImplementation(
+        createToolStreamMock("Starting...", [toolCall])
+      );
 
       const result = await executeAgentTurn(
         mockSession,
@@ -726,30 +638,19 @@ describe("executeAgentTurn", () => {
       // Need to reset confirmation state for each test
       (createConfirmationState as Mock).mockReturnValue({ allowAll: false });
 
-      const firstResponse: ChatWithToolsResponse = {
-        id: "msg-1",
-        content: "",
-        stopReason: "tool_use",
-        usage: { inputTokens: 100, outputTokens: 50 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [
-          { id: "tool-1", name: "write_file", input: { path: "/file1.ts", content: "code1" } },
-          { id: "tool-2", name: "write_file", input: { path: "/file2.ts", content: "code2" } },
-        ],
-      };
+      const toolCalls: ToolCall[] = [
+        { id: "tool-1", name: "write_file", input: { path: "/file1.ts", content: "code1" } },
+        { id: "tool-2", name: "write_file", input: { path: "/file2.ts", content: "code2" } },
+      ];
 
-      const secondResponse: ChatWithToolsResponse = {
-        id: "msg-2",
-        content: "Done.",
-        stopReason: "end_turn",
-        usage: { inputTokens: 150, outputTokens: 75 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [],
-      };
-
-      (mockProvider.chatWithTools as Mock)
-        .mockResolvedValueOnce(firstResponse)
-        .mockResolvedValueOnce(secondResponse);
+      let callCount = 0;
+      (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return createToolStreamMock("", toolCalls)();
+        }
+        return createTextStreamMock("Done.")();
+      });
 
       (mockToolRegistry.execute as Mock).mockResolvedValue({
         success: true,
@@ -776,29 +677,16 @@ describe("executeAgentTurn", () => {
       (requiresConfirmation as Mock).mockReturnValue(true);
       (confirmToolExecution as Mock).mockResolvedValue("trust_session");
 
-      const firstResponse: ChatWithToolsResponse = {
-        id: "msg-1",
-        content: "",
-        stopReason: "tool_use",
-        usage: { inputTokens: 100, outputTokens: 50 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [
-          { id: "tool-1", name: "bash_exec", input: { command: "ls" } },
-        ],
-      };
+      const toolCall: ToolCall = { id: "tool-1", name: "bash_exec", input: { command: "ls" } };
 
-      const secondResponse: ChatWithToolsResponse = {
-        id: "msg-2",
-        content: "Done.",
-        stopReason: "end_turn",
-        usage: { inputTokens: 150, outputTokens: 75 },
-        model: "claude-sonnet-4-20250514",
-        toolCalls: [],
-      };
-
-      (mockProvider.chatWithTools as Mock)
-        .mockResolvedValueOnce(firstResponse)
-        .mockResolvedValueOnce(secondResponse);
+      let callCount = 0;
+      (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return createToolStreamMock("", [toolCall])();
+        }
+        return createTextStreamMock("Done.")();
+      });
 
       (mockToolRegistry.execute as Mock).mockResolvedValue({
         success: true,

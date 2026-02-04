@@ -71,11 +71,11 @@ describe("createSpinner", () => {
       spinner.start();
       const callCount1 = stdoutWriteSpy.mock.calls.length;
 
-      vi.advanceTimersByTime(120);
+      vi.advanceTimersByTime(80);
       spinner.start(); // Try to start again
 
-      vi.advanceTimersByTime(120);
-      // Should have advanced normally, not doubled
+      vi.advanceTimersByTime(80);
+      // Should have advanced normally, not doubled (interval is 80ms now)
       expect(stdoutWriteSpy.mock.calls.length).toBe(callCount1 + 2);
 
       spinner.stop();

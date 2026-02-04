@@ -265,6 +265,51 @@ export class OrchestrateExecutor implements PhaseExecutor {
         };
       },
 
+      async *streamWithTools(messages, options) {
+        // Fallback to chatWithTools for adapters (no real streaming support)
+        const adapted = messages.map((m) => ({
+          role: m.role,
+          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+        }));
+        const tools = options.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.input_schema as Record<string, unknown>,
+        }));
+        const response = await llmContext.chatWithTools(adapted, tools);
+
+        // Yield text if present
+        if (response.content) {
+          yield {
+            type: "text" as const,
+            text: response.content,
+          };
+        }
+
+        // Yield tool calls
+        for (const tc of response.toolCalls || []) {
+          yield {
+            type: "tool_use_start" as const,
+            toolCall: {
+              id: tc.name,
+              name: tc.name,
+            },
+          };
+          yield {
+            type: "tool_use_end" as const,
+            toolCall: {
+              id: tc.name,
+              name: tc.name,
+              input: tc.arguments,
+            },
+          };
+        }
+
+        yield {
+          type: "done" as const,
+        };
+      },
+
       countTokens(_text: string): number {
         return Math.ceil(_text.length / 4);
       },

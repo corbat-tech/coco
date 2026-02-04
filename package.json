@@ -55,6 +55,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@clack/prompts": "^0.11.0",
     "@google/generative-ai": "^0.24.1",
+    "ansi-escapes": "^7.3.0",
     "chalk": "^5.4.0",
     "commander": "^13.0.0",
     "dotenv": "^17.2.3",
@@ -62,6 +63,7 @@
     "glob": "^11.0.0",
     "json5": "^2.2.3",
     "openai": "^6.17.0",
+    "ora": "^9.2.0",
     "simple-git": "^3.27.0",
     "tslog": "^4.9.3",
     "zod": "^3.24.0"

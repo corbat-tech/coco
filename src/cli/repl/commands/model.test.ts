@@ -14,6 +14,7 @@ vi.mock("chalk", () => ({
     yellow: (s: string) => s,
     green: (s: string) => s,
     bold: (s: string) => s,
+    magenta: (s: string) => s,
   },
 }));
 
@@ -65,7 +66,7 @@ describe("modelCommand", () => {
 
       const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
       expect(allOutput).toContain("Current provider");
-      expect(allOutput).toContain("anthropic");
+      expect(allOutput).toContain("Anthropic"); // Provider name (capitalized)
     });
 
     it("should display current model", async () => {
@@ -111,8 +112,8 @@ describe("modelCommand", () => {
       await modelCommand.execute(["gpt-4o"], mockSession);
 
       const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("openai");
-      expect(allOutput).toContain("Current provider is anthropic");
+      expect(allOutput).toContain("OpenAI"); // Provider name (capitalized)
+      expect(allOutput).toContain("Anthropic Claude"); // Current provider full name
     });
 
     it("should not change the model", async () => {
