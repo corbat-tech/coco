@@ -39,46 +39,140 @@ export interface OnboardingResult {
 export async function runOnboardingV2(): Promise<OnboardingResult | null> {
   console.clear();
 
-  // Banner de bienvenida
+  // Paso 1: Detectar providers ya configurados
+  const configuredProviders = getConfiguredProviders();
+
+  // Banner de bienvenida - diferente si es primera vez
+  if (configuredProviders.length === 0) {
+    // Primera vez - mostrar banner de bienvenida más llamativo
+    console.log(
+      chalk.cyan.bold(`
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║   🥥 Welcome to Corbat-Coco v${VERSION.padEnd(36)}║
+║                                                                ║
+║   The AI Coding Agent That Actually Ships Production Code      ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+`),
+    );
+
+    // Mensaje de primera vez
+    console.log(chalk.yellow.bold("  ⚠️  No API key detected\n"));
+    console.log(chalk.dim("  To use Coco, you need an API key from one of these providers:\n"));
+
+    // Mostrar providers disponibles con URLs
+    const providers = getAllProviders();
+    for (const provider of providers) {
+      console.log(chalk.white(`    ${provider.emoji} ${provider.name.padEnd(20)} → ${chalk.cyan(provider.apiKeyUrl)}`));
+    }
+
+    console.log();
+    console.log(chalk.dim("  Don't have an API key? Get one free from any provider above."));
+    console.log(chalk.dim("  Anthropic Claude is recommended for best coding results.\n"));
+
+    // Preguntar qué quiere hacer
+    const action = await p.select({
+      message: "What would you like to do?",
+      options: [
+        {
+          value: "setup",
+          label: "🔑 I have an API key - let's set it up",
+          hint: "Configure your provider",
+        },
+        {
+          value: "help",
+          label: "❓ How do I get an API key?",
+          hint: "Show detailed instructions",
+        },
+        {
+          value: "exit",
+          label: "👋 Exit for now",
+          hint: "Come back when you have a key",
+        },
+      ],
+    });
+
+    if (p.isCancel(action) || action === "exit") {
+      p.log.message(chalk.dim("\n👋 No worries! Run `coco` again when you have an API key.\n"));
+      return null;
+    }
+
+    if (action === "help") {
+      await showApiKeyHelp();
+      return runOnboardingV2(); // Volver al inicio
+    }
+
+    // Continuar con setup
+    return await setupNewProvider();
+  }
+
+  // Ya tiene providers configurados - banner normal
   console.log(
     chalk.cyan.bold(`
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
 ║   🥥 Corbat-Coco v${VERSION}                                  ║
 ║                                                          ║
-║   Your AI Coding Agent                                    ║
-║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
 `),
   );
 
-  p.log.message(chalk.dim("Welcome! Let's get you set up with an AI provider.\n"));
+  p.log.info(
+    `Found ${configuredProviders.length} configured provider(s): ${configuredProviders
+      .map((p) => p.emoji + " " + p.name)
+      .join(", ")}`,
+  );
 
-  // Paso 1: Detectar providers ya configurados
-  const configuredProviders = getConfiguredProviders();
+  const useExisting = await p.confirm({
+    message: "Use an existing provider?",
+    initialValue: true,
+  });
 
-  if (configuredProviders.length > 0) {
-    p.log.info(
-      `Found ${configuredProviders.length} configured provider(s): ${configuredProviders
-        .map((p) => p.emoji + " " + p.name)
-        .join(", ")}`,
-    );
+  if (p.isCancel(useExisting)) return null;
 
-    const useExisting = await p.confirm({
-      message: "Use an existing provider?",
-      initialValue: true,
-    });
-
-    if (p.isCancel(useExisting)) return null;
-
-    if (useExisting) {
-      const selected = await selectExistingProvider(configuredProviders);
-      if (selected) return selected;
-    }
+  if (useExisting) {
+    const selected = await selectExistingProvider(configuredProviders);
+    if (selected) return selected;
   }
 
-  // Paso 2: Seleccionar nuevo provider
+  // Configurar nuevo provider
   return await setupNewProvider();
+}
+
+/**
+ * Mostrar ayuda detallada para obtener API keys
+ */
+async function showApiKeyHelp(): Promise<void> {
+  console.clear();
+  console.log(
+    chalk.cyan.bold(`
+╔══════════════════════════════════════════════════════════╗
+║   🔑 How to Get an API Key                               ║
+╚══════════════════════════════════════════════════════════╝
+`),
+  );
+
+  const providers = getAllProviders();
+
+  for (const provider of providers) {
+    console.log(chalk.bold(`\n${provider.emoji} ${provider.name}`));
+    console.log(chalk.dim(`   ${provider.description}`));
+    console.log(`   ${chalk.cyan("→")} ${provider.apiKeyUrl}`);
+    console.log(chalk.dim(`   Env var: ${provider.envVar}`));
+  }
+
+  console.log(chalk.bold("\n\n📝 Quick Setup Options:\n"));
+  console.log(chalk.dim("   1. Set environment variable:"));
+  console.log(chalk.white("      export ANTHROPIC_API_KEY=\"sk-ant-...\"\n"));
+  console.log(chalk.dim("   2. Or let Coco save it for you during setup\n"));
+
+  console.log(chalk.yellow("\n💡 Tip: Anthropic Claude gives the best coding results.\n"));
+
+  await p.confirm({
+    message: "Press Enter to continue...",
+    initialValue: true,
+  });
 }
 
 /**
@@ -202,21 +296,26 @@ async function setupNewProvider(): Promise<OnboardingResult | null> {
  * Mostrar información del provider
  */
 function showProviderInfo(provider: ProviderDefinition): void {
-  p.log.message("");
-  p.log.step(`Setting up ${provider.emoji} ${provider.name}`);
+  console.log();
+  console.log(chalk.bold(`  ${provider.emoji} Setting up ${provider.name}`));
+  console.log();
 
-  p.log.message(chalk.dim(`\n📖 Documentation: ${provider.docsUrl}`));
-  p.log.message(chalk.dim(`🔑 Get API key: ${provider.apiKeyUrl}`));
+  // Link prominente para obtener API key
+  console.log(chalk.yellow("  🔑 Get your API key here:"));
+  console.log(chalk.cyan.bold(`     ${provider.apiKeyUrl}`));
+  console.log();
 
+  // Features
   if (provider.features) {
     const features = [];
     if (provider.features.streaming) features.push("streaming");
     if (provider.features.functionCalling) features.push("tools");
     if (provider.features.vision) features.push("vision");
-    p.log.message(chalk.dim(`✨ Features: ${features.join(", ")}`));
+    console.log(chalk.dim(`  ✨ Features: ${features.join(", ")}`));
   }
 
-  p.log.message("");
+  console.log(chalk.dim(`  📖 Docs: ${provider.docsUrl}`));
+  console.log();
 }
 
 /**
