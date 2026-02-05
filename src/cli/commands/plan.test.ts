@@ -365,8 +365,12 @@ describe("plan command", () => {
 
       vi.mocked(findConfigPath).mockResolvedValue("/test/.coco/config.json");
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       const { runPlan } = await import("./plan.js");
@@ -1035,8 +1039,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       // Create a temp file to read
@@ -1082,8 +1090,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "plan-test-"));
@@ -1128,8 +1140,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "plan-test-"));
@@ -1171,8 +1187,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       vi.mocked(createConvergeExecutor).mockImplementation(() => {
@@ -1210,8 +1230,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "plan-test-"));
@@ -1253,8 +1277,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       vi.mocked(createConvergeExecutor).mockImplementation(() => {
@@ -1290,8 +1318,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       vi.mocked(createConvergeExecutor).mockImplementation(() => {
@@ -1329,8 +1361,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "plan-test-"));
@@ -1375,8 +1411,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       vi.mocked(createConvergeExecutor).mockImplementation(() => {
@@ -1416,8 +1456,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       vi.mocked(createConvergeExecutor).mockImplementation(() => {
@@ -1457,8 +1501,12 @@ describe("plan command", () => {
         quality: { minScore: 85 },
       });
       vi.mocked(createProvider).mockResolvedValue({
-        chat: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
-        chatWithTools: vi.fn().mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chat: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
+        chatWithTools: vi
+          .fn()
+          .mockResolvedValue({ content: "{}", usage: { inputTokens: 0, outputTokens: 0 } }),
       } as any);
 
       vi.mocked(createConvergeExecutor).mockImplementation(() => {

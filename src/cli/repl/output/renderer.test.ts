@@ -54,29 +54,26 @@ describe("renderStreamChunk", () => {
     vi.restoreAllMocks();
   });
 
-  it("should write text chunks to stdout via typewriter", async () => {
-    const chunk: StreamChunk = { type: "text", text: "Hello" };
+  it("should write text chunks to stdout via line buffer", async () => {
+    const chunk: StreamChunk = { type: "text", text: "Hello\n" };
 
     renderStreamChunk(chunk);
 
-    // Wait for typewriter to process
-    await getTypewriter().waitForComplete();
-
-    // Typewriter writes character by character
+    // Line buffer outputs complete lines
     expect(stdoutWriteSpy).toHaveBeenCalled();
-    // All characters should have been written
     const allWrites = stdoutWriteSpy.mock.calls.map((call) => call[0]).join("");
-    expect(allWrites).toBe("Hello");
+    expect(allWrites).toBe("Hello\n");
   });
 
   it("should flush on done chunk", () => {
+    resetTypewriter(); // Clear any previous buffer
     const textChunk: StreamChunk = { type: "text", text: "Test" };
     const doneChunk: StreamChunk = { type: "done" };
 
     renderStreamChunk(textChunk);
     renderStreamChunk(doneChunk);
 
-    // Should have written all characters after flush
+    // Should have written all text after flush
     const allWrites = stdoutWriteSpy.mock.calls.map((call) => call[0]).join("");
     expect(allWrites).toBe("Test");
   });

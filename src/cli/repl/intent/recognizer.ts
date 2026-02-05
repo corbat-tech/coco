@@ -37,7 +37,7 @@ export const DEFAULT_INTENT_CONFIG: IntentConfig = {
   minConfidence: CONFIDENCE["MINIMUM"] ?? 0.5,
   autoExecute: false,
   autoExecuteThreshold: CONFIDENCE["HIGH"] ?? 0.9,
-  alwaysConfirm: ["init", "build", "output"],
+  alwaysConfirm: ["init", "build", "output", "status"],
   autoExecutePreferences: {},
 };
 
@@ -83,9 +83,11 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
       }
     }
 
-    // Extract tech stack
-    let techMatch;
-    while ((techMatch = ENTITY_PATTERNS.techStack.exec(input)) !== null) {
+    // Extract tech stack - create new regex to avoid global state issues
+    const techStackRegex =
+      /(node\.?js|typescript|python|go|golang|rust|java|react|vue|angular|docker|kubernetes|aws|gcp|azure|postgres|mysql|mongo|redis)\b/gi;
+    const techMatches = input.matchAll(techStackRegex);
+    for (const techMatch of techMatches) {
       entities.techStack = entities.techStack || [];
       if (techMatch[1]) {
         const tech = techMatch[1].toLowerCase();

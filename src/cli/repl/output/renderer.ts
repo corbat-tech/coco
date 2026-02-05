@@ -373,12 +373,22 @@ function highlightLine(line: string, keywords: Set<string>): string {
 
 // Legacy exports for backward compatibility (used in tests)
 export function resetTypewriter(): void {
-  // No-op - typewriter removed
+  resetLineBuffer();
 }
 
 export function getTypewriter(): { flush: () => void; waitForComplete: () => Promise<void> } {
   return {
-    flush: () => {},
+    flush: flushLineBuffer,
     waitForComplete: () => Promise.resolve(),
   };
+}
+
+/**
+ * Render stream chunk immediately (no buffering)
+ * Used for non-interactive output or testing
+ */
+export function renderStreamChunkImmediate(chunk: StreamChunk): void {
+  if (chunk.type === "text" && chunk.text) {
+    process.stdout.write(chunk.text);
+  }
 }
