@@ -34,8 +34,12 @@ import { VERSION } from "../../version.js";
 import { createTrustStore, type TrustLevel } from "./trust-store.js";
 import * as p from "@clack/prompts";
 import { createIntentRecognizer, type Intent } from "./intent/index.js";
-import { getStateManager, formatStateStatus, getStateSummary } from "./state/index.js";
+// State manager available for future use
+// import { getStateManager, formatStateStatus, getStateSummary } from "./state/index.js";
 import { ensureConfiguredV2 } from "./onboarding-v2.js";
+import { checkForUpdates } from "./version-check.js";
+import { getInternalProviderId } from "../../config/env.js";
+import { loadAllowedPaths } from "../../tools/allowed-paths.js";
 
 /**
  * Start the REPL
@@ -71,9 +75,11 @@ export async function startRepl(
   session.config = configured;
 
   // Initialize provider
+  // Use internal provider ID (e.g., "codex" for "openai" with OAuth)
+  const internalProviderId = getInternalProviderId(session.config.provider.type);
   let provider;
   try {
-    provider = await createProvider(session.config.provider.type, {
+    provider = await createProvider(internalProviderId, {
       model: session.config.provider.model || undefined,
       maxTokens: session.config.provider.maxTokens,
     });
@@ -94,6 +100,9 @@ export async function startRepl(
 
   // Initialize context manager
   initializeContextManager(session, provider);
+
+  // Load persisted allowed paths for this project
+  await loadAllowedPaths(projectPath);
 
   // Initialize tool registry
   const toolRegistry = createFullToolRegistry();
@@ -168,6 +177,9 @@ export async function startRepl(
     try {
       console.log(); // Blank line before response
 
+      // Pause input to prevent typing interference during agent response
+      inputHandler.pause();
+
       // Create abort controller for Ctrl+C cancellation
       const abortController = new AbortController();
       let wasAborted = false;
@@ -194,6 +206,8 @@ export async function startRepl(
           clearSpinner();
           renderToolStart(result.name, result.input);
           renderToolEnd(result);
+          // Show waiting spinner while LLM processes the result
+          setSpinner("Processing...");
         },
         onToolSkipped: (tc, reason) => {
           clearSpinner();
@@ -207,6 +221,10 @@ export async function startRepl(
         },
         onToolPreparing: (toolName) => {
           setSpinner(`Preparing ${toolName}...`);
+        },
+        onBeforeConfirmation: () => {
+          // Clear spinner before showing confirmation dialog
+          clearSpinner();
         },
         signal: abortController.signal,
       });
@@ -277,7 +295,39 @@ export async function startRepl(
       if (error instanceof Error && error.name === "AbortError") {
         continue;
       }
-      renderError(error instanceof Error ? error.message : String(error));
+
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // Check for LM Studio context length error
+      if (errorMsg.includes("context length") || errorMsg.includes("tokens to keep")) {
+        renderError(errorMsg);
+        console.log();
+        console.log(chalk.yellow("   💡 This is a context length error."));
+        console.log(chalk.yellow("   The model's context window is too small for Coco.\n"));
+        console.log(chalk.white("   To fix this in LM Studio:"));
+        console.log(chalk.dim("   1. Click on the model name in the top bar"));
+        console.log(chalk.dim("   2. Find 'Context Length' setting"));
+        console.log(chalk.dim("   3. Increase it (recommended: 16384 or higher)"));
+        console.log(chalk.dim("   4. Click 'Reload Model'\n"));
+        continue;
+      }
+
+      // Check for timeout errors
+      if (
+        errorMsg.includes("timeout") ||
+        errorMsg.includes("Timeout") ||
+        errorMsg.includes("ETIMEDOUT") ||
+        errorMsg.includes("ECONNRESET")
+      ) {
+        renderError("Request timed out");
+        console.log(chalk.dim("   The model took too long to respond. Try again or use a faster model."));
+        continue;
+      }
+
+      renderError(errorMsg);
+    } finally {
+      // Always resume input handler after agent turn
+      inputHandler.resume();
     }
   }
 
@@ -285,55 +335,55 @@ export async function startRepl(
 }
 
 /**
- * Print welcome message with project state
+ * Print welcome message - retro terminal style, compact
+ * Brand color: Magenta/Purple 🟣
  */
 async function printWelcome(session: { projectPath: string; config: ReplConfig }): Promise<void> {
-  // Load project state
-  const stateManager = getStateManager();
-  const state = await stateManager.load(session.projectPath);
-  const summary = getStateSummary(state);
   const trustStore = createTrustStore();
   await trustStore.init();
   const trustLevel = trustStore.getLevel(session.projectPath);
 
-  console.log(
-    chalk.cyan.bold(`
-╔══════════════════════════════════════════════════╗
-║         🥥 Corbat-Coco REPL                      ║
-║   Autonomous Coding Agent v${VERSION.padEnd(31)}║
-╚══════════════════════════════════════════════════╝
-`),
-  );
+  // Box dimensions - fixed width for consistency
+  const boxWidth = 41;
+  const innerWidth = boxWidth - 4; // Account for "│ " and " │"
 
-  // Project info
-  console.log(chalk.dim(`📁 ${session.projectPath}`));
+  // Build content lines with proper padding
+  // Note: Emoji 🥥 takes 2 visual chars, so we subtract 1 from padding calculation
+  const titleText = "CORBAT-COCO";
+  const versionText = `v${VERSION}`;
+  const titlePadding = innerWidth - titleText.length - versionText.length - 2; // -2 for emoji visual width adjustment
+  const subtitleText = "open source • corbat.tech";
+  const subtitlePadding = innerWidth - subtitleText.length;
 
-  // Trust status
-  if (trustLevel) {
-    const emoji = trustLevel === "full" ? "🔓" : trustLevel === "write" ? "✏️" : "👁️";
-    console.log(chalk.dim(`${emoji} ${trustLevel} access`));
+  console.log();
+  console.log(chalk.magenta("  ╭" + "─".repeat(boxWidth - 2) + "╮"));
+  console.log(chalk.magenta("  │ ") + "🥥 " + chalk.bold.white(titleText) + " ".repeat(titlePadding) + chalk.dim(versionText) + chalk.magenta(" │"));
+  console.log(chalk.magenta("  │ ") + chalk.dim(subtitleText) + " ".repeat(subtitlePadding) + chalk.magenta(" │"));
+  console.log(chalk.magenta("  ╰" + "─".repeat(boxWidth - 2) + "╯"));
+
+  // Check for updates (non-blocking, with 3s timeout)
+  const updateInfo = await checkForUpdates();
+  if (updateInfo) {
+    console.log(chalk.yellow(`  ⬆ ${chalk.dim(updateInfo.currentVersion)} → ${chalk.green(updateInfo.latestVersion)} ${chalk.dim(`(${updateInfo.updateCommand})`)}`));
   }
 
-  // State status
-  console.log(`📊 ${formatStateStatus(state)}`);
+  // Project info - single compact block
+  const maxPathLen = 50;
+  let displayPath = session.projectPath;
+  if (displayPath.length > maxPathLen) {
+    displayPath = "..." + displayPath.slice(-maxPathLen + 3);
+  }
 
-  // Progress indicators
-  console.log(
-    chalk.dim(
-      `   ${summary.spec ? "✅" : "⬜"} Spec  ${summary.architecture ? "✅" : "⬜"} Architecture  ${summary.implementation ? "✅" : "⬜"} Implementation`,
-    ),
-  );
-
-  console.log();
-  console.log(chalk.dim(`🤖 ${session.config.provider.type} / ${session.config.provider.model}`));
-
-  // Contextual suggestion
-  const suggestion = await stateManager.getSuggestion(session.projectPath);
-  console.log();
-  console.log(chalk.yellow(`💡 ${suggestion}`));
+  const providerName = session.config.provider.type;
+  const modelName = session.config.provider.model || "default";
+  const trustText = trustLevel === "full" ? "full" : trustLevel === "write" ? "write" : trustLevel === "read" ? "read" : "";
 
   console.log();
-  console.log(chalk.dim("Type /help for commands, /exit to quit\n"));
+  console.log(chalk.dim(`  📁 ${displayPath}`));
+  console.log(chalk.dim(`  🤖 ${providerName}/`) + chalk.magenta(modelName) + (trustText ? chalk.dim(` • 🔐 ${trustText}`) : ""));
+  console.log();
+  console.log(chalk.dim("  Type your request or ") + chalk.magenta("/help") + chalk.dim(" for commands"));
+  console.log();
 }
 
 export type { ReplConfig, ReplSession, AgentTurnResult } from "./types.js";
@@ -345,7 +395,7 @@ export * from "./skills/index.js";
 export * from "./progress/index.js";
 
 /**
- * Check and request project trust
+ * Check and request project trust - compact version
  */
 async function checkProjectTrust(projectPath: string): Promise<boolean> {
   const trustStore = createTrustStore();
@@ -353,49 +403,42 @@ async function checkProjectTrust(projectPath: string): Promise<boolean> {
 
   // Check if already trusted
   if (trustStore.isTrusted(projectPath)) {
-    // Update last accessed
     await trustStore.touch(projectPath);
     return true;
   }
 
-  // Show first-time access warning
-  p.log.message("");
-  p.log.message("🚀 Corbat-Coco REPL v" + VERSION);
-  p.log.message("");
-  p.log.message(`📁 Project: ${projectPath}`);
-  p.log.warning("⚠️  First time accessing this directory");
-  p.log.message("");
-  p.log.message("This agent will:");
-  p.log.message("  • Read files and directories");
-  p.log.message("  • Write and modify files");
-  p.log.message("  • Execute bash commands");
-  p.log.message("  • Run tests and linters");
-  p.log.message("  • Use Git operations");
-  p.log.message("");
+  // Compact first-time access warning
+  console.log();
+  console.log(chalk.cyan.bold("  🥥 Corbat-Coco") + chalk.dim(` v${VERSION}`));
+  console.log(chalk.dim(`  📁 ${projectPath}`));
+  console.log();
+  console.log(chalk.yellow("  ⚠ First time accessing this directory"));
+  console.log(chalk.dim("  This agent can: read/write files, run commands, git ops"));
+  console.log();
 
   // Ask for approval
   const approved = await p.select({
-    message: "Allow access to this directory?",
+    message: "Grant access?",
     options: [
-      { value: "write", label: "Yes, allow write access" },
-      { value: "read", label: "Read-only (no file modifications)" },
-      { value: "no", label: "No, exit" },
+      { value: "write", label: "✓ Write access (recommended)" },
+      { value: "read", label: "◐ Read-only" },
+      { value: "no", label: "✗ Deny & exit" },
     ],
   });
 
   if (p.isCancel(approved) || approved === "no") {
-    p.outro("Access denied. Exiting...");
+    p.outro(chalk.dim("Access denied."));
     return false;
   }
 
   // Ask if remember decision
   const remember = await p.confirm({
-    message: "Remember this decision for future sessions?",
+    message: "Remember for this project?",
     initialValue: true,
   });
 
   if (p.isCancel(remember)) {
-    p.outro("Cancelled. Exiting...");
+    p.outro(chalk.dim("Cancelled."));
     return false;
   }
 
@@ -403,9 +446,7 @@ async function checkProjectTrust(projectPath: string): Promise<boolean> {
     await trustStore.addTrust(projectPath, approved as TrustLevel);
   }
 
-  p.log.success("✓ Access granted. Type /trust to manage permissions.");
-  p.log.message("");
-
+  console.log(chalk.green("  ✓ Access granted") + chalk.dim(" • /trust to manage"));
   return true;
 }
 

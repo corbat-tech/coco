@@ -20,25 +20,53 @@ import {
 import type { StreamChunk } from "../../../providers/types.js";
 import type { ExecutedToolCall } from "../types.js";
 
-// Mock chalk with nested methods (green.bold, yellow.bold, etc.)
-vi.mock("chalk", () => ({
-  default: {
-    dim: (s: string) => `[dim]${s}[/dim]`,
-    cyan: Object.assign((s: string) => `[cyan]${s}[/cyan]`, {
-      bold: (s: string) => `[cyan.bold]${s}[/cyan.bold]`,
-    }),
-    green: Object.assign((s: string) => `[green]${s}[/green]`, {
-      bold: (s: string) => `[green.bold]${s}[/green.bold]`,
-    }),
-    red: Object.assign((s: string) => `[red]${s}[/red]`, {
-      bold: (s: string) => `[red.bold]${s}[/red.bold]`,
-    }),
-    yellow: Object.assign((s: string) => `[yellow]${s}[/yellow]`, {
-      bold: (s: string) => `[yellow.bold]${s}[/yellow.bold]`,
-    }),
-    blue: (s: string) => `[blue]${s}[/blue]`,
+// Create a comprehensive chalk mock with all nested methods
+const createChalkMock = () => {
+  const identity = (s: string) => s;
+  const dimFn = Object.assign((s: string) => `[dim]${s}[/dim]`, {
+    italic: (s: string) => `[dim.italic]${s}[/dim.italic]`,
+  });
+  const boldFn = Object.assign((s: string) => `[bold]${s}[/bold]`, {
+    cyan: (s: string) => `[bold.cyan]${s}[/bold.cyan]`,
+    green: (s: string) => `[bold.green]${s}[/bold.green]`,
+  });
+  const cyanFn = Object.assign((s: string) => `[cyan]${s}[/cyan]`, {
+    bold: (s: string) => `[cyan.bold]${s}[/cyan.bold]`,
+    dim: (s: string) => `[cyan.dim]${s}[/cyan.dim]`,
+  });
+  const greenFn = Object.assign((s: string) => `[green]${s}[/green]`, {
+    bold: (s: string) => `[green.bold]${s}[/green.bold]`,
+  });
+  const redFn = Object.assign((s: string) => `[red]${s}[/red]`, {
+    bold: (s: string) => `[red.bold]${s}[/red.bold]`,
+  });
+  const yellowFn = Object.assign((s: string) => `[yellow]${s}[/yellow]`, {
+    bold: (s: string) => `[yellow.bold]${s}[/yellow.bold]`,
+  });
+  const whiteFn = Object.assign((s: string) => `[white]${s}[/white]`, {
+    bold: (s: string) => `[white.bold]${s}[/white.bold]`,
+  });
+  const blueFn = Object.assign((s: string) => `[blue]${s}[/blue]`, {
+    underline: (s: string) => `[blue.underline]${s}[/blue.underline]`,
+  });
+
+  return {
+    dim: dimFn,
+    bold: boldFn,
+    cyan: cyanFn,
+    green: greenFn,
+    red: redFn,
+    yellow: yellowFn,
+    blue: blueFn,
     magenta: (s: string) => `[magenta]${s}[/magenta]`,
-  },
+    white: whiteFn,
+    italic: (s: string) => `[italic]${s}[/italic]`,
+    gray: (s: string) => `[gray]${s}[/gray]`,
+  };
+};
+
+vi.mock("chalk", () => ({
+  default: createChalkMock(),
 }));
 
 describe("renderStreamChunk", () => {

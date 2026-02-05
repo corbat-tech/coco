@@ -29,6 +29,9 @@ export { AnthropicProvider, createAnthropicProvider } from "./anthropic.js";
 // OpenAI provider
 export { OpenAIProvider, createOpenAIProvider, createKimiProvider } from "./openai.js";
 
+// Codex provider (ChatGPT Plus/Pro via OAuth)
+export { CodexProvider, createCodexProvider } from "./codex.js";
+
 // Gemini provider
 export { GeminiProvider, createGeminiProvider } from "./gemini.js";
 
@@ -76,13 +79,14 @@ import type { LLMProvider, ProviderConfig } from "./types.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { OpenAIProvider, createKimiProvider } from "./openai.js";
 import { GeminiProvider } from "./gemini.js";
+import { CodexProvider } from "./codex.js";
 import { ProviderError } from "../utils/errors.js";
 import { getApiKey, getBaseUrl, getDefaultModel } from "../config/env.js";
 
 /**
  * Supported provider types
  */
-export type ProviderType = "anthropic" | "openai" | "gemini" | "kimi";
+export type ProviderType = "anthropic" | "openai" | "codex" | "gemini" | "kimi" | "lmstudio";
 
 /**
  * Create a provider by type
@@ -112,6 +116,11 @@ export async function createProvider(
       provider = new OpenAIProvider();
       break;
 
+    case "codex":
+      // Codex uses OAuth tokens from ChatGPT Plus/Pro
+      provider = new CodexProvider();
+      break;
+
     case "gemini":
       provider = new GeminiProvider();
       break;
@@ -120,6 +129,14 @@ export async function createProvider(
       provider = createKimiProvider(mergedConfig);
       await provider.initialize(mergedConfig);
       return provider;
+
+    case "lmstudio":
+      // LM Studio uses OpenAI-compatible API
+      provider = new OpenAIProvider();
+      // Override base URL for LM Studio
+      mergedConfig.baseUrl = mergedConfig.baseUrl ?? "http://localhost:1234/v1";
+      mergedConfig.apiKey = mergedConfig.apiKey ?? "lm-studio"; // LM Studio doesn't need real key
+      break;
 
     default:
       throw new ProviderError(`Unknown provider type: ${type}`, {
@@ -156,8 +173,13 @@ export function listProviders(): Array<{
     },
     {
       id: "openai",
-      name: "OpenAI",
+      name: "OpenAI (API Key)",
       configured: !!getApiKey("openai"),
+    },
+    {
+      id: "codex",
+      name: "OpenAI Codex (ChatGPT Plus/Pro)",
+      configured: false, // Will check OAuth tokens separately
     },
     {
       id: "gemini",

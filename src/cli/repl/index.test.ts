@@ -78,6 +78,10 @@ vi.mock("./intent/index.js", () => ({
   })),
 }));
 
+vi.mock("../../tools/allowed-paths.js", () => ({
+  loadAllowedPaths: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("./input/handler.js", () => ({
   createInputHandler: vi.fn(),
 }));

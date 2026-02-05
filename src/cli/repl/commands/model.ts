@@ -8,6 +8,7 @@ import ansiEscapes from "ansi-escapes";
 import type { SlashCommand, ReplSession } from "../types.js";
 import { getProviderDefinition, getAllProviders } from "../providers-config.js";
 import type { ProviderType } from "../../../providers/index.js";
+import { saveProviderPreference } from "../../../config/env.js";
 
 /**
  * Interactive model selector using arrow keys
@@ -154,6 +155,10 @@ export const modelCommand: SlashCommand = {
       }
 
       session.config.provider.model = selectedModel;
+
+      // Save preference for next session
+      await saveProviderPreference(currentProvider, selectedModel);
+
       const modelInfo = providerDef.models.find((m) => m.id === selectedModel);
       console.log(chalk.green(`✓ Switched to ${modelInfo?.name ?? selectedModel}\n`));
 
@@ -182,6 +187,10 @@ export const modelCommand: SlashCommand = {
       // Allow custom model names (for fine-tunes, etc.)
       console.log(chalk.yellow(`Model "${newModel}" not in known list, setting anyway...`));
       session.config.provider.model = newModel;
+
+      // Save preference for next session
+      await saveProviderPreference(currentProvider, newModel);
+
       console.log(chalk.green(`✓ Model set to: ${newModel}\n`));
       return false;
     }
@@ -195,6 +204,10 @@ export const modelCommand: SlashCommand = {
     }
 
     session.config.provider.model = newModel;
+
+    // Save preference for next session
+    await saveProviderPreference(currentProvider, newModel);
+
     const modelInfo = providerDef.models.find((m) => m.id === newModel);
     console.log(chalk.green(`✓ Switched to ${modelInfo?.name ?? newModel}\n`));
 

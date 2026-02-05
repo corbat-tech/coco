@@ -37,6 +37,13 @@ export interface ParallelExecutorOptions {
   projectPath?: string;
   /** Callback when a hook executes */
   onHookExecuted?: (event: string, result: HookExecutionResult) => void;
+  /**
+   * Called when a tool fails because the target path is outside the project directory.
+   * Receives the directory path that needs authorization.
+   * Return true if the user authorized the path (tool will be retried).
+   * Return false to keep the error as-is.
+   */
+  onPathAccessDenied?: (dirPath: string) => Promise<boolean>;
 }
 
 /**
@@ -91,6 +98,7 @@ export class ParallelToolExecutor {
       onToolEnd,
       onToolSkipped,
       signal,
+      onPathAccessDenied,
     } = options;
 
     const total = toolCalls.length;
@@ -167,6 +175,7 @@ export class ParallelToolExecutor {
           onToolStart,
           onToolEnd,
           signal,
+          onPathAccessDenied,
         ).then((result) => {
           task.result = result;
           task.completed = true;
@@ -215,6 +224,7 @@ export class ParallelToolExecutor {
     onToolStart?: (toolCall: ToolCall, index: number, total: number) => void,
     onToolEnd?: (result: ExecutedToolCall) => void,
     signal?: AbortSignal,
+    onPathAccessDenied?: (dirPath: string) => Promise<boolean>,
   ): Promise<ExecutedToolCall | null> {
     // Check for abort before starting
     if (signal?.aborted) {
@@ -224,7 +234,20 @@ export class ParallelToolExecutor {
     onToolStart?.(toolCall, index, total);
 
     const startTime = performance.now();
-    const result: ToolResult = await registry.execute(toolCall.name, toolCall.input, { signal });
+    let result: ToolResult = await registry.execute(toolCall.name, toolCall.input, { signal });
+
+    // If tool failed due to path access, offer to authorize and retry
+    if (!result.success && result.error && onPathAccessDenied) {
+      const dirPath = extractDeniedPath(result.error);
+      if (dirPath) {
+        const authorized = await onPathAccessDenied(dirPath);
+        if (authorized) {
+          // Retry the tool now that the path is authorized
+          result = await registry.execute(toolCall.name, toolCall.input, { signal });
+        }
+      }
+    }
+
     const duration = performance.now() - startTime;
 
     const output = result.success
@@ -354,6 +377,15 @@ export class ParallelToolExecutor {
 
     return { executed: executedCall, skipped: false };
   }
+}
+
+/**
+ * Extract the directory path from an "outside project directory" error message.
+ * Returns the directory path if matched, or null.
+ */
+function extractDeniedPath(error: string): string | null {
+  const match = error.match(/Use \/allow-path (.+?) to grant access/);
+  return match?.[1] ?? null;
 }
 
 /**

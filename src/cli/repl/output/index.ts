@@ -42,6 +42,28 @@ export {
   flushLineBuffer,
   /** Reset line buffer for new session */
   resetLineBuffer,
+  /** Get raw markdown accumulated during streaming */
+  getRawMarkdown,
+  /** Clear the raw markdown buffer */
+  clearRawMarkdown,
 } from "./renderer.js";
 
+export {
+  /** Copy text to system clipboard */
+  copyToClipboard,
+  /** Check if clipboard is available */
+  isClipboardAvailable,
+} from "./clipboard.js";
+
 export { createSpinner, type Spinner } from "./spinner.js";
+
+export {
+  /** Render full markdown to terminal-formatted string */
+  renderMarkdown,
+  /** Render markdown with assistant response styling */
+  renderAssistantMarkdown,
+  /** Simple inline markdown for streaming text */
+  renderInlineMarkdown,
+  /** Check if text contains markdown formatting */
+  containsMarkdown,
+} from "./markdown.js";

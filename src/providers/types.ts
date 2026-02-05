@@ -199,6 +199,8 @@ export interface ProviderConfig {
   maxTokens?: number;
   temperature?: number;
   timeout?: number;
+  /** Internal: flag to indicate using Google Cloud ADC */
+  useADC?: boolean;
 }
 
 /**

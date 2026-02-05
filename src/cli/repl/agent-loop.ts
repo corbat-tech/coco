@@ -18,8 +18,6 @@ import { getConversationContext, addMessage, saveTrustedTool } from "./session.j
 import {
   requiresConfirmation,
   confirmToolExecution,
-  createConfirmationState,
-  type ConfirmationState,
 } from "./confirmation.js";
 import { ParallelToolExecutor } from "./parallel-executor.js";
 import {
@@ -28,6 +26,7 @@ import {
   type HookExecutionResult,
 } from "./hooks/index.js";
 import { resetLineBuffer, flushLineBuffer } from "./output/renderer.js";
+import { promptAllowPath } from "./allow-path-prompt.js";
 
 /**
  * Options for executing an agent turn
@@ -41,6 +40,8 @@ export interface AgentTurnOptions {
   onToolSkipped?: (toolCall: ToolCall, reason: string) => void;
   /** Called when a tool is being prepared (parsed from stream) */
   onToolPreparing?: (toolName: string) => void;
+  /** Called before showing confirmation dialog (to clear spinners, etc.) */
+  onBeforeConfirmation?: () => void;
   signal?: AbortSignal;
   /** Skip confirmation prompts for destructive tools */
   skipConfirmation?: boolean;
@@ -75,9 +76,6 @@ export async function executeAgentTurn(
 
   // Get tool definitions for LLM (cast to provider's ToolDefinition type)
   const tools = toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
-
-  // Confirmation state for this turn
-  const confirmState: ConfirmationState = createConfirmationState();
 
   // Agentic loop - continue until no more tool calls
   let iteration = 0;
@@ -237,12 +235,24 @@ export async function executeAgentTurn(
       // Check if confirmation is needed (skip if tool is trusted for session)
       const needsConfirmation =
         !options.skipConfirmation &&
-        !confirmState.allowAll &&
         !session.trustedTools.has(toolCall.name) &&
-        requiresConfirmation(toolCall.name);
+        requiresConfirmation(toolCall.name, toolCall.input);
 
       if (needsConfirmation) {
+        // Notify UI to clear any spinners before showing confirmation
+        options.onBeforeConfirmation?.();
         const confirmResult = await confirmToolExecution(toolCall);
+
+        // Handle edit result for bash_exec
+        if (typeof confirmResult === "object" && confirmResult.type === "edit") {
+          // Create modified tool call with edited command
+          const editedToolCall: ToolCall = {
+            ...toolCall,
+            input: { ...toolCall.input, command: confirmResult.newCommand },
+          };
+          confirmedTools.push(editedToolCall);
+          continue;
+        }
 
         switch (confirmResult) {
           case "no":
@@ -256,16 +266,16 @@ export async function executeAgentTurn(
             turnAborted = true;
             continue;
 
-          case "yes_all":
-            // Allow all for rest of turn
-            confirmState.allowAll = true;
+          case "trust_project":
+            // Trust this tool for this project (persist to projectTrusted)
+            session.trustedTools.add(toolCall.name);
+            saveTrustedTool(toolCall.name, session.projectPath, false).catch(() => {});
             break;
 
-          case "trust_session":
-            // Trust this tool for the rest of the session and persist
+          case "trust_global":
+            // Trust this tool globally (persist to globalTrusted)
             session.trustedTools.add(toolCall.name);
-            // Persist trust setting for future sessions (fire and forget)
-            saveTrustedTool(toolCall.name, session.projectPath, false).catch(() => {});
+            saveTrustedTool(toolCall.name, null, true).catch(() => {});
             break;
 
           case "yes":
@@ -292,6 +302,11 @@ export async function executeAgentTurn(
         onToolEnd: options.onToolEnd,
         onToolSkipped: options.onToolSkipped,
         signal: options.signal,
+        onPathAccessDenied: async (dirPath: string) => {
+          // Clear spinner before showing interactive prompt
+          options.onBeforeConfirmation?.();
+          return promptAllowPath(dirPath);
+        },
       });
 
       // Collect executed tools

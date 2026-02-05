@@ -1,5 +1,10 @@
 /**
  * Google Gemini provider for Corbat-Coco
+ *
+ * Supports multiple authentication methods:
+ * 1. GEMINI_API_KEY environment variable (recommended)
+ * 2. GOOGLE_API_KEY environment variable
+ * 3. Google Cloud ADC (gcloud auth application-default login)
  */
 
 import {
@@ -26,17 +31,29 @@ import type {
   ToolResultContent,
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
+import { getCachedADCToken } from "../auth/gcloud.js";
 
 /**
- * Default model
+ * Default model - Updated February 2026
  */
-const DEFAULT_MODEL = "gemini-2.0-flash";
+const DEFAULT_MODEL = "gemini-3-flash-preview";
 
 /**
  * Context windows for models
+ * Updated February 2026 - Gemini 3 uses -preview suffix
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
-  "gemini-2.0-flash": 1000000,
+  // Gemini 3 series (latest, Jan 2026 - use -preview suffix)
+  "gemini-3-flash-preview": 1000000,
+  "gemini-3-pro-preview": 1000000,
+  // Gemini 2.5 series (production stable)
+  "gemini-2.5-pro-preview-05-06": 1048576,
+  "gemini-2.5-flash-preview-05-20": 1048576,
+  "gemini-2.5-pro": 1048576,
+  "gemini-2.5-flash": 1048576,
+  // Gemini 2.0 series (GA stable)
+  "gemini-2.0-flash": 1048576,
+  // Legacy
   "gemini-1.5-flash": 1000000,
   "gemini-1.5-pro": 2000000,
   "gemini-1.0-pro": 32000,
@@ -54,18 +71,62 @@ export class GeminiProvider implements LLMProvider {
 
   /**
    * Initialize the provider
+   *
+   * Authentication priority:
+   * 1. API key passed in config (unless it's the ADC marker)
+   * 2. GEMINI_API_KEY environment variable
+   * 3. GOOGLE_API_KEY environment variable
+   * 4. Google Cloud ADC (gcloud auth application-default login)
    */
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
 
-    const apiKey = config.apiKey ?? process.env["GEMINI_API_KEY"] ?? process.env["GOOGLE_API_KEY"];
+    // Check for ADC marker (set by onboarding when user chooses gcloud ADC)
+    const isADCMarker = config.apiKey === "__gcloud_adc__";
+
+    // Try explicit API keys first (unless it's the ADC marker)
+    let apiKey = (!isADCMarker && config.apiKey)
+      ? config.apiKey
+      : process.env["GEMINI_API_KEY"] ?? process.env["GOOGLE_API_KEY"];
+
+    // If no API key or ADC marker is set, try gcloud ADC
+    if (!apiKey || isADCMarker) {
+      try {
+        const adcToken = await getCachedADCToken();
+        if (adcToken) {
+          apiKey = adcToken.accessToken;
+          // Store that we're using ADC for refresh later
+          this.config.useADC = true;
+        }
+      } catch {
+        // ADC not available, continue without it
+      }
+    }
+
     if (!apiKey) {
-      throw new ProviderError("Gemini API key not provided", {
-        provider: this.id,
-      });
+      throw new ProviderError(
+        "Gemini API key not provided. Set GEMINI_API_KEY or run: gcloud auth application-default login",
+        { provider: this.id },
+      );
     }
 
     this.client = new GoogleGenerativeAI(apiKey);
+  }
+
+  /**
+   * Refresh ADC token if needed and reinitialize client
+   */
+  private async refreshADCIfNeeded(): Promise<void> {
+    if (!this.config.useADC) return;
+
+    try {
+      const adcToken = await getCachedADCToken();
+      if (adcToken) {
+        this.client = new GoogleGenerativeAI(adcToken.accessToken);
+      }
+    } catch {
+      // Token refresh failed, continue with existing client
+    }
   }
 
   /**
@@ -73,6 +134,7 @@ export class GeminiProvider implements LLMProvider {
    */
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
+    await this.refreshADCIfNeeded();
 
     try {
       const model = this.client!.getGenerativeModel({
@@ -104,6 +166,7 @@ export class GeminiProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
+    await this.refreshADCIfNeeded();
 
     try {
       const tools: Tool[] = [
@@ -143,6 +206,7 @@ export class GeminiProvider implements LLMProvider {
    */
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    await this.refreshADCIfNeeded();
 
     try {
       const model = this.client!.getGenerativeModel({
@@ -180,6 +244,7 @@ export class GeminiProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    await this.refreshADCIfNeeded();
 
     try {
       const tools: Tool[] = [

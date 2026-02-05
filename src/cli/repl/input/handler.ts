@@ -25,6 +25,10 @@ import { getAllCommands } from "../commands/index.js";
 export interface InputHandler {
   prompt(): Promise<string | null>;
   close(): void;
+  /** Pause input during agent processing to prevent interference */
+  pause(): void;
+  /** Resume input after agent processing */
+  resume(): void;
 }
 
 /** History file location */
@@ -102,8 +106,10 @@ export function createInputHandler(_session: ReplSession): InputHandler {
   let tempLine = "";
   let lastMenuLines = 0;
 
-  const promptStr = "coco> ";
+  const promptStr = "🥥 › ";
   const MAX_ROWS = 8;
+  /** Bottom margin: push prompt up from terminal edge */
+  const BOTTOM_MARGIN = 1;
   const ITEM_WIDTH = 28; // Width for each column item (command + padding)
 
   /**
@@ -201,10 +207,19 @@ export function createInputHandler(_session: ReplSession): InputHandler {
         lastMenuLines++;
       }
 
-      // Move cursor back up to input line
-      output += ansiEscapes.cursorUp(lastMenuLines);
+      // Add bottom margin below menu, then move cursor back to prompt line
+      for (let i = 0; i < BOTTOM_MARGIN; i++) {
+        output += "\n";
+      }
+      output += ansiEscapes.cursorUp(lastMenuLines + BOTTOM_MARGIN);
     } else {
       lastMenuLines = 0;
+
+      // Add bottom margin below prompt, then move cursor back
+      for (let i = 0; i < BOTTOM_MARGIN; i++) {
+        output += "\n";
+      }
+      output += ansiEscapes.cursorUp(BOTTOM_MARGIN);
     }
 
     // Move cursor to end of actual input (after prompt, after typed text, before ghost)
@@ -218,11 +233,9 @@ export function createInputHandler(_session: ReplSession): InputHandler {
    * Clear the menu before exiting or submitting
    */
   function clearMenu() {
-    if (lastMenuLines > 0) {
-      // Move down past menu, then erase up
-      process.stdout.write(ansiEscapes.eraseDown);
-      lastMenuLines = 0;
-    }
+    // Always erase below to clear menu and/or bottom margin
+    process.stdout.write(ansiEscapes.eraseDown);
+    lastMenuLines = 0;
   }
 
   return {
@@ -439,6 +452,19 @@ export function createInputHandler(_session: ReplSession): InputHandler {
         closed = true;
         saveHistory(sessionHistory);
       }
+    },
+
+    pause(): void {
+      // Pause stdin to prevent input during agent processing
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdin.pause();
+    },
+
+    resume(): void {
+      // Resume stdin for next prompt
+      // Note: raw mode will be re-enabled by prompt()
     },
   };
 }

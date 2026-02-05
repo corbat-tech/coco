@@ -5,19 +5,19 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import type { Message, LLMProvider } from "../../providers/types.js";
 import type { ReplSession, ReplConfig } from "./types.js";
-import { getDefaultProvider, getDefaultModel } from "../../config/env.js";
+import { getDefaultModel, getLastUsedProvider, getLastUsedModel } from "../../config/env.js";
 import { createContextManager } from "./context/manager.js";
 import { createContextCompactor, type CompactionResult } from "./context/compactor.js";
 import { createMemoryLoader, type MemoryContext } from "./memory/index.js";
+import { CONFIG_PATHS } from "../../config/paths.js";
 
 /**
  * Trust settings file location
  */
-const TRUST_SETTINGS_DIR = path.join(os.homedir(), ".config", "corbat-coco");
-const TRUST_SETTINGS_FILE = path.join(TRUST_SETTINGS_DIR, "trusted-tools.json");
+const TRUST_SETTINGS_DIR = path.dirname(CONFIG_PATHS.trustedTools);
+const TRUST_SETTINGS_FILE = CONFIG_PATHS.trustedTools;
 
 /**
  * Trust settings interface
@@ -49,17 +49,60 @@ When the user asks you to do something:
 3. Explain what you did concisely
 
 Be helpful and direct. If a task requires multiple steps, execute them one by one.
-Always verify your work by reading files after editing or running tests after changes.`;
+Always verify your work by reading files after editing or running tests after changes.
+
+## File Access
+File operations are restricted to the project directory by default.
+If a tool fails with "outside project directory", tell the user to run \`/allow-path <directory>\` to grant access to that directory. Do NOT retry the operation until the user has granted access.
+
+## Output Formatting Rules
+
+**For normal conversation**: Just respond naturally without any special formatting. Short answers, questions, confirmations, and casual chat should be plain text.
+
+**For structured content** (documentation, tutorials, summaries, explanations with multiple sections, or when the user asks for "markdown"):
+
+1. Wrap your entire response in a single markdown code block:
+   \`\`\`markdown
+   Your content here...
+   \`\`\`
+
+2. **CRITICAL: Never close the markdown block prematurely** - The closing \`\`\` must ONLY appear at the very end.
+
+3. **For code examples inside markdown**, use TILDES (~~~) instead of backticks:
+   ~~~javascript
+   function example() { return "hello"; }
+   ~~~
+
+4. **Include all content in ONE block**: headers, lists, tables, quotes, code examples.
+
+**When to use markdown block:**
+- User asks for documentation, summary, tutorial, guide
+- Response has multiple sections with headers
+- Response includes tables or complex formatting
+- User explicitly requests markdown
+
+**When NOT to use markdown block:**
+- Simple answers ("Yes", "The file is at /path/to/file")
+- Short explanations (1-2 sentences)
+- Questions back to the user
+- Confirmation messages
+- Error messages`;
 
 /**
  * Default REPL configuration
+ * Uses last used provider/model from preferences if available
  */
 export function createDefaultReplConfig(): ReplConfig {
-  const providerType = getDefaultProvider();
+  // Get last used provider from preferences (falls back to env/anthropic)
+  const providerType = getLastUsedProvider();
+
+  // Get last used model for this provider, or fall back to default
+  const model = getLastUsedModel(providerType) ?? getDefaultModel(providerType);
+
   return {
     provider: {
       type: providerType,
-      model: getDefaultModel(providerType),
+      model,
       maxTokens: 8192,
     },
     ui: {
@@ -182,12 +225,12 @@ export async function loadTrustedTools(projectPath: string): Promise<Set<string>
 /**
  * Save a trusted tool to persistent storage
  * @param toolName - The tool name to trust
- * @param projectPath - The project path (for project-specific trust)
+ * @param projectPath - The project path (for project-specific trust), can be null for global trust
  * @param global - If true, trust globally; otherwise trust for this project only
  */
 export async function saveTrustedTool(
   toolName: string,
-  projectPath: string,
+  projectPath: string | null,
   global: boolean = false,
 ): Promise<void> {
   const settings = await loadTrustSettings();
@@ -197,8 +240,8 @@ export async function saveTrustedTool(
     if (!settings.globalTrusted.includes(toolName)) {
       settings.globalTrusted.push(toolName);
     }
-  } else {
-    // Add to project-specific trusted
+  } else if (projectPath) {
+    // Add to project-specific trusted (only if we have a valid project path)
     if (!settings.projectTrusted[projectPath]) {
       settings.projectTrusted[projectPath] = [];
     }

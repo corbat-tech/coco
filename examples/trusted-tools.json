@@ -1,0 +1,97 @@
+{
+  "$schema": "https://corbat.tech/schemas/trusted-tools.json",
+  "_comment": "Recommended trusted tools config. Copy to ~/.coco/trusted-tools.json",
+
+  "globalTrusted": [
+    "read_file",
+    "glob",
+    "list_dir",
+    "tree",
+    "file_exists",
+    "grep",
+    "find_in_file",
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_branch",
+    "run_linter",
+    "analyze_complexity",
+    "calculate_quality",
+    "get_coverage",
+    "command_exists"
+  ],
+
+  "projectTrusted": {
+    "_example_/path/to/your/project": [
+      "write_file",
+      "edit_file",
+      "copy_file",
+      "move_file",
+      "git_add",
+      "git_commit",
+      "run_tests",
+      "run_test_file",
+      "run_script",
+      "tsc"
+    ]
+  },
+
+  "_reference": {
+    "safe_to_trust_globally": {
+      "_description": "Read-only tools that never modify anything",
+      "tools": [
+        "read_file       - Read file contents",
+        "glob            - Find files by pattern",
+        "list_dir        - List directory contents",
+        "tree            - Directory tree view",
+        "file_exists     - Check if file exists",
+        "grep            - Search text in files",
+        "find_in_file    - Find text in a file",
+        "git_status      - Show git status",
+        "git_diff        - Show git diff",
+        "git_log         - Show git history",
+        "git_branch      - List branches",
+        "command_exists  - Check if command exists",
+        "run_linter      - Run code linter (read-only)",
+        "analyze_complexity - Code complexity (read-only)",
+        "calculate_quality  - Quality score (read-only)",
+        "get_coverage    - Test coverage (read-only)"
+      ]
+    },
+
+    "trust_per_project": {
+      "_description": "Tools that modify files - trust only in specific projects",
+      "tools": [
+        "write_file     - Create/overwrite file",
+        "edit_file      - Edit file contents",
+        "copy_file      - Copy file",
+        "move_file      - Move/rename file",
+        "git_add        - Stage changes",
+        "git_commit     - Create commit (local only)",
+        "git_checkout   - Switch branch",
+        "git_init       - Initialize repo",
+        "run_tests      - Run test suite",
+        "run_test_file  - Run specific test",
+        "run_script     - Run npm/pnpm script",
+        "tsc            - Run TypeScript compiler"
+      ]
+    },
+
+    "always_ask": {
+      "_description": "High-risk tools that always show a confirmation prompt with warning",
+      "_note": "These tools work normally but cannot be auto-trusted - user must approve each time",
+      "tools": [
+        "delete_file     - Permanently removes files",
+        "git_push        - Pushes to remote (affects others)",
+        "git_pull        - Pulls from remote (can overwrite local)",
+        "install_deps    - Downloads and runs npm packages",
+        "make            - Runs arbitrary Makefile targets",
+        "bash_exec       - Executes arbitrary shell commands",
+        "bash_background - Runs background processes",
+        "http_fetch      - Makes HTTP requests",
+        "http_json       - Makes JSON API requests",
+        "get_env         - Could expose sensitive env vars"
+      ]
+    }
+  }
+}

@@ -22,9 +22,9 @@ import { ProviderError } from "../utils/errors.js";
 import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 
 /**
- * Default models
+ * Default model - Updated January 2026
  */
-const DEFAULT_MODEL = "gpt-4o";
+const DEFAULT_MODEL = "gpt-5.2-codex";
 
 /**
  * Context windows for models
@@ -39,6 +39,13 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   o1: 200000,
   "o1-mini": 128000,
   "o3-mini": 200000,
+  // GPT-5 series (2025-2026)
+  "gpt-5": 400000,
+  "gpt-5.2": 400000,
+  "gpt-5.2-codex": 400000,
+  "gpt-5.2-thinking": 400000,
+  "gpt-5.2-instant": 400000,
+  "gpt-5.2-pro": 400000,
   // Kimi/Moonshot models
   "kimi-k2.5": 262144,
   "kimi-k2-0324": 131072,
@@ -46,6 +53,33 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "moonshot-v1-8k": 8000,
   "moonshot-v1-32k": 32000,
   "moonshot-v1-128k": 128000,
+  // LM Studio / Local models (Qwen3-Coder series)
+  "qwen3-coder-3b-instruct": 256000,
+  "qwen3-coder-8b-instruct": 256000,
+  "qwen3-coder-14b-instruct": 256000,
+  "qwen3-coder-32b-instruct": 256000,
+  // DeepSeek Coder models
+  "deepseek-coder-v3": 128000,
+  "deepseek-coder-v3-lite": 128000,
+  "deepseek-coder-v2": 128000,
+  "deepseek-coder": 128000,
+  // Codestral (Mistral)
+  "codestral-22b": 32768,
+  codestral: 32768,
+  // Qwen 2.5 Coder (legacy but still popular)
+  "qwen2.5-coder-7b-instruct": 32768,
+  "qwen2.5-coder-14b-instruct": 32768,
+  "qwen2.5-coder-32b-instruct": 32768,
+  // Llama 3 Code models
+  "llama-3-8b": 8192,
+  "llama-3-70b": 8192,
+  "llama-3.1-8b": 128000,
+  "llama-3.1-70b": 128000,
+  "llama-3.2-3b": 128000,
+  // Mistral models
+  "mistral-7b": 32768,
+  "mistral-nemo": 128000,
+  "mixtral-8x7b": 32768,
 };
 
 /**
@@ -59,6 +93,22 @@ const MODELS_WITHOUT_TEMPERATURE: string[] = [
   "kimi-k2.5",
   "kimi-k2-0324",
   "kimi-latest",
+];
+
+/**
+ * Local model patterns - these use different tokenizers
+ * Used for more accurate token counting
+ */
+const LOCAL_MODEL_PATTERNS: string[] = [
+  "qwen",
+  "deepseek",
+  "codestral",
+  "llama",
+  "mistral",
+  "mixtral",
+  "phi",
+  "gemma",
+  "starcoder",
 ];
 
 /**
@@ -316,98 +366,144 @@ export class OpenAIProvider implements LLMProvider {
       const toolCallBuilders: Map<number, { id: string; name: string; arguments: string }> =
         new Map();
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta;
+      // Add timeout protection for local LLMs that may hang
+      const streamTimeout = this.config.timeout ?? 120000;
+      let lastActivityTime = Date.now();
 
-        // Handle text content
-        if (delta?.content) {
-          yield { type: "text", text: delta.content };
+      const checkTimeout = () => {
+        if (Date.now() - lastActivityTime > streamTimeout) {
+          throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
         }
+      };
 
-        // Handle tool calls
-        if (delta?.tool_calls) {
-          for (const toolCallDelta of delta.tool_calls) {
-            const index = toolCallDelta.index;
+      // Set up periodic timeout check
+      const timeoutInterval = setInterval(checkTimeout, 5000);
 
-            if (!toolCallBuilders.has(index)) {
-              // New tool call starting
-              toolCallBuilders.set(index, {
-                id: toolCallDelta.id ?? "",
-                name: toolCallDelta.function?.name ?? "",
-                arguments: "",
-              });
-              yield {
-                type: "tool_use_start",
-                toolCall: {
-                  id: toolCallDelta.id,
-                  name: toolCallDelta.function?.name,
-                },
-              };
-            }
+      try {
+        for await (const chunk of stream) {
+          lastActivityTime = Date.now(); // Reset timeout on activity
+          const delta = chunk.choices[0]?.delta;
 
-            const builder = toolCallBuilders.get(index)!;
+          // Handle text content
+          if (delta?.content) {
+            yield { type: "text", text: delta.content };
+          }
 
-            // Update id if provided
-            if (toolCallDelta.id) {
-              builder.id = toolCallDelta.id;
-            }
+          // Handle tool calls
+          if (delta?.tool_calls) {
+            for (const toolCallDelta of delta.tool_calls) {
+              const index = toolCallDelta.index;
 
-            // Update name if provided
-            if (toolCallDelta.function?.name) {
-              builder.name = toolCallDelta.function.name;
-            }
+              if (!toolCallBuilders.has(index)) {
+                // New tool call starting
+                toolCallBuilders.set(index, {
+                  id: toolCallDelta.id ?? "",
+                  name: toolCallDelta.function?.name ?? "",
+                  arguments: "",
+                });
+                yield {
+                  type: "tool_use_start",
+                  toolCall: {
+                    id: toolCallDelta.id,
+                    name: toolCallDelta.function?.name,
+                  },
+                };
+              }
 
-            // Accumulate arguments
-            if (toolCallDelta.function?.arguments) {
-              builder.arguments += toolCallDelta.function.arguments;
-              yield {
-                type: "tool_use_delta",
-                toolCall: {
-                  id: builder.id,
-                  name: builder.name,
-                },
-                text: toolCallDelta.function.arguments,
-              };
+              const builder = toolCallBuilders.get(index)!;
+
+              // Update id if provided
+              if (toolCallDelta.id) {
+                builder.id = toolCallDelta.id;
+              }
+
+              // Update name if provided
+              if (toolCallDelta.function?.name) {
+                builder.name = toolCallDelta.function.name;
+              }
+
+              // Accumulate arguments
+              if (toolCallDelta.function?.arguments) {
+                builder.arguments += toolCallDelta.function.arguments;
+                yield {
+                  type: "tool_use_delta",
+                  toolCall: {
+                    id: builder.id,
+                    name: builder.name,
+                  },
+                  text: toolCallDelta.function.arguments,
+                };
+              }
             }
           }
         }
-      }
 
-      // Finalize all tool calls
-      for (const [, builder] of toolCallBuilders) {
-        let input: Record<string, unknown> = {};
-        try {
-          input = builder.arguments ? JSON.parse(builder.arguments) : {};
-        } catch {
-          // Invalid JSON, use empty object
+        // Finalize all tool calls
+        for (const [, builder] of toolCallBuilders) {
+          let input: Record<string, unknown> = {};
+          try {
+            input = builder.arguments ? JSON.parse(builder.arguments) : {};
+          } catch {
+            // Invalid JSON, use empty object
+          }
+
+          yield {
+            type: "tool_use_end",
+            toolCall: {
+              id: builder.id,
+              name: builder.name,
+              input,
+            },
+          };
         }
 
-        yield {
-          type: "tool_use_end",
-          toolCall: {
-            id: builder.id,
-            name: builder.name,
-            input,
-          },
-        };
+        yield { type: "done" };
+      } finally {
+        clearInterval(timeoutInterval);
       }
-
-      yield { type: "done" };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Count tokens (improved heuristic for OpenAI models)
+   * Check if current model is a local model (LM Studio, Ollama, etc.)
+   */
+  private isLocalModel(): boolean {
+    const model = (this.config.model ?? "").toLowerCase();
+    const baseUrl = (this.config.baseUrl ?? "").toLowerCase();
+
+    // Check by URL patterns (localhost, common local ports)
+    if (
+      baseUrl.includes("localhost") ||
+      baseUrl.includes("127.0.0.1") ||
+      baseUrl.includes(":1234") || // LM Studio default
+      baseUrl.includes(":11434") // Ollama default
+    ) {
+      return true;
+    }
+
+    // Check by model name patterns
+    return LOCAL_MODEL_PATTERNS.some((pattern) => model.includes(pattern));
+  }
+
+  /**
+   * Count tokens (improved heuristic for OpenAI and local models)
    *
-   * GPT models use a BPE tokenizer. The average ratio varies:
+   * Different tokenizers have different characteristics:
+   *
+   * GPT models (BPE tokenizer - tiktoken):
    * - English text: ~4 characters per token
-   * - Code: ~3.3 characters per token (more syntax chars)
-   * - Common words: Often 1 token per word
+   * - Code: ~3.3 characters per token
    *
-   * For accurate counting, use tiktoken library.
-   * This heuristic provides a reasonable estimate without the dependency.
+   * Local models (SentencePiece/HuggingFace tokenizers):
+   * - Qwen models: ~3.5 chars/token for code, uses tiktoken-compatible
+   * - Llama models: ~3.8 chars/token, SentencePiece-based
+   * - DeepSeek: ~3.2 chars/token for code, BPE-based
+   * - Mistral: ~3.5 chars/token, SentencePiece-based
+   *
+   * For accurate counting, use the model's native tokenizer.
+   * This heuristic provides a reasonable estimate without dependencies.
    */
   countTokens(text: string): number {
     if (!text) return 0;
@@ -416,40 +512,109 @@ export class OpenAIProvider implements LLMProvider {
     const codePatterns = /[{}[\]();=<>!&|+\-*/]/g;
     const whitespacePattern = /\s/g;
     const wordPattern = /\b\w+\b/g;
+    const nonAsciiPattern = /[^\x00-\x7F]/g;
 
     const codeChars = (text.match(codePatterns) || []).length;
     const whitespace = (text.match(whitespacePattern) || []).length;
     const words = (text.match(wordPattern) || []).length;
+    const nonAscii = (text.match(nonAsciiPattern) || []).length;
 
     // Estimate if text is code-like
     const isCodeLike = codeChars > text.length * 0.05;
 
-    // Calculate base ratio
+    // Check if we're using a local model (different tokenizer characteristics)
+    const isLocal = this.isLocalModel();
+
+    // Calculate base ratio based on model type and content
     let charsPerToken: number;
-    if (isCodeLike) {
-      charsPerToken = 3.3;
-    } else if (whitespace > text.length * 0.3) {
-      charsPerToken = 4.5;
+    if (isLocal) {
+      // Local models tend to have slightly more efficient tokenization for code
+      if (isCodeLike) {
+        charsPerToken = 3.2; // Code is more efficiently tokenized
+      } else if (nonAscii > text.length * 0.1) {
+        charsPerToken = 2.0; // Non-ASCII (CJK, emoji) uses more tokens
+      } else {
+        charsPerToken = 3.5;
+      }
     } else {
-      charsPerToken = 4.0;
+      // OpenAI GPT models
+      if (isCodeLike) {
+        charsPerToken = 3.3;
+      } else if (whitespace > text.length * 0.3) {
+        charsPerToken = 4.5;
+      } else {
+        charsPerToken = 4.0;
+      }
     }
 
-    // Word-based estimate (GPT tends to have ~1.3 tokens per word)
-    const wordBasedEstimate = words * 1.3;
+    // Word-based estimate
+    const tokensPerWord = isLocal ? 1.4 : 1.3;
+    const wordBasedEstimate = words * tokensPerWord;
 
     // Char-based estimate
     const charBasedEstimate = text.length / charsPerToken;
 
-    // Use average of both methods
-    return Math.ceil((wordBasedEstimate + charBasedEstimate) / 2);
+    // Use weighted average (char-based is usually more reliable for code)
+    const weight = isCodeLike ? 0.7 : 0.5;
+    return Math.ceil(charBasedEstimate * weight + wordBasedEstimate * (1 - weight));
   }
 
   /**
    * Get context window size
+   *
+   * For local models, tries to match by model family if exact match not found.
+   * This handles cases where LM Studio reports models with different naming
+   * conventions (e.g., "qwen3-coder-8b" vs "qwen3-coder-8b-instruct").
    */
   getContextWindow(): number {
     const model = this.config.model ?? DEFAULT_MODEL;
-    return CONTEXT_WINDOWS[model] ?? 128000;
+
+    // Try exact match first
+    if (CONTEXT_WINDOWS[model]) {
+      return CONTEXT_WINDOWS[model];
+    }
+
+    // Try partial match for local models
+    const modelLower = model.toLowerCase();
+    for (const [key, value] of Object.entries(CONTEXT_WINDOWS)) {
+      // Check if model name contains the key or vice versa
+      if (modelLower.includes(key.toLowerCase()) || key.toLowerCase().includes(modelLower)) {
+        return value;
+      }
+    }
+
+    // Infer context window by model family for local models
+    if (modelLower.includes("qwen3-coder")) {
+      return 256000; // Qwen3-Coder has 256k context
+    }
+    if (modelLower.includes("qwen2.5-coder")) {
+      return 32768;
+    }
+    if (modelLower.includes("deepseek-coder")) {
+      return 128000;
+    }
+    if (modelLower.includes("codestral")) {
+      return 32768;
+    }
+    if (modelLower.includes("llama-3.1") || modelLower.includes("llama-3.2")) {
+      return 128000;
+    }
+    if (modelLower.includes("llama")) {
+      return 8192;
+    }
+    if (modelLower.includes("mistral-nemo")) {
+      return 128000;
+    }
+    if (modelLower.includes("mistral") || modelLower.includes("mixtral")) {
+      return 32768;
+    }
+
+    // Default for unknown models (conservative estimate for local models)
+    if (this.isLocalModel()) {
+      return 32768; // Safe default for local models
+    }
+
+    return 128000; // Default for cloud APIs
   }
 
   /**

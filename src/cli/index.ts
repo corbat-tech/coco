@@ -15,7 +15,7 @@ import { registerConfigCommand } from "./commands/config.js";
 import { registerMCPCommand } from "./commands/mcp.js";
 import { startRepl } from "./repl/index.js";
 import { runOnboardingV2 } from "./repl/onboarding-v2.js";
-import { getDefaultProvider } from "../config/env.js";
+import { getLastUsedProvider } from "../config/env.js";
 import type { ProviderType } from "../providers/index.js";
 
 const program = new Command();
@@ -52,7 +52,7 @@ program
   .command("chat", { isDefault: true })
   .description("Start interactive chat session with the agent")
   .option("-m, --model <model>", "LLM model to use")
-  .option("--provider <provider>", "LLM provider (anthropic, openai, gemini, kimi)")
+  .option("--provider <provider>", "LLM provider (anthropic, openai, codex, gemini, kimi)")
   .option("-p, --path <path>", "Project path", process.cwd())
   .option("--setup", "Run setup wizard before starting")
   .action(async (options: { model?: string; provider?: string; path: string; setup?: boolean }) => {
@@ -65,7 +65,8 @@ program
       }
     }
 
-    const providerType = (options.provider as ProviderType) ?? getDefaultProvider();
+    // Use last used provider from preferences (falls back to env/anthropic)
+    const providerType = (options.provider as ProviderType) ?? getLastUsedProvider();
     await startRepl({
       projectPath: options.path,
       config: {
@@ -78,10 +79,8 @@ program
     });
   });
 
-// Load environment variables lazily (performance: async instead of sync import)
 async function main(): Promise<void> {
-  // Load dotenv only when needed, not at module import time
-  await import("dotenv/config");
+  // API keys are loaded from ~/.coco/.env by config/env.ts (no project .env needed)
   await program.parseAsync(process.argv);
 }
 

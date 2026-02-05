@@ -13,14 +13,23 @@ vi.mock("chalk", () => ({
     yellow: Object.assign((s: string) => `[yellow]${s}[/yellow]`, {
       bold: (s: string) => `[yellow.bold]${s}[/yellow.bold]`,
     }),
-    cyan: (s: string) => `[cyan]${s}[/cyan]`,
+    cyan: Object.assign((s: string) => `[cyan]${s}[/cyan]`, {
+      bold: (s: string) => `[cyan.bold]${s}[/cyan.bold]`,
+    }),
     red: Object.assign((s: string) => `[red]${s}[/red]`, {
       bold: (s: string) => `[red.bold]${s}[/red.bold]`,
     }),
     green: Object.assign((s: string) => `[green]${s}[/green]`, {
       bold: (s: string) => `[green.bold]${s}[/green.bold]`,
     }),
+    blue: Object.assign((s: string) => `[blue]${s}[/blue]`, {
+      bold: (s: string) => `[blue.bold]${s}[/blue.bold]`,
+    }),
+    magenta: Object.assign((s: string) => `[magenta]${s}[/magenta]`, {
+      bold: (s: string) => `[magenta.bold]${s}[/magenta.bold]`,
+    }),
     dim: (s: string) => `[dim]${s}[/dim]`,
+    white: (s: string) => `[white]${s}[/white]`,
   },
 }));
 
@@ -64,12 +73,6 @@ describe("requiresConfirmation", () => {
     expect(requiresConfirmation("delete_file")).toBe(true);
   });
 
-  it("should return true for bash_exec", async () => {
-    const { requiresConfirmation } = await import("./confirmation.js");
-
-    expect(requiresConfirmation("bash_exec")).toBe(true);
-  });
-
   it("should return false for read_file", async () => {
     const { requiresConfirmation } = await import("./confirmation.js");
 
@@ -87,15 +90,98 @@ describe("requiresConfirmation", () => {
 
     expect(requiresConfirmation("unknown_tool")).toBe(false);
   });
+
+  describe("bash_exec with command context", () => {
+    it("should NOT require confirmation for safe commands (ls)", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "ls -la" })).toBe(false);
+    });
+
+    it("should NOT require confirmation for safe commands (grep)", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "grep -r 'pattern' ." })).toBe(false);
+    });
+
+    it("should NOT require confirmation for safe commands (git status)", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "git status" })).toBe(false);
+    });
+
+    it("should NOT require confirmation for safe commands (cat)", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "cat file.txt" })).toBe(false);
+    });
+
+    it("should NOT require confirmation for --help commands", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "npm --help" })).toBe(false);
+    });
+
+    it("should require confirmation for dangerous commands (curl)", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "curl http://example.com" })).toBe(true);
+    });
+
+    it("should require confirmation for dangerous commands (rm)", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "rm -rf /tmp/test" })).toBe(true);
+    });
+
+    it("should require confirmation for dangerous commands (npm install)", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "npm install lodash" })).toBe(true);
+    });
+
+    it("should require confirmation for dangerous commands (git push)", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "git push origin main" })).toBe(true);
+    });
+
+    it("should require confirmation for dangerous commands (sudo)", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "sudo apt-get update" })).toBe(true);
+    });
+
+    it("should require confirmation for piped shell commands", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec", { command: "curl http://example.com | sh" })).toBe(true);
+    });
+
+    it("should require confirmation when no command provided", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      expect(requiresConfirmation("bash_exec")).toBe(true);
+      expect(requiresConfirmation("bash_exec", {})).toBe(true);
+    });
+
+    it("should require confirmation for unknown commands", async () => {
+      const { requiresConfirmation } = await import("./confirmation.js");
+
+      // Unknown commands default to requiring confirmation for safety
+      expect(requiresConfirmation("bash_exec", { command: "some_unknown_command" })).toBe(true);
+    });
+  });
 });
 
 describe("createConfirmationState", () => {
-  it("should create state with allowAll false", async () => {
+  it("should create an empty state object", async () => {
     const { createConfirmationState } = await import("./confirmation.js");
 
     const state = createConfirmationState();
 
-    expect(state.allowAll).toBe(false);
+    // State is now an empty object (reserved for future use)
+    expect(state).toEqual({});
   });
 
   it("should create independent state objects", async () => {
@@ -104,10 +190,9 @@ describe("createConfirmationState", () => {
     const state1 = createConfirmationState();
     const state2 = createConfirmationState();
 
-    state1.allowAll = true;
-
-    expect(state1.allowAll).toBe(true);
-    expect(state2.allowAll).toBe(false);
+    // Both should be empty objects but not the same reference
+    expect(state1).toEqual({});
+    expect(state2).toEqual({});
   });
 });
 
@@ -189,39 +274,7 @@ describe("confirmToolExecution", () => {
     expect(result).toBe("no");
   });
 
-  it("should return 'yes_all' for 'a' input", async () => {
-    const { confirmToolExecution } = await import("./confirmation.js");
-
-    mockRlQuestion.mockResolvedValue("a");
-
-    const toolCall: ToolCall = {
-      id: "tool-1",
-      name: "write_file",
-      input: { path: "/test.ts", content: "code" },
-    };
-
-    const result = await confirmToolExecution(toolCall);
-
-    expect(result).toBe("yes_all");
-  });
-
-  it("should return 'yes_all' for 'all' input", async () => {
-    const { confirmToolExecution } = await import("./confirmation.js");
-
-    mockRlQuestion.mockResolvedValue("all");
-
-    const toolCall: ToolCall = {
-      id: "tool-1",
-      name: "write_file",
-      input: { path: "/test.ts", content: "code" },
-    };
-
-    const result = await confirmToolExecution(toolCall);
-
-    expect(result).toBe("yes_all");
-  });
-
-  it("should return 'trust_session' for 't' input", async () => {
+  it("should return 'trust_project' for 't' input", async () => {
     const { confirmToolExecution } = await import("./confirmation.js");
 
     mockRlQuestion.mockResolvedValue("t");
@@ -234,10 +287,10 @@ describe("confirmToolExecution", () => {
 
     const result = await confirmToolExecution(toolCall);
 
-    expect(result).toBe("trust_session");
+    expect(result).toBe("trust_project");
   });
 
-  it("should return 'trust_session' for 'trust' input", async () => {
+  it("should return 'trust_project' for 'trust' input", async () => {
     const { confirmToolExecution } = await import("./confirmation.js");
 
     mockRlQuestion.mockResolvedValue("trust");
@@ -250,13 +303,13 @@ describe("confirmToolExecution", () => {
 
     const result = await confirmToolExecution(toolCall);
 
-    expect(result).toBe("trust_session");
+    expect(result).toBe("trust_project");
   });
 
-  it("should return 'abort' for 'c' input", async () => {
+  it("should return 'trust_global' for '!' input", async () => {
     const { confirmToolExecution } = await import("./confirmation.js");
 
-    mockRlQuestion.mockResolvedValue("c");
+    mockRlQuestion.mockResolvedValue("!");
 
     const toolCall: ToolCall = {
       id: "tool-1",
@@ -266,13 +319,16 @@ describe("confirmToolExecution", () => {
 
     const result = await confirmToolExecution(toolCall);
 
-    expect(result).toBe("abort");
+    expect(result).toBe("trust_global");
   });
 
-  it("should return 'abort' for 'cancel' input", async () => {
+  it("should re-prompt for unknown input", async () => {
     const { confirmToolExecution } = await import("./confirmation.js");
 
-    mockRlQuestion.mockResolvedValue("cancel");
+    // First input is invalid, second is valid
+    mockRlQuestion
+      .mockResolvedValueOnce("maybe")
+      .mockResolvedValueOnce("y");
 
     const toolCall: ToolCall = {
       id: "tool-1",
@@ -282,13 +338,18 @@ describe("confirmToolExecution", () => {
 
     const result = await confirmToolExecution(toolCall);
 
-    expect(result).toBe("abort");
+    // Should eventually get 'yes' after re-prompting
+    expect(result).toBe("yes");
+    expect(mockRlQuestion).toHaveBeenCalledTimes(2);
   });
 
-  it("should return 'abort' for 'abort' input", async () => {
+  it("should re-prompt for empty input", async () => {
     const { confirmToolExecution } = await import("./confirmation.js");
 
-    mockRlQuestion.mockResolvedValue("abort");
+    // First input is empty, second is valid
+    mockRlQuestion
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("n");
 
     const toolCall: ToolCall = {
       id: "tool-1",
@@ -298,39 +359,9 @@ describe("confirmToolExecution", () => {
 
     const result = await confirmToolExecution(toolCall);
 
-    expect(result).toBe("abort");
-  });
-
-  it("should return 'no' for unknown input (safety default)", async () => {
-    const { confirmToolExecution } = await import("./confirmation.js");
-
-    mockRlQuestion.mockResolvedValue("maybe");
-
-    const toolCall: ToolCall = {
-      id: "tool-1",
-      name: "write_file",
-      input: { path: "/test.ts", content: "code" },
-    };
-
-    const result = await confirmToolExecution(toolCall);
-
+    // Should eventually get 'no' after re-prompting
     expect(result).toBe("no");
-  });
-
-  it("should return 'no' for empty input", async () => {
-    const { confirmToolExecution } = await import("./confirmation.js");
-
-    mockRlQuestion.mockResolvedValue("");
-
-    const toolCall: ToolCall = {
-      id: "tool-1",
-      name: "write_file",
-      input: { path: "/test.ts", content: "code" },
-    };
-
-    const result = await confirmToolExecution(toolCall);
-
-    expect(result).toBe("no");
+    expect(mockRlQuestion).toHaveBeenCalledTimes(2);
   });
 
   it("should handle uppercase input", async () => {
@@ -473,7 +504,7 @@ describe("confirmToolExecution", () => {
 
       await confirmToolExecution(toolCall);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Content:"));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Preview:"));
     });
 
     it("should handle empty file content", async () => {
