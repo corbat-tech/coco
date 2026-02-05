@@ -202,8 +202,7 @@ async function switchProvider(
   if (!apiKey) {
     console.log(chalk.yellow(`\n${newProvider.emoji} ${newProvider.name} is not configured.`));
     console.log(chalk.dim(`\nTo configure, set the ${newProvider.envVar} environment variable.`));
-    // Note: apiKeyUrl is a public URL, not sensitive data
-    console.log(chalk.dim(`Get your API key from: ${newProvider.apiKeyUrl}\n`)); // CodeQL: false positive - this is a public URL
+    console.log(chalk.dim(`Visit the ${newProvider.name} website to get your API key.\n`));
 
     const configure = await p.confirm({
       message: "Would you like to enter an API key now?",
