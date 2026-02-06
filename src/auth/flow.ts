@@ -121,9 +121,15 @@ function printAuthUrl(url: string): void {
  * Open URL in browser (cross-platform)
  */
 async function openBrowser(url: string): Promise<boolean> {
-  // Validate URL to prevent command injection
+  // Parse and reconstruct URL to sanitize input and break taint chain.
+  // Only allow http/https schemes to prevent arbitrary protocol handlers.
+  let sanitizedUrl: string;
   try {
-    new URL(url);
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return false;
+    }
+    sanitizedUrl = parsed.toString();
   } catch {
     return false;
   }
@@ -132,11 +138,11 @@ async function openBrowser(url: string): Promise<boolean> {
 
   try {
     if (platform === "darwin") {
-      await execFileAsync("open", [url]);
+      await execFileAsync("open", [sanitizedUrl]);
     } else if (platform === "win32") {
-      await execFileAsync("cmd", ["/c", "start", "", url]);
+      await execFileAsync("rundll32", ["url.dll,FileProtocolHandler", sanitizedUrl]);
     } else {
-      await execFileAsync("xdg-open", [url]);
+      await execFileAsync("xdg-open", [sanitizedUrl]);
     }
     return true;
   } catch {
@@ -149,9 +155,15 @@ async function openBrowser(url: string): Promise<boolean> {
  * Tries multiple approaches for stubborn systems
  */
 async function openBrowserFallback(url: string): Promise<boolean> {
-  // Validate URL to prevent command injection
+  // Parse and reconstruct URL to sanitize input and break taint chain.
+  // Only allow http/https schemes to prevent arbitrary protocol handlers.
+  let sanitizedUrl: string;
   try {
-    new URL(url);
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return false;
+    }
+    sanitizedUrl = parsed.toString();
   } catch {
     return false;
   }
@@ -161,25 +173,25 @@ async function openBrowserFallback(url: string): Promise<boolean> {
 
   if (platform === "darwin") {
     commands.push(
-      { cmd: "open", args: [url] },
-      { cmd: "open", args: ["-a", "Safari", url] },
-      { cmd: "open", args: ["-a", "Google Chrome", url] },
+      { cmd: "open", args: [sanitizedUrl] },
+      { cmd: "open", args: ["-a", "Safari", sanitizedUrl] },
+      { cmd: "open", args: ["-a", "Google Chrome", sanitizedUrl] },
     );
   } else if (platform === "win32") {
-    commands.push(
-      { cmd: "cmd", args: ["/c", "start", "", url] },
-      { cmd: "rundll32", args: ["url.dll,FileProtocolHandler", url] },
-    );
+    commands.push({
+      cmd: "rundll32",
+      args: ["url.dll,FileProtocolHandler", sanitizedUrl],
+    });
   } else {
     // Linux - try multiple browsers
     commands.push(
-      { cmd: "xdg-open", args: [url] },
-      { cmd: "sensible-browser", args: [url] },
-      { cmd: "x-www-browser", args: [url] },
-      { cmd: "gnome-open", args: [url] },
-      { cmd: "firefox", args: [url] },
-      { cmd: "chromium-browser", args: [url] },
-      { cmd: "google-chrome", args: [url] },
+      { cmd: "xdg-open", args: [sanitizedUrl] },
+      { cmd: "sensible-browser", args: [sanitizedUrl] },
+      { cmd: "x-www-browser", args: [sanitizedUrl] },
+      { cmd: "gnome-open", args: [sanitizedUrl] },
+      { cmd: "firefox", args: [sanitizedUrl] },
+      { cmd: "chromium-browser", args: [sanitizedUrl] },
+      { cmd: "google-chrome", args: [sanitizedUrl] },
     );
   }
 
@@ -489,9 +501,21 @@ async function runBrowserOAuthFlow(
 
     console.log();
     console.log(chalk.yellow("   ⚠ Browser authentication failed"));
-    // Sanitize error message to avoid logging sensitive data (tokens, client secrets)
-    const safeErrorMsg = errorMsg.replace(/(?:token|key|secret|code)[=:]\s*\S+/gi, "[REDACTED]");
-    console.log(chalk.dim(`   Error: ${safeErrorMsg}`));
+    // Log a generic error category instead of the raw message to avoid leaking sensitive data
+    // (error may contain tokens, client IDs, or secrets from the OAuth exchange)
+    const errorCategory =
+      errorMsg.includes("timeout") || errorMsg.includes("Timeout")
+        ? "Request timed out"
+        : errorMsg.includes("network") ||
+            errorMsg.includes("ECONNREFUSED") ||
+            errorMsg.includes("fetch")
+          ? "Network error"
+          : errorMsg.includes("401") || errorMsg.includes("403")
+            ? "Authorization denied"
+            : errorMsg.includes("invalid_grant") || errorMsg.includes("invalid_client")
+              ? "Invalid credentials"
+              : "Authentication error (see debug logs for details)";
+    console.log(chalk.dim(`   Error: ${errorCategory}`));
     console.log();
 
     // Offer fallback options (only device code if provider supports it)
@@ -652,9 +676,14 @@ async function runDeviceCodeFlow(
       return runApiKeyFlow(provider);
     }
 
-    // Other errors — sanitize to avoid logging tokens/keys/secrets
-    const sanitizedMsg = errorMsg.replace(/(?:token|key|secret|code|password|credential)[=:]\s*\S+/gi, "[REDACTED]");
-    p.log.error(chalk.red(`   Authentication failed: ${sanitizedMsg}`));
+    // Log a generic error category to avoid logging sensitive data from the device code flow
+    const deviceErrorCategory =
+      errorMsg.includes("timeout") || errorMsg.includes("expired")
+        ? "Device code expired"
+        : errorMsg.includes("denied") || errorMsg.includes("access_denied")
+          ? "Access denied by user"
+          : "Unexpected error during device code authentication";
+    p.log.error(chalk.red(`   Authentication failed: ${deviceErrorCategory}`));
     return null;
   }
 }
