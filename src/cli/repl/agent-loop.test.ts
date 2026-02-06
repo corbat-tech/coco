@@ -75,6 +75,9 @@ vi.mock("./session.js", () => ({
   getConversationContext: vi.fn(),
   addMessage: vi.fn(),
   saveTrustedTool: vi.fn(() => Promise.resolve(undefined)),
+  removeTrustedTool: vi.fn(() => Promise.resolve(undefined)),
+  saveDeniedTool: vi.fn(() => Promise.resolve(undefined)),
+  removeDeniedTool: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 // Mock confirmation module
@@ -635,7 +638,8 @@ describe("executeAgentTurn", () => {
 
       await executeAgentTurn(mockSession, "Run command", mockProvider, mockToolRegistry);
 
-      expect(mockSession.trustedTools.has("bash_exec")).toBe(true);
+      // Pattern-aware: bash_exec + {command: "ls"} → "bash:ls"
+      expect(mockSession.trustedTools.has("bash:ls")).toBe(true);
     });
 
     it("should trust tool globally when user chooses trust_global", async () => {

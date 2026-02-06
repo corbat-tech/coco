@@ -6,6 +6,8 @@ import * as readline from "node:readline/promises";
 import fs from "node:fs/promises";
 import chalk from "chalk";
 import type { ToolCall } from "../../providers/types.js";
+import { getTrustPattern } from "./bash-patterns.js";
+import { getRiskDescription, getEffectDescription } from "../../tools/permissions.js";
 
 /**
  * Tools that ALWAYS require confirmation before execution
@@ -31,6 +33,8 @@ const ALWAYS_CONFIRM_TOOLS = new Set([
   "http_json",
   // Sensitive data
   "get_env",
+  // Permission changes (always confirm)
+  "manage_permissions",
 ]);
 
 /**
@@ -398,13 +402,17 @@ function formatWriteFilePreview(toolCall: ToolCall, maxLines: number = 10): stri
 }
 
 /**
- * Format tool call for confirmation display with CREATE/MODIFY distinction
+ * Format tool call for confirmation display with CREATE/MODIFY distinction.
+ * Returns the description line and the trust pattern.
  */
 function formatToolCallForConfirmation(
   toolCall: ToolCall,
   metadata?: { isCreate?: boolean },
-): string {
+): { description: string; pattern: string } {
+  const pattern = getTrustPattern(toolCall.name, toolCall.input);
   const { name, input } = toolCall;
+
+  let description: string;
 
   switch (name) {
     // File operations
@@ -413,58 +421,70 @@ function formatToolCallForConfirmation(
       const actionLabel = isCreate
         ? chalk.green.bold("CREATE file")
         : chalk.yellow.bold("MODIFY file");
-      return `${actionLabel}: ${chalk.cyan(input.path ?? "unknown")}`;
+      description = `${actionLabel}: ${chalk.cyan(input.path ?? "unknown")}`;
+      break;
     }
 
     case "edit_file":
-      return `${chalk.yellow.bold("EDIT file")}: ${chalk.cyan(input.path ?? "unknown")}`;
+      description = `${chalk.yellow.bold("EDIT file")}: ${chalk.cyan(input.path ?? "unknown")}`;
+      break;
 
     case "delete_file":
-      return `${chalk.red.bold("DELETE file")}: ${chalk.cyan(input.path ?? "unknown")}`;
+      description = `${chalk.red.bold("DELETE file")}: ${chalk.cyan(input.path ?? "unknown")}`;
+      break;
 
     case "copy_file":
-      return `${chalk.yellow.bold("COPY")}: ${chalk.cyan(input.source ?? "?")} → ${chalk.cyan(input.destination ?? "?")}`;
+      description = `${chalk.yellow.bold("COPY")}: ${chalk.cyan(input.source ?? "?")} → ${chalk.cyan(input.destination ?? "?")}`;
+      break;
 
     case "move_file":
-      return `${chalk.yellow.bold("MOVE")}: ${chalk.cyan(input.source ?? "?")} → ${chalk.cyan(input.destination ?? "?")}`;
+      description = `${chalk.yellow.bold("MOVE")}: ${chalk.cyan(input.source ?? "?")} → ${chalk.cyan(input.destination ?? "?")}`;
+      break;
 
     // Shell execution
     case "bash_exec": {
-      const cmd = truncateLine(String(input.command ?? ""));
-      return `${chalk.yellow.bold("EXECUTE")}: ${chalk.cyan(cmd)}`;
+      const cmd = truncateLine(String(input.command ?? ""), 60);
+      description = `${chalk.yellow.bold("EXECUTE")}: ${chalk.cyan(cmd)}`;
+      break;
     }
 
     case "bash_background": {
-      const cmd = truncateLine(String(input.command ?? ""));
-      return `${chalk.yellow.bold("BACKGROUND")}: ${chalk.cyan(cmd)}`;
+      const cmd = truncateLine(String(input.command ?? ""), 60);
+      description = `${chalk.yellow.bold("BACKGROUND")}: ${chalk.cyan(cmd)}`;
+      break;
     }
 
     // Git remote operations
     case "git_push": {
       const remote = input.remote ?? "origin";
       const branch = input.branch ?? "current";
-      return `${chalk.red.bold("GIT PUSH")}: ${chalk.cyan(`${remote}/${branch}`)}`;
+      description = `${chalk.red.bold("GIT PUSH")}: ${chalk.cyan(`${remote}/${branch}`)}`;
+      break;
     }
 
     case "git_pull": {
       const remote = input.remote ?? "origin";
       const branch = input.branch ?? "current";
-      return `${chalk.yellow.bold("GIT PULL")}: ${chalk.cyan(`${remote}/${branch}`)}`;
+      description = `${chalk.yellow.bold("GIT PULL")}: ${chalk.cyan(`${remote}/${branch}`)}`;
+      break;
     }
 
     // Package management
     case "install_deps":
-      return `${chalk.yellow.bold("INSTALL DEPS")}: ${chalk.cyan(input.packageManager ?? "npm/pnpm")}`;
+      description = `${chalk.yellow.bold("INSTALL DEPS")}: ${chalk.cyan(input.packageManager ?? "npm/pnpm")}`;
+      break;
 
     // Build tools
     case "make": {
       const target = input.target ?? "default";
-      return `${chalk.yellow.bold("MAKE")}: ${chalk.cyan(target)}`;
+      description = `${chalk.yellow.bold("MAKE")}: ${chalk.cyan(target)}`;
+      break;
     }
 
     case "run_script": {
       const script = input.script ?? input.name ?? "unknown";
-      return `${chalk.yellow.bold("RUN SCRIPT")}: ${chalk.cyan(script)}`;
+      description = `${chalk.yellow.bold("RUN SCRIPT")}: ${chalk.cyan(script)}`;
+      break;
     }
 
     // Network
@@ -472,18 +492,51 @@ function formatToolCallForConfirmation(
     case "http_json": {
       const url = String(input.url ?? "unknown");
       const method = String(input.method ?? "GET").toUpperCase();
-      return `${chalk.yellow.bold("HTTP " + method)}: ${chalk.cyan(url)}`;
+      description = `${chalk.yellow.bold("HTTP " + method)}: ${chalk.cyan(url)}`;
+      break;
     }
 
     // Sensitive
     case "get_env": {
       const varName = input.name ?? input.variable ?? "unknown";
-      return `${chalk.yellow.bold("READ ENV")}: ${chalk.cyan(varName)}`;
+      description = `${chalk.yellow.bold("READ ENV")}: ${chalk.cyan(varName)}`;
+      break;
+    }
+
+    // Permission management
+    case "manage_permissions": {
+      const action = String(input.action ?? "unknown");
+      const patterns = Array.isArray(input.patterns) ? input.patterns.map(String) : [];
+      const scope = String(input.scope ?? "project") as "global" | "project";
+      const reason = input.reason ? String(input.reason) : undefined;
+      const actionLabel =
+        action === "allow"
+          ? chalk.green.bold("ALLOW")
+          : chalk.red.bold(action.toUpperCase());
+      const scopeLabel =
+        scope === "global"
+          ? chalk.blue("Global (all projects)")
+          : chalk.magenta("Project (current only)");
+      const patternList = patterns.map((p: string) => chalk.cyan(p)).join(", ");
+      const lines = [`${actionLabel}: ${patternList}`];
+      lines.push(`${chalk.dim("  Scope:")}  ${scopeLabel}`);
+      if (reason) {
+        lines.push(`${chalk.dim("  Reason:")} ${reason}`);
+      }
+      for (const p of patterns) {
+        lines.push(`${chalk.dim("  Risk:")}   ${getRiskDescription(p)}`);
+        lines.push(`${chalk.dim("  Effect:")} ${getEffectDescription(action as "allow" | "deny" | "ask", p, scope)}`);
+      }
+      description = lines.join("\n  ");
+      break;
     }
 
     default:
-      return `${chalk.yellow(name)}`;
+      description = chalk.yellow(name);
+      break;
   }
+
+  return { description, pattern };
 }
 
 /**
@@ -524,29 +577,48 @@ async function checkFileExists(filePath: string): Promise<boolean> {
 }
 
 /**
- * Ask user to edit the command
+ * Ask user to edit the command using readline (needs cooked mode for line editing)
  */
-async function promptEditCommand(
-  rl: readline.Interface,
-  originalCommand: string,
-): Promise<string | null> {
+async function promptEditCommand(originalCommand: string): Promise<string | null> {
   console.log();
   console.log(chalk.dim("  Edit command (or press Enter to cancel):"));
   console.log(chalk.cyan(`  Current: ${originalCommand}`));
 
-  const answer = await rl.question(chalk.dim("  New cmd: "));
-  const trimmed = answer.trim();
-
-  if (!trimmed) {
-    return null;
+  // Switch to cooked mode for line editing
+  if (process.stdin.isTTY && process.stdin.isRaw) {
+    process.stdin.setRawMode(false);
   }
 
-  return trimmed;
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  try {
+    const answer = await rl.question(chalk.dim("  New cmd: "));
+    const trimmed = answer.trim();
+    return trimmed || null;
+  } finally {
+    rl.close();
+  }
+}
+
+/** Option definition for the interactive menu */
+interface MenuOption {
+  key: string;
+  label: string;
+  description: string;
+  color: (s: string) => string;
+  result: ConfirmationResult | "edit";
 }
 
 /**
  * Ask for confirmation before executing a tool
  * Brand color: Magenta 🟣
+ *
+ * Features:
+ * - Instant single-key response (no Enter needed for y/n/t/!)
+ * - Arrow key navigation between options with Enter to select
  */
 export async function confirmToolExecution(toolCall: ToolCall): Promise<ConfirmationResult> {
   // Detect create vs modify for write_file
@@ -555,15 +627,15 @@ export async function confirmToolExecution(toolCall: ToolCall): Promise<Confirma
     isCreate = !(await checkFileExists(String(toolCall.input.path)));
   }
 
-  const description = formatToolCallForConfirmation(toolCall, { isCreate });
+  const { description, pattern } = formatToolCallForConfirmation(toolCall, { isCreate });
   const isBashExec = toolCall.name === "bash_exec";
 
-  // Simple clean header
+  // Generic header with trust pattern indicator
   console.log();
   console.log(chalk.magenta.bold("  ⚡ Confirm Action"));
-  console.log(chalk.magenta("  " + "─".repeat(45)));
+  console.log(chalk.magenta("  " + "─".repeat(24)));
   console.log();
-  console.log(`  ${description}`);
+  console.log(`  ${description}  ${chalk.dim(chalk.green(`[${pattern}]`))}`);
 
   // Show diff preview for edit_file
   const diffPreview = formatDiffPreview(toolCall);
@@ -585,152 +657,202 @@ export async function confirmToolExecution(toolCall: ToolCall): Promise<Confirma
     }
   }
 
-  // Options - simplified menu
-  console.log();
-  const baseOptions = 4; // y, n, t, !
-  const optionCount = isBashExec ? baseOptions + 1 : baseOptions;
-  const menuLines = optionCount + 2; // +2 for empty lines before/after
-
-  console.log(chalk.green("  [y]") + chalk.dim("es       ") + "Allow once");
-  console.log(chalk.red("  [n]") + chalk.dim("o       ") + "Skip");
+  // Build menu options
+  const options: MenuOption[] = [
+    { key: "y", label: "yes", description: "Allow once", color: chalk.green, result: "yes" },
+    { key: "n", label: "no", description: "Skip", color: chalk.red, result: "no" },
+  ];
   if (isBashExec) {
-    console.log(chalk.yellow("  [e]") + chalk.dim("dit     ") + "Edit command");
+    options.push({
+      key: "e",
+      label: "edit",
+      description: "Edit command",
+      color: chalk.yellow,
+      result: "edit",
+    });
   }
-  console.log(chalk.magenta("  [t]") + chalk.dim("rust    ") + "Always allow (this project)");
-  console.log(chalk.blue("  [!]") + chalk.dim("       ") + "Always allow (everywhere)");
-  console.log(chalk.dim("  Ctrl+C to abort task"));
-  console.log();
+  options.push(
+    {
+      key: "t",
+      label: "trust",
+      description: "Always allow (this project)",
+      color: chalk.magenta,
+      result: "trust_project",
+    },
+    {
+      key: "!",
+      label: "!",
+      description: "Always allow (everywhere)",
+      color: chalk.blue,
+      result: "trust_global",
+    },
+  );
 
-  // Ensure stdin is in the right state for readline
-  // (it may have been paused by the input handler)
+  const menuLines = options.length + 3; // options + hint + empty lines
+  let selectedIndex = 0;
+
+  /** Render the menu with the current selection highlighted */
+  const renderMenu = () => {
+    console.log();
+    for (let i = 0; i < options.length; i++) {
+      const opt = options[i]!;
+      const pointer = i === selectedIndex ? chalk.magenta("❯ ") : "  ";
+      const keyDisplay = opt.color(`[${opt.key}]`);
+      const labelPad = opt.label.padEnd(8);
+      const desc = i === selectedIndex ? chalk.white(opt.description) : opt.description;
+      console.log(`${pointer}${keyDisplay}${chalk.dim(labelPad)} ${desc}`);
+    }
+    console.log(chalk.dim("  Ctrl+C to abort"));
+    console.log();
+  };
+
+  /** Clear the menu area (move up and clear lines) */
+  const clearMenu = () => {
+    process.stdout.write(`\x1b[${menuLines}A`);
+    for (let i = 0; i < menuLines; i++) {
+      process.stdout.write("\x1b[2K");
+      if (i < menuLines - 1) process.stdout.write("\n");
+    }
+    process.stdout.write(`\x1b[${menuLines - 1}A\r`);
+  };
+
+  /** Show final selection after clearing the menu */
+  const showSelection = (choice: string, color: (s: string) => string) => {
+    clearMenu();
+    console.log(color(`  ✓ ${choice}`));
+  };
+
+  // Render initial menu
+  renderMenu();
+
+  // Ensure stdin is ready
   if (process.stdin.isPaused()) {
     process.stdin.resume();
   }
-  // Disable raw mode if enabled (readline needs cooked mode)
-  if (process.stdin.isTTY && process.stdin.isRaw) {
-    process.stdin.setRawMode(false);
-  }
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  /**
-   * Clear the options menu and show selected choice
-   * Need to clear: menu lines + 1 for user input line
-   */
-  const showSelection = (choice: string, color: (s: string) => string) => {
-    const linesToClear = menuLines + 1; // +1 for the input line with user's answer
-
-    // Move cursor up
-    process.stdout.write(`\x1b[${linesToClear}A`);
-
-    // Clear each line
-    for (let i = 0; i < linesToClear; i++) {
-      process.stdout.write("\x1b[2K"); // Clear entire line
-      if (i < linesToClear - 1) {
-        process.stdout.write("\n"); // Move down (except last)
-      }
-    }
-
-    // Move back to top of cleared area
-    process.stdout.write(`\x1b[${linesToClear - 1}A`);
-    process.stdout.write("\r"); // Return to beginning of line
-
-    // Show selected choice
-    console.log(color(`  ✓ ${choice}`));
-  };
 
   return new Promise<ConfirmationResult>((resolve) => {
     let resolved = false;
 
+    // Enable raw mode for instant keypress detection
+    const wasRaw = process.stdin.isTTY ? process.stdin.isRaw : false;
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+
     const cleanup = () => {
-      if (!resolved) {
-        resolved = true;
-        rl.close();
+      if (resolved) return;
+      resolved = true;
+      process.stdin.removeListener("data", onData);
+      // Restore previous raw mode state
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(wasRaw);
       }
     };
 
-    // Handle SIGINT (Ctrl+C)
-    rl.on("SIGINT", () => {
+    const handleResult = (result: ConfirmationResult) => {
       cleanup();
-      showSelection("Cancelled", chalk.dim);
-      resolve("abort");
-    });
+      resolve(result);
+    };
 
-    // Handle close event (e.g., EOF)
-    rl.on("close", () => {
-      if (!resolved) {
-        resolved = true;
+    const handleEdit = async () => {
+      cleanup();
+      const originalCommand = String(toolCall.input.command ?? "");
+      try {
+        const newCommand = await promptEditCommand(originalCommand);
+        if (newCommand) {
+          showSelection("Edited", chalk.yellow);
+          resolve({ type: "edit", newCommand });
+        } else {
+          console.log(chalk.dim("  Edit cancelled, re-prompting..."));
+          // Re-enter the confirmation flow
+          resolve(await confirmToolExecution(toolCall));
+        }
+      } catch {
         resolve("abort");
       }
-    });
-
-    const askQuestion = () => {
-      rl.question(chalk.magenta("  ❯ ")).then(async (answer) => {
-        const normalized = answer.trim();
-
-        switch (normalized.toLowerCase()) {
-          case "y":
-          case "yes":
-            cleanup();
-            showSelection("Allowed", chalk.green);
-            resolve("yes");
-            break;
-
-          case "n":
-          case "no":
-            cleanup();
-            showSelection("Skipped", chalk.red);
-            resolve("no");
-            break;
-
-          case "e":
-          case "edit":
-            if (isBashExec) {
-              const originalCommand = String(toolCall.input.command ?? "");
-              try {
-                const newCommand = await promptEditCommand(rl, originalCommand);
-                cleanup();
-                if (newCommand) {
-                  showSelection("Edited", chalk.yellow);
-                  resolve({ type: "edit", newCommand });
-                } else {
-                  console.log(chalk.dim("  Edit cancelled."));
-                  askQuestion();
-                }
-              } catch {
-                cleanup();
-                resolve("abort");
-              }
-            } else {
-              console.log(chalk.yellow("  Edit only available for bash commands."));
-              askQuestion();
-            }
-            break;
-
-          case "t":
-          case "trust":
-            cleanup();
-            showSelection("Trusted (project)", chalk.magenta);
-            resolve("trust_project");
-            break;
-
-          case "!":
-            cleanup();
-            showSelection("Trusted (global)", chalk.blue);
-            resolve("trust_global");
-            break;
-
-          default:
-            console.log(chalk.yellow("  Invalid: y/n" + (isBashExec ? "/e" : "") + "/t/!"));
-            askQuestion();
-        }
-      });
     };
 
-    askQuestion();
+    const selectCurrent = () => {
+      const opt = options[selectedIndex]!;
+      if (opt.result === "edit") {
+        showSelection("Editing...", chalk.yellow);
+        handleEdit();
+      } else {
+        const labels: Record<string, [string, (s: string) => string]> = {
+          yes: ["Allowed", chalk.green],
+          no: ["Skipped", chalk.red],
+          trust_project: ["Trusted (project)", chalk.magenta],
+          trust_global: ["Trusted (global)", chalk.blue],
+        };
+        const [label, color] = labels[opt.result as string] ?? ["Selected", chalk.white];
+        showSelection(label, color);
+        handleResult(opt.result as ConfirmationResult);
+      }
+    };
+
+    const redrawMenu = () => {
+      clearMenu();
+      renderMenu();
+    };
+
+    const onData = (data: Buffer) => {
+      if (resolved) return;
+
+      const str = data.toString();
+
+      // Ctrl+C
+      if (str === "\x03") {
+        showSelection("Cancelled", chalk.dim);
+        handleResult("abort");
+        return;
+      }
+
+      // Enter - select current option
+      if (str === "\r" || str === "\n") {
+        selectCurrent();
+        return;
+      }
+
+      // Arrow keys (escape sequences)
+      if (str === "\x1b[A" || str === "\x1bOA") {
+        // Up arrow
+        selectedIndex = (selectedIndex - 1 + options.length) % options.length;
+        redrawMenu();
+        return;
+      }
+      if (str === "\x1b[B" || str === "\x1bOB") {
+        // Down arrow
+        selectedIndex = (selectedIndex + 1) % options.length;
+        redrawMenu();
+        return;
+      }
+
+      // Direct key shortcuts (instant, no Enter needed)
+      const key = str.toLowerCase();
+      const matchedOption = options.find((o) => o.key === key);
+      if (matchedOption) {
+        selectedIndex = options.indexOf(matchedOption);
+        if (matchedOption.result === "edit") {
+          showSelection("Editing...", chalk.yellow);
+          handleEdit();
+        } else {
+          const labels: Record<string, [string, (s: string) => string]> = {
+            yes: ["Allowed", chalk.green],
+            no: ["Skipped", chalk.red],
+            trust_project: ["Trusted (project)", chalk.magenta],
+            trust_global: ["Trusted (global)", chalk.blue],
+          };
+          const [label, color] = labels[matchedOption.result as string] ?? [
+            "Selected",
+            chalk.white,
+          ];
+          showSelection(label, color);
+          handleResult(matchedOption.result as ConfirmationResult);
+        }
+      }
+    };
+
+    process.stdin.on("data", onData);
   });
 }
 

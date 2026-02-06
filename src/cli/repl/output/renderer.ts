@@ -12,6 +12,7 @@
 import chalk from "chalk";
 import type { StreamChunk } from "../../../providers/types.js";
 import type { ExecutedToolCall } from "../types.js";
+import { highlightLine, highlightBlock } from "./syntax.js";
 
 // ============================================================================
 // State Management
@@ -182,11 +183,9 @@ function renderMarkdownBlock(lines: string[]): void {
   const width = Math.min(getTerminalWidth() - 4, 100);
   const contentWidth = width - 4;
 
-  // Top border with "Markdown" title
-  const title = " Markdown ";
-  const topPadding = Math.floor((width - title.length - 2) / 2);
-  const topRemainder = width - title.length - 2 - topPadding;
-  console.log(chalk.magenta("┌" + "─".repeat(topPadding) + title + "─".repeat(topRemainder) + "┐"));
+  // Short top border with "Markdown" title
+  const title = "Markdown";
+  console.log(chalk.magenta("╭── " + title + " ──"));
 
   // Process lines, detecting nested code blocks and tables
   let i = 0;
@@ -227,22 +226,14 @@ function renderMarkdownBlock(lines: string[]): void {
       const formatted = formatMarkdownLine(line);
       const wrappedLines = wrapText(formatted, contentWidth);
       for (const wrappedLine of wrappedLines) {
-        const padding = contentWidth - stripAnsi(wrappedLine).length;
-        console.log(
-          chalk.magenta("│") +
-            " " +
-            wrappedLine +
-            " ".repeat(Math.max(0, padding)) +
-            " " +
-            chalk.magenta("│"),
-        );
+        console.log(chalk.magenta("│") + " " + wrappedLine);
       }
       i++;
     }
   }
 
-  // Bottom border
-  console.log(chalk.magenta("└" + "─".repeat(width - 2) + "┘"));
+  // Short bottom border (matching top length)
+  console.log(chalk.magenta("╰──────────────"));
 }
 
 function isTableLine(line: string): boolean {
@@ -306,9 +297,9 @@ function renderNestedTable(lines: string[], parentWidth: number): void {
   }
 
   // Render table top border
-  const tableTop = "┌" + columnWidths.map((w) => "─".repeat(w + 2)).join("┬") + "┐";
+  const tableTop = "╭" + columnWidths.map((w) => "─".repeat(w + 2)).join("┬") + "╮";
   const tableMid = "├" + columnWidths.map((w) => "─".repeat(w + 2)).join("┼") + "┤";
-  const tableBot = "└" + columnWidths.map((w) => "─".repeat(w + 2)).join("┴") + "┘";
+  const tableBot = "╰" + columnWidths.map((w) => "─".repeat(w + 2)).join("┴") + "╯";
 
   // Helper to render a row
   const renderRow = (cells: string[], isHeader: boolean) => {
@@ -321,16 +312,9 @@ function renderNestedTable(lines: string[], parentWidth: number): void {
     return "│ " + formatted.join(" │ ") + " │";
   };
 
-  // Output table inside the markdown box
+  // Output table inside the markdown box (no outer right border for markdown)
   const outputTableLine = (tableLine: string) => {
-    const padding = parentWidth - stripAnsi(tableLine).length - 2;
-    console.log(
-      chalk.magenta("│") +
-        " " +
-        chalk.cyan(tableLine) +
-        " ".repeat(Math.max(0, padding)) +
-        chalk.magenta("│"),
-    );
+    console.log(chalk.magenta("│") + "  " + chalk.cyan(tableLine));
   };
 
   outputTableLine(tableTop);
@@ -354,16 +338,14 @@ function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: numbe
     chalk.magenta("│") +
       " " +
       chalk.cyan(
-        "┌" +
+        "╭" +
           "─".repeat(Math.max(0, innerTopPadding)) +
           " " +
           title +
           " " +
           "─".repeat(Math.max(0, innerTopRemainder)) +
-          "┐",
-      ) +
-      " " +
-      chalk.magenta("│"),
+          "╮",
+      ),
   );
 
   // Code lines
@@ -381,9 +363,7 @@ function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: numbe
           wrappedLine +
           " ".repeat(Math.max(0, padding)) +
           " " +
-          chalk.cyan("│") +
-          " " +
-          chalk.magenta("│"),
+          chalk.cyan("│"),
       );
     }
   }
@@ -392,9 +372,7 @@ function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: numbe
   console.log(
     chalk.magenta("│") +
       " " +
-      chalk.cyan("└" + "─".repeat(innerWidth - 2) + "┘") +
-      " " +
-      chalk.magenta("│"),
+      chalk.cyan("╰" + "─".repeat(innerWidth - 2) + "╯"),
   );
 }
 
@@ -408,7 +386,7 @@ function renderSimpleCodeBlock(lang: string, lines: string[]): void {
   const topPadding = Math.floor((width - titleDisplay.length - 2) / 2);
   const topRemainder = width - titleDisplay.length - 2 - topPadding;
   console.log(
-    chalk.magenta("┌" + "─".repeat(topPadding) + titleDisplay + "─".repeat(topRemainder) + "┐"),
+    chalk.magenta("╭" + "─".repeat(topPadding) + titleDisplay + "─".repeat(topRemainder) + "╮"),
   );
 
   for (const line of lines) {
@@ -427,32 +405,16 @@ function renderSimpleCodeBlock(lang: string, lines: string[]): void {
     }
   }
 
-  console.log(chalk.magenta("└" + "─".repeat(width - 2) + "┘"));
+  console.log(chalk.magenta("╰" + "─".repeat(width - 2) + "╯"));
 }
 
 function formatCodeLine(line: string, lang: string): string {
-  // Apply syntax highlighting based on language
-  if (lang === "bash" || lang === "sh" || lang === "shell") {
-    return highlightBash(line);
-  } else if (lang === "typescript" || lang === "ts" || lang === "javascript" || lang === "js") {
-    return highlightCode(line);
-  } else if (lang === "markdown" || lang === "md") {
+  // Markdown lines get special formatting (not code highlighting)
+  if (lang === "markdown" || lang === "md") {
     return formatMarkdownLine(line);
   }
-  // Default: minimal highlighting
-  return line;
-}
-
-function highlightBash(line: string): string {
-  // Comments
-  if (line.trim().startsWith("#")) {
-    return chalk.dim(line);
-  }
-  // Commands at start of line
-  return line
-    .replace(/^(\s*)([\w-]+)/, (_, space, cmd) => space + chalk.cyan(cmd))
-    .replace(/(".*?"|'.*?')/g, (match) => chalk.yellow(match))
-    .replace(/(\$\w+|\$\{[^}]+\})/g, (match) => chalk.green(match));
+  // Use highlight.js for all supported languages
+  return highlightLine(line, lang);
 }
 
 // ============================================================================
@@ -471,9 +433,29 @@ function formatMarkdownLine(line: string): string {
     return chalk.green.bold(line.slice(4));
   }
 
+  // Blockquotes
+  if (line.match(/^>\s?/)) {
+    const content = line.replace(/^>\s?/, "");
+    const formatted = formatInlineMarkdown(content);
+    return chalk.dim("▌ ") + chalk.italic(formatted);
+  }
+
   // Horizontal rule
   if (/^-{3,}$/.test(line) || /^\*{3,}$/.test(line)) {
     return chalk.dim("─".repeat(40));
+  }
+
+  // HTML embedded elements
+  const htmlResult = formatHtmlLine(line);
+  if (htmlResult !== null) {
+    return htmlResult;
+  }
+
+  // Checklist items
+  if (line.match(/^(\s*)[-*]\s\[x\]\s/i)) {
+    line = line.replace(/^(\s*)[-*]\s\[x\]\s/i, "$1" + chalk.green("✔ "));
+  } else if (line.match(/^(\s*)[-*]\s\[\s?\]\s/)) {
+    line = line.replace(/^(\s*)[-*]\s\[\s?\]\s/, "$1" + chalk.dim("☐ "));
   }
 
   // List items
@@ -488,6 +470,158 @@ function formatMarkdownLine(line: string): string {
   line = formatInlineMarkdown(line);
 
   return line;
+}
+
+/**
+ * Handle HTML tags embedded in markdown.
+ * Returns formatted string if the line is an HTML element, null otherwise.
+ */
+function formatHtmlLine(line: string): string | null {
+  const trimmed = line.trim();
+
+  // <details> → collapsible section indicator
+  if (/^<details\s*\/?>$/i.test(trimmed) || /^<details\s+[^>]*>$/i.test(trimmed)) {
+    return chalk.dim("▶ ") + chalk.dim.italic("details");
+  }
+
+  // </details>
+  if (/^<\/details>$/i.test(trimmed)) {
+    return chalk.dim("  ◀ end details");
+  }
+
+  // <summary>text</summary> (inline)
+  const summaryInlineMatch = trimmed.match(/^<summary>(.*?)<\/summary>$/i);
+  if (summaryInlineMatch) {
+    const content = summaryInlineMatch[1] || "";
+    return chalk.dim("▶ ") + chalk.bold(formatInlineMarkdown(content));
+  }
+
+  // <summary> (opening only)
+  if (/^<summary\s*\/?>$/i.test(trimmed) || /^<summary\s+[^>]*>$/i.test(trimmed)) {
+    return chalk.dim("▶ ") + chalk.dim.italic("summary:");
+  }
+
+  // </summary>
+  if (/^<\/summary>$/i.test(trimmed)) {
+    return ""; // Hide closing summary tag
+  }
+
+  // <br>, <br/>, <br /> → empty line
+  if (/^<br\s*\/?>$/i.test(trimmed)) {
+    return "";
+  }
+
+  // <hr>, <hr/>, <hr /> → horizontal rule
+  if (/^<hr\s*\/?>$/i.test(trimmed)) {
+    return chalk.dim("─".repeat(40));
+  }
+
+  // <h1>...<h6> inline headings
+  const headingMatch = trimmed.match(/^<h([1-6])>(.*?)<\/h\1>$/i);
+  if (headingMatch) {
+    const content = headingMatch[2] || "";
+    return chalk.green.bold(formatInlineMarkdown(content));
+  }
+
+  // <p>text</p> → just the text
+  const pMatch = trimmed.match(/^<p>(.*?)<\/p>$/i);
+  if (pMatch) {
+    return formatInlineMarkdown(pMatch[1] || "");
+  }
+
+  // Opening/closing <p> tags alone
+  if (/^<\/?p>$/i.test(trimmed)) {
+    return ""; // Hide standalone <p> and </p>
+  }
+
+  // <strong>text</strong> or <b>text</b> → bold
+  const boldMatch = trimmed.match(/^<(?:strong|b)>(.*?)<\/(?:strong|b)>$/i);
+  if (boldMatch) {
+    return chalk.bold(formatInlineMarkdown(boldMatch[1] || ""));
+  }
+
+  // <em>text</em> or <i>text</i> → italic
+  const italicMatch = trimmed.match(/^<(?:em|i)>(.*?)<\/(?:em|i)>$/i);
+  if (italicMatch) {
+    return chalk.italic(formatInlineMarkdown(italicMatch[1] || ""));
+  }
+
+  // <code>text</code> → inline code
+  const codeMatch = trimmed.match(/^<code>(.*?)<\/code>$/i);
+  if (codeMatch) {
+    return chalk.cyan(codeMatch[1] || "");
+  }
+
+  // <blockquote> → blockquote indicator
+  if (/^<blockquote\s*>$/i.test(trimmed)) {
+    return chalk.dim("▌ ");
+  }
+  if (/^<\/blockquote>$/i.test(trimmed)) {
+    return ""; // Hide closing tag
+  }
+
+  // <ul>, <ol>, </ul>, </ol> → hide structural list tags
+  if (/^<\/?[uo]l\s*>$/i.test(trimmed)) {
+    return ""; // Hide list container tags
+  }
+
+  // <li>text</li> → bullet point
+  const liMatch = trimmed.match(/^<li>(.*?)<\/li>$/i);
+  if (liMatch) {
+    return "• " + formatInlineMarkdown(liMatch[1] || "");
+  }
+
+  // Opening <li> alone
+  if (/^<li\s*>$/i.test(trimmed)) {
+    return "• ";
+  }
+  // Closing </li>
+  if (/^<\/li>$/i.test(trimmed)) {
+    return ""; // Hide closing tag
+  }
+
+  // <div> / </div> → hide structural divs
+  if (/^<\/?div\s*[^>]*>$/i.test(trimmed)) {
+    return ""; // Hide div tags
+  }
+
+  // <span>text</span> → just show the text
+  const spanMatch = trimmed.match(/^<span[^>]*>(.*?)<\/span>$/i);
+  if (spanMatch) {
+    return formatInlineMarkdown(spanMatch[1] || "");
+  }
+
+  // <img ... alt="text" /> → show alt text
+  const imgMatch = trimmed.match(/^<img\s[^>]*alt=["']([^"']*)["'][^>]*\/?>$/i);
+  if (imgMatch) {
+    return chalk.dim("[image: ") + chalk.italic(imgMatch[1] || "") + chalk.dim("]");
+  }
+
+  // <a href="url">text</a> → show text as link
+  const aMatch = trimmed.match(/^<a\s[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>$/i);
+  if (aMatch) {
+    return chalk.blue.underline(aMatch[2] || aMatch[1] || "");
+  }
+
+  // Generic: any remaining standalone HTML tag (opening or closing) → dim it
+  if (/^<\/?[a-z][a-z0-9]*(\s[^>]*)?\s*\/?>$/i.test(trimmed)) {
+    return chalk.dim(trimmed);
+  }
+
+  // Lines with mixed HTML inline tags → strip HTML and format
+  if (/<[a-z][a-z0-9]*(\s[^>]*)?\s*\/?>/i.test(trimmed) && /<\/[a-z][a-z0-9]*>/i.test(trimmed)) {
+    const stripped = trimmed
+      .replace(/<br\s*\/?>/gi, " ")
+      .replace(/<\/?(?:strong|b)>/gi, "**")
+      .replace(/<\/?(?:em|i)>/gi, "*")
+      .replace(/<\/?code>/gi, "`")
+      .replace(/<a\s[^>]*href=["']([^"']*)["'][^>]*>/gi, "")
+      .replace(/<\/a>/gi, "")
+      .replace(/<[^>]+>/g, "");
+    return formatInlineMarkdown(stripped);
+  }
+
+  return null; // Not an HTML line, handle normally
 }
 
 function formatInlineMarkdown(text: string): string {
@@ -743,67 +877,11 @@ export function renderWarning(message: string): void {
 }
 
 // ============================================================================
-// Code Highlighting
+// Code Highlighting (delegates to syntax.ts / highlight.js)
 // ============================================================================
 
 export function highlightCode(code: string): string {
-  const keywords = new Set([
-    "const",
-    "let",
-    "var",
-    "function",
-    "return",
-    "if",
-    "else",
-    "for",
-    "while",
-    "import",
-    "export",
-    "from",
-    "class",
-    "extends",
-    "async",
-    "await",
-    "try",
-    "catch",
-    "throw",
-    "new",
-    "this",
-    "true",
-    "false",
-    "null",
-    "undefined",
-    "type",
-    "interface",
-    "enum",
-  ]);
-
-  return code
-    .split("\n")
-    .map((line) => {
-      const commentIndex = line.indexOf("//");
-      if (commentIndex !== -1) {
-        const beforeComment = line.slice(0, commentIndex);
-        const comment = line.slice(commentIndex);
-        return highlightCodeLine(beforeComment, keywords) + chalk.dim(comment);
-      }
-      return highlightCodeLine(line, keywords);
-    })
-    .join("\n");
-}
-
-function highlightCodeLine(line: string, keywords: Set<string>): string {
-  return line
-    .replace(/"([^"\\]|\\.)*"/g, (match) => chalk.yellow(match))
-    .replace(/'([^'\\]|\\.)*'/g, (match) => chalk.yellow(match))
-    .replace(/`([^`\\]|\\.)*`/g, (match) => chalk.yellow(match))
-    .replace(/\b(\d+\.?\d*)\b/g, (match) => chalk.magenta(match))
-    .replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match) => {
-      if (keywords.has(match)) {
-        return chalk.blue(match);
-      }
-      return match;
-    });
+  return highlightBlock(code, "typescript");
 }
 
 // ============================================================================

@@ -234,13 +234,13 @@ export async function runOAuthFlow(
 
   // Show auth method selection
   console.log();
-  console.log(chalk.magenta("   ┌─────────────────────────────────────────────────┐"));
+  console.log(chalk.magenta("   ╭─────────────────────────────────────────────────╮"));
   console.log(
     chalk.magenta("   │ ") +
       chalk.bold.white(`${displayInfo.emoji} ${displayInfo.name} Authentication`.padEnd(47)) +
       chalk.magenta("│"),
   );
-  console.log(chalk.magenta("   └─────────────────────────────────────────────────┘"));
+  console.log(chalk.magenta("   ╰─────────────────────────────────────────────────╯"));
   console.log();
 
   const authOptions = [
@@ -417,7 +417,7 @@ async function runBrowserOAuthFlow(
     // Step 4: Show instructions
     console.log(chalk.green(`   ✓ Server ready on port ${port}`));
     console.log();
-    console.log(chalk.magenta("   ┌─────────────────────────────────────────────────┐"));
+    console.log(chalk.magenta("   ╭─────────────────────────────────────────────────╮"));
     console.log(
       chalk.magenta("   │ ") +
         chalk.bold.white(`${displayInfo.authDescription}`.padEnd(47)) +
@@ -434,7 +434,7 @@ async function runBrowserOAuthFlow(
         chalk.dim("After signing in, you'll be redirected back.") +
         chalk.magenta("    │"),
     );
-    console.log(chalk.magenta("   └─────────────────────────────────────────────────┘"));
+    console.log(chalk.magenta("   ╰─────────────────────────────────────────────────╯"));
     console.log();
 
     // Step 5: Open browser
@@ -576,7 +576,7 @@ async function runDeviceCodeFlow(
 
     // Step 2: Show user instructions
     console.log();
-    console.log(chalk.magenta("   ┌─────────────────────────────────────────────────┐"));
+    console.log(chalk.magenta("   ╭─────────────────────────────────────────────────╮"));
     console.log(
       chalk.magenta("   │ ") +
         chalk.bold.white("Enter this code in your browser:") +
@@ -589,7 +589,7 @@ async function runDeviceCodeFlow(
         chalk.magenta("                            │"),
     );
     console.log(chalk.magenta("   │                                                 │"));
-    console.log(chalk.magenta("   └─────────────────────────────────────────────────┘"));
+    console.log(chalk.magenta("   ╰─────────────────────────────────────────────────╯"));
     console.log();
 
     const verificationUrl = deviceCode.verificationUriComplete || deviceCode.verificationUri;
@@ -704,7 +704,7 @@ async function runApiKeyFlow(
   const keyPrefixHint = keyPrefix ? ` (starts with '${keyPrefix}')` : "";
 
   console.log();
-  console.log(chalk.magenta("   ┌─────────────────────────────────────────────────┐"));
+  console.log(chalk.magenta("   ╭─────────────────────────────────────────────────╮"));
   console.log(
     chalk.magenta("   │ ") +
       chalk.bold.white(`🔑 Get your ${displayInfo.name} API key:`.padEnd(47)) +
@@ -726,7 +726,7 @@ async function runApiKeyFlow(
       chalk.dim("3. Copy and paste it here") +
       chalk.magenta("                      │"),
   );
-  console.log(chalk.magenta("   └─────────────────────────────────────────────────┘"));
+  console.log(chalk.magenta("   ╰─────────────────────────────────────────────────╯"));
   console.log();
   // Log a sanitized version of the URL (mask any sensitive query params)
   try {

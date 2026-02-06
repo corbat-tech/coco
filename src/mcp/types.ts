@@ -138,6 +138,35 @@ export interface MCPCallToolResult {
 }
 
 /**
+ * MCP Read Resource result
+ */
+export interface MCPReadResourceResult {
+  contents: Array<{
+    uri: string;
+    mimeType?: string;
+    text?: string;
+    blob?: string;
+  }>;
+}
+
+/**
+ * MCP Get Prompt result
+ */
+export interface MCPGetPromptResult {
+  description?: string;
+  messages: Array<{
+    role: "user" | "assistant";
+    content: {
+      type: "text" | "image" | "resource";
+      text?: string;
+      data?: string;
+      mimeType?: string;
+      resource?: MCPResource;
+    };
+  }>;
+}
+
+/**
  * Transport interface for MCP communication
  */
 export interface MCPTransport {
@@ -179,8 +208,17 @@ export interface MCPClient {
   /** List available resources */
   listResources(): Promise<{ resources: MCPResource[] }>;
 
+  /** Read a specific resource by URI */
+  readResource(uri: string): Promise<MCPReadResourceResult>;
+
   /** List available prompts */
   listPrompts(): Promise<{ prompts: MCPPrompt[] }>;
+
+  /** Get a specific prompt with arguments */
+  getPrompt(
+    name: string,
+    args?: Record<string, string>,
+  ): Promise<MCPGetPromptResult>;
 
   /** Close the client connection */
   close(): Promise<void>;
@@ -250,13 +288,15 @@ export interface MCPServerConfig {
   /** Server description */
   description?: string;
   /** Transport type */
-  transport: "stdio" | "http";
+  transport: "stdio" | "http" | "sse";
   /** Stdio transport configuration */
   stdio?: StdioTransportConfig;
   /** HTTP transport configuration */
   http?: {
     /** Server URL */
     url: string;
+    /** Custom headers */
+    headers?: Record<string, string>;
     /** Authentication type */
     auth?: {
       type: "oauth" | "bearer" | "apikey";

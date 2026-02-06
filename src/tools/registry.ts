@@ -29,7 +29,12 @@ export type ToolCategory =
   | "test" // Testing
   | "quality" // Code quality
   | "build" // Build tools
-  | "deploy"; // Deployment
+  | "deploy" // Deployment
+  | "config" // Configuration & permissions
+  | "web" // Web search and fetch
+  | "search" // Semantic and code search
+  | "memory" // Memory and checkpoint
+  | "document"; // Document processing (PDF, images)
 
 /**
  * Tool execution result

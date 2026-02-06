@@ -25,8 +25,10 @@ const TRUST_SETTINGS_FILE = CONFIG_PATHS.trustedTools;
 interface TrustSettings {
   /** Globally trusted tools (for all projects) */
   globalTrusted: string[];
-  /** Per-project trusted tools */
+  /** Per-project trusted tools (additive to global) */
   projectTrusted: Record<string, string[]>;
+  /** Per-project denied tools (overrides global allow) */
+  projectDenied: Record<string, string[]>;
   /** Last updated timestamp */
   updatedAt: string;
 }
@@ -178,11 +180,19 @@ export function clearSession(session: ReplSession): void {
 async function loadTrustSettings(): Promise<TrustSettings> {
   try {
     const content = await fs.readFile(TRUST_SETTINGS_FILE, "utf-8");
-    return JSON.parse(content) as TrustSettings;
+    const raw = JSON.parse(content) as Partial<TrustSettings>;
+    // Backward compat: older files may not have projectDenied
+    return {
+      globalTrusted: raw.globalTrusted ?? [],
+      projectTrusted: raw.projectTrusted ?? {},
+      projectDenied: raw.projectDenied ?? {},
+      updatedAt: raw.updatedAt ?? new Date().toISOString(),
+    };
   } catch {
     return {
       globalTrusted: [],
       projectTrusted: {},
+      projectDenied: {},
       updatedAt: new Date().toISOString(),
     };
   }
@@ -213,10 +223,16 @@ export async function loadTrustedTools(projectPath: string): Promise<Set<string>
     trusted.add(tool);
   }
 
-  // Add project-specific trusted tools
+  // Add project-specific trusted tools (additive)
   const projectTrusted = settings.projectTrusted[projectPath] ?? [];
   for (const tool of projectTrusted) {
     trusted.add(tool);
+  }
+
+  // Remove project-denied tools (subtractive override — project > global)
+  const projectDenied = settings.projectDenied[projectPath] ?? [];
+  for (const tool of projectDenied) {
+    trusted.delete(tool);
   }
 
   return trusted;
@@ -277,16 +293,70 @@ export async function removeTrustedTool(
 }
 
 /**
- * Get all trusted tools (global and project-specific)
+ * Save a tool to the project deny list (overrides global allow).
+ * Also removes from projectTrusted for consistency.
+ */
+export async function saveDeniedTool(
+  toolName: string,
+  projectPath: string,
+): Promise<void> {
+  const settings = await loadTrustSettings();
+
+  if (!settings.projectDenied[projectPath]) {
+    settings.projectDenied[projectPath] = [];
+  }
+  const denied = settings.projectDenied[projectPath];
+  if (denied && !denied.includes(toolName)) {
+    denied.push(toolName);
+  }
+
+  // Remove from projectTrusted for this project if present (consistency)
+  const projectTrusted = settings.projectTrusted[projectPath];
+  if (projectTrusted) {
+    settings.projectTrusted[projectPath] = projectTrusted.filter((t) => t !== toolName);
+  }
+
+  await saveTrustSettings(settings);
+}
+
+/**
+ * Remove a tool from the project deny list
+ */
+export async function removeDeniedTool(
+  toolName: string,
+  projectPath: string,
+): Promise<void> {
+  const settings = await loadTrustSettings();
+
+  const denied = settings.projectDenied[projectPath];
+  if (denied) {
+    settings.projectDenied[projectPath] = denied.filter((t) => t !== toolName);
+  }
+
+  await saveTrustSettings(settings);
+}
+
+/**
+ * Get denied tools for a project
+ */
+export async function getDeniedTools(projectPath: string): Promise<string[]> {
+  const settings = await loadTrustSettings();
+  return settings.projectDenied[projectPath] ?? [];
+}
+
+/**
+ * Get all trusted tools (global, project-specific, and project-denied)
  */
 export async function getAllTrustedTools(projectPath: string): Promise<{
   global: string[];
   project: string[];
+  denied: string[];
 }> {
   const settings = await loadTrustSettings();
   return {
     global: settings.globalTrusted,
     project: settings.projectTrusted[projectPath] ?? [],
+    denied: settings.projectDenied[projectPath] ?? [],
   };
 }
 

@@ -9,6 +9,7 @@ import {
   createToolsFromMCPServer,
   getMCPToolInfo,
   extractOriginalToolName,
+  jsonSchemaToZod,
 } from "./tools.js";
 import type { MCPTool, MCPClient, MCPCallToolResult } from "./types.js";
 import { MCPTimeoutError } from "./errors.js";
@@ -23,7 +24,9 @@ describe("wrapMCPTool", () => {
     listTools: vi.fn().mockResolvedValue({ tools: [] }),
     callTool: vi.fn(),
     listResources: vi.fn(),
+    readResource: vi.fn(),
     listPrompts: vi.fn(),
+    getPrompt: vi.fn(),
     close: vi.fn(),
     isConnected: vi.fn().mockReturnValue(true),
   };
@@ -241,7 +244,9 @@ describe("wrapMCPTools", () => {
     listTools: vi.fn(),
     callTool: vi.fn(),
     listResources: vi.fn(),
+    readResource: vi.fn(),
     listPrompts: vi.fn(),
+    getPrompt: vi.fn(),
     close: vi.fn(),
     isConnected: vi.fn().mockReturnValue(true),
   };
@@ -276,7 +281,9 @@ describe("createToolsFromMCPServer", () => {
     }),
     callTool: vi.fn(),
     listResources: vi.fn(),
+    readResource: vi.fn(),
     listPrompts: vi.fn(),
+    getPrompt: vi.fn(),
     close: vi.fn(),
     isConnected: vi.fn().mockReturnValue(false),
   };
@@ -351,7 +358,9 @@ describe("json schema to zod conversion", () => {
     listTools: vi.fn(),
     callTool: vi.fn(),
     listResources: vi.fn(),
+    readResource: vi.fn(),
     listPrompts: vi.fn(),
+    getPrompt: vi.fn(),
     close: vi.fn(),
     isConnected: vi.fn().mockReturnValue(true),
   };
@@ -453,5 +462,137 @@ describe("json schema to zod conversion", () => {
 
     expect(() => tool.parameters.parse({ config: { enabled: true } })).not.toThrow();
     expect(() => tool.parameters.parse({ config: { enabled: "yes" } })).toThrow();
+  });
+});
+
+describe("enhanced jsonSchemaToZod", () => {
+  it("should handle string enum", () => {
+    const schema = jsonSchemaToZod({
+      enum: ["red", "green", "blue"],
+    });
+
+    expect(schema.parse("red")).toBe("red");
+    expect(() => schema.parse("yellow")).toThrow();
+  });
+
+  it("should handle const literal", () => {
+    const schema = jsonSchemaToZod({
+      const: "fixed_value",
+    });
+
+    expect(schema.parse("fixed_value")).toBe("fixed_value");
+    expect(() => schema.parse("other")).toThrow();
+  });
+
+  it("should handle nullable type", () => {
+    const schema = jsonSchemaToZod({
+      type: "string",
+      nullable: true,
+    });
+
+    expect(schema.parse("hello")).toBe("hello");
+    expect(schema.parse(null)).toBeNull();
+  });
+
+  it("should handle type array with null", () => {
+    const schema = jsonSchemaToZod({
+      type: ["string", "null"],
+    });
+
+    expect(schema.parse("hello")).toBe("hello");
+    expect(schema.parse(null)).toBeNull();
+  });
+
+  it("should handle null type", () => {
+    const schema = jsonSchemaToZod({
+      type: "null",
+    });
+
+    expect(schema.parse(null)).toBeNull();
+    expect(() => schema.parse("test")).toThrow();
+  });
+
+  it("should handle string with minLength/maxLength", () => {
+    const schema = jsonSchemaToZod({
+      type: "string",
+      minLength: 2,
+      maxLength: 10,
+    });
+
+    expect(schema.parse("hello")).toBe("hello");
+    expect(() => schema.parse("a")).toThrow();
+    expect(() => schema.parse("this is too long string")).toThrow();
+  });
+
+  it("should handle number with minimum/maximum", () => {
+    const schema = jsonSchemaToZod({
+      type: "number",
+      minimum: 0,
+      maximum: 100,
+    });
+
+    expect(schema.parse(50)).toBe(50);
+    expect(() => schema.parse(-1)).toThrow();
+    expect(() => schema.parse(101)).toThrow();
+  });
+
+  it("should handle integer type", () => {
+    const schema = jsonSchemaToZod({
+      type: "integer",
+    });
+
+    expect(schema.parse(42)).toBe(42);
+    // Zod int() rejects floats
+    expect(() => schema.parse(3.14)).toThrow();
+  });
+
+  it("should handle array with minItems/maxItems", () => {
+    const schema = jsonSchemaToZod({
+      type: "array",
+      items: { type: "string" },
+      minItems: 1,
+      maxItems: 3,
+    });
+
+    expect(schema.parse(["a"])).toEqual(["a"]);
+    expect(() => schema.parse([])).toThrow();
+    expect(() => schema.parse(["a", "b", "c", "d"])).toThrow();
+  });
+
+  it("should handle oneOf as union", () => {
+    const schema = jsonSchemaToZod({
+      oneOf: [{ type: "string" }, { type: "number" }],
+    });
+
+    expect(schema.parse("hello")).toBe("hello");
+    expect(schema.parse(42)).toBe(42);
+    expect(() => schema.parse(true)).toThrow();
+  });
+
+  it("should handle anyOf as union", () => {
+    const schema = jsonSchemaToZod({
+      anyOf: [{ type: "string" }, { type: "number" }],
+    });
+
+    expect(schema.parse("hello")).toBe("hello");
+    expect(schema.parse(42)).toBe(42);
+  });
+
+  it("should handle unknown type as z.any()", () => {
+    const schema = jsonSchemaToZod({
+      type: "custom_type",
+    });
+
+    // Should not throw for any value
+    expect(schema.parse("anything")).toBe("anything");
+    expect(schema.parse(42)).toBe(42);
+  });
+
+  it("should handle schema without type as z.any()", () => {
+    const schema = jsonSchemaToZod({});
+
+    expect(schema.parse("anything")).toBe("anything");
+    expect(schema.parse(42)).toBe(42);
+    expect(schema.parse(null)).toBeNull();
   });
 });

@@ -99,6 +99,98 @@ export {
   type BuildResult,
 } from "./build.js";
 
+// Permissions tools
+export {
+  managePermissionsTool,
+  permissionsTools,
+  getRiskLevel,
+  getRiskDescription,
+  getEffectDescription,
+  type RiskLevel,
+} from "./permissions.js";
+
+// Web tools
+export {
+  webSearchTool,
+  webFetchTool,
+  webTools,
+  type WebSearchOutput,
+  type WebSearchResultItem,
+  type WebFetchOutput,
+} from "./web.js";
+
+// Diff tools (visual)
+export { showDiffTool, diffTools } from "./diff.js";
+
+// Review tools
+export {
+  reviewCodeTool,
+  reviewTools,
+  type ReviewResult,
+  type ReviewFinding,
+  type ReviewSummary,
+  type ReviewSeverity,
+  type ReviewCategory,
+} from "./review.js";
+
+// Codebase map tools
+export {
+  codebaseMapTool,
+  codebaseMapTools,
+  type CodebaseMapOutput,
+  type FileMapEntry,
+  type CodeDefinition,
+  type DefinitionType,
+} from "./codebase-map.js";
+
+// Memory tools
+export {
+  createMemoryTool,
+  recallMemoryTool,
+  listMemoriesTool,
+  memoryTools,
+  type Memory,
+} from "./memory.js";
+
+// Checkpoint tools
+export {
+  createCheckpointTool,
+  restoreCheckpointTool,
+  listCheckpointsTool,
+  checkpointTools,
+  type Checkpoint,
+} from "./checkpoint.js";
+
+// Semantic search tools
+export {
+  semanticSearchTool,
+  semanticSearchTools,
+  type SemanticSearchOutput,
+  type SemanticSearchResultItem,
+} from "./semantic-search.js";
+
+// Diagram tools
+export {
+  generateDiagramTool,
+  diagramTools,
+  type DiagramOutput,
+} from "./diagram.js";
+
+// PDF tools
+export { readPdfTool, pdfTools, type PdfReadOutput } from "./pdf.js";
+
+// Image tools
+export { readImageTool, imageTools, type ImageReadOutput } from "./image.js";
+
+// Database tools
+export {
+  sqlQueryTool,
+  inspectSchemaTool,
+  databaseTools,
+  type SqlQueryOutput,
+  type SchemaInspectOutput,
+} from "./database.js";
+
 /**
  * Register all tools with a registry
  */
@@ -111,6 +203,18 @@ import { qualityTools } from "./quality.js";
 import { searchTools } from "./search.js";
 import { httpTools } from "./http.js";
 import { buildTools } from "./build.js";
+import { permissionsTools } from "./permissions.js";
+import { webTools } from "./web.js";
+import { codebaseMapTools } from "./codebase-map.js";
+import { memoryTools } from "./memory.js";
+import { checkpointTools } from "./checkpoint.js";
+import { diffTools } from "./diff.js";
+import { reviewTools } from "./review.js";
+import { semanticSearchTools } from "./semantic-search.js";
+import { diagramTools } from "./diagram.js";
+import { pdfTools } from "./pdf.js";
+import { imageTools } from "./image.js";
+import { databaseTools } from "./database.js";
 
 export function registerAllTools(registry: ToolRegistry): void {
   const allTools = [
@@ -122,6 +226,18 @@ export function registerAllTools(registry: ToolRegistry): void {
     ...searchTools,
     ...httpTools,
     ...buildTools,
+    ...permissionsTools,
+    ...webTools,
+    ...codebaseMapTools,
+    ...memoryTools,
+    ...checkpointTools,
+    ...diffTools,
+    ...reviewTools,
+    ...semanticSearchTools,
+    ...diagramTools,
+    ...pdfTools,
+    ...imageTools,
+    ...databaseTools,
   ];
 
   for (const tool of allTools) {

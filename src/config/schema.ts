@@ -93,7 +93,7 @@ export type IntegrationsConfig = z.infer<typeof IntegrationsConfigSchema>;
  */
 export const MCPServerConfigEntrySchema = z.object({
   name: z.string(),
-  transport: z.enum(["stdio", "http"]),
+  transport: z.enum(["stdio", "http", "sse"]),
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
   url: z.string().optional(),
@@ -124,6 +124,42 @@ export const MCPConfigSchema = z.object({
 export type MCPConfig = z.infer<typeof MCPConfigSchema>;
 
 /**
+ * Tools configuration schema
+ */
+export const ToolsConfigSchema = z.object({
+  webSearch: z
+    .object({
+      engine: z
+        .enum(["duckduckgo", "brave", "serpapi"])
+        .default("duckduckgo"),
+      apiKey: z.string().optional(),
+      maxResults: z.number().min(1).max(20).default(5),
+    })
+    .optional(),
+  memory: z
+    .object({
+      maxMemories: z.number().min(1).max(10000).default(1000),
+      scope: z.enum(["global", "project", "both"]).default("project"),
+    })
+    .optional(),
+  checkpoint: z
+    .object({
+      maxCheckpoints: z.number().min(1).max(200).default(50),
+      useGitStash: z.boolean().default(true),
+    })
+    .optional(),
+  semanticSearch: z
+    .object({
+      model: z.string().default("all-MiniLM-L6-v2"),
+      chunkSize: z.number().min(5).max(100).default(20),
+      threshold: z.number().min(0).max(1).default(0.3),
+    })
+    .optional(),
+});
+
+export type ToolsConfig = z.infer<typeof ToolsConfigSchema>;
+
+/**
  * Complete configuration schema
  */
 export const CocoConfigSchema = z.object({
@@ -152,6 +188,7 @@ export const CocoConfigSchema = z.object({
   stack: StackConfigSchema.optional(),
   integrations: IntegrationsConfigSchema.optional(),
   mcp: MCPConfigSchema.optional(),
+  tools: ToolsConfigSchema.optional(),
 });
 
 export type CocoConfig = z.infer<typeof CocoConfigSchema>;

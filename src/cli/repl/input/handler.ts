@@ -18,6 +18,7 @@ import chalk from "chalk";
 import ansiEscapes from "ansi-escapes";
 import type { ReplSession } from "../types.js";
 import { getAllCommands } from "../commands/index.js";
+import { isCocoMode } from "../coco-mode.js";
 
 /**
  * Input handler interface for REPL
@@ -106,7 +107,22 @@ export function createInputHandler(_session: ReplSession): InputHandler {
   let tempLine = "";
   let lastMenuLines = 0;
 
-  const promptStr = "🥥 › ";
+  // Prompt changes dynamically based on COCO mode
+  // Visual length must be tracked separately from ANSI-colored string
+  const getPrompt = () => {
+    if (isCocoMode()) {
+      return {
+        str: "🥥 " + chalk.magenta("[coco]") + " › ",
+        // 🥥=2 + space=1 + [coco]=6 + space=1 + ›=1 + space=1 = 12
+        visualLen: 12,
+      };
+    }
+    return {
+      str: chalk.green("🥥 › "),
+      // 🥥=2 + space=1 + ›=1 + space=1 = 5
+      visualLen: 5,
+    };
+  };
   const MAX_ROWS = 8;
   /** Bottom margin: push prompt up from terminal edge */
   const BOTTOM_MARGIN = 1;
@@ -131,7 +147,8 @@ export function createInputHandler(_session: ReplSession): InputHandler {
     process.stdout.write("\r" + ansiEscapes.eraseDown);
 
     // Write prompt + current line
-    let output = chalk.green(promptStr) + currentLine;
+    const prompt = getPrompt();
+    let output = prompt.str + currentLine;
 
     // Update completions
     completions = findCompletions(currentLine);
@@ -223,7 +240,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
     }
 
     // Move cursor to end of actual input (after prompt, after typed text, before ghost)
-    output += `\r${ansiEscapes.cursorForward(promptStr.length + currentLine.length)}`;
+    output += `\r${ansiEscapes.cursorForward(prompt.visualLen + currentLine.length)}`;
 
     // Write everything at once
     process.stdout.write(output);

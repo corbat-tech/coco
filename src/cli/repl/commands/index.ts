@@ -27,6 +27,8 @@ import { resumeCommand } from "./resume.js";
 import { updateCommand } from "./update.js";
 import { copyCommand } from "./copy.js";
 import { allowPathCommand } from "./allow-path.js";
+import { permissionsCommand } from "./permissions.js";
+import { cocoCommand } from "./coco.js";
 import { renderError } from "../output/renderer.js";
 
 /**
@@ -57,6 +59,8 @@ const commands: SlashCommand[] = [
   updateCommand,
   copyCommand,
   allowPathCommand,
+  permissionsCommand,
+  cocoCommand,
 ];
 
 /**

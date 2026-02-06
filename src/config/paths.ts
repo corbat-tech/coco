@@ -44,6 +44,15 @@ export const CONFIG_PATHS = {
 
   /** User-level memory file: ~/.coco/COCO.md */
   memory: join(COCO_HOME, "COCO.md"),
+
+  /** Memories directory: ~/.coco/memories/ */
+  memories: join(COCO_HOME, "memories"),
+
+  /** Checkpoints directory: ~/.coco/checkpoints/ */
+  checkpoints: join(COCO_HOME, "checkpoints"),
+
+  /** Search index directory: ~/.coco/search-index/ */
+  searchIndex: join(COCO_HOME, "search-index"),
 } as const;
 
 /**

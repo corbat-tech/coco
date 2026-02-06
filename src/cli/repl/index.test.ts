@@ -16,6 +16,19 @@ vi.mock("./session.js", () => ({
   initializeContextManager: vi.fn(),
   checkAndCompactContext: vi.fn().mockResolvedValue(null),
   getContextUsagePercent: vi.fn(() => 50),
+  loadTrustedTools: vi.fn().mockResolvedValue(new Set()),
+  saveTrustedTool: vi.fn().mockResolvedValue(undefined),
+  removeTrustedTool: vi.fn().mockResolvedValue(undefined),
+  saveDeniedTool: vi.fn().mockResolvedValue(undefined),
+  removeDeniedTool: vi.fn().mockResolvedValue(undefined),
+  getDeniedTools: vi.fn().mockResolvedValue([]),
+  getAllTrustedTools: vi.fn().mockResolvedValue({ global: [], project: [], denied: [] }),
+}));
+
+// Mock recommended-permissions to skip suggestion in tests
+vi.mock("./recommended-permissions.js", () => ({
+  shouldShowPermissionSuggestion: vi.fn().mockResolvedValue(false),
+  showPermissionSuggestion: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock trust-store to always return trusted (prevents interactive prompts)

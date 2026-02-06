@@ -330,6 +330,109 @@ describe("MCPClientImpl", () => {
     });
   });
 
+  describe("readResource", () => {
+    it("should read a resource by URI", async () => {
+      // Initialize first
+      const initPromise = client.initialize({
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "test-client", version: "1.0.0" },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const initId = lastRequestId;
+
+      messageHandler?.({
+        jsonrpc: "2.0",
+        id: initId,
+        result: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          serverInfo: { name: "test-server", version: "1.0.0" },
+        },
+      });
+
+      await initPromise;
+
+      // Read resource
+      const readPromise = client.readResource("file:///test.txt");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const readId = lastRequestId;
+
+      messageHandler?.({
+        jsonrpc: "2.0",
+        id: readId,
+        result: {
+          contents: [
+            {
+              uri: "file:///test.txt",
+              mimeType: "text/plain",
+              text: "file content here",
+            },
+          ],
+        },
+      });
+
+      const result = await readPromise;
+
+      expect(result.contents).toHaveLength(1);
+      expect(result.contents[0]?.text).toBe("file content here");
+    });
+  });
+
+  describe("getPrompt", () => {
+    it("should get a prompt with arguments", async () => {
+      // Initialize first
+      const initPromise = client.initialize({
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "test-client", version: "1.0.0" },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const initId = lastRequestId;
+
+      messageHandler?.({
+        jsonrpc: "2.0",
+        id: initId,
+        result: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          serverInfo: { name: "test-server", version: "1.0.0" },
+        },
+      });
+
+      await initPromise;
+
+      // Get prompt
+      const promptPromise = client.getPrompt("greeting", { name: "World" });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const promptId = lastRequestId;
+
+      messageHandler?.({
+        jsonrpc: "2.0",
+        id: promptId,
+        result: {
+          description: "A greeting prompt",
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: "Hello, World!",
+              },
+            },
+          ],
+        },
+      });
+
+      const result = await promptPromise;
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0]?.content.text).toBe("Hello, World!");
+    });
+  });
+
   describe("close", () => {
     it("should close client connection", async () => {
       // Initialize first

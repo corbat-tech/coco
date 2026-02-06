@@ -26,30 +26,121 @@ const DEFAULT_OPTIONS: Required<MCPToolWrapperOptions> = {
 
 /**
  * Convert JSON schema type to Zod schema
+ * Enhanced to support: enum, oneOf, anyOf, allOf, const, nullable,
+ * string formats (uri, email, datetime), number constraints (min, max)
  */
-function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodType {
+export function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodType {
+  // Handle enum at any level
+  if (schema.enum && Array.isArray(schema.enum)) {
+    const values = schema.enum as [string, ...string[]];
+    if (values.length > 0 && values.every((v) => typeof v === "string")) {
+      return z.enum(values as [string, ...string[]]);
+    }
+    // Mixed-type enum: use union of literals
+    const literals = values.map((v) => z.literal(v));
+    if (literals.length < 2) {
+      return literals[0] ?? z.any();
+    }
+    return z.union(
+      literals as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]],
+    );
+  }
+
+  // Handle const
+  if (schema.const !== undefined) {
+    return z.literal(schema.const as string | number | boolean);
+  }
+
+  // Handle oneOf (union)
+  if (schema.oneOf && Array.isArray(schema.oneOf)) {
+    const schemas = (schema.oneOf as Record<string, unknown>[]).map(jsonSchemaToZod);
+    if (schemas.length >= 2) {
+      return z.union(schemas as [z.ZodType, z.ZodType, ...z.ZodType[]]);
+    }
+    return schemas[0] ?? z.unknown();
+  }
+
+  // Handle anyOf (union)
+  if (schema.anyOf && Array.isArray(schema.anyOf)) {
+    const schemas = (schema.anyOf as Record<string, unknown>[]).map(jsonSchemaToZod);
+    if (schemas.length >= 2) {
+      return z.union(schemas as [z.ZodType, z.ZodType, ...z.ZodType[]]);
+    }
+    return schemas[0] ?? z.unknown();
+  }
+
+  // Handle allOf (intersection)
+  if (schema.allOf && Array.isArray(schema.allOf)) {
+    const schemas = (schema.allOf as Record<string, unknown>[]).map(jsonSchemaToZod);
+    return schemas.reduce((acc, s) => z.intersection(acc, s));
+  }
+
   const type = schema.type as string;
 
+  // Handle nullable
+  const makeNullable = (s: z.ZodType): z.ZodType => {
+    if (schema.nullable === true) return s.nullable();
+    return s;
+  };
+
   switch (type) {
-    case "string":
-      return z.string();
-    case "number":
-      return z.number();
-    case "integer":
-      return z.number().int();
+    case "string": {
+      let s = z.string();
+      // String format support
+      if (schema.format) {
+        switch (schema.format) {
+          case "uri":
+          case "url":
+            s = z.string().url();
+            break;
+          case "email":
+            s = z.string().email();
+            break;
+          case "date-time":
+          case "datetime":
+            s = z.string().datetime();
+            break;
+          // Other formats: keep as plain string
+        }
+      }
+      // String length constraints
+      if (typeof schema.minLength === "number") s = s.min(schema.minLength as number);
+      if (typeof schema.maxLength === "number") s = s.max(schema.maxLength as number);
+      return makeNullable(s);
+    }
+    case "number": {
+      let n = z.number();
+      if (typeof schema.minimum === "number") n = n.min(schema.minimum as number);
+      if (typeof schema.maximum === "number") n = n.max(schema.maximum as number);
+      if (typeof schema.exclusiveMinimum === "number") n = n.gt(schema.exclusiveMinimum as number);
+      if (typeof schema.exclusiveMaximum === "number") n = n.lt(schema.exclusiveMaximum as number);
+      return makeNullable(n);
+    }
+    case "integer": {
+      let n = z.number().int();
+      if (typeof schema.minimum === "number") n = n.min(schema.minimum as number);
+      if (typeof schema.maximum === "number") n = n.max(schema.maximum as number);
+      return makeNullable(n);
+    }
     case "boolean":
-      return z.boolean();
+      return makeNullable(z.boolean());
+    case "null":
+      return z.null();
     case "array":
       if (schema.items) {
-        return z.array(jsonSchemaToZod(schema.items as Record<string, unknown>));
+        const itemSchema = jsonSchemaToZod(schema.items as Record<string, unknown>);
+        let arr = z.array(itemSchema);
+        if (typeof schema.minItems === "number") arr = arr.min(schema.minItems as number);
+        if (typeof schema.maxItems === "number") arr = arr.max(schema.maxItems as number);
+        return makeNullable(arr);
       }
-      return z.array(z.unknown());
+      return makeNullable(z.array(z.unknown()));
     case "object": {
       const properties = schema.properties as Record<string, Record<string, unknown>> | undefined;
       const required = schema.required as string[] | undefined;
 
       if (!properties) {
-        return z.record(z.string(), z.unknown());
+        return makeNullable(z.record(z.string(), z.unknown()));
       }
 
       const shape: Record<string, z.ZodType> = {};
@@ -61,12 +152,27 @@ function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodType {
           fieldSchema = fieldSchema.optional();
         }
 
+        // Add description if present
+        if (propSchema.description && typeof propSchema.description === "string") {
+          fieldSchema = fieldSchema.describe(propSchema.description);
+        }
+
         shape[key] = fieldSchema;
       }
 
-      return z.object(shape);
+      return makeNullable(z.object(shape));
     }
     default:
+      // If type is an array (e.g., ["string", "null"]), handle as union
+      if (Array.isArray(schema.type)) {
+        const types = schema.type as string[];
+        if (types.includes("null")) {
+          const nonNullType = types.find((t) => t !== "null");
+          if (nonNullType) {
+            return jsonSchemaToZod({ ...schema, type: nonNullType }).nullable();
+          }
+        }
+      }
       return z.unknown();
   }
 }

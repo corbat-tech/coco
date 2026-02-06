@@ -13,6 +13,7 @@ vi.mock("chalk", () => {
     fn.dim = (s: string) => s;
     fn.cyan = Object.assign((s: string) => s, { bold: (s: string) => s });
     fn.yellow = Object.assign((s: string) => s, { bold: (s: string) => s });
+    fn.magenta = Object.assign((s: string) => s, { bold: (s: string) => s });
     fn.bold = Object.assign((s: string) => s, { cyan: (s: string) => s });
     fn.green = (s: string) => s;
     fn.red = (s: string) => s;

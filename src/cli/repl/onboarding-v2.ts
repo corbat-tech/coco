@@ -332,13 +332,13 @@ async function setupProviderWithAuth(
  */
 async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingResult | null> {
   console.log();
-  console.log(chalk.magenta("   ┌─────────────────────────────────────────────────┐"));
+  console.log(chalk.magenta("   ╭─────────────────────────────────────────────────╮"));
   console.log(
     chalk.magenta("   │ ") +
       chalk.bold.white("☁️ Google Cloud ADC Authentication") +
       chalk.magenta("              │"),
   );
-  console.log(chalk.magenta("   └─────────────────────────────────────────────────┘"));
+  console.log(chalk.magenta("   ╰─────────────────────────────────────────────────╯"));
   console.log();
 
   // Check if gcloud CLI is installed
@@ -1083,7 +1083,6 @@ async function testConnection(
  */
 export async function saveConfiguration(result: OnboardingResult): Promise<void> {
   const provider = getProviderDefinition(result.type);
-  const isLocal = provider.requiresApiKey === false;
   const isGcloudADC = result.apiKey === "__gcloud_adc__";
 
   // gcloud ADC doesn't need to save API key - credentials are managed by gcloud
@@ -1098,7 +1097,12 @@ export async function saveConfiguration(result: OnboardingResult): Promise<void>
   }
 
   // API keys are user-level credentials — always saved globally in ~/.coco/.env
-  const message = isLocal ? "Save your LM Studio configuration?" : "Save your API key?";
+  const message =
+    result.type === "lmstudio"
+      ? "Save your LM Studio configuration?"
+      : result.type === "codex"
+        ? "Save your configuration?"
+        : "Save your API key?";
 
   const saveOptions = await p.select({
     message,
@@ -1120,13 +1124,17 @@ export async function saveConfiguration(result: OnboardingResult): Promise<void>
 
   const envVarsToSave: Record<string, string> = {};
 
-  if (isLocal) {
+  if (result.type === "lmstudio") {
     // LM Studio: save config (no API key)
     envVarsToSave["COCO_PROVIDER"] = result.type;
     envVarsToSave["LMSTUDIO_MODEL"] = result.model;
     if (result.baseUrl) {
       envVarsToSave["LMSTUDIO_BASE_URL"] = result.baseUrl;
     }
+  } else if (result.type === "codex") {
+    // Codex/ChatGPT OAuth: save provider and model (token managed by OAuth flow)
+    envVarsToSave["COCO_PROVIDER"] = result.type;
+    envVarsToSave["CODEX_MODEL"] = result.model;
   } else {
     // Cloud providers: save API key
     envVarsToSave[provider.envVar] = result.apiKey;

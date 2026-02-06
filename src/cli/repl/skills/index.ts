@@ -12,11 +12,11 @@ export type { Skill, SkillContext, SkillResult, SkillCategory, SkillInfo } from 
 export { SkillRegistry, createSkillRegistry } from "./registry.js";
 
 // Export builtin skills
-export { createHelpSkill, clearSkill, statusSkill, compactSkill } from "./builtin/index.js";
+export { createHelpSkill, clearSkill, statusSkill, compactSkill, reviewSkill, diffSkill } from "./builtin/index.js";
 
 // Import for factory function
 import { SkillRegistry } from "./registry.js";
-import { createHelpSkill, clearSkill, statusSkill, compactSkill } from "./builtin/index.js";
+import { createHelpSkill, clearSkill, statusSkill, compactSkill, reviewSkill, diffSkill } from "./builtin/index.js";
 
 /**
  * Create a skill registry with all built-in skills registered
@@ -31,6 +31,8 @@ export function createDefaultRegistry(): SkillRegistry {
   registry.register(clearSkill);
   registry.register(statusSkill);
   registry.register(compactSkill);
+  registry.register(reviewSkill);
+  registry.register(diffSkill);
 
   return registry;
 }

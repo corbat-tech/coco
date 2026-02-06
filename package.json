@@ -60,6 +60,7 @@
     "commander": "^14.0.3",
     "execa": "^9.5.0",
     "glob": "^13.0.1",
+    "highlight.js": "^11.11.1",
     "json5": "^2.2.3",
     "marked": "^15.0.0",
     "marked-terminal": "^7.0.0",

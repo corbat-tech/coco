@@ -9,6 +9,7 @@ import {
   initializeContextManager,
   checkAndCompactContext,
   getContextUsagePercent,
+  loadTrustedTools,
 } from "./session.js";
 import { createInputHandler } from "./input/handler.js";
 import {
@@ -40,6 +41,21 @@ import { ensureConfiguredV2 } from "./onboarding-v2.js";
 import { checkForUpdates } from "./version-check.js";
 import { getInternalProviderId } from "../../config/env.js";
 import { loadAllowedPaths } from "../../tools/allowed-paths.js";
+import {
+  shouldShowPermissionSuggestion,
+  showPermissionSuggestion,
+} from "./recommended-permissions.js";
+import {
+  isCocoMode,
+  loadCocoModePreference,
+  looksLikeFeatureRequest,
+  wasHintShown,
+  markHintShown,
+  formatCocoHint,
+  formatQualityResult,
+  getCocoModeSystemPrompt,
+  type CocoQualityResult,
+} from "./coco-mode.js";
 
 /**
  * Start the REPL
@@ -103,6 +119,19 @@ export async function startRepl(
 
   // Load persisted allowed paths for this project
   await loadAllowedPaths(projectPath);
+
+  // Show recommended permissions suggestion for first-time users
+  if (await shouldShowPermissionSuggestion()) {
+    await showPermissionSuggestion();
+    // Reload trust into session after potential changes
+    const updatedTrust = await loadTrustedTools(projectPath);
+    for (const tool of updatedTrust) {
+      session.trustedTools.add(tool);
+    }
+  }
+
+  // Load COCO mode preference
+  await loadCocoModePreference();
 
   // Initialize tool registry
   const toolRegistry = createFullToolRegistry();
@@ -175,7 +204,21 @@ export async function startRepl(
     };
 
     try {
+      // Show contextual hint for first feature-like prompt when COCO mode is off
+      if (!isCocoMode() && !wasHintShown() && looksLikeFeatureRequest(input)) {
+        markHintShown();
+        console.log(formatCocoHint());
+      }
+
       console.log(); // Blank line before response
+
+      // If COCO mode is active, temporarily augment the system prompt
+      let originalSystemPrompt: string | undefined;
+      if (isCocoMode()) {
+        originalSystemPrompt = session.config.agent.systemPrompt;
+        session.config.agent.systemPrompt =
+          originalSystemPrompt + "\n" + getCocoModeSystemPrompt();
+      }
 
       // Pause input to prevent typing interference during agent response
       inputHandler.pause();
@@ -259,7 +302,20 @@ export async function startRepl(
         continue;
       }
 
+      // Restore original system prompt if COCO mode augmented it
+      if (originalSystemPrompt !== undefined) {
+        session.config.agent.systemPrompt = originalSystemPrompt;
+      }
+
       console.log(); // Blank line after response
+
+      // Parse and display quality report if COCO mode produced one
+      if (isCocoMode() && result.content) {
+        const qualityResult = parseCocoQualityReport(result.content);
+        if (qualityResult) {
+          console.log(formatQualityResult(qualityResult));
+        }
+      }
 
       // Track token usage for /cost command
       addTokenUsage(result.usage.inputTokens, result.usage.outputTokens);
@@ -410,6 +466,12 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
       chalk.magenta(modelName) +
       (trustText ? chalk.dim(` • 🔐 ${trustText}`) : ""),
   );
+  // Show COCO mode status
+  const cocoStatus = isCocoMode()
+    ? chalk.magenta("  🔄 quality mode: ") + chalk.green.bold("on") + chalk.dim(" (/coco to toggle)")
+    : chalk.dim("  💡 /coco — enable auto-test & quality iteration");
+  console.log(cocoStatus);
+
   console.log();
   console.log(
     chalk.dim("  Type your request or ") + chalk.magenta("/help") + chalk.dim(" for commands"),
@@ -479,6 +541,52 @@ async function checkProjectTrust(projectPath: string): Promise<boolean> {
 
   console.log(chalk.green("  ✓ Access granted") + chalk.dim(" • /trust to manage"));
   return true;
+}
+
+/**
+ * Parse COCO quality report from agent response content
+ */
+function parseCocoQualityReport(content: string): CocoQualityResult | null {
+  const marker = "COCO_QUALITY_REPORT";
+  const idx = content.indexOf(marker);
+  if (idx === -1) return null;
+
+  const block = content.slice(idx);
+
+  const getField = (name: string): string | undefined => {
+    const match = block.match(new RegExp(`${name}:\\s*(.+)`));
+    return match?.[1]?.trim();
+  };
+
+  const scoreHistoryRaw = getField("score_history");
+  if (!scoreHistoryRaw) return null;
+
+  // Parse [72, 84, 87, 88]
+  const scores = scoreHistoryRaw
+    .replace(/[\[\]]/g, "")
+    .split(",")
+    .map((s) => parseFloat(s.trim()))
+    .filter((n) => !isNaN(n));
+
+  if (scores.length === 0) return null;
+
+  const testsPassed = parseInt(getField("tests_passed") ?? "", 10);
+  const testsTotal = parseInt(getField("tests_total") ?? "", 10);
+  const coverage = parseInt(getField("coverage") ?? "", 10);
+  const security = parseInt(getField("security") ?? "", 10);
+  const iterations = parseInt(getField("iterations") ?? "", 10) || scores.length;
+  const converged = getField("converged") === "true";
+
+  return {
+    converged,
+    scoreHistory: scores,
+    finalScore: scores[scores.length - 1] ?? 0,
+    iterations,
+    testsPassed: isNaN(testsPassed) ? undefined : testsPassed,
+    testsTotal: isNaN(testsTotal) ? undefined : testsTotal,
+    coverage: isNaN(coverage) ? undefined : coverage,
+    securityScore: isNaN(security) ? undefined : security,
+  };
 }
 
 /**

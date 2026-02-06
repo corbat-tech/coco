@@ -21,6 +21,16 @@ export const helpCommand: SlashCommand = {
 
     const sections = [
       {
+        title: "Quality Mode",
+        commands: [
+          {
+            cmd: "/coco [on|off]",
+            desc: "Auto-test, self-review, iterate until quality ≥ 85/100",
+            highlight: true,
+          },
+        ],
+      },
+      {
         title: "COCO Phases",
         commands: [
           { cmd: "/init, /i [name]", desc: "Initialize a new project" },
@@ -47,6 +57,7 @@ export const helpCommand: SlashCommand = {
           { cmd: "/compact", desc: "Toggle compact mode (less verbose)" },
           { cmd: "/cost, /tokens", desc: "Show token usage and cost" },
           { cmd: "/trust", desc: "Manage project trust permissions" },
+          { cmd: "/permissions, /perms", desc: "Manage tool permissions and allowlist" },
         ],
       },
       {
@@ -71,8 +82,14 @@ export const helpCommand: SlashCommand = {
 
     for (const section of sections) {
       console.log(chalk.bold(section.title));
-      for (const { cmd, desc } of section.commands) {
-        console.log(`  ${chalk.yellow(cmd.padEnd(22))} ${chalk.dim(desc)}`);
+      for (const entry of section.commands) {
+        const { cmd, desc } = entry;
+        const isHighlight = "highlight" in entry && entry.highlight;
+        if (isHighlight) {
+          console.log(`  ${chalk.magenta.bold(cmd.padEnd(22))} ${chalk.white(desc)}`);
+        } else {
+          console.log(`  ${chalk.yellow(cmd.padEnd(22))} ${chalk.dim(desc)}`);
+        }
       }
       console.log();
     }

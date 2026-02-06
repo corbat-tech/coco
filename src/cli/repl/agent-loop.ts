@@ -14,8 +14,16 @@ import type {
 } from "../../providers/types.js";
 import type { ToolRegistry } from "../../tools/registry.js";
 import type { ReplSession, AgentTurnResult, ExecutedToolCall } from "./types.js";
-import { getConversationContext, addMessage, saveTrustedTool } from "./session.js";
+import {
+  getConversationContext,
+  addMessage,
+  saveTrustedTool,
+  removeTrustedTool,
+  saveDeniedTool,
+  removeDeniedTool,
+} from "./session.js";
 import { requiresConfirmation, confirmToolExecution } from "./confirmation.js";
+import { getTrustPattern } from "./bash-patterns.js";
 import { ParallelToolExecutor } from "./parallel-executor.js";
 import {
   type HookRegistryInterface,
@@ -230,9 +238,11 @@ export async function executeAgentTurn(
       }
 
       // Check if confirmation is needed (skip if tool is trusted for session)
+      // Uses pattern-aware trust: "bash:git:commit" instead of just "bash_exec"
+      const trustPattern = getTrustPattern(toolCall.name, toolCall.input);
       const needsConfirmation =
         !options.skipConfirmation &&
-        !session.trustedTools.has(toolCall.name) &&
+        !session.trustedTools.has(trustPattern) &&
         requiresConfirmation(toolCall.name, toolCall.input);
 
       if (needsConfirmation) {
@@ -263,17 +273,21 @@ export async function executeAgentTurn(
             turnAborted = true;
             continue;
 
-          case "trust_project":
-            // Trust this tool for this project (persist to projectTrusted)
-            session.trustedTools.add(toolCall.name);
-            saveTrustedTool(toolCall.name, session.projectPath, false).catch(() => {});
+          case "trust_project": {
+            // Trust this tool pattern for this project (e.g., "bash:git:commit")
+            const projectPattern = getTrustPattern(toolCall.name, toolCall.input);
+            session.trustedTools.add(projectPattern);
+            saveTrustedTool(projectPattern, session.projectPath, false).catch(() => {});
             break;
+          }
 
-          case "trust_global":
-            // Trust this tool globally (persist to globalTrusted)
-            session.trustedTools.add(toolCall.name);
-            saveTrustedTool(toolCall.name, null, true).catch(() => {});
+          case "trust_global": {
+            // Trust this tool pattern globally (e.g., "bash:git:commit")
+            const globalPattern = getTrustPattern(toolCall.name, toolCall.input);
+            session.trustedTools.add(globalPattern);
+            saveTrustedTool(globalPattern, null, true).catch(() => {});
             break;
+          }
 
           case "yes":
           default:
@@ -306,9 +320,41 @@ export async function executeAgentTurn(
         },
       });
 
-      // Collect executed tools
+      // Collect executed tools and apply side-effects
       for (const executed of parallelResult.executed) {
         executedTools.push(executed);
+
+        // Apply manage_permissions side-effects after successful execution
+        if (executed.name === "manage_permissions" && executed.result.success) {
+          const action = executed.input.action as string;
+          const patterns = executed.input.patterns as string[];
+          const scope = (executed.input.scope as string) || "project";
+
+          if (Array.isArray(patterns)) {
+            for (const p of patterns) {
+              if (action === "allow") {
+                session.trustedTools.add(p);
+                if (scope === "global") {
+                  saveTrustedTool(p, null, true).catch(() => {});
+                } else {
+                  saveTrustedTool(p, session.projectPath, false).catch(() => {});
+                }
+                // Remove from project deny list if previously denied
+                removeDeniedTool(p, session.projectPath).catch(() => {});
+              } else {
+                // deny / ask
+                session.trustedTools.delete(p);
+                if (scope === "global") {
+                  // Global deny = remove from global allow list
+                  removeTrustedTool(p, session.projectPath, true).catch(() => {});
+                } else {
+                  // Project deny = add to project deny list (overrides global)
+                  saveDeniedTool(p, session.projectPath).catch(() => {});
+                }
+              }
+            }
+          }
+        }
       }
 
       // Handle skipped tools from parallel execution (e.g., due to abort)

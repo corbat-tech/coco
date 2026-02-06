@@ -11,6 +11,8 @@ import type {
   MCPInitializeResult,
   MCPCallToolParams,
   MCPCallToolResult,
+  MCPReadResourceResult,
+  MCPGetPromptResult,
   MCPTool,
   MCPResource,
   MCPPrompt,
@@ -176,11 +178,33 @@ export class MCPClientImpl implements MCPClient {
   }
 
   /**
+   * Read a specific resource by URI
+   */
+  async readResource(uri: string): Promise<MCPReadResourceResult> {
+    this.ensureInitialized();
+    return this.sendRequest<MCPReadResourceResult>("resources/read", { uri });
+  }
+
+  /**
    * List available prompts
    */
   async listPrompts(): Promise<{ prompts: MCPPrompt[] }> {
     this.ensureInitialized();
     return this.sendRequest<{ prompts: MCPPrompt[] }>("prompts/list");
+  }
+
+  /**
+   * Get a specific prompt with arguments
+   */
+  async getPrompt(
+    name: string,
+    args?: Record<string, string>,
+  ): Promise<MCPGetPromptResult> {
+    this.ensureInitialized();
+    return this.sendRequest<MCPGetPromptResult>("prompts/get", {
+      name,
+      arguments: args,
+    });
   }
 
   /**

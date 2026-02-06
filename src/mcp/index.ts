@@ -39,6 +39,8 @@ export type {
   MCPInitializeResult,
   MCPCallToolParams,
   MCPCallToolResult,
+  MCPReadResourceResult,
+  MCPGetPromptResult,
   MCPTool,
   MCPResource,
   MCPPrompt,
@@ -66,6 +68,8 @@ export {
 export { StdioTransport } from "./transport/stdio.js";
 export { HTTPTransport } from "./transport/http.js";
 export type { HTTPTransportConfig } from "./transport/http.js";
+export { SSETransport } from "./transport/sse.js";
+export type { SSETransportConfig } from "./transport/sse.js";
 
 // Client factory
 export { createMCPClient, MCPClientImpl } from "./client.js";
@@ -101,3 +105,17 @@ export {
   loadMCPServersFromCOCOConfig,
 } from "./config-loader.js";
 export type { MCPConfigFile } from "./config-loader.js";
+
+// Schema to Zod converter
+export { jsonSchemaToZod } from "./tools.js";
+
+// Lifecycle manager
+export {
+  MCPServerManager,
+  getMCPServerManager,
+  createMCPServerManager,
+} from "./lifecycle.js";
+export type {
+  ServerConnection,
+  HealthCheckResult,
+} from "./lifecycle.js";
