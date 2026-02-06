@@ -242,7 +242,7 @@ describe("MigrationRegistry", () => {
         description: "Add field",
         migrate: (config) => ({ ...config, newField: "added" }),
         rollback: (config) => {
-          const { newField, ...rest } = config as Record<string, unknown>;
+          const { newField: _newField, ...rest } = config as Record<string, unknown>;
           return rest;
         },
       });

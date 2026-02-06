@@ -6,7 +6,7 @@
 
 import { readFile, writeFile, access, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { CONFIG_PATHS } from "../../config/paths.js";
 
 /**
  * Trust approval levels
@@ -61,7 +61,7 @@ const DEFAULT_TRUST_STORE: TrustStoreConfig = {
 /**
  * Trust store file path
  */
-export const TRUST_STORE_PATH = join(homedir(), ".config", "corbat-coco", "projects-trust.json");
+export const TRUST_STORE_PATH = CONFIG_PATHS.projects;
 
 /**
  * Ensure directory exists

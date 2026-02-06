@@ -37,7 +37,7 @@ describe("MODEL_PRICING", () => {
   });
 
   it("should have valid pricing structure", () => {
-    for (const [model, pricing] of Object.entries(MODEL_PRICING)) {
+    for (const [_model, pricing] of Object.entries(MODEL_PRICING)) {
       expect(pricing.inputPerMillion).toBeGreaterThan(0);
       expect(pricing.outputPerMillion).toBeGreaterThan(0);
       expect(pricing.contextWindow).toBeGreaterThan(0);

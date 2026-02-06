@@ -419,7 +419,7 @@ describe("ConvergeExecutor - advanced scenarios", () => {
           usage: { inputTokens: 100, outputTokens: 50 },
         });
 
-      const result = await executor.execute({
+      await executor.execute({
         projectPath: tempDir,
         config: {
           quality: { minScore: 85, minCoverage: 80, maxIterations: 10, convergenceThreshold: 2 },
@@ -940,7 +940,7 @@ describe("runConvergePhase - additional scenarios", () => {
       isAvailable: vi.fn().mockResolvedValue(true),
     };
 
-    const result = await runConvergePhase(tempDir, mockLLM as any, {
+    await runConvergePhase(tempDir, mockLLM as any, {
       onUserInput: async () => "test input",
     });
 
@@ -1066,7 +1066,7 @@ describe("ConvergeExecutor - LLM adapter methods", () => {
         usage: { inputTokens: 100, outputTokens: 50 },
       });
 
-    const mockChatWithTools = vi.fn().mockImplementation(async (messages: any[], tools: any) => {
+    const mockChatWithTools = vi.fn().mockImplementation(async (_messages: any[], _tools: any) => {
       chatWithToolsCalled.push(true);
       return {
         content: JSON.stringify({}),
@@ -1913,8 +1913,8 @@ describe("runConvergePhase - chatWithTools adaptation", () => {
   it("should adapt chatWithTools with tool calls", async () => {
     const { runConvergePhase } = await import("./executor.js");
 
-    let chatWithToolsCalled = false;
-    let receivedTools: any[] = [];
+    let _chatWithToolsCalled = false;
+    let _receivedTools: any[] = [];
 
     const mockLLM = {
       id: "test",
@@ -1928,8 +1928,8 @@ describe("runConvergePhase - chatWithTools adaptation", () => {
         model: "test",
       }),
       chatWithTools: vi.fn().mockImplementation(async (messages: any[], options: any) => {
-        chatWithToolsCalled = true;
-        receivedTools = options.tools;
+        _chatWithToolsCalled = true;
+        _receivedTools = options.tools;
         return {
           id: "resp-2",
           content: "{}",
@@ -2128,7 +2128,7 @@ describe("runConvergePhase - context adapter chatWithTools", () => {
   it("should exercise chatWithTools in context adapter via specification generation", async () => {
     const { runConvergePhase } = await import("./executor.js");
 
-    let chatWithToolsInvoked = false;
+    let _chatWithToolsInvoked = false;
 
     const mockLLM = {
       id: "test",
@@ -2157,8 +2157,8 @@ describe("runConvergePhase - context adapter chatWithTools", () => {
           usage: { inputTokens: 50, outputTokens: 25 },
           model: "test",
         }),
-      chatWithTools: vi.fn().mockImplementation(async (messages: any[], options: any) => {
-        chatWithToolsInvoked = true;
+      chatWithTools: vi.fn().mockImplementation(async (_messages: any[], _options: any) => {
+        _chatWithToolsInvoked = true;
         return {
           id: "resp-tools",
           content: "{}",
@@ -2866,7 +2866,7 @@ describe("runConvergePhase - context.llm.chatWithTools coverage", () => {
   it("should have chatWithTools method available on context.llm", async () => {
     const { runConvergePhase } = await import("./executor.js");
 
-    let receivedContext: any = null;
+    let _receivedContext: any = null;
 
     // We mock the discovery process to capture the context
     const mockLLM = {
@@ -2883,7 +2883,7 @@ describe("runConvergePhase - context.llm.chatWithTools coverage", () => {
         usage: { inputTokens: 100, outputTokens: 50 },
         model: "test",
       }),
-      chatWithTools: vi.fn().mockImplementation(async (messages, options) => {
+      chatWithTools: vi.fn().mockImplementation(async (_messages, _options) => {
         return {
           id: "resp-2",
           content: "{}",

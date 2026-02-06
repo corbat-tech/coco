@@ -113,7 +113,7 @@ describe("GeminiProvider", () => {
       const provider = new GeminiProvider();
       await provider.initialize({ apiKey: "test", model: "gemini-2.0-flash" });
 
-      expect(provider.getContextWindow()).toBe(1000000);
+      expect(provider.getContextWindow()).toBe(1048576);
     });
 
     it("should return context window for gemini-1.5-pro", async () => {

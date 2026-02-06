@@ -9,20 +9,9 @@
  * - Error handling and retry
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Mock } from "vitest";
-import type {
-  LLMProvider,
-  ProviderConfig,
-  Message,
-  ChatOptions,
-  ChatResponse,
-  ChatWithToolsOptions,
-  ChatWithToolsResponse,
-  ToolDefinition,
-  ToolCall,
-  StreamChunk,
-} from "./types.js";
+import type { LLMProvider, Message, ToolDefinition } from "./types.js";
 
 // Mock the Anthropic SDK
 vi.mock("@anthropic-ai/sdk", () => {

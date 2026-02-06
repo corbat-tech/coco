@@ -4,8 +4,6 @@
 
 import { describe, it, expect } from "vitest";
 import { StdioTransport } from "./stdio.js";
-import { MCPConnectionError } from "../errors.js";
-
 describe("StdioTransport", () => {
   describe("constructor", () => {
     it("should create stdio transport with config", () => {

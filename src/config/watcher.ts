@@ -55,7 +55,7 @@ export class ConfigWatcher extends EventEmitter {
     // Load initial config
     try {
       this.currentConfig = await loadConfig(this.configPath);
-    } catch (error) {
+    } catch {
       // Config might not exist yet
       this.currentConfig = null;
     }

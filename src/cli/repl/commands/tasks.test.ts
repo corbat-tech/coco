@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { tasksCommand } from "./tasks.js";
-import { BackgroundTaskManager, resetBackgroundTaskManager } from "../background/index.js";
+import { resetBackgroundTaskManager } from "../background/index.js";
 import type { ReplSession } from "../types.js";
 
 // Mock console.log to capture output

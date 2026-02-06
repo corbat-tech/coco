@@ -718,7 +718,7 @@ describe("CompleteExecutor - runTests method coverage", () => {
 
     // Capture the runTests callback
     let capturedRunTests: (() => Promise<any>) | undefined;
-    mockIteratorExecute.mockImplementation((context, runTests, saveFiles, onProgress) => {
+    mockIteratorExecute.mockImplementation((context, runTests, _saveFiles, _onProgress) => {
       capturedRunTests = runTests;
       return Promise.resolve({
         taskId: context.task.id,
@@ -782,7 +782,7 @@ describe("CompleteExecutor - runTests method coverage", () => {
     const { CompleteExecutor } = await import("./executor.js");
 
     let capturedRunTests: (() => Promise<any>) | undefined;
-    mockIteratorExecute.mockImplementation((context, runTests, saveFiles, onProgress) => {
+    mockIteratorExecute.mockImplementation((context, runTests, _saveFiles, _onProgress) => {
       capturedRunTests = runTests;
       return Promise.resolve({
         taskId: context.task.id,
@@ -820,7 +820,7 @@ describe("CompleteExecutor - runTests method coverage", () => {
     const { CompleteExecutor } = await import("./executor.js");
 
     let capturedRunTests: (() => Promise<any>) | undefined;
-    mockIteratorExecute.mockImplementation((context, runTests, saveFiles, onProgress) => {
+    mockIteratorExecute.mockImplementation((context, runTests, _saveFiles, _onProgress) => {
       capturedRunTests = runTests;
       return Promise.resolve({
         taskId: context.task.id,
@@ -867,7 +867,7 @@ describe("CompleteExecutor - saveFiles callback coverage", () => {
     const { CompleteExecutor } = await import("./executor.js");
 
     let capturedSaveFiles: ((files: any[]) => Promise<void>) | undefined;
-    mockIteratorExecute.mockImplementation((context, runTests, saveFiles, onProgress) => {
+    mockIteratorExecute.mockImplementation((context, runTests, saveFiles, _onProgress) => {
       capturedSaveFiles = saveFiles;
       return Promise.resolve({
         taskId: context.task.id,
@@ -903,7 +903,7 @@ describe("CompleteExecutor - saveFiles callback coverage", () => {
     const { CompleteExecutor } = await import("./executor.js");
 
     let capturedSaveFiles: ((files: any[]) => Promise<void>) | undefined;
-    mockIteratorExecute.mockImplementation((context, runTests, saveFiles, onProgress) => {
+    mockIteratorExecute.mockImplementation((context, runTests, saveFiles, _onProgress) => {
       capturedSaveFiles = saveFiles;
       return Promise.resolve({
         taskId: context.task.id,
@@ -1644,7 +1644,7 @@ describe("CompleteExecutor - advanced scenarios", () => {
       await executor.execute(createMockContext() as any);
 
       // Should write markdown file - check for results directory writes
-      const resultsWriteCalls = mockWriteFile.mock.calls.filter(
+      const _resultsWriteCalls = mockWriteFile.mock.calls.filter(
         (c: any) => c[0].includes("results") && c[0].includes(".md"),
       );
       // Markdown results should be written

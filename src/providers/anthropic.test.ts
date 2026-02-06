@@ -381,6 +381,7 @@ describe("stream", () => {
 
   it("should handle stream errors", async () => {
     mockMessagesStream.mockReturnValueOnce({
+      // eslint-disable-next-line require-yield
       async *[Symbol.asyncIterator]() {
         throw new Error("Stream error");
       },

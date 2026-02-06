@@ -139,7 +139,7 @@ export async function parallel<T, R>(
   fn: (item: T, index: number) => Promise<R>,
   concurrency: number = 5,
 ): Promise<R[]> {
-  const results: R[] = new Array(items.length);
+  const results: R[] = Array.from<R>({ length: items.length });
   const executing = new Map<number, Promise<void>>();
   let nextId = 0;
 

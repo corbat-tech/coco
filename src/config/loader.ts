@@ -1,5 +1,11 @@
 /**
  * Configuration loader for Corbat-Coco
+ *
+ * Supports hierarchical configuration with priority:
+ * 1. Project config (<project>/.coco/config.json)
+ * 2. Global config (~/.coco/config.json)
+ * 3. Environment variables
+ * 4. Built-in defaults
  */
 
 import fs from "node:fs/promises";
@@ -7,26 +13,63 @@ import path from "node:path";
 import JSON5 from "json5";
 import { CocoConfigSchema, createDefaultConfigObject, type CocoConfig } from "./schema.js";
 import { ConfigError } from "../utils/errors.js";
+import { CONFIG_PATHS } from "./paths.js";
 
 /**
- * Load configuration from file
+ * Load configuration from file with hierarchical fallback
+ *
+ * Priority order:
+ * 1. Explicit configPath parameter
+ * 2. Project config (<cwd>/.coco/config.json)
+ * 3. Global config (~/.coco/config.json)
+ * 4. Built-in defaults
  */
 export async function loadConfig(configPath?: string): Promise<CocoConfig> {
-  const resolvedPath = configPath || findConfigPathSync();
+  // Start with defaults
+  let config = createDefaultConfig("my-project");
 
+  // Load global config first (lowest priority, lenient — may contain preferences)
+  const globalConfig = await loadConfigFile(CONFIG_PATHS.config, { strict: false });
+  if (globalConfig) {
+    config = deepMergeConfig(config, globalConfig);
+  }
+
+  // Load project config (higher priority, strict validation)
+  const projectConfigPath = configPath || getProjectConfigPath();
+  const projectConfig = await loadConfigFile(projectConfigPath);
+  if (projectConfig) {
+    config = deepMergeConfig(config, projectConfig);
+  }
+
+  return config;
+}
+
+/**
+ * Load a single config file, returning null if not found
+ */
+async function loadConfigFile(
+  configPath: string,
+  options: { strict?: boolean } = {},
+): Promise<Partial<CocoConfig> | null> {
+  const { strict = true } = options;
   try {
-    const content = await fs.readFile(resolvedPath, "utf-8");
+    const content = await fs.readFile(configPath, "utf-8");
     const parsed = JSON5.parse(content);
 
-    const result = CocoConfigSchema.safeParse(parsed);
+    // Validate partial config
+    const result = CocoConfigSchema.partial().safeParse(parsed);
     if (!result.success) {
+      if (!strict) {
+        // Non-project config files (e.g., user preferences) may not match the schema.
+        return null;
+      }
       const issues = result.error.issues.map((i) => ({
         path: i.path.join("."),
         message: i.message,
       }));
       throw new ConfigError("Invalid configuration", {
         issues,
-        configPath: resolvedPath,
+        configPath,
       });
     }
 
@@ -36,20 +79,48 @@ export async function loadConfig(configPath?: string): Promise<CocoConfig> {
       throw error;
     }
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      // Config file doesn't exist, return defaults
-      return createDefaultConfig("my-project");
+      return null; // File doesn't exist
     }
     throw new ConfigError("Failed to load configuration", {
-      configPath: resolvedPath,
+      configPath,
       cause: error instanceof Error ? error : undefined,
     });
   }
 }
 
 /**
- * Save configuration to file
+ * Deep merge configuration objects
  */
-export async function saveConfig(config: CocoConfig, configPath?: string): Promise<void> {
+function deepMergeConfig(base: CocoConfig, override: Partial<CocoConfig>): CocoConfig {
+  return {
+    ...base,
+    ...override,
+    project: { ...base.project, ...override.project },
+    provider: { ...base.provider, ...override.provider },
+    quality: { ...base.quality, ...override.quality },
+    persistence: { ...base.persistence, ...override.persistence },
+  };
+}
+
+/**
+ * Get the project config path (in current directory)
+ */
+function getProjectConfigPath(): string {
+  return path.join(process.cwd(), ".coco", "config.json");
+}
+
+/**
+ * Save configuration to file
+ *
+ * @param config - Configuration to save
+ * @param configPath - Path to save to (defaults to project config)
+ * @param global - If true, saves to global config instead
+ */
+export async function saveConfig(
+  config: CocoConfig,
+  configPath?: string,
+  global: boolean = false,
+): Promise<void> {
   // Validate configuration before saving
   const result = CocoConfigSchema.safeParse(config);
   if (!result.success) {
@@ -59,11 +130,12 @@ export async function saveConfig(config: CocoConfig, configPath?: string): Promi
     }));
     throw new ConfigError("Cannot save invalid configuration", {
       issues,
-      configPath: configPath || findConfigPathSync(),
+      configPath: configPath || getProjectConfigPath(),
     });
   }
 
-  const resolvedPath = configPath || findConfigPathSync();
+  // Determine save path
+  const resolvedPath = configPath || (global ? CONFIG_PATHS.config : getProjectConfigPath());
   const dir = path.dirname(resolvedPath);
 
   await fs.mkdir(dir, { recursive: true });
@@ -84,9 +156,14 @@ export function createDefaultConfig(
 
 /**
  * Find the configuration file path
+ *
+ * Returns the first config file found in priority order:
+ * 1. Environment variable COCO_CONFIG_PATH
+ * 2. Project config (<cwd>/.coco/config.json)
+ * 3. Global config (~/.coco/config.json)
  */
 export async function findConfigPath(cwd?: string): Promise<string | undefined> {
-  // Check environment variable
+  // Check environment variable (highest priority)
   const envPath = process.env["COCO_CONFIG_PATH"];
   if (envPath) {
     try {
@@ -97,43 +174,93 @@ export async function findConfigPath(cwd?: string): Promise<string | undefined> 
     }
   }
 
-  // Check in provided directory
+  // Check project config
   const basePath = cwd || process.cwd();
-  const configPath = path.join(basePath, ".coco", "config.json");
+  const projectConfigPath = path.join(basePath, ".coco", "config.json");
 
   try {
-    await fs.access(configPath);
-    return configPath;
+    await fs.access(projectConfigPath);
+    return projectConfigPath;
+  } catch {
+    // Continue to global
+  }
+
+  // Check global config
+  try {
+    await fs.access(CONFIG_PATHS.config);
+    return CONFIG_PATHS.config;
   } catch {
     return undefined;
   }
 }
 
 /**
- * Find the configuration file path (sync, for internal use)
+ * Get paths to all config files that exist
  */
-function findConfigPathSync(): string {
-  // Check environment variable
-  const envPath = process.env["COCO_CONFIG_PATH"];
-  if (envPath) {
-    return envPath;
+export async function findAllConfigPaths(cwd?: string): Promise<{
+  global?: string;
+  project?: string;
+}> {
+  const result: { global?: string; project?: string } = {};
+
+  // Check global
+  try {
+    await fs.access(CONFIG_PATHS.config);
+    result.global = CONFIG_PATHS.config;
+  } catch {
+    // Not found
   }
 
-  // Default to current directory
-  return path.join(process.cwd(), ".coco", "config.json");
+  // Check project
+  const basePath = cwd || process.cwd();
+  const projectConfigPath = path.join(basePath, ".coco", "config.json");
+  try {
+    await fs.access(projectConfigPath);
+    result.project = projectConfigPath;
+  } catch {
+    // Not found
+  }
+
+  return result;
 }
 
 /**
  * Check if configuration exists
+ *
+ * @param scope - "project" | "global" | "any" (default: "any")
  */
-export async function configExists(configPath?: string): Promise<boolean> {
-  const resolvedPath = configPath || findConfigPathSync();
-  try {
-    await fs.access(resolvedPath);
-    return true;
-  } catch {
-    return false;
+export async function configExists(
+  configPath?: string,
+  scope: "project" | "global" | "any" = "any",
+): Promise<boolean> {
+  if (configPath) {
+    try {
+      await fs.access(configPath);
+      return true;
+    } catch {
+      return false;
+    }
   }
+
+  if (scope === "project" || scope === "any") {
+    try {
+      await fs.access(getProjectConfigPath());
+      return true;
+    } catch {
+      if (scope === "project") return false;
+    }
+  }
+
+  if (scope === "global" || scope === "any") {
+    try {
+      await fs.access(CONFIG_PATHS.config);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 /**

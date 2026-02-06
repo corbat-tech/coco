@@ -210,7 +210,7 @@ export function calculateConfidenceBoost(input: string): number {
   }
 
   // Questions are less likely to be commands
-  if (/\?$/.test(input)) {
+  if (input.endsWith("?")) {
     boost -= 0.15;
   }
 

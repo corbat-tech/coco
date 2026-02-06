@@ -5,8 +5,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ToolRegistry, ToolResult } from "../../tools/registry.js";
 import type { ToolCall } from "../../providers/types.js";
-import type { ExecutedToolCall } from "./types.js";
-
 // Mock the registry module
 const mockExecute = vi.fn();
 const mockRegistry = {

@@ -201,16 +201,29 @@ describe("Providers module exports", () => {
 
     it("should return list of providers", () => {
       const providers = ProviderExports.listProviders();
-      expect(providers).toHaveLength(4);
-      expect(providers.map((p) => p.id)).toEqual(["anthropic", "openai", "gemini", "kimi"]);
+      expect(providers).toHaveLength(5);
+      expect(providers.map((p) => p.id)).toEqual([
+        "anthropic",
+        "openai",
+        "codex",
+        "gemini",
+        "kimi",
+      ]);
     });
   });
 
   describe("ProviderType", () => {
     it("should define valid provider types", () => {
       // Test that the type constraints work by using valid values
-      const validTypes: ProviderExports.ProviderType[] = ["anthropic", "openai", "gemini", "kimi"];
-      expect(validTypes).toHaveLength(4);
+      const validTypes: ProviderExports.ProviderType[] = [
+        "anthropic",
+        "openai",
+        "codex",
+        "gemini",
+        "kimi",
+        "lmstudio",
+      ];
+      expect(validTypes).toHaveLength(6);
     });
   });
 });

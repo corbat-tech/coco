@@ -81,6 +81,7 @@ Examples:
             "User-Agent": "Corbat-Coco/0.1.0",
             ...headers,
           },
+          // oxlint-disable-next-line unicorn/no-invalid-fetch-options -- Body is conditionally set only for non-GET methods
           body: method && ["POST", "PUT", "PATCH"].includes(method) ? body : undefined,
           signal: controller.signal,
         });

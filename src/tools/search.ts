@@ -213,7 +213,7 @@ export const findInFileTool: ToolDefinition<
 Examples:
 - Find text: { "file": "src/app.ts", "pattern": "export" }
 - Case insensitive: { "file": "README.md", "pattern": "install", "caseSensitive": false }
-- Regex: { "file": "package.json", "pattern": "\"version\":\\s*\"[^\"]+\"" }`,
+- Regex: { "file": "package.json", "pattern": '"version":\\s*"[^"]+"' }`,
   category: "file",
   parameters: z.object({
     file: z.string().describe("File path to search"),

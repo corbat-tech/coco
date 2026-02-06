@@ -12,7 +12,7 @@ import {
   createHelpSkill,
   SkillRegistry,
 } from "./index.js";
-import type { Skill, SkillContext, SkillResult } from "./types.js";
+import type { Skill, SkillContext } from "./types.js";
 
 describe("SkillRegistry", () => {
   let registry: SkillRegistry;

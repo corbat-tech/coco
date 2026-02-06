@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { ProgressTracker, createProgressTracker } from "./tracker.js";
-import type { TodoItem, ProgressState, TodoStatus } from "./types.js";
+import type { ProgressState } from "./types.js";
 
 describe("ProgressTracker", () => {
   let tracker: ProgressTracker;
@@ -105,7 +105,7 @@ describe("ProgressTracker", () => {
 
     it("should update updatedAt timestamp on status change", () => {
       const todo = tracker.addTodo("Task", "Doing task");
-      const originalUpdatedAt = todo.updatedAt;
+      const _originalUpdatedAt = todo.updatedAt;
 
       // Wait a small amount to ensure timestamp changes
       tracker.updateStatus(todo.id, "in_progress");
@@ -208,7 +208,7 @@ describe("ProgressTracker", () => {
     it("should get todos by status", () => {
       const todo1 = tracker.addTodo("Task 1", "Doing 1");
       const todo2 = tracker.addTodo("Task 2", "Doing 2");
-      const todo3 = tracker.addTodo("Task 3", "Doing 3");
+      tracker.addTodo("Task 3", "Doing 3");
 
       tracker.completeTodo(todo1.id);
       tracker.startTodo(todo2.id);
@@ -367,7 +367,7 @@ describe("ProgressTracker", () => {
 
     it("should format progress with completed tasks", () => {
       const todo1 = tracker.addTodo("Task 1", "Doing 1");
-      const todo2 = tracker.addTodo("Task 2", "Doing 2");
+      tracker.addTodo("Task 2", "Doing 2");
 
       tracker.completeTodo(todo1.id);
 
@@ -403,7 +403,7 @@ describe("ProgressTracker", () => {
       const todo1 = tracker.addTodo("Task 1", "Doing 1");
       const todo2 = tracker.addTodo("Task 2", "Doing 2");
       const todo3 = tracker.addTodo("Task 3", "Doing 3");
-      const todo4 = tracker.addTodo("Task 4", "Doing 4");
+      tracker.addTodo("Task 4", "Doing 4");
 
       tracker.completeTodo(todo1.id);
       tracker.startTodo(todo2.id);
@@ -420,7 +420,7 @@ describe("ProgressTracker", () => {
 
   describe("JSON Serialization", () => {
     it("should serialize to JSON", () => {
-      const todo1 = tracker.addTodo("Task 1", "Doing 1");
+      tracker.addTodo("Task 1", "Doing 1");
       const todo2 = tracker.addTodo("Task 2", "Doing 2");
       tracker.startTodo(todo2.id);
 

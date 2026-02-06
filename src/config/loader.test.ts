@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { CONFIG_PATHS } from "./paths.js";
 import {
   loadConfig,
   saveConfig,
@@ -350,24 +351,57 @@ describe("loadConfig edge cases", () => {
     );
   });
 
-  it("should use COCO_CONFIG_PATH env variable via findConfigPathSync", async () => {
-    const originalEnv = process.env.COCO_CONFIG_PATH;
-    process.env.COCO_CONFIG_PATH = "/env/config.json";
-
-    const mockConfig = {
-      project: { name: "env-project" },
+  it("should load config with global fallback when project config not found", async () => {
+    const globalConfig = {
+      project: { name: "global-project" },
     };
 
     const fs = await import("node:fs/promises");
-    vi.mocked(fs.default.readFile).mockResolvedValue(JSON.stringify(mockConfig));
+    // Global config exists, project config doesn't
+    vi.mocked(fs.default.readFile).mockImplementation(async (path) => {
+      if (String(path) === CONFIG_PATHS.config) {
+        // Global config found
+        return JSON.stringify(globalConfig);
+      }
+      // Project config not found
+      const err = new Error("ENOENT") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      throw err;
+    });
 
-    // Call without explicit path to use findConfigPathSync
     const config = await loadConfig();
 
-    expect(fs.default.readFile).toHaveBeenCalledWith("/env/config.json", "utf-8");
-    expect(config.project.name).toBe("env-project");
+    // Should merge global config into defaults
+    expect(config.project.name).toBe("global-project");
+  });
 
-    process.env.COCO_CONFIG_PATH = originalEnv;
+  it("should prioritize project config over global config", async () => {
+    const globalConfig = {
+      project: { name: "global-project" },
+      provider: { type: "openai" },
+    };
+    const projectConfig = {
+      project: { name: "project-name" },
+    };
+
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.readFile).mockImplementation(async (path) => {
+      const pathStr = String(path);
+      // Global config is in home dir (~/.coco), project is in cwd
+      const isGlobalPath = pathStr === CONFIG_PATHS.config;
+      if (isGlobalPath) {
+        return JSON.stringify(globalConfig);
+      }
+      // Project config (in cwd, contains WORKSPACE)
+      return JSON.stringify(projectConfig);
+    });
+
+    const config = await loadConfig();
+
+    // Project name should be from project config (higher priority)
+    expect(config.project.name).toBe("project-name");
+    // Provider should be from global config (merged)
+    expect(config.provider.type).toBe("openai");
   });
 });
 
@@ -407,29 +441,22 @@ describe("saveConfig edge cases", () => {
     }
   });
 
-  it("should use findConfigPathSync fallback for invalid config when no path provided", async () => {
-    const originalEnv = process.env.COCO_CONFIG_PATH;
-    process.env.COCO_CONFIG_PATH = "/fallback/config.json";
-
+  it("should use project path fallback for invalid config when no path provided", async () => {
     const invalidConfig = {
       project: { name: "" }, // empty name is invalid
     } as any;
 
-    // This tests the fallback branch in line 69 where configPath is undefined
+    // This tests the fallback branch where configPath is undefined
     try {
       await saveConfig(invalidConfig);
     } catch (error) {
       expect(error).toBeInstanceOf(ConfigError);
-      expect((error as ConfigError).context.configPath).toBe("/fallback/config.json");
+      // Should use project config path as fallback
+      expect((error as ConfigError).context.configPath).toContain(".coco/config.json");
     }
-
-    process.env.COCO_CONFIG_PATH = originalEnv;
   });
 
-  it("should use COCO_CONFIG_PATH env variable when no path provided", async () => {
-    const originalEnv = process.env.COCO_CONFIG_PATH;
-    process.env.COCO_CONFIG_PATH = "/env/save/config.json";
-
+  it("should save to project config by default", async () => {
     const config = createDefaultConfig("test");
 
     const fs = await import("node:fs/promises");
@@ -438,13 +465,25 @@ describe("saveConfig edge cases", () => {
 
     await saveConfig(config);
 
-    expect(fs.default.writeFile).toHaveBeenCalledWith(
-      "/env/save/config.json",
-      expect.any(String),
-      "utf-8",
-    );
+    // Should save to project config path
+    const calledPath = vi.mocked(fs.default.writeFile).mock.calls[0]?.[0] as string;
+    expect(calledPath).toContain(".coco/config.json");
+  });
 
-    process.env.COCO_CONFIG_PATH = originalEnv;
+  it("should save to global config when global flag is true", async () => {
+    const config = createDefaultConfig("test");
+
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fs.default.writeFile).mockResolvedValue(undefined);
+
+    await saveConfig(config, undefined, true);
+
+    // Should save to global config path (~/.coco/config.json)
+    const calledPath = vi.mocked(fs.default.writeFile).mock.calls[0]?.[0] as string;
+    expect(calledPath).toContain(".coco/config.json");
+    // Global path should be in home directory
+    expect(calledPath).toMatch(/\.coco\/config\.json$/);
   });
 });
 
@@ -475,19 +514,28 @@ describe("configExists", () => {
     expect(exists).toBe(false);
   });
 
-  it("should use COCO_CONFIG_PATH env variable when no path provided", async () => {
-    const originalEnv = process.env.COCO_CONFIG_PATH;
-    process.env.COCO_CONFIG_PATH = "/env/config.json";
-
+  it("should check project config when scope is 'project'", async () => {
     const fs = await import("node:fs/promises");
     vi.mocked(fs.default.access).mockResolvedValue(undefined);
 
-    const exists = await configExists();
+    const exists = await configExists(undefined, "project");
 
-    expect(fs.default.access).toHaveBeenCalledWith("/env/config.json");
+    // Should check project config path
+    const calledPath = vi.mocked(fs.default.access).mock.calls[0]?.[0] as string;
+    expect(calledPath).toContain(".coco/config.json");
     expect(exists).toBe(true);
+  });
 
-    process.env.COCO_CONFIG_PATH = originalEnv;
+  it("should check global config when scope is 'global'", async () => {
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.access).mockResolvedValue(undefined);
+
+    const exists = await configExists(undefined, "global");
+
+    // Should check global config path
+    const calledPath = vi.mocked(fs.default.access).mock.calls[0]?.[0] as string;
+    expect(calledPath).toContain(".coco/config.json");
+    expect(exists).toBe(true);
   });
 
   it("should use default path when COCO_CONFIG_PATH is not set", async () => {

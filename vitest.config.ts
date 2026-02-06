@@ -10,7 +10,12 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "lcov", "html"],
       include: ["src/**/*.ts"],
-      exclude: ["src/**/*.test.ts", "src/**/*.d.ts"],
+      exclude: [
+        "src/**/*.test.ts",
+        "src/**/*.d.ts",
+        "src/types/**", // Pure type definitions, no runtime code
+        "src/cli/repl/onboarding-v2.ts", // Interactive UI, requires manual testing
+      ],
       thresholds: {
         // Phase 2 audit: stepping toward 80%+ target
         lines: 72,

@@ -168,7 +168,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("anthropic");
 
-    expect(model).toBe("claude-sonnet-4-20250514");
+    expect(model).toBe("claude-opus-4-6-20260115");
   });
 
   it("should return custom OPENAI_MODEL if set", () => {
@@ -184,7 +184,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("openai");
 
-    expect(model).toBe("gpt-4o");
+    expect(model).toBe("gpt-5.2-codex");
   });
 
   it("should return custom GEMINI_MODEL if set", () => {
@@ -200,7 +200,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("gemini");
 
-    expect(model).toBe("gemini-2.0-flash");
+    expect(model).toBe("gemini-3-flash-preview");
   });
 
   it("should return custom KIMI_MODEL if set", () => {
@@ -222,7 +222,7 @@ describe("getDefaultModel", () => {
   it("should return gpt-4o for unknown provider", () => {
     const model = getDefaultModel("unknown" as ProviderType);
 
-    expect(model).toBe("gpt-4o");
+    expect(model).toBe("gpt-5.2-codex");
   });
 });
 

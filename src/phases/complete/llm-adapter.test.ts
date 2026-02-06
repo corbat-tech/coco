@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createLLMAdapter, type TokenTracker, type TrackingLLMProvider } from "./llm-adapter.js";
+import { createLLMAdapter } from "./llm-adapter.js";
 import type { PhaseContext } from "../types.js";
 
 /**

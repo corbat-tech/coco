@@ -11,19 +11,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
-import type {
-  LLMProvider,
-  ChatWithToolsResponse,
-  ChatResponse,
-  Message,
-  ToolDefinition,
-  StreamChunk,
-  ToolCall,
-} from "../../providers/types.js";
+import type { LLMProvider, Message, StreamChunk, ToolCall } from "../../providers/types.js";
 import type { ToolRegistry, ToolResult } from "../../tools/registry.js";
-import type { ReplSession, ExecutedToolCall } from "./types.js";
-import { ContextManager, createContextManager } from "./context/manager.js";
-import { ProgressTracker, createProgressTracker } from "./progress/tracker.js";
+import type { ReplSession } from "./types.js";
+import { createContextManager } from "./context/manager.js";
+import { createProgressTracker } from "./progress/tracker.js";
 
 // Mock chalk to simplify output testing
 vi.mock("chalk", () => ({
@@ -68,29 +60,6 @@ vi.mock("./confirmation.js", () => ({
   confirmToolExecution: vi.fn(),
   createConfirmationState: vi.fn(() => ({ allowAll: false })),
 }));
-
-/**
- * Helper to create a mock async generator for streaming responses
- */
-function createMockStreamWithTools(
-  content: string,
-  toolCalls: ToolCall[] = [],
-): () => AsyncIterable<StreamChunk> {
-  return function* mockStream(): Generator<StreamChunk> {
-    // Yield text content character by character (or in chunks)
-    if (content) {
-      yield { type: "text", text: content };
-    }
-
-    // Yield tool calls
-    for (const tc of toolCalls) {
-      yield { type: "tool_use_start", toolCall: { id: tc.id, name: tc.name } };
-      yield { type: "tool_use_end", toolCall: tc };
-    }
-
-    yield { type: "done" };
-  } as unknown as () => AsyncIterable<StreamChunk>;
-}
 
 /**
  * Create async iterable from generator

@@ -2,7 +2,7 @@
  * Tests for orchestrator
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { OrchestratorConfig } from "./types.js";
 
 // Create mock functions for fs
@@ -1093,7 +1093,7 @@ describe("createOrchestrator", () => {
       const orchestrator = createOrchestrator(createTestConfig());
 
       // Get initial state
-      const initialState = orchestrator.getState();
+      orchestrator.getState();
 
       const result = await orchestrator.transitionTo("converge");
 

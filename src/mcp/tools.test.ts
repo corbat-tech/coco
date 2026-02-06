@@ -11,7 +11,6 @@ import {
   extractOriginalToolName,
 } from "./tools.js";
 import type { MCPTool, MCPClient, MCPCallToolResult } from "./types.js";
-import type { ToolDefinition, ToolRegistry } from "../tools/registry.js";
 import { MCPTimeoutError } from "./errors.js";
 
 describe("wrapMCPTool", () => {

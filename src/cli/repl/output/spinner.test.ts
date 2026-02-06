@@ -40,6 +40,7 @@ vi.mock("chalk", () => ({
     cyan: (s: string) => `[cyan]${s}[/cyan]`,
     green: (s: string) => `[green]${s}[/green]`,
     red: (s: string) => `[red]${s}[/red]`,
+    magenta: (s: string) => `[magenta]${s}[/magenta]`,
   },
 }));
 

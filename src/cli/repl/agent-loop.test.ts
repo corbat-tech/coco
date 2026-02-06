@@ -4,13 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
-import type {
-  LLMProvider,
-  ChatWithToolsResponse,
-  Message,
-  StreamChunk,
-  ToolCall,
-} from "../../providers/types.js";
+import type { LLMProvider, StreamChunk, ToolCall } from "../../providers/types.js";
 
 /**
  * Create async iterable from generator
@@ -87,7 +81,11 @@ vi.mock("./session.js", () => ({
 vi.mock("./confirmation.js", () => ({
   requiresConfirmation: vi.fn(),
   confirmToolExecution: vi.fn(),
-  createConfirmationState: vi.fn(() => ({ allowAll: false })),
+}));
+
+// Mock allow-path prompt
+vi.mock("./allow-path-prompt.js", () => ({
+  promptAllowPath: vi.fn().mockResolvedValue(false),
 }));
 
 describe("executeAgentTurn", () => {
@@ -611,50 +609,12 @@ describe("executeAgentTurn", () => {
       expect(mockToolRegistry.execute).not.toHaveBeenCalled();
     });
 
-    it("should allow all subsequent tools when user chooses yes_all", async () => {
-      const { executeAgentTurn } = await import("./agent-loop.js");
-      const { requiresConfirmation, confirmToolExecution, createConfirmationState } =
-        await import("./confirmation.js");
-
-      (requiresConfirmation as Mock).mockReturnValue(true);
-      (confirmToolExecution as Mock).mockResolvedValue("yes_all");
-
-      // Need to reset confirmation state for each test
-      (createConfirmationState as Mock).mockReturnValue({ allowAll: false });
-
-      const toolCalls: ToolCall[] = [
-        { id: "tool-1", name: "write_file", input: { path: "/file1.ts", content: "code1" } },
-        { id: "tool-2", name: "write_file", input: { path: "/file2.ts", content: "code2" } },
-      ];
-
-      let callCount = 0;
-      (mockProvider.streamWithTools as Mock).mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) {
-          return createToolStreamMock("", toolCalls)();
-        }
-        return createTextStreamMock("Done.")();
-      });
-
-      (mockToolRegistry.execute as Mock).mockResolvedValue({
-        success: true,
-        data: {},
-        duration: 10,
-      });
-
-      await executeAgentTurn(mockSession, "Write files", mockProvider, mockToolRegistry);
-
-      // Should only prompt once (for first tool), then allow all
-      expect(confirmToolExecution).toHaveBeenCalledTimes(1);
-      expect(mockToolRegistry.execute).toHaveBeenCalledTimes(2);
-    });
-
-    it("should trust tool for session when user chooses trust_session", async () => {
+    it("should trust tool for project when user chooses trust_project", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
       const { requiresConfirmation, confirmToolExecution } = await import("./confirmation.js");
 
       (requiresConfirmation as Mock).mockReturnValue(true);
-      (confirmToolExecution as Mock).mockResolvedValue("trust_session");
+      (confirmToolExecution as Mock).mockResolvedValue("trust_project");
 
       const toolCall: ToolCall = { id: "tool-1", name: "bash_exec", input: { command: "ls" } };
 
@@ -676,6 +636,39 @@ describe("executeAgentTurn", () => {
       await executeAgentTurn(mockSession, "Run command", mockProvider, mockToolRegistry);
 
       expect(mockSession.trustedTools.has("bash_exec")).toBe(true);
+    });
+
+    it("should trust tool globally when user chooses trust_global", async () => {
+      const { executeAgentTurn } = await import("./agent-loop.js");
+      const { requiresConfirmation, confirmToolExecution } = await import("./confirmation.js");
+
+      (requiresConfirmation as Mock).mockReturnValue(true);
+      (confirmToolExecution as Mock).mockResolvedValue("trust_global");
+
+      const toolCall: ToolCall = {
+        id: "tool-1",
+        name: "write_file",
+        input: { path: "/test.ts", content: "code" },
+      };
+
+      let callCount = 0;
+      (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return createToolStreamMock("", [toolCall])();
+        }
+        return createTextStreamMock("Done.")();
+      });
+
+      (mockToolRegistry.execute as Mock).mockResolvedValue({
+        success: true,
+        data: {},
+        duration: 10,
+      });
+
+      await executeAgentTurn(mockSession, "Write file", mockProvider, mockToolRegistry);
+
+      expect(mockSession.trustedTools.has("write_file")).toBe(true);
     });
   });
 });

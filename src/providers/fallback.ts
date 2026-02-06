@@ -167,7 +167,7 @@ export class ProviderFallback implements LLMProvider {
         }
         breaker.recordSuccess();
         return;
-      } catch (error) {
+      } catch {
         breaker.recordFailure();
         // Continue to next provider
       }
@@ -199,7 +199,7 @@ export class ProviderFallback implements LLMProvider {
         }
         breaker.recordSuccess();
         return;
-      } catch (error) {
+      } catch {
         breaker.recordFailure();
         // Continue to next provider
       }

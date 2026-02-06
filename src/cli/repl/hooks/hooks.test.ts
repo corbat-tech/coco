@@ -4,7 +4,7 @@
  * Tests types.ts, registry.ts, and executor.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -995,7 +995,7 @@ describe("executor.ts", () => {
 
   describe("executeHooks with multiple hooks", () => {
     it("should execute hooks in order", async () => {
-      const output: string[] = [];
+      const _output: string[] = [];
 
       // Create a script that appends to a file to track execution order
       const scriptPath = join(tempDir, "order.txt");

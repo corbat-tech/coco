@@ -58,8 +58,10 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
 export const DEFAULT_PRICING: Record<ProviderType, ModelPricing> = {
   anthropic: { inputPerMillion: 3, outputPerMillion: 15, contextWindow: 200000 },
   openai: { inputPerMillion: 2.5, outputPerMillion: 10, contextWindow: 128000 },
+  codex: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 128000 }, // ChatGPT Plus/Pro subscription
   gemini: { inputPerMillion: 0.1, outputPerMillion: 0.4, contextWindow: 1000000 },
   kimi: { inputPerMillion: 1.2, outputPerMillion: 1.2, contextWindow: 8192 },
+  lmstudio: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 32768 }, // Free - local models
 };
 
 /**

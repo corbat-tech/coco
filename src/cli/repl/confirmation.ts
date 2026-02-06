@@ -8,15 +8,248 @@ import chalk from "chalk";
 import type { ToolCall } from "../../providers/types.js";
 
 /**
- * Tools that require confirmation before execution
+ * Tools that ALWAYS require confirmation before execution
+ * (regardless of input)
  */
-const DESTRUCTIVE_TOOLS = new Set(["write_file", "edit_file", "delete_file", "bash_exec"]);
+const ALWAYS_CONFIRM_TOOLS = new Set([
+  // File modifications
+  "write_file",
+  "edit_file",
+  "delete_file",
+  "copy_file",
+  "move_file",
+  // Git remote (affects others)
+  "git_push",
+  "git_pull",
+  // Package management (downloads & runs code)
+  "install_deps",
+  // Build tools (can run arbitrary code)
+  "make",
+  "run_script",
+  // Network requests
+  "http_fetch",
+  "http_json",
+  // Sensitive data
+  "get_env",
+]);
+
+/**
+ * Safe bash commands that don't require confirmation
+ * These are read-only or informational commands
+ */
+const SAFE_BASH_COMMANDS = new Set([
+  // File listing & info
+  "ls",
+  "ll",
+  "la",
+  "dir",
+  "find",
+  "locate",
+  "stat",
+  "file",
+  "du",
+  "df",
+  "tree",
+  // Text viewing (read-only)
+  "cat",
+  "head",
+  "tail",
+  "less",
+  "more",
+  "wc",
+  // Search
+  "grep",
+  "egrep",
+  "fgrep",
+  "rg",
+  "ag",
+  "ack",
+  // Process & system info
+  "ps",
+  "top",
+  "htop",
+  "who",
+  "whoami",
+  "id",
+  "uname",
+  "hostname",
+  "uptime",
+  "date",
+  "cal",
+  "env",
+  "printenv",
+  // Git (read-only)
+  "git status",
+  "git log",
+  "git diff",
+  "git branch",
+  "git show",
+  "git blame",
+  "git remote -v",
+  "git tag",
+  "git stash list",
+  // Package info (read-only)
+  "npm list",
+  "npm ls",
+  "npm outdated",
+  "npm view",
+  "pnpm list",
+  "pnpm ls",
+  "pnpm outdated",
+  "yarn list",
+  "pip list",
+  "pip show",
+  "cargo --version",
+  "go version",
+  "node --version",
+  "npm --version",
+  "python --version",
+  // Path & which
+  "which",
+  "whereis",
+  "type",
+  "command -v",
+  // Echo & print
+  "echo",
+  "printf",
+  "pwd",
+  // Help
+  "man",
+  "help",
+  "--help",
+  "-h",
+  "--version",
+  "-v",
+]);
+
+/**
+ * Dangerous bash command patterns that ALWAYS require confirmation
+ */
+const DANGEROUS_BASH_PATTERNS = [
+  // Network commands
+  /\bcurl\b/i,
+  /\bwget\b/i,
+  /\bssh\b/i,
+  /\bscp\b/i,
+  /\brsync\b/i,
+  /\bnc\b/i,
+  /\bnetcat\b/i,
+  /\btelnet\b/i,
+  /\bftp\b/i,
+  // Destructive file operations
+  /\brm\b/i,
+  /\brmdir\b/i,
+  /\bmv\b/i,
+  /\bcp\b/i,
+  /\bdd\b/i,
+  /\bshred\b/i,
+  // Permission changes
+  /\bchmod\b/i,
+  /\bchown\b/i,
+  /\bchgrp\b/i,
+  // Package installation
+  /\bnpm\s+(install|i|add|ci)\b/i,
+  /\bpnpm\s+(install|i|add)\b/i,
+  /\byarn\s+(add|install)\b/i,
+  /\bpip\s+install\b/i,
+  /\bapt(-get)?\s+(install|remove|purge)\b/i,
+  /\bbrew\s+(install|uninstall|remove)\b/i,
+  // Git write operations
+  /\bgit\s+(push|commit|merge|rebase|reset|checkout|pull|clone)\b/i,
+  // Process control
+  /\bkill\b/i,
+  /\bpkill\b/i,
+  /\bkillall\b/i,
+  // Sudo & admin
+  /\bsudo\b/i,
+  /\bsu\b/i,
+  // Code execution
+  /\beval\b/i,
+  /\bexec\b/i,
+  /\bsource\b/i,
+  /\b\.\s+\//,
+  // Pipes to shell
+  /\|\s*(ba)?sh\b/i,
+  /\|\s*bash\b/i,
+  // Writing to files
+  /[>|]\s*\/?\w/,
+  /\btee\b/i,
+  // Docker operations
+  /\bdocker\s+(run|exec|build|push|pull|rm|stop|kill)\b/i,
+  /\bdocker-compose\s+(up|down|build|pull|push)\b/i,
+  // Database operations
+  /\bmysql\b/i,
+  /\bpsql\b/i,
+  /\bmongo\b/i,
+  /\bredis-cli\b/i,
+];
+
+/**
+ * Check if a bash command is safe (doesn't require confirmation)
+ */
+function isSafeBashCommand(command: string): boolean {
+  const trimmed = command.trim();
+
+  // Check against dangerous patterns first
+  for (const pattern of DANGEROUS_BASH_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return false;
+    }
+  }
+
+  // Extract the base command (first word or git subcommand)
+  const baseCommand = trimmed.split(/\s+/)[0]?.toLowerCase() ?? "";
+
+  // Check if it's a known safe command
+  if (SAFE_BASH_COMMANDS.has(baseCommand)) {
+    return true;
+  }
+
+  // Check for git read-only commands specifically
+  if (trimmed.startsWith("git ")) {
+    const gitCmd = trimmed.slice(0, 20).toLowerCase();
+    for (const safe of SAFE_BASH_COMMANDS) {
+      if (safe.startsWith("git ") && gitCmd.startsWith(safe)) {
+        return true;
+      }
+    }
+  }
+
+  // Check for common safe patterns
+  if (trimmed.endsWith("--help") || trimmed.endsWith("-h")) {
+    return true;
+  }
+  if (trimmed.endsWith("--version") || trimmed.endsWith("-v") || trimmed.endsWith("-V")) {
+    return true;
+  }
+
+  // Default: require confirmation for unknown commands
+  return false;
+}
 
 /**
  * Check if a tool requires confirmation
+ * @param toolName - Name of the tool
+ * @param input - Optional tool input for context-aware decisions
  */
-export function requiresConfirmation(toolName: string): boolean {
-  return DESTRUCTIVE_TOOLS.has(toolName);
+export function requiresConfirmation(toolName: string, input?: Record<string, unknown>): boolean {
+  // Always confirm these tools
+  if (ALWAYS_CONFIRM_TOOLS.has(toolName)) {
+    return true;
+  }
+
+  // Special handling for bash_exec and bash_background
+  if (toolName === "bash_exec" || toolName === "bash_background") {
+    const command = input?.command;
+    if (typeof command === "string") {
+      // Safe commands don't need confirmation
+      return !isSafeBashCommand(command);
+    }
+    // If no command provided, require confirmation
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -174,6 +407,7 @@ function formatToolCallForConfirmation(
   const { name, input } = toolCall;
 
   switch (name) {
+    // File operations
     case "write_file": {
       const isCreate = metadata?.isCreate ?? false;
       const actionLabel = isCreate
@@ -188,10 +422,63 @@ function formatToolCallForConfirmation(
     case "delete_file":
       return `${chalk.red.bold("DELETE file")}: ${chalk.cyan(input.path ?? "unknown")}`;
 
+    case "copy_file":
+      return `${chalk.yellow.bold("COPY")}: ${chalk.cyan(input.source ?? "?")} → ${chalk.cyan(input.destination ?? "?")}`;
+
+    case "move_file":
+      return `${chalk.yellow.bold("MOVE")}: ${chalk.cyan(input.source ?? "?")} → ${chalk.cyan(input.destination ?? "?")}`;
+
+    // Shell execution
     case "bash_exec": {
-      const cmd = String(input.command ?? "").slice(0, 60);
-      const truncated = cmd.length < String(input.command ?? "").length ? "..." : "";
-      return `${chalk.yellow.bold("EXECUTE")}: ${chalk.cyan(cmd + truncated)}`;
+      const cmd = truncateLine(String(input.command ?? ""));
+      return `${chalk.yellow.bold("EXECUTE")}: ${chalk.cyan(cmd)}`;
+    }
+
+    case "bash_background": {
+      const cmd = truncateLine(String(input.command ?? ""));
+      return `${chalk.yellow.bold("BACKGROUND")}: ${chalk.cyan(cmd)}`;
+    }
+
+    // Git remote operations
+    case "git_push": {
+      const remote = input.remote ?? "origin";
+      const branch = input.branch ?? "current";
+      return `${chalk.red.bold("GIT PUSH")}: ${chalk.cyan(`${remote}/${branch}`)}`;
+    }
+
+    case "git_pull": {
+      const remote = input.remote ?? "origin";
+      const branch = input.branch ?? "current";
+      return `${chalk.yellow.bold("GIT PULL")}: ${chalk.cyan(`${remote}/${branch}`)}`;
+    }
+
+    // Package management
+    case "install_deps":
+      return `${chalk.yellow.bold("INSTALL DEPS")}: ${chalk.cyan(input.packageManager ?? "npm/pnpm")}`;
+
+    // Build tools
+    case "make": {
+      const target = input.target ?? "default";
+      return `${chalk.yellow.bold("MAKE")}: ${chalk.cyan(target)}`;
+    }
+
+    case "run_script": {
+      const script = input.script ?? input.name ?? "unknown";
+      return `${chalk.yellow.bold("RUN SCRIPT")}: ${chalk.cyan(script)}`;
+    }
+
+    // Network
+    case "http_fetch":
+    case "http_json": {
+      const url = String(input.url ?? "unknown");
+      const method = String(input.method ?? "GET").toUpperCase();
+      return `${chalk.yellow.bold("HTTP " + method)}: ${chalk.cyan(url)}`;
+    }
+
+    // Sensitive
+    case "get_env": {
+      const varName = input.name ?? input.variable ?? "unknown";
+      return `${chalk.yellow.bold("READ ENV")}: ${chalk.cyan(varName)}`;
     }
 
     default:
@@ -216,7 +503,13 @@ function formatDiffPreview(toolCall: ToolCall): string | null {
 /**
  * Result of confirmation prompt
  */
-export type ConfirmationResult = "yes" | "no" | "yes_all" | "trust_session" | "abort";
+export type ConfirmationResult =
+  | "yes"
+  | "no"
+  | "trust_project"
+  | "trust_global"
+  | "abort"
+  | { type: "edit"; newCommand: string };
 
 /**
  * Check if a file exists (for create vs modify detection)
@@ -231,7 +524,29 @@ async function checkFileExists(filePath: string): Promise<boolean> {
 }
 
 /**
+ * Ask user to edit the command
+ */
+async function promptEditCommand(
+  rl: readline.Interface,
+  originalCommand: string,
+): Promise<string | null> {
+  console.log();
+  console.log(chalk.dim("  Edit command (or press Enter to cancel):"));
+  console.log(chalk.cyan(`  Current: ${originalCommand}`));
+
+  const answer = await rl.question(chalk.dim("  New cmd: "));
+  const trimmed = answer.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed;
+}
+
+/**
  * Ask for confirmation before executing a tool
+ * Brand color: Magenta 🟣
  */
 export async function confirmToolExecution(toolCall: ToolCall): Promise<ConfirmationResult> {
   // Detect create vs modify for write_file
@@ -241,33 +556,92 @@ export async function confirmToolExecution(toolCall: ToolCall): Promise<Confirma
   }
 
   const description = formatToolCallForConfirmation(toolCall, { isCreate });
+  const isBashExec = toolCall.name === "bash_exec";
 
-  console.log(`\n${chalk.bold("Confirm")} ${description}`);
+  // Simple clean header
+  console.log();
+  console.log(chalk.magenta.bold("  ⚡ Confirm Action"));
+  console.log(chalk.magenta("  " + "─".repeat(45)));
+  console.log();
+  console.log(`  ${description}`);
 
   // Show diff preview for edit_file
   const diffPreview = formatDiffPreview(toolCall);
   if (diffPreview) {
+    console.log();
     console.log(chalk.dim("  Changes:"));
-    for (const line of diffPreview.split("\n")) {
-      console.log(`    ${line}`);
+    for (const line of diffPreview.split("\n").slice(0, 5)) {
+      console.log(chalk.dim("    ") + line);
     }
   }
 
   // Show content preview for write_file
-  const writePreview = formatWriteFilePreview(toolCall);
+  const writePreview = formatWriteFilePreview(toolCall, 3);
   if (writePreview) {
-    console.log(chalk.dim("  Content:"));
-    console.log(writePreview);
+    console.log();
+    console.log(chalk.dim("  Preview:"));
+    for (const line of writePreview.split("\n").slice(0, 4)) {
+      console.log(line);
+    }
   }
 
-  console.log(chalk.dim("  [y]es  [n]o  [a]ll this turn  [t]rust session  [c]ancel"));
+  // Options - simplified menu
+  console.log();
+  const baseOptions = 4; // y, n, t, !
+  const optionCount = isBashExec ? baseOptions + 1 : baseOptions;
+  const menuLines = optionCount + 2; // +2 for empty lines before/after
+
+  console.log(chalk.green("  [y]") + chalk.dim("es       ") + "Allow once");
+  console.log(chalk.red("  [n]") + chalk.dim("o       ") + "Skip");
+  if (isBashExec) {
+    console.log(chalk.yellow("  [e]") + chalk.dim("dit     ") + "Edit command");
+  }
+  console.log(chalk.magenta("  [t]") + chalk.dim("rust    ") + "Always allow (this project)");
+  console.log(chalk.blue("  [!]") + chalk.dim("       ") + "Always allow (everywhere)");
+  console.log(chalk.dim("  Ctrl+C to abort task"));
+  console.log();
+
+  // Ensure stdin is in the right state for readline
+  // (it may have been paused by the input handler)
+  if (process.stdin.isPaused()) {
+    process.stdin.resume();
+  }
+  // Disable raw mode if enabled (readline needs cooked mode)
+  if (process.stdin.isTTY && process.stdin.isRaw) {
+    process.stdin.setRawMode(false);
+  }
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
-  // P0-3: Handle Ctrl+C during confirmation
+  /**
+   * Clear the options menu and show selected choice
+   * Need to clear: menu lines + 1 for user input line
+   */
+  const showSelection = (choice: string, color: (s: string) => string) => {
+    const linesToClear = menuLines + 1; // +1 for the input line with user's answer
+
+    // Move cursor up
+    process.stdout.write(`\x1b[${linesToClear}A`);
+
+    // Clear each line
+    for (let i = 0; i < linesToClear; i++) {
+      process.stdout.write("\x1b[2K"); // Clear entire line
+      if (i < linesToClear - 1) {
+        process.stdout.write("\n"); // Move down (except last)
+      }
+    }
+
+    // Move back to top of cleared area
+    process.stdout.write(`\x1b[${linesToClear - 1}A`);
+    process.stdout.write("\r"); // Return to beginning of line
+
+    // Show selected choice
+    console.log(color(`  ✓ ${choice}`));
+  };
+
   return new Promise<ConfirmationResult>((resolve) => {
     let resolved = false;
 
@@ -281,7 +655,7 @@ export async function confirmToolExecution(toolCall: ToolCall): Promise<Confirma
     // Handle SIGINT (Ctrl+C)
     rl.on("SIGINT", () => {
       cleanup();
-      console.log(chalk.dim(" (cancelled)"));
+      showSelection("Cancelled", chalk.dim);
       resolve("abort");
     });
 
@@ -293,55 +667,84 @@ export async function confirmToolExecution(toolCall: ToolCall): Promise<Confirma
       }
     });
 
-    rl.question(chalk.dim("  > ")).then((answer) => {
-      cleanup();
-      const normalized = answer.trim().toLowerCase();
+    const askQuestion = () => {
+      rl.question(chalk.magenta("  ❯ ")).then(async (answer) => {
+        const normalized = answer.trim();
 
-      switch (normalized) {
-        case "y":
-        case "yes":
-          resolve("yes");
-          break;
+        switch (normalized.toLowerCase()) {
+          case "y":
+          case "yes":
+            cleanup();
+            showSelection("Allowed", chalk.green);
+            resolve("yes");
+            break;
 
-        case "n":
-        case "no":
-          resolve("no");
-          break;
+          case "n":
+          case "no":
+            cleanup();
+            showSelection("Skipped", chalk.red);
+            resolve("no");
+            break;
 
-        case "a":
-        case "all":
-          resolve("yes_all");
-          break;
+          case "e":
+          case "edit":
+            if (isBashExec) {
+              const originalCommand = String(toolCall.input.command ?? "");
+              try {
+                const newCommand = await promptEditCommand(rl, originalCommand);
+                cleanup();
+                if (newCommand) {
+                  showSelection("Edited", chalk.yellow);
+                  resolve({ type: "edit", newCommand });
+                } else {
+                  console.log(chalk.dim("  Edit cancelled."));
+                  askQuestion();
+                }
+              } catch {
+                cleanup();
+                resolve("abort");
+              }
+            } else {
+              console.log(chalk.yellow("  Edit only available for bash commands."));
+              askQuestion();
+            }
+            break;
 
-        case "t":
-        case "trust":
-          resolve("trust_session");
-          break;
+          case "t":
+          case "trust":
+            cleanup();
+            showSelection("Trusted (project)", chalk.magenta);
+            resolve("trust_project");
+            break;
 
-        case "c":
-        case "cancel":
-        case "abort":
-          resolve("abort");
-          break;
+          case "!":
+            cleanup();
+            showSelection("Trusted (global)", chalk.blue);
+            resolve("trust_global");
+            break;
 
-        default:
-          // Default to "no" for safety
-          resolve("no");
-      }
-    });
+          default:
+            console.log(chalk.yellow("  Invalid: y/n" + (isBashExec ? "/e" : "") + "/t/!"));
+            askQuestion();
+        }
+      });
+    };
+
+    askQuestion();
   });
 }
 
 /**
- * Confirmation state for a turn (tracks "allow all" setting)
+ * Confirmation state for a session
+ * Note: "allow all this turn" was removed for simplicity
  */
 export type ConfirmationState = {
-  allowAll: boolean;
+  // Reserved for future use
 };
 
 /**
  * Create initial confirmation state
  */
 export function createConfirmationState(): ConfirmationState {
-  return { allowAll: false };
+  return {};
 }

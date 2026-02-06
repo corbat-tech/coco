@@ -3,8 +3,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import * as p from "@clack/prompts";
-
 // Store original process.exit and env
 const originalExit = process.exit;
 const originalEnv = { ...process.env };

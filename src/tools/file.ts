@@ -9,6 +9,7 @@ import path from "node:path";
 import { glob } from "glob";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { FileSystemError, ToolError } from "../utils/errors.js";
+import { isWithinAllowedPath } from "./allowed-paths.js";
 
 /**
  * Sensitive file patterns that should be protected
@@ -50,6 +51,7 @@ function hasNullByte(str: string): boolean {
  */
 function normalizePath(filePath: string): string {
   // Remove null bytes
+  // oxlint-disable-next-line no-control-regex -- Intentional: sanitizing null bytes from file paths
   let normalized = filePath.replace(/\0/g, "");
   // Normalize path separators and resolve .. and .
   normalized = path.normalize(normalized);
@@ -81,27 +83,32 @@ function isPathAllowed(
     }
   }
 
-  // Check home directory access (only allow within project)
+  // Check home directory access (only allow within project or explicitly allowed paths)
   const home = process.env.HOME;
   if (home) {
     const normalizedHome = path.normalize(home);
     const normalizedCwd = path.normalize(cwd);
     if (absolute.startsWith(normalizedHome) && !absolute.startsWith(normalizedCwd)) {
-      // Allow reading common config files in home (but NOT sensitive ones)
-      if (operation === "read") {
+      // Check if path is within user-authorized allowed paths
+      if (isWithinAllowedPath(absolute, operation)) {
+        // Path is explicitly authorized — continue to sensitive file checks below
+      } else if (operation === "read") {
+        // Allow reading common config files in home (but NOT sensitive ones)
         const allowedHomeReads = [".gitconfig", ".zshrc", ".bashrc"];
         const basename = path.basename(absolute);
         // Block .npmrc, .pypirc as they may contain auth tokens
         if (!allowedHomeReads.includes(basename)) {
+          const targetDir = path.dirname(absolute);
           return {
             allowed: false,
-            reason: "Reading files outside project directory is not allowed",
+            reason: `Reading files outside project directory is not allowed. Use /allow-path ${targetDir} to grant access.`,
           };
         }
       } else {
+        const targetDir = path.dirname(absolute);
         return {
           allowed: false,
-          reason: `${operation} operations outside project directory are not allowed`,
+          reason: `${operation} operations outside project directory are not allowed. Use /allow-path ${targetDir} to grant access.`,
         };
       }
     }

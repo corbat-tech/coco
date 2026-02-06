@@ -23,15 +23,24 @@ import { ProviderError } from "../utils/errors.js";
 import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 
 /**
- * Default model
+ * Default model - Updated February 2026
  */
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_MODEL = "claude-opus-4-6-20260115";
 
 /**
  * Context windows for models
+ * Updated February 2026 - Added Claude 4.6
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
-  // Claude 4 models (newest)
+  // Claude 4.6 (latest, Jan 2026) - 200K-1M context, 128K output
+  "claude-opus-4-6-20260115": 200000,
+  // Claude 4.5 models (Nov 2025)
+  "claude-opus-4-5-20251124": 200000,
+  "claude-sonnet-4-5-20250929": 200000,
+  "claude-haiku-4-5-20251001": 200000,
+  // Claude 4.1 models
+  "claude-opus-4-1-20250801": 200000,
+  // Claude 4 models
   "claude-sonnet-4-20250514": 200000,
   "claude-opus-4-20250514": 200000,
   // Claude 3.7 models

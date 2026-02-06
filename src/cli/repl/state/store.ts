@@ -53,7 +53,7 @@ export function createStateManager(): StateManager {
         ...file.state,
         path: projectPath,
       };
-    } catch (error) {
+    } catch {
       // State file doesn't exist, return default
       return {
         ...DEFAULT_STATE,

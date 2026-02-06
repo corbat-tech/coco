@@ -24,6 +24,9 @@ import { tasksCommand } from "./tasks.js";
 import { memoryCommand } from "./memory.js";
 import { rewindCommand } from "./rewind.js";
 import { resumeCommand } from "./resume.js";
+import { updateCommand } from "./update.js";
+import { copyCommand } from "./copy.js";
+import { allowPathCommand } from "./allow-path.js";
 import { renderError } from "../output/renderer.js";
 
 /**
@@ -51,6 +54,9 @@ const commands: SlashCommand[] = [
   memoryCommand,
   rewindCommand,
   resumeCommand,
+  updateCommand,
+  copyCommand,
+  allowPathCommand,
 ];
 
 /**

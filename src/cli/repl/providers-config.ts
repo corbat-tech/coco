@@ -8,31 +8,71 @@
  * ============================================================================
  *
  * This is the SINGLE SOURCE OF TRUTH for all provider and model definitions.
- * When you need to update models, only edit this file!
+ * When you need to update models, edit this file AND sync the other files!
  *
- * To update models/providers, ask Claude:
+ * === QUICK UPDATE COMMAND ===
  *
- *   "Actualiza los modelos de [proveedor] en providers-config.ts.
- *    Busca en internet los últimos modelos disponibles de [proveedor]
- *    y actualiza la lista de modelos con sus context windows."
+ * Just say: "Actualiza proveedores" and provide this context:
  *
- * Or in English:
+ * 1. Search the web for latest models from each provider:
+ *    - Anthropic: https://docs.anthropic.com/en/docs/about-claude/models
+ *    - OpenAI: https://platform.openai.com/docs/models
+ *    - Google Gemini: https://ai.google.dev/gemini-api/docs/models/gemini
+ *    - Moonshot Kimi: https://platform.moonshot.ai/docs
+ *    - LM Studio: Check popular models on Hugging Face
  *
- *   "Update the [provider] models in providers-config.ts.
- *    Search the internet for the latest available models from [provider]
- *    and update the models list with their context windows."
+ * 2. Update these files (in order):
+ *    a) THIS FILE (providers-config.ts):
+ *       - models[] array for each provider
+ *       - contextWindow and maxOutputTokens
+ *       - description with release date
+ *       - recommended: true for best model
  *
- * Files that use this configuration (no need to update manually):
- * - src/cli/repl/commands/model.ts (uses getProviderDefinition)
- * - src/cli/repl/commands/provider.ts (uses getAllProviders)
- * - src/cli/repl/onboarding-v2.ts (uses getAllProviders, getRecommendedModel)
- * - src/cli/commands/config.ts (uses getAllProviders, formatModelInfo)
+ *    b) src/providers/{provider}.ts:
+ *       - DEFAULT_MODEL constant
+ *       - CONTEXT_WINDOWS record
  *
- * Files that have their own CONTEXT_WINDOWS (may need sync):
- * - src/providers/openai.ts (CONTEXT_WINDOWS for Kimi models)
- * - src/providers/anthropic.ts (CONTEXT_WINDOWS for Claude models)
- * - src/providers/gemini.ts (CONTEXT_WINDOWS for Gemini models)
+ *    c) src/config/env.ts:
+ *       - getDefaultModel() switch cases
  *
+ * 3. Verify:
+ *    - apiKeyUrl is still valid
+ *    - baseUrl hasn't changed
+ *    - OAuth client IDs (if any) in src/auth/oauth.ts
+ *
+ * === FILES TO SYNC ===
+ *
+ * PRIMARY (edit first):
+ * - src/cli/repl/providers-config.ts (this file)
+ *
+ * SECONDARY (sync DEFAULT_MODEL and CONTEXT_WINDOWS):
+ * - src/providers/anthropic.ts
+ * - src/providers/openai.ts
+ * - src/providers/gemini.ts
+ * - src/providers/codex.ts
+ * - src/config/env.ts (getDefaultModel function)
+ *
+ * CONSUMERS (no changes needed, they read from this file):
+ * - src/cli/repl/commands/model.ts
+ * - src/cli/repl/commands/provider.ts
+ * - src/cli/repl/onboarding-v2.ts
+ * - src/cli/commands/config.ts
+ *
+ * === OAUTH CONFIG ===
+ *
+ * If OAuth endpoints change, update:
+ * - src/auth/oauth.ts (OAUTH_CONFIGS)
+ * - src/auth/flow.ts (getProviderDisplayInfo)
+ *
+ * ============================================================================
+ * Last updated: February 5, 2026
+ *
+ * CURRENT MODELS (verified from official docs):
+ * - Anthropic: claude-opus-4-6-20260115 (latest), claude-sonnet-4-5, claude-haiku-4-5
+ * - OpenAI: gpt-5.2-codex, gpt-5.2-thinking, gpt-5.2-pro
+ * - Gemini: gemini-3-flash-preview, gemini-3-pro-preview, gemini-2.5-pro
+ * - Kimi: kimi-k2.5 (latest)
+ * - LM Studio: qwen3-coder series (best local option)
  * ============================================================================
  */
 
@@ -65,6 +105,16 @@ export interface ProviderDefinition {
   models: ModelDefinition[];
   supportsCustomModels: boolean;
   openaiCompatible: boolean;
+  /** Whether to ask for custom URL during setup (for proxies, local servers, etc.) */
+  askForCustomUrl?: boolean;
+  /** Whether API key is required (false for local providers like LM Studio) */
+  requiresApiKey?: boolean;
+  /** Whether provider supports gcloud ADC authentication */
+  supportsGcloudADC?: boolean;
+  /** Whether provider supports OAuth authentication (e.g., Google account login for Gemini) */
+  supportsOAuth?: boolean;
+  /** Internal provider - not shown in user selection (e.g., "codex" is internal, "openai" is user-facing) */
+  internal?: boolean;
   features: {
     streaming: boolean;
     functionCalling: boolean;
@@ -80,7 +130,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     id: "anthropic",
     name: "Anthropic Claude",
     emoji: "🟠",
-    description: "Most capable models for coding and reasoning",
+    description: "Best for coding, agents, and reasoning",
     envVar: "ANTHROPIC_API_KEY",
     apiKeyUrl: "https://console.anthropic.com/settings/keys",
     docsUrl: "https://docs.anthropic.com",
@@ -92,42 +142,43 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true,
     },
+    // Updated: February 2026 - Claude 4.6 is latest
     models: [
       {
-        id: "claude-sonnet-4-20250514",
-        name: "Claude Sonnet 4",
-        description: "Latest and most capable Sonnet model",
+        id: "claude-opus-4-6-20260115",
+        name: "Claude Opus 4.6",
+        description: "Most capable - coding, agents & complex tasks (Jan 2026)",
         contextWindow: 200000,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 128000,
         recommended: true,
       },
       {
-        id: "claude-opus-4-20250514",
-        name: "Claude Opus 4",
-        description: "Maximum capability for complex reasoning",
+        id: "claude-sonnet-4-5-20250929",
+        name: "Claude Sonnet 4.5",
+        description: "Best balance of speed and capability (Sep 2025)",
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "claude-haiku-4-5-20251001",
+        name: "Claude Haiku 4.5",
+        description: "Fastest and cheapest (Oct 2025)",
         contextWindow: 200000,
         maxOutputTokens: 8192,
       },
       {
-        id: "claude-3-7-sonnet-20250219",
-        name: "Claude 3.7 Sonnet",
-        description: "Intelligent model with extended thinking",
+        id: "claude-opus-4-5-20251124",
+        name: "Claude Opus 4.5",
+        description: "Previous flagship (Nov 2025)",
         contextWindow: 200000,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 32000,
       },
       {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
-        description: "Good balance of speed and intelligence",
+        id: "claude-sonnet-4-20250514",
+        name: "Claude Sonnet 4",
+        description: "Stable production model (May 2025)",
         contextWindow: 200000,
         maxOutputTokens: 8192,
-      },
-      {
-        id: "claude-3-5-haiku-20241022",
-        name: "Claude 3.5 Haiku",
-        description: "Fastest responses, good for simple tasks",
-        contextWindow: 200000,
-        maxOutputTokens: 4096,
       },
     ],
   },
@@ -136,13 +187,74 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     id: "openai",
     name: "OpenAI",
     emoji: "🟢",
-    description: "GPT-4o and GPT-4 models",
+    description: "GPT-5.2 and Codex models",
     envVar: "OPENAI_API_KEY",
     apiKeyUrl: "https://platform.openai.com/api-keys",
     docsUrl: "https://platform.openai.com/docs",
     baseUrl: "https://api.openai.com/v1",
     supportsCustomModels: true,
     openaiCompatible: true,
+    askForCustomUrl: false, // OpenAI has fixed endpoint
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: true,
+    },
+    // Updated: January 2026 - GPT-5.2 series is latest
+    models: [
+      {
+        id: "gpt-5.2-codex",
+        name: "GPT-5.2 Codex",
+        description: "Best for coding & software engineering (Jan 2026)",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+        recommended: true,
+      },
+      {
+        id: "gpt-5.2-thinking",
+        name: "GPT-5.2 Thinking",
+        description: "Deep reasoning for complex tasks (Dec 2025)",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-5.2-instant",
+        name: "GPT-5.2 Instant",
+        description: "Fast everyday workhorse (Dec 2025)",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-5.2-pro",
+        name: "GPT-5.2 Pro",
+        description: "Most intelligent for hard problems (Dec 2025)",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-4o",
+        name: "GPT-4o",
+        description: "Legacy multimodal model (retiring Feb 2026)",
+        contextWindow: 128000,
+        maxOutputTokens: 16384,
+      },
+    ],
+  },
+
+  // Codex - ChatGPT Plus/Pro via OAuth (same models as OpenAI but uses subscription)
+  codex: {
+    id: "codex",
+    name: "OpenAI Codex (ChatGPT Plus/Pro)",
+    emoji: "🟣",
+    description: "Use your ChatGPT Plus/Pro subscription via OAuth",
+    envVar: "OPENAI_CODEX_TOKEN", // Not actually used, we use OAuth tokens
+    apiKeyUrl: "https://chatgpt.com/",
+    docsUrl: "https://openai.com/chatgpt/pricing",
+    baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+    supportsCustomModels: false,
+    openaiCompatible: false, // Uses different API format
+    requiresApiKey: false, // Uses OAuth
+    internal: true, // Hidden from user - use "openai" with OAuth instead
     features: {
       streaming: true,
       functionCalling: true,
@@ -150,47 +262,33 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     },
     models: [
       {
-        id: "gpt-4o",
-        name: "GPT-4o",
-        description: "Most capable multimodal model",
-        contextWindow: 128000,
-        maxOutputTokens: 16384,
+        id: "gpt-5-codex",
+        name: "GPT-5 Codex",
+        description: "Best coding model via ChatGPT subscription",
+        contextWindow: 200000,
+        maxOutputTokens: 128000,
         recommended: true,
       },
       {
-        id: "gpt-4o-mini",
-        name: "GPT-4o Mini",
-        description: "Fast and cost-effective",
-        contextWindow: 128000,
-        maxOutputTokens: 16384,
+        id: "gpt-5.2-codex",
+        name: "GPT-5.2 Codex",
+        description: "Latest advanced coding model",
+        contextWindow: 200000,
+        maxOutputTokens: 128000,
       },
       {
-        id: "o1",
-        name: "o1",
-        description: "Reasoning model for complex tasks",
-        contextWindow: 128000,
-        maxOutputTokens: 32768,
+        id: "gpt-5",
+        name: "GPT-5",
+        description: "General-purpose reasoning model",
+        contextWindow: 200000,
+        maxOutputTokens: 128000,
       },
       {
-        id: "o1-mini",
-        name: "o1-mini",
-        description: "Faster reasoning model",
-        contextWindow: 128000,
-        maxOutputTokens: 65536,
-      },
-      {
-        id: "gpt-4-turbo",
-        name: "GPT-4 Turbo",
-        description: "Legacy high-capability model",
-        contextWindow: 128000,
-        maxOutputTokens: 4096,
-      },
-      {
-        id: "gpt-3.5-turbo",
-        name: "GPT-3.5 Turbo",
-        description: "Legacy fast and cheap model",
-        contextWindow: 16385,
-        maxOutputTokens: 4096,
+        id: "gpt-5.2",
+        name: "GPT-5.2",
+        description: "Latest general-purpose model",
+        contextWindow: 200000,
+        maxOutputTokens: 128000,
       },
     ],
   },
@@ -199,53 +297,56 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     id: "gemini",
     name: "Google Gemini",
     emoji: "🔵",
-    description: "Gemini 2.0 and 1.5 models",
+    description: "Gemini 3 and 2.5 models",
     envVar: "GEMINI_API_KEY",
-    apiKeyUrl: "https://aistudio.google.com/app/apikey",
+    apiKeyUrl: "https://aistudio.google.com/apikey",
     docsUrl: "https://ai.google.dev/gemini-api/docs",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     supportsCustomModels: true,
     openaiCompatible: false,
+    supportsGcloudADC: true, // Supports gcloud auth application-default login
+    // NOTE: OAuth removed - Google's client ID is restricted to official apps only
     features: {
       streaming: true,
       functionCalling: true,
       vision: true,
     },
+    // Updated: February 2026 - Gemini 3 series is latest (use -preview suffix)
     models: [
       {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
-        description: "Fast, capable, and cost-effective",
+        id: "gemini-3-flash-preview",
+        name: "Gemini 3 Flash",
+        description: "Fast with PhD-level reasoning - 1M context (Jan 2026)",
         contextWindow: 1000000,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 65536,
         recommended: true,
       },
       {
-        id: "gemini-2.0-flash-lite",
-        name: "Gemini 2.0 Flash Lite",
-        description: "Fastest responses, lowest cost",
+        id: "gemini-3-pro-preview",
+        name: "Gemini 3 Pro",
+        description: "Most powerful - beats 19/20 benchmarks (Jan 2026)",
         contextWindow: 1000000,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 65536,
       },
       {
-        id: "gemini-2.0-pro-exp-02-05",
-        name: "Gemini 2.0 Pro Exp",
-        description: "Experimental pro model with 2M context",
-        contextWindow: 2000000,
-        maxOutputTokens: 8192,
+        id: "gemini-2.5-pro-preview-05-06",
+        name: "Gemini 2.5 Pro",
+        description: "Production tier - complex reasoning & coding (stable)",
+        contextWindow: 1048576,
+        maxOutputTokens: 65536,
       },
       {
-        id: "gemini-1.5-pro",
-        name: "Gemini 1.5 Pro",
-        description: "Legacy pro model",
-        contextWindow: 2000000,
-        maxOutputTokens: 8192,
+        id: "gemini-2.5-flash-preview-05-20",
+        name: "Gemini 2.5 Flash",
+        description: "Production tier - fast with thinking budgets",
+        contextWindow: 1048576,
+        maxOutputTokens: 65536,
       },
       {
-        id: "gemini-1.5-flash",
-        name: "Gemini 1.5 Flash",
-        description: "Legacy fast model",
-        contextWindow: 1000000,
+        id: "gemini-2.0-flash",
+        name: "Gemini 2.0 Flash",
+        description: "Stable GA model - good for most tasks",
+        contextWindow: 1048576,
         maxOutputTokens: 8192,
       },
     ],
@@ -263,6 +364,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     baseUrl: "https://api.moonshot.ai/v1",
     supportsCustomModels: true,
     openaiCompatible: true,
+    askForCustomUrl: true, // Some users may use proxies
     features: {
       streaming: true,
       functionCalling: true,
@@ -314,6 +416,78 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       },
     ],
   },
+
+  // LM Studio - Local models via OpenAI-compatible API
+  lmstudio: {
+    id: "lmstudio",
+    name: "LM Studio (Local)",
+    emoji: "🖥️",
+    description: "Run models locally - free, private, no API key needed",
+    envVar: "LMSTUDIO_API_KEY", // Placeholder, not actually required
+    apiKeyUrl: "https://lmstudio.ai/",
+    docsUrl: "https://lmstudio.ai/docs",
+    baseUrl: "http://localhost:1234/v1",
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    askForCustomUrl: true, // User might use different port
+    requiresApiKey: false, // LM Studio doesn't need API key
+    features: {
+      streaming: true,
+      functionCalling: true, // Some models support it
+      vision: false, // Most local models don't support vision
+    },
+    // Updated: January 2026 - Qwen3-Coder is the new best
+    // Search these names in LM Studio to download
+    models: [
+      // Qwen3-Coder - State of the art (July 2025)
+      {
+        id: "qwen3-coder-3b-instruct",
+        name: "⚡ Qwen3 Coder 3B",
+        description: "Search: 'qwen3 coder 3b' (8GB RAM)",
+        contextWindow: 256000,
+        maxOutputTokens: 8192,
+        recommended: true,
+      },
+      {
+        id: "qwen3-coder-8b-instruct",
+        name: "🎯 Qwen3 Coder 8B",
+        description: "Search: 'qwen3 coder 8b' (16GB RAM)",
+        contextWindow: 256000,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "qwen3-coder-14b-instruct",
+        name: "💪 Qwen3 Coder 14B",
+        description: "Search: 'qwen3 coder 14b' (32GB RAM)",
+        contextWindow: 256000,
+        maxOutputTokens: 8192,
+      },
+      // DeepSeek - Great alternative
+      {
+        id: "deepseek-coder-v3-lite",
+        name: "DeepSeek Coder V3 Lite",
+        description: "Search: 'deepseek coder v3' (16GB RAM)",
+        contextWindow: 128000,
+        maxOutputTokens: 8192,
+      },
+      // Codestral - Mistral's coding model
+      {
+        id: "codestral-22b",
+        name: "Codestral 22B",
+        description: "Search: 'codestral' (24GB RAM)",
+        contextWindow: 32768,
+        maxOutputTokens: 8192,
+      },
+      // Legacy but still good
+      {
+        id: "qwen2.5-coder-7b-instruct",
+        name: "Qwen 2.5 Coder 7B",
+        description: "Search: 'qwen 2.5 coder 7b' (16GB RAM)",
+        contextWindow: 32768,
+        maxOutputTokens: 8192,
+      },
+    ],
+  },
 };
 
 /**
@@ -324,9 +498,18 @@ export function getProviderDefinition(type: ProviderType): ProviderDefinition {
 }
 
 /**
- * Get all provider definitions
+ * Get all provider definitions for user selection
+ * Excludes internal providers like "codex" that shouldn't be shown to users
  */
 export function getAllProviders(): ProviderDefinition[] {
+  return Object.values(PROVIDER_DEFINITIONS).filter((p) => !p.internal);
+}
+
+/**
+ * Get all provider definitions including internal ones
+ * Use this for internal lookups (e.g., getProviderDefinition)
+ */
+export function getAllProvidersIncludingInternal(): ProviderDefinition[] {
   return Object.values(PROVIDER_DEFINITIONS);
 }
 

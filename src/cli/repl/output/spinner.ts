@@ -1,6 +1,8 @@
 /**
  * Spinner for long operations using Ora
  * Ora handles concurrent stdout output gracefully
+ *
+ * Brand color: Magenta/Purple 🟣
  */
 
 import ora, { type Ora } from "ora";
@@ -15,6 +17,29 @@ export type Spinner = {
   fail(message?: string): void;
   /** Update tool counter for multi-tool operations */
   setToolCount(current: number, total?: number): void;
+};
+
+/**
+ * Custom coco spinner frames - a bouncing coconut! 🥥
+ */
+const COCO_SPINNER = {
+  interval: 120,
+  frames: ["🥥    ", " 🥥   ", "  🥥  ", "   🥥 ", "    🥥", "   🥥 ", "  🥥  ", " 🥥   "],
+};
+
+/**
+ * Alternative spinners (exported for potential future use)
+ */
+export const SPINNERS = {
+  coco: COCO_SPINNER,
+  brain: {
+    interval: 150,
+    frames: ["🧠", "💭", "💡", "✨", "🧠", "💭", "💡", "⚡"],
+  },
+  face: {
+    interval: 200,
+    frames: ["(◠‿◠)", "(◠‿◕)", "(◕‿◕)", "(◕‿◠)", "(◠‿◠)", "(●‿●)", "(◠‿◠)", "(◕‿◕)"],
+  },
 };
 
 /**
@@ -45,7 +70,7 @@ export function createSpinner(message: string): Spinner {
     const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
     const elapsedStr = elapsed > 0 ? chalk.dim(` (${elapsed}s)`) : "";
     const toolCountStr = formatToolCount();
-    spinner.text = `${currentMessage}${toolCountStr}${elapsedStr}`;
+    spinner.text = chalk.magenta(`${currentMessage}${toolCountStr}`) + elapsedStr;
   };
 
   return {
@@ -54,9 +79,9 @@ export function createSpinner(message: string): Spinner {
       startTime = Date.now();
 
       spinner = ora({
-        text: currentMessage,
-        spinner: "dots",
-        color: "cyan",
+        text: chalk.magenta(currentMessage),
+        spinner: COCO_SPINNER,
+        color: "magenta",
       }).start();
 
       // Update elapsed time every second

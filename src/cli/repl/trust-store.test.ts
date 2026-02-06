@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, readFile, access } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,7 +16,6 @@ import {
   listTrustedProjects,
   canPerformOperation,
   createTrustStore,
-  TRUST_STORE_PATH,
   type TrustStoreConfig,
 } from "./trust-store.js";
 
