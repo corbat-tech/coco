@@ -1,6 +1,6 @@
 {
   "name": "corbat-coco",
-  "version": "1.0.0",
+  "version": "1.0.0", 
   "description": "Autonomous Coding Agent with Self-Review, Quality Convergence, and Production-Ready Output",
   "type": "module",
   "main": "dist/index.js",
@@ -29,6 +29,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "benchmark": "tsx test/benchmarks/quality-benchmark.ts",
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
     "prepublishOnly": "pnpm build",

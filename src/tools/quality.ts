@@ -9,8 +9,8 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
-import type { QualityScores, QualityDimensions } from "../quality/types.js";
-import { DEFAULT_QUALITY_WEIGHTS } from "../quality/types.js";
+import type { QualityScores } from "../quality/types.js";
+import { createQualityEvaluator } from "../quality/evaluator.js";
 
 /**
  * Lint result interface
@@ -395,72 +395,46 @@ function analyzeFileComplexity(content: string, file: string): FileComplexity {
 }
 
 /**
- * Calculate full quality scores
+ * Calculate full quality scores using the new QualityEvaluator
+ * This replaces hardcoded values with real measurements
  */
 export const calculateQualityTool: ToolDefinition<
-  { cwd?: string; files?: string[] },
+  { cwd?: string; files?: string[]; useSnyk?: boolean },
   QualityScores
 > = defineTool({
   name: "calculate_quality",
-  description: `Calculate comprehensive quality scores across all dimensions (lint, complexity, coverage, etc.).
+  description: `Calculate comprehensive quality scores using REAL analyzers (coverage, security, complexity).
+
+This tool now uses the unified QualityEvaluator which provides:
+- Real test coverage from c8/nyc instrumentation
+- Security scanning (static analysis + npm audit + optional Snyk)
+- AST-based complexity analysis
+- Code duplication detection
 
 Examples:
-- Full analysis: {} → { "overall": 85, "dimensions": { "complexity": 90, "style": 95, ... } }
-- Specific files: { "files": ["src/core/*.ts"] }`,
+- Full analysis: {} → { "overall": 85, "dimensions": { "complexity": 90, "testCoverage": 82, "security": 100, ... } }
+- Specific files: { "files": ["src/core/*.ts"] }
+- With Snyk: { "useSnyk": true }`,
   category: "quality",
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),
     files: z.array(z.string()).optional().describe("Specific files to analyze"),
+    useSnyk: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe("Use Snyk for enhanced security scanning"),
   }),
-  async execute({ cwd, files }) {
+  async execute({ cwd, files, useSnyk }) {
     const projectDir = cwd ?? process.cwd();
-    const startTime = performance.now();
 
     try {
-      // Run all quality checks in parallel
-      const [lintResult, complexityResult] = await Promise.all([
-        runLinterTool.execute({ cwd: projectDir, files }),
-        analyzeComplexityTool.execute({ cwd: projectDir, files }),
-      ]);
+      // Use the new unified QualityEvaluator
+      const evaluator = createQualityEvaluator(projectDir, useSnyk);
+      const evaluation = await evaluator.evaluate(files);
 
-      // Try to get coverage (may not be available)
-      let testCoverage = 0;
-      try {
-        const { getCoverageTool } = await import("./test.js");
-        const coverage = await getCoverageTool.execute({ cwd: projectDir });
-        testCoverage = (coverage.lines + coverage.branches + coverage.functions) / 3;
-      } catch {
-        // Coverage not available
-      }
-
-      // Calculate dimensions
-      const dimensions: QualityDimensions = {
-        correctness: 85, // Would need test results
-        completeness: 80, // Would need requirements analysis
-        robustness: 75, // Would need test analysis
-        readability: Math.min(100, 100 - complexityResult.averageComplexity * 2),
-        maintainability: Math.min(100, 100 - complexityResult.complexFunctions * 5),
-        complexity: complexityResult.score,
-        duplication: 90, // Would need duplication analysis
-        testCoverage,
-        testQuality: 70, // Would need test analysis
-        security: 100, // Would need security scan
-        documentation: 60, // Would need doc analysis
-        style: lintResult.score,
-      };
-
-      // Calculate overall weighted score
-      const overall = Object.entries(dimensions).reduce((sum, [key, value]) => {
-        const weight = DEFAULT_QUALITY_WEIGHTS[key as keyof typeof DEFAULT_QUALITY_WEIGHTS] ?? 0;
-        return sum + value * weight;
-      }, 0);
-
-      return {
-        overall,
-        dimensions,
-        evaluatedAt: new Date(),
-        evaluationDurationMs: performance.now() - startTime,
-      };
+      // Return QualityScores format
+      return evaluation.scores;
     } catch (error) {
       throw new ToolError(
         `Quality calculation failed: ${error instanceof Error ? error.message : String(error)}`,

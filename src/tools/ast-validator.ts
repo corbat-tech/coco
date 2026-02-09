@@ -49,7 +49,7 @@ export async function validateCode(
       tokens: true,
       jsx: filePath.endsWith(".tsx") || filePath.endsWith(".jsx"),
       errorOnUnknownASTType: false,
-      errorOnTypeScriptSyntacticAndSemanticIssues: false,
+      errorOnTypeScriptSyntacticAndSemanticIssues: false, // Disabled: not supported by parse()
       filePath,
     });
 
@@ -96,13 +96,14 @@ export async function validateCode(
  * Extract imports from code
  */
 export function extractImports(code: string): string[] {
-  const importRegex = /import\s+(?:{[^}]+}|[\w*]+)\s+from\s+['"]([^'"]+)['"]/g;
   const imports: string[] = [];
-  let match: RegExpExecArray | null;
 
-  while ((match = importRegex.exec(code)) !== null) {
-    if (match[1]) {
-      imports.push(match[1]);
+  for (const line of code.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("import ")) continue;
+    const fromMatch = /from\s+['"]([^'"]+)['"]/.exec(trimmed);
+    if (fromMatch?.[1]) {
+      imports.push(fromMatch[1]);
     }
   }
 

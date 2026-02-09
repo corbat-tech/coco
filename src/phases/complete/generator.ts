@@ -16,12 +16,14 @@ import {
   buildFeedbackSection,
 } from "./prompts.js";
 import { PhaseError } from "../../utils/errors.js";
+import { validateCode, findMissingImports } from "../../tools/ast-validator.js";
 
 /**
  * Code Generator
  */
 export class CodeGenerator {
   private llm: LLMProvider;
+  private maxValidationRetries = 3;
 
   constructor(llm: LLMProvider) {
     this.llm = llm;
@@ -49,7 +51,15 @@ export class CodeGenerator {
       { role: "user", content: prompt },
     ]);
 
-    return this.parseGenerationResponse(response.content);
+    const generatedResponse = this.parseGenerationResponse(response.content);
+
+    // NEW: Validate and fix syntax errors before returning
+    const validatedFiles = await this.validateAndFixFiles(generatedResponse.files);
+
+    return {
+      ...generatedResponse,
+      files: validatedFiles,
+    };
   }
 
   /**
@@ -78,6 +88,122 @@ export class CodeGenerator {
     ]);
 
     return this.parseImprovementResponse(response.content);
+  }
+
+  /**
+   * Validate generated files and auto-fix syntax errors
+   */
+  private async validateAndFixFiles(files: GeneratedFile[]): Promise<GeneratedFile[]> {
+    const validatedFiles: GeneratedFile[] = [];
+
+    for (const file of files) {
+      let validatedFile = file;
+      let retries = 0;
+
+      // Skip non-TS/JS files
+      const isCodeFile =
+        file.path.endsWith(".ts") ||
+        file.path.endsWith(".tsx") ||
+        file.path.endsWith(".js") ||
+        file.path.endsWith(".jsx");
+
+      if (!isCodeFile) {
+        validatedFiles.push(file);
+        continue;
+      }
+
+      // Validate and retry up to maxValidationRetries times
+      while (retries < this.maxValidationRetries) {
+        const language =
+          file.path.endsWith(".ts") || file.path.endsWith(".tsx") ? "typescript" : "javascript";
+        const validation = await validateCode(validatedFile.content, validatedFile.path, language);
+
+        if (validation.valid) {
+          // Check for missing imports
+          const missingImports = findMissingImports(validatedFile.content, validatedFile.path);
+          if (missingImports.length > 0) {
+            // Add warning but don't fail
+            console.warn(
+              `[Generator] File ${validatedFile.path} may be missing imports: ${missingImports.join(", ")}`,
+            );
+          }
+          break;
+        }
+
+        // Has syntax errors - ask LLM to fix
+        retries++;
+        console.warn(
+          `[Generator] Syntax errors in ${validatedFile.path} (attempt ${retries}/${this.maxValidationRetries})`,
+        );
+
+        if (retries >= this.maxValidationRetries) {
+          throw new PhaseError(
+            `Failed to generate valid code for ${validatedFile.path} after ${this.maxValidationRetries} attempts. Errors: ${validation.errors.map((e) => e.message).join("; ")}`,
+            { phase: "complete" },
+          );
+        }
+
+        // Try to fix the syntax errors
+        try {
+          const fixedContent = await this.fixSyntaxErrors(validatedFile, validation.errors);
+          validatedFile = { ...validatedFile, content: fixedContent };
+        } catch (error) {
+          throw new PhaseError(
+            `Failed to fix syntax errors in ${validatedFile.path}: ${error instanceof Error ? error.message : String(error)}`,
+            { phase: "complete" },
+          );
+        }
+      }
+
+      validatedFiles.push(validatedFile);
+    }
+
+    return validatedFiles;
+  }
+
+  /**
+   * Fix syntax errors using LLM
+   */
+  private async fixSyntaxErrors(
+    file: GeneratedFile,
+    errors: Array<{ line: number; column: number; message: string }>,
+  ): Promise<string> {
+    const errorMessages = errors
+      .map((e) => `Line ${e.line}, Column ${e.column}: ${e.message}`)
+      .join("\n");
+
+    const fixPrompt = `Fix the following syntax errors in this TypeScript/JavaScript code:
+
+Syntax Errors:
+${errorMessages}
+
+Original Code:
+\`\`\`${file.path.endsWith(".ts") || file.path.endsWith(".tsx") ? "typescript" : "javascript"}
+${file.content}
+\`\`\`
+
+Return ONLY the fixed code, no explanations or markdown. The code must be syntactically valid.`;
+
+    const response = await this.llm.chat([
+      {
+        role: "system",
+        content:
+          "You are a code fixing expert. Fix syntax errors and return only valid code without any markdown formatting or explanations.",
+      },
+      { role: "user", content: fixPrompt },
+    ]);
+
+    // Extract code from response (remove markdown if present)
+    let fixedCode = response.content.trim();
+
+    // Remove markdown code blocks if present
+    const codeBlockRegex = /```(?:typescript|javascript|ts|js)?\n?([\s\S]*?)```/;
+    const match = fixedCode.match(codeBlockRegex);
+    if (match?.[1]) {
+      fixedCode = match[1].trim();
+    }
+
+    return fixedCode;
   }
 
   /**

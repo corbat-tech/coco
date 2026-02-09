@@ -1,0 +1,32 @@
+{
+  "project": "corbat-coco",
+  "timestamp": "2026-02-09T10:25:40.749Z",
+  "duration": 19825.577792,
+  "scores": {
+    "overall": 60,
+    "dimensions": {
+      "testCoverage": 0,
+      "security": 0,
+      "complexity": 100,
+      "duplication": 72.54676754770074,
+      "style": 100,
+      "readability": 94.62509180743807,
+      "maintainability": 0,
+      "correctness": 85,
+      "completeness": 80,
+      "robustness": 75,
+      "testQuality": 70,
+      "documentation": 60
+    }
+  },
+  "metrics": {
+    "filesAnalyzed": 12,
+    "issuesFound": 311,
+    "suggestionsGenerated": 3
+  },
+  "validation": {
+    "percentage": 41.66666666666667,
+    "real": 7,
+    "total": 12
+  }
+}
