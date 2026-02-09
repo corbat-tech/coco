@@ -300,6 +300,22 @@ export class PatternSecurityScanner {
   }
 }
 
+/** Shape of a single vulnerability in Snyk JSON output */
+interface SnykVulnerability {
+  severity: string;
+  title: string;
+  moduleName: string;
+  version: string;
+  fixedIn?: string[];
+  nearestFixedInVersion?: string;
+  identifiers?: { CWE?: string[] };
+}
+
+/** Shape of Snyk JSON report */
+interface SnykReport {
+  vulnerabilities?: SnykVulnerability[];
+}
+
 /**
  * Snyk Security Scanner (optional, requires snyk CLI)
  */
@@ -329,7 +345,7 @@ export class SnykSecurityScanner {
         reject: false,
       });
 
-      const report = JSON.parse(result.stdout || result.stderr);
+      const report = JSON.parse(result.stdout || result.stderr) as SnykReport;
       const vulnerabilities = this.parseSnykReport(report);
       const scanDuration = performance.now() - startTime;
 
@@ -350,10 +366,10 @@ export class SnykSecurityScanner {
   /**
    * Parse Snyk JSON report
    */
-  private parseSnykReport(report: any): SecurityVulnerability[] {
+  private parseSnykReport(report: SnykReport): SecurityVulnerability[] {
     if (!report.vulnerabilities) return [];
 
-    return report.vulnerabilities.map((v: any) => ({
+    return report.vulnerabilities.map((v) => ({
       severity: v.severity as VulnerabilitySeverity,
       type: "Dependency Vulnerability",
       location: { file: "package.json" },

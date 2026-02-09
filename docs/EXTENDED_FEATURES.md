@@ -125,9 +125,14 @@ createAgentPlan({
 //   totalTasks: 3,
 //   executionOrder: ["task-0", "task-1", "task-2"],
 //   estimatedTime: 270ms,
-//   maxParallelism: 2
+//   maxParallelism: 2,
+//   unresolvedDependencies: []
 // }
 ```
+
+**Notes**:
+- Dependencies can reference `"task-<index>"` or the numeric index as a string (e.g. `"0"`).
+- Any dependency that doesn't match a planned task is reported in `unresolvedDependencies`.
 
 **Agent Roles**:
 - 🔍 **Researcher**: Web search, document analysis, information synthesis

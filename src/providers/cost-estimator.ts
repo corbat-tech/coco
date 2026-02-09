@@ -43,8 +43,11 @@ function getModelCost(model: string): { input: number; output: number } {
     return MODEL_COSTS[model];
   }
 
-  // Try partial match
-  for (const [key, cost] of Object.entries(MODEL_COSTS)) {
+  // Try partial match (sort by key length descending for longest match first)
+  const sortedEntries = Object.entries(MODEL_COSTS).sort(
+    ([a], [b]) => b.length - a.length,
+  );
+  for (const [key, cost] of sortedEntries) {
     if (model.includes(key)) {
       return cost;
     }

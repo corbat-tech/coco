@@ -85,24 +85,33 @@ describe("OutputExecutor", () => {
   });
 
   describe("canStart", () => {
-    it("should return true", async () => {
+    it("should return false for empty context", async () => {
       const { OutputExecutor } = await import("./executor.js");
 
       const executor = new OutputExecutor();
       const result = executor.canStart({} as any);
+
+      expect(result).toBe(false);
+    });
+
+    it("should return true when projectPath is set", async () => {
+      const { OutputExecutor } = await import("./executor.js");
+
+      const executor = new OutputExecutor();
+      const result = executor.canStart({ projectPath: "/tmp/test" } as any);
 
       expect(result).toBe(true);
     });
   });
 
   describe("canComplete", () => {
-    it("should return true", async () => {
+    it("should return false before execute", async () => {
       const { OutputExecutor } = await import("./executor.js");
 
       const executor = new OutputExecutor();
       const result = executor.canComplete({} as any);
 
-      expect(result).toBe(true);
+      expect(result).toBe(false);
     });
   });
 

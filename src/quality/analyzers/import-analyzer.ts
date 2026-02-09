@@ -6,6 +6,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { parse } from "@typescript-eslint/typescript-estree";
+import type { TSESTree } from "@typescript-eslint/typescript-estree";
 import type { GeneratedFile } from "../../phases/complete/types.js";
 
 export interface ImportInfo {
@@ -133,17 +134,23 @@ export class ImportAnalyzer {
       });
 
       // Traverse AST to find import declarations
-      const traverse = (node: any): void => {
+      const traverse = (node: TSESTree.Node): void => {
         if (node.type === "ImportDeclaration") {
+          const importNode = node as TSESTree.ImportDeclaration;
           imports.push({
-            source: node.source.value,
+            source: importNode.source.value as string,
             specifiers:
-              node.specifiers?.map((s: any) => s.local?.name || s.imported?.name || "") || [],
-            isTypeOnly: node.importKind === "type",
+              importNode.specifiers?.map((s) => {
+                if (s.type === "ImportSpecifier") {
+                  return s.local?.name || (s.imported as TSESTree.Identifier)?.name || "";
+                }
+                return s.local?.name || "";
+              }) || [],
+            isTypeOnly: importNode.importKind === "type",
             isDynamic: false,
             location: {
-              line: node.loc?.start.line || 0,
-              column: node.loc?.start.column || 0,
+              line: importNode.loc?.start.line || 0,
+              column: importNode.loc?.start.column || 0,
             },
           });
         }
@@ -151,31 +158,33 @@ export class ImportAnalyzer {
         // Check for dynamic imports: import('module')
         if (
           node.type === "CallExpression" &&
-          node.callee?.type === "Import" &&
-          node.arguments?.[0]?.type === "Literal"
+          (node as TSESTree.CallExpression).callee?.type === ("Import" as string) &&
+          (node as TSESTree.CallExpression).arguments?.[0]?.type === "Literal"
         ) {
+          const callNode = node as TSESTree.CallExpression;
+          const firstArg = callNode.arguments[0] as TSESTree.Literal;
           imports.push({
-            source: node.arguments[0].value,
+            source: firstArg.value as string,
             specifiers: [],
             isTypeOnly: false,
             isDynamic: true,
             location: {
-              line: node.loc?.start.line || 0,
-              column: node.loc?.start.column || 0,
+              line: callNode.loc?.start.line || 0,
+              column: callNode.loc?.start.column || 0,
             },
           });
         }
 
         // Recursively traverse child nodes
         for (const key of Object.keys(node)) {
-          const child = node[key];
+          const child = (node as unknown as Record<string, unknown>)[key];
           if (child && typeof child === "object") {
             if (Array.isArray(child)) {
-              child.forEach((c) => {
-                if (c && typeof c === "object") traverse(c);
+              child.forEach((c: unknown) => {
+                if (c && typeof c === "object" && (c as TSESTree.Node).type) traverse(c as TSESTree.Node);
               });
-            } else {
-              traverse(child);
+            } else if ((child as TSESTree.Node).type) {
+              traverse(child as TSESTree.Node);
             }
           }
         }
@@ -209,6 +218,7 @@ export class ImportAnalyzer {
    */
   private async detectCircularDependencies(files: GeneratedFile[]): Promise<CircularDependency[]> {
     const graph = new Map<string, Set<string>>();
+    const filePaths = new Set(files.filter((f) => this.isCodeFile(f.path)).map((f) => f.path));
 
     // Build dependency graph
     for (const file of files) {
@@ -221,7 +231,15 @@ export class ImportAnalyzer {
         if (imp.source.startsWith(".")) {
           // Resolve relative import to absolute path
           const resolvedPath = this.resolveImport(file.path, imp.source);
-          deps.add(resolvedPath);
+
+          // Try to match the resolved path to an actual file in the graph
+          // since imports often use .js extension but files are .ts
+          const matchedPath = this.findMatchingFile(resolvedPath, filePaths);
+          if (matchedPath) {
+            deps.add(matchedPath);
+          } else {
+            deps.add(resolvedPath);
+          }
         }
       }
 
@@ -266,6 +284,42 @@ export class ImportAnalyzer {
     }
 
     return cycles;
+  }
+
+  /**
+   * Find matching file path from known file paths
+   * Handles .js → .ts extension mapping
+   */
+  private findMatchingFile(resolvedPath: string, filePaths: Set<string>): string | undefined {
+    // Direct match
+    if (filePaths.has(resolvedPath)) return resolvedPath;
+
+    // Try swapping extensions (.js → .ts, .jsx → .tsx)
+    const extMap: Record<string, string[]> = {
+      ".js": [".ts", ".tsx"],
+      ".jsx": [".tsx", ".ts"],
+      ".ts": [".js"],
+      ".tsx": [".jsx"],
+    };
+
+    const ext = path.extname(resolvedPath);
+    const base = resolvedPath.slice(0, -ext.length);
+    const alternatives = extMap[ext] || [];
+
+    for (const altExt of alternatives) {
+      const altPath = base + altExt;
+      if (filePaths.has(altPath)) return altPath;
+    }
+
+    // Try without extension + common extensions
+    if (!ext) {
+      for (const tryExt of [".ts", ".tsx", ".js", ".jsx"]) {
+        const withExt = resolvedPath + tryExt;
+        if (filePaths.has(withExt)) return withExt;
+      }
+    }
+
+    return undefined;
   }
 
   /**
@@ -341,11 +395,11 @@ export class ImportAnalyzer {
    */
   private async addDependencies(packages: string[]): Promise<void> {
     const packageJsonPath = path.join(this.projectRoot, "package.json");
-    let packageJson: any;
+    let packageJson: Record<string, unknown>;
 
     try {
       const content = await fs.readFile(packageJsonPath, "utf-8");
-      packageJson = JSON.parse(content);
+      packageJson = JSON.parse(content) as Record<string, unknown>;
     } catch {
       console.warn("[ImportAnalyzer] Could not read package.json");
       return;
@@ -356,8 +410,9 @@ export class ImportAnalyzer {
       if (!packageJson.dependencies) {
         packageJson.dependencies = {};
       }
-      if (!packageJson.dependencies[pkg]) {
-        packageJson.dependencies[pkg] = "latest"; // Would use npm registry API to get actual version
+      const deps = packageJson.dependencies as Record<string, string>;
+      if (!deps[pkg]) {
+        deps[pkg] = "latest"; // Would use npm registry API to get actual version
       }
     }
 

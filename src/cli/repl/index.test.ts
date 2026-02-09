@@ -131,6 +131,11 @@ vi.mock("../../tools/index.js", () => ({
   })),
 }));
 
+vi.mock("../../agents/provider-bridge.js", () => ({
+  setAgentProvider: vi.fn(),
+  setAgentToolRegistry: vi.fn(),
+}));
+
 vi.mock("./commands/index.js", () => ({
   isSlashCommand: vi.fn(),
   parseSlashCommand: vi.fn(),
@@ -209,6 +214,10 @@ describe("REPL index", () => {
       const { createProvider } = await import("../../providers/index.js");
       const { createSession } = await import("./session.js");
       const { createInputHandler } = await import("./input/handler.js");
+      const { createFullToolRegistry } = await import("../../tools/index.js");
+      const { setAgentProvider, setAgentToolRegistry } = await import(
+        "../../agents/provider-bridge.js"
+      );
 
       const mockProvider: Partial<LLMProvider> = {
         isAvailable: vi.fn().mockResolvedValue(true),
@@ -237,6 +246,8 @@ describe("REPL index", () => {
         pause: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
+      const mockRegistry = { getAll: vi.fn(() => []), get: vi.fn() };
+      vi.mocked(createFullToolRegistry).mockReturnValue(mockRegistry as any);
 
       const { startRepl } = await import("./index.js");
       await startRepl();
@@ -245,6 +256,8 @@ describe("REPL index", () => {
       expect(mockConsoleLog).toHaveBeenCalled();
       // Should call close on exit
       expect(mockInputHandler.close).toHaveBeenCalled();
+      expect(setAgentProvider).toHaveBeenCalledWith(mockProvider);
+      expect(setAgentToolRegistry).toHaveBeenCalledWith(mockRegistry);
     });
 
     it("should skip empty input", async () => {

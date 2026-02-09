@@ -1,16 +1,17 @@
 /**
  * Agent Executor
- * Executes specialized agents with autonomous loops
+ * Executes specialized agents with real multi-turn tool use via LLM tool-use protocol
  */
 
-import type { LLMProvider, Message } from "../providers/types.js";
-
-// Simplified Tool interface (compatible with existing tools)
-export interface Tool {
-  name: string;
-  description: string;
-  execute: (input: any) => Promise<any>;
-}
+import type {
+  LLMProvider,
+  Message,
+  MessageContent,
+  ToolDefinition,
+  ToolUseContent,
+  ToolResultContent,
+} from "../providers/types.js";
+import type { ToolRegistry } from "../tools/registry.js";
 
 export interface AgentDefinition {
   role: "researcher" | "coder" | "tester" | "reviewer" | "optimizer" | "planner";
@@ -22,7 +23,7 @@ export interface AgentDefinition {
 export interface AgentTask {
   id: string;
   description: string;
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
   dependencies?: string[];
 }
 
@@ -36,20 +37,20 @@ export interface AgentResult {
 }
 
 /**
- * Agent Executor - Runs autonomous agents with tool access
+ * Agent Executor - Runs autonomous agents with real tool use
+ *
+ * Uses the LLM tool-use protocol: the LLM requests tool calls,
+ * the executor runs them via the ToolRegistry, sends results back,
+ * and loops until the LLM is done or max turns is reached.
  */
 export class AgentExecutor {
-  private provider: LLMProvider;
-  // Reserved for future tool use implementation
-  // private availableTools: Map<string, Tool>;
-
-  constructor(provider: LLMProvider, _tools: Tool[]) {
-    this.provider = provider;
-    // this.availableTools = new Map(tools.map((t) => [t.name, t]));
-  }
+  constructor(
+    private provider: LLMProvider,
+    private toolRegistry: ToolRegistry,
+  ) {}
 
   /**
-   * Execute an agent on a task
+   * Execute an agent on a task with multi-turn tool use
    */
   async execute(agent: AgentDefinition, task: AgentTask): Promise<AgentResult> {
     const startTime = Date.now();
@@ -58,19 +59,14 @@ export class AgentExecutor {
     // Build initial messages
     const messages: Message[] = [
       {
-        role: "system",
-        content: agent.systemPrompt,
-      },
-      {
         role: "user",
         content: this.buildTaskPrompt(task),
       },
     ];
 
-    // Filter tools for this agent (reserved for future use)
-    // const agentTools = this.filterToolsForAgent(agent.allowedTools);
+    // Get tool definitions filtered for this agent's allowed tools
+    const agentToolDefs = this.getToolDefinitionsForAgent(agent.allowedTools);
 
-    // Autonomous loop
     let turn = 0;
     let totalTokens = 0;
 
@@ -78,30 +74,87 @@ export class AgentExecutor {
       turn++;
 
       try {
-        // Get response from LLM (simplified - no tool use for now)
-        const response = await this.provider.chat(messages);
+        // Call LLM with tools via the tool-use protocol
+        const response = await this.provider.chatWithTools(messages, {
+          tools: agentToolDefs,
+          system: agent.systemPrompt,
+        });
 
         const usage = response.usage;
         totalTokens += (usage?.inputTokens || 0) + (usage?.outputTokens || 0);
 
-        // Add assistant message
+        // If no tool calls, the agent is done
+        if (response.stopReason !== "tool_use" || response.toolCalls.length === 0) {
+          return {
+            output: response.content,
+            success: true,
+            turns: turn,
+            toolsUsed: Array.from(toolsUsed),
+            tokensUsed: totalTokens,
+            duration: Date.now() - startTime,
+          };
+        }
+
+        // Build assistant message with tool_use content blocks
+        const assistantContent: Array<ToolUseContent | { type: "text"; text: string }> = [];
+        if (response.content) {
+          assistantContent.push({
+            type: "text",
+            text: response.content,
+          });
+        }
+        for (const toolCall of response.toolCalls) {
+          assistantContent.push({
+            type: "tool_use",
+            id: toolCall.id,
+            name: toolCall.name,
+            input: toolCall.input,
+          });
+        }
+
         messages.push({
           role: "assistant",
-          content: response.content,
+          content: assistantContent as unknown as MessageContent,
         });
 
-        // Agent is done after response
-        return {
-          output: response.content,
-          success: true,
-          turns: turn,
-          toolsUsed: Array.from(toolsUsed),
-          tokensUsed: totalTokens,
-          duration: Date.now() - startTime,
-        };
+        // Execute each tool call and collect results
+        const toolResults: ToolResultContent[] = [];
+
+        for (const toolCall of response.toolCalls) {
+          toolsUsed.add(toolCall.name);
+
+          try {
+            const result = await this.toolRegistry.execute(
+              toolCall.name,
+              toolCall.input,
+            );
+
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: toolCall.id,
+              content: result.success
+                ? JSON.stringify(result.data)
+                : `Error: ${result.error}`,
+              is_error: !result.success,
+            });
+          } catch (error) {
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: toolCall.id,
+              content: `Tool execution error: ${error instanceof Error ? error.message : String(error)}`,
+              is_error: true,
+            });
+          }
+        }
+
+        // Add tool results as a user message
+        messages.push({
+          role: "user",
+          content: toolResults as unknown as MessageContent,
+        });
       } catch (error) {
         return {
-          output: `Agent error: ${error instanceof Error ? error.message : String(error)}`,
+          output: `Agent error on turn ${turn}: ${error instanceof Error ? error.message : String(error)}`,
           success: false,
           turns: turn,
           toolsUsed: Array.from(toolsUsed),
@@ -138,16 +191,17 @@ export class AgentExecutor {
   }
 
   /**
-   * Filter tools based on agent's allowed tools
-   * (Reserved for future tool use implementation)
+   * Get tool definitions filtered for this agent's allowed tools
    */
-  // private filterToolsForAgent(allowedToolNames: string[]): Tool[] {
-  //   return allowedToolNames.map((name) => this.availableTools.get(name)).filter((t): t is Tool => t !== undefined);
-  // }
+  private getToolDefinitionsForAgent(allowedToolNames: string[]): ToolDefinition[] {
+    const allDefs = this.toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
+    if (allowedToolNames.length === 0) return allDefs;
+    return allDefs.filter((def) => allowedToolNames.includes(def.name));
+  }
 }
 
 /**
- * Predefined agent roles with system prompts
+ * Predefined agent roles with system prompts and real tool names
  */
 export const AGENT_ROLES: Record<string, Omit<AgentDefinition, "maxTurns">> = {
   researcher: {
@@ -159,7 +213,7 @@ export const AGENT_ROLES: Record<string, Omit<AgentDefinition, "maxTurns">> = {
 - Document your findings clearly
 
 Use tools to search, read files, and analyze code structure.`,
-    allowedTools: ["readFile", "searchCode", "listFiles", "analyzeImports"],
+    allowedTools: ["read_file", "grep", "find_in_file", "glob", "codebase_map"],
   },
 
   coder: {
@@ -170,8 +224,8 @@ Use tools to search, read files, and analyze code structure.`,
 - Ensure code is syntactically valid
 - Write clean, maintainable code
 
-Use tools to validate syntax, check types, and ensure quality.`,
-    allowedTools: ["writeFile", "validateCode", "formatCode", "findMissingImports"],
+Use tools to read existing code, write new files, and validate syntax.`,
+    allowedTools: ["read_file", "write_file", "edit_file", "bash_exec", "validateCode"],
   },
 
   tester: {
@@ -182,8 +236,8 @@ Use tools to validate syntax, check types, and ensure quality.`,
 - Test edge cases and error conditions
 - Ensure tests are reliable and maintainable
 
-Use tools to analyze code and generate tests.`,
-    allowedTools: ["writeFile", "runTests", "calculateCoverage", "analyzeTestQuality"],
+Use tools to read code, write tests, and run them.`,
+    allowedTools: ["read_file", "write_file", "run_tests", "get_coverage", "run_test_file"],
   },
 
   reviewer: {
@@ -194,8 +248,8 @@ Use tools to analyze code and generate tests.`,
 - Ensure best practices are followed
 - Provide actionable feedback
 
-Use tools to analyze code quality and security.`,
-    allowedTools: ["readFile", "calculateQuality", "scanSecurity", "analyzeComplexity"],
+Use tools to read and analyze code quality.`,
+    allowedTools: ["read_file", "calculate_quality", "analyze_complexity", "grep"],
   },
 
   optimizer: {
@@ -207,7 +261,7 @@ Use tools to analyze code quality and security.`,
 - Refactor for maintainability
 
 Use tools to analyze and improve code.`,
-    allowedTools: ["readFile", "analyzeComplexity", "findDuplication", "writeFile"],
+    allowedTools: ["read_file", "write_file", "edit_file", "analyze_complexity", "grep"],
   },
 
   planner: {
@@ -218,14 +272,14 @@ Use tools to analyze and improve code.`,
 - Estimate complexity and effort
 - Create actionable plans
 
-Use tools to analyze requirements and create structured plans.`,
-    allowedTools: ["readFile", "analyzeComplexity", "searchCode"],
+Use tools to analyze requirements and explore the codebase.`,
+    allowedTools: ["read_file", "grep", "glob", "codebase_map"],
   },
 };
 
 /**
  * Create an agent executor
  */
-export function createAgentExecutor(provider: LLMProvider, tools: Tool[]): AgentExecutor {
-  return new AgentExecutor(provider, tools);
+export function createAgentExecutor(provider: LLMProvider, toolRegistry: ToolRegistry): AgentExecutor {
+  return new AgentExecutor(provider, toolRegistry);
 }

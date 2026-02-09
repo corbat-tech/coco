@@ -222,6 +222,45 @@ describe("QualityConfigSchema", () => {
   });
 });
 
+
+describe("QualityConfigSchema cross-field validation", () => {
+  it("should reject minIterations > maxIterations", () => {
+    const result = QualityConfigSchema.safeParse({
+      minScore: 85,
+      minCoverage: 80,
+      maxIterations: 3,
+      minIterations: 5,
+      convergenceThreshold: 2,
+      securityThreshold: 100,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("should reject convergenceThreshold >= minScore", () => {
+    const result = QualityConfigSchema.safeParse({
+      minScore: 85,
+      minCoverage: 80,
+      maxIterations: 10,
+      minIterations: 2,
+      convergenceThreshold: 85,
+      securityThreshold: 100,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("should accept valid cross-field values", () => {
+    const result = QualityConfigSchema.safeParse({
+      minScore: 85,
+      minCoverage: 80,
+      maxIterations: 10,
+      minIterations: 2,
+      convergenceThreshold: 2,
+      securityThreshold: 100,
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
 describe("PersistenceConfigSchema", () => {
   it("should accept valid persistence config", () => {
     const config = {

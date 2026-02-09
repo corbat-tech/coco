@@ -47,8 +47,23 @@
     "code-generation",
     "quality",
     "testing",
-    "cli"
+    "cli",
+    "llm",
+    "code-review",
+    "code-quality",
+    "self-review",
+    "multi-agent",
+    "convergence",
+    "typescript"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbat/corbat-coco.git"
+  },
+  "homepage": "https://github.com/corbat/corbat-coco#readme",
+  "bugs": {
+    "url": "https://github.com/corbat/corbat-coco/issues"
+  },
   "author": "Corbat",
   "license": "MIT",
   "engines": {

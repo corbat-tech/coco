@@ -28,6 +28,7 @@ export class OutputExecutor implements PhaseExecutor {
   readonly description = "Generate CI/CD, Docker, and documentation";
 
   private config: OutputConfig;
+  private generatedArtifacts: PhaseArtifact[] = [];
 
   constructor(config: Partial<OutputConfig> = {}) {
     this.config = this.mergeConfig(DEFAULT_OUTPUT_CONFIG, config);
@@ -64,8 +65,8 @@ export class OutputExecutor implements PhaseExecutor {
   /**
    * Check if the phase can start
    */
-  canStart(_context: PhaseContext): boolean {
-    return true;
+  canStart(context: PhaseContext): boolean {
+    return context.projectPath !== undefined && context.projectPath.length > 0;
   }
 
   /**
@@ -212,6 +213,8 @@ export class OutputExecutor implements PhaseExecutor {
 
       const endTime = new Date();
 
+      this.generatedArtifacts = artifacts;
+
       return {
         phase: "output",
         success: true,
@@ -238,7 +241,7 @@ export class OutputExecutor implements PhaseExecutor {
    * Check if the phase can complete
    */
   canComplete(_context: PhaseContext): boolean {
-    return true;
+    return this.generatedArtifacts.length > 0;
   }
 
   /**
@@ -249,19 +252,21 @@ export class OutputExecutor implements PhaseExecutor {
       phase: "output",
       timestamp: new Date(),
       state: {
-        artifacts: [],
-        progress: 0,
+        artifacts: this.generatedArtifacts,
+        progress: this.generatedArtifacts.length > 0 ? 100 : 0,
         checkpoint: null,
       },
-      resumePoint: "start",
+      resumePoint: this.generatedArtifacts.length > 0 ? "complete" : "start",
     };
   }
 
   /**
    * Restore from checkpoint
    */
-  async restore(_checkpoint: PhaseCheckpoint, _context: PhaseContext): Promise<void> {
-    // OUTPUT is fast enough to re-run
+  async restore(checkpoint: PhaseCheckpoint, _context: PhaseContext): Promise<void> {
+    if (checkpoint.state?.artifacts) {
+      this.generatedArtifacts = checkpoint.state.artifacts as PhaseArtifact[];
+    }
   }
 
   /**

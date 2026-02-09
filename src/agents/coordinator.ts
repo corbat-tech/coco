@@ -18,6 +18,54 @@ export interface CoordinationResult {
 }
 
 /**
+ * Weighted keyword patterns for agent role classification.
+ * Each role has primary keywords (weight 3) and secondary keywords (weight 1).
+ * The role with the highest total score is selected. Default: "coder".
+ */
+const ROLE_PATTERNS: Record<string, Array<{ keywords: string[]; weight: number }>> = {
+  researcher: [
+    {
+      keywords: ["research", "find", "analyze", "explore", "investigate", "discover", "understand", "examine"],
+      weight: 3,
+    },
+    { keywords: ["pattern", "example", "reference", "dependency", "structure", "architecture", "how", "why"], weight: 1 },
+  ],
+  tester: [
+    { keywords: ["test", "coverage", "spec", "assertion", "mock", "unit test", "e2e", "integration test"], weight: 3 },
+    { keywords: ["validate", "verify", "check", "expect", "should"], weight: 1 },
+  ],
+  reviewer: [
+    { keywords: ["review", "quality", "audit", "inspect", "lint", "code review"], weight: 3 },
+    { keywords: ["issue", "problem", "vulnerability", "smell", "concern", "feedback"], weight: 1 },
+  ],
+  optimizer: [
+    { keywords: ["optimize", "refactor", "performance", "simplify", "reduce", "improve efficiency"], weight: 3 },
+    { keywords: ["clean", "improve", "deduplicate", "consolidate", "streamline"], weight: 1 },
+  ],
+  planner: [
+    { keywords: ["plan", "decompose", "design", "architect", "breakdown", "roadmap"], weight: 3 },
+    { keywords: ["strategy", "organize", "prioritize", "estimate", "scope", "divide"], weight: 1 },
+  ],
+};
+
+/**
+ * Score a task description against a role's keyword patterns.
+ * Returns the total weighted score.
+ */
+function scoreTaskForRole(description: string, patterns: Array<{ keywords: string[]; weight: number }>): number {
+  const desc = description.toLowerCase();
+  let score = 0;
+  for (const pattern of patterns) {
+    for (const keyword of pattern.keywords) {
+      if (desc.includes(keyword)) {
+        score += pattern.weight;
+      }
+    }
+  }
+  return score;
+}
+
+/**
  * Agent Coordinator - Manages parallel agent execution with dependencies
  */
 export class AgentCoordinator {
@@ -43,7 +91,7 @@ export class AgentCoordinator {
     const graph = this.buildDependencyGraph(tasks);
 
     // Topological sort to get execution levels
-    const levels = this.topologicalSort(graph);
+    const levels = this.topologicalSort(tasks, graph);
 
     const results = new Map<string, AgentResult>();
     let totalAgentsExecuted = 0;
@@ -89,7 +137,7 @@ export class AgentCoordinator {
       }
     }
 
-    const parallelismAchieved = totalAgentsExecuted / levels.length;
+    const parallelismAchieved = levels.length > 0 ? totalAgentsExecuted / levels.length : 0;
 
     return {
       results,
@@ -124,14 +172,17 @@ export class AgentCoordinator {
    * Topological sort to determine execution order
    * Returns tasks grouped by execution level (all tasks in a level can run in parallel)
    */
-  private topologicalSort(graph: Map<string, Set<string>>): AgentTask[][] {
+  private topologicalSort(
+    tasks: AgentTask[],
+    graph: Map<string, Set<string>>,
+  ): AgentTask[][] {
     const levels: AgentTask[][] = [];
     const completed = new Set<string>();
     const taskMap = new Map<string, AgentTask>();
 
-    // Build reverse lookup
-    for (const [taskId] of graph) {
-      taskMap.set(taskId, { id: taskId, description: taskId }); // Would have real tasks
+    // Build lookup with real task data
+    for (const task of tasks) {
+      taskMap.set(task.id, task);
     }
 
     while (completed.size < graph.size) {
@@ -203,41 +254,43 @@ export class AgentCoordinator {
   }
 
   /**
-   * Get agent definition for a task
-   * (Would have more sophisticated logic to choose agent based on task type)
+   * Get agent definition for a task using weighted keyword scoring.
+   * Scores the task description against all role patterns and picks the best match.
+   * Falls back to "coder" if no role scores above the minimum threshold.
    */
   private getAgentForTask(task: AgentTask): AgentDefinition {
-    // Simple heuristic: choose based on task description
     const desc = task.description.toLowerCase();
 
-    if (desc.includes("research") || desc.includes("find") || desc.includes("analyze")) {
-      return {
-        ...(this.agentDefinitions.get("researcher") ?? this.getDefaultAgent()),
-        maxTurns: 20,
-      };
+    // Score each role
+    let bestRole = "coder";
+    let bestScore = 0;
+
+    for (const [role, patterns] of Object.entries(ROLE_PATTERNS)) {
+      const score = scoreTaskForRole(desc, patterns);
+      if (score > bestScore) {
+        bestScore = score;
+        bestRole = role;
+      }
     }
 
-    if (desc.includes("test") || desc.includes("coverage")) {
-      return { ...(this.agentDefinitions.get("tester") ?? this.getDefaultAgent()), maxTurns: 15 };
+    // Minimum score threshold: if no role scores above 2, default to coder
+    if (bestScore < 2) {
+      bestRole = "coder";
     }
 
-    if (desc.includes("review") || desc.includes("quality")) {
-      return { ...(this.agentDefinitions.get("reviewer") ?? this.getDefaultAgent()), maxTurns: 10 };
-    }
+    const maxTurnsMap: Record<string, number> = {
+      researcher: 20,
+      tester: 15,
+      reviewer: 10,
+      optimizer: 15,
+      planner: 10,
+      coder: 20,
+    };
 
-    if (desc.includes("optimize") || desc.includes("refactor")) {
-      return {
-        ...(this.agentDefinitions.get("optimizer") ?? this.getDefaultAgent()),
-        maxTurns: 15,
-      };
-    }
-
-    if (desc.includes("plan") || desc.includes("decompose")) {
-      return { ...(this.agentDefinitions.get("planner") ?? this.getDefaultAgent()), maxTurns: 10 };
-    }
-
-    // Default to coder
-    return { ...(this.agentDefinitions.get("coder") ?? this.getDefaultAgent()), maxTurns: 20 };
+    return {
+      ...(this.agentDefinitions.get(bestRole) ?? this.getDefaultAgent()),
+      maxTurns: maxTurnsMap[bestRole] ?? 20,
+    };
   }
 
   /**

@@ -30,6 +30,7 @@ import { allowPathCommand } from "./allow-path.js";
 import { permissionsCommand } from "./permissions.js";
 import { cocoCommand } from "./coco.js";
 import { imageCommand } from "./image.js";
+import { tutorialCommand } from "./tutorial.js";
 import { renderError } from "../output/renderer.js";
 
 /**
@@ -63,6 +64,7 @@ const commands: SlashCommand[] = [
   permissionsCommand,
   cocoCommand,
   imageCommand,
+  tutorialCommand,
 ];
 
 /**

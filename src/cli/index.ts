@@ -16,6 +16,7 @@ import { registerMCPCommand } from "./commands/mcp.js";
 import { startRepl } from "./repl/index.js";
 import { runOnboardingV2 } from "./repl/onboarding-v2.js";
 import { getLastUsedProvider } from "../config/env.js";
+import { formatError } from "../utils/errors.js";
 import type { ProviderType } from "../providers/index.js";
 
 const program = new Command();
@@ -85,6 +86,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error("Fatal error:", error);
+  console.error(formatError(error));
   process.exit(1);
 });

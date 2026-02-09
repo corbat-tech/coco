@@ -83,7 +83,7 @@ export class CompleteExecutor implements PhaseExecutor {
       }
 
       this.llmAdapter = createLLMAdapter(context);
-      this.iterator = createTaskIterator(this.llmAdapter, this.config.quality);
+      this.iterator = createTaskIterator(this.llmAdapter, this.config.quality, context.projectPath);
 
       const result = await this.executeSprint(context, this.currentSprint, this.backlog);
 

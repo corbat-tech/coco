@@ -22,7 +22,7 @@ import * as os from "node:os";
 import chalk from "chalk";
 import ansiEscapes from "ansi-escapes";
 import type { ReplSession } from "../types.js";
-import { getAllCommands, setPendingImage } from "../commands/index.js";
+import { getAllCommands, setPendingImage, hasPendingImage } from "../commands/index.js";
 import { isCocoMode } from "../coco-mode.js";
 import { readClipboardImage } from "../output/clipboard.js";
 
@@ -150,17 +150,20 @@ export function createInputHandler(_session: ReplSession): InputHandler {
   // Prompt changes dynamically based on COCO mode
   // Visual length must be tracked separately from ANSI-colored string
   const getPrompt = () => {
+    const imageIndicator = hasPendingImage() ? chalk.cyan(" \u{1F4CE} 1 image") : "";
+    const imageIndicatorLen = hasPendingImage() ? 10 : 0; // " 📎 1 image" = 10 visible chars (📎=2)
+
     if (isCocoMode()) {
       return {
-        str: "🥥 " + chalk.magenta("[coco]") + " › ",
-        // 🥥=2 + space=1 + [coco]=6 + space=1 + ›=1 + space=1 = 12
-        visualLen: 12,
+        str: "\u{1F965} " + chalk.magenta("[coco]") + " \u203A " + imageIndicator,
+        // 🥥=2 + space=1 + [coco]=6 + space=1 + ›=1 + space=1 = 12 + image indicator
+        visualLen: 12 + imageIndicatorLen,
       };
     }
     return {
-      str: chalk.green("🥥 › "),
-      // 🥥=2 + space=1 + ›=1 + space=1 = 5
-      visualLen: 5,
+      str: chalk.green("\u{1F965} \u203A ") + imageIndicator,
+      // 🥥=2 + space=1 + ›=1 + space=1 = 5 + image indicator
+      visualLen: 5 + imageIndicatorLen,
     };
   };
   const MAX_ROWS = 8;
@@ -180,15 +183,30 @@ export function createInputHandler(_session: ReplSession): InputHandler {
 
   /**
    * Render the current line with ghost text and dropdown menu
-   * Uses eraseDown to clear everything below cursor before redrawing
+   * Uses eraseDown to clear everything below cursor before redrawing.
+   * Handles multi-line wrapping by moving cursor up to the first wrapped line.
    */
   function render() {
-    // Move to column 0, clear from cursor to end of screen (clears line + menu below)
+    const termCols = process.stdout.columns || 80;
+    const prompt = getPrompt();
+
+    // Calculate how many terminal lines the previous prompt+text occupied
+    // so we can move up to clear all wrapped lines
+    const totalVisualLen = prompt.visualLen + currentLine.length;
+    const wrappedLines = Math.max(0, Math.ceil(totalVisualLen / termCols) - 1);
+
+    // Move cursor up to the first line of the prompt, then clear everything
+    if (wrappedLines > 0) {
+      process.stdout.write(ansiEscapes.cursorUp(wrappedLines));
+    }
     process.stdout.write("\r" + ansiEscapes.eraseDown);
 
+    // Build separator line above input area
+    const separator = chalk.dim("\u2500".repeat(termCols));
+    let output = separator + "\n";
+
     // Write prompt + current line
-    const prompt = getPrompt();
-    let output = prompt.str + currentLine;
+    output += prompt.str + currentLine;
 
     // Update completions
     completions = findCompletions(currentLine);
@@ -234,7 +252,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
       // Show scroll indicator at top if there are items above
       if (startIndex > 0) {
         output += "\n";
-        output += chalk.dim(`  ↑ ${startIndex} more above`);
+        output += chalk.dim(`  \u2191 ${startIndex} more above`);
         lastMenuLines++;
       }
 
@@ -264,7 +282,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
       // Show scroll indicator at bottom if there are items below
       if (endIndex < completions.length) {
         output += "\n";
-        output += chalk.dim(`  ↓ ${completions.length - endIndex} more below`);
+        output += chalk.dim(`  \u2193 ${completions.length - endIndex} more below`);
         lastMenuLines++;
       }
 
@@ -272,7 +290,8 @@ export function createInputHandler(_session: ReplSession): InputHandler {
       for (let i = 0; i < BOTTOM_MARGIN; i++) {
         output += "\n";
       }
-      output += ansiEscapes.cursorUp(lastMenuLines + BOTTOM_MARGIN);
+      // +1 for the separator line we added above the prompt
+      output += ansiEscapes.cursorUp(lastMenuLines + BOTTOM_MARGIN + 1);
     } else {
       lastMenuLines = 0;
 
@@ -280,11 +299,26 @@ export function createInputHandler(_session: ReplSession): InputHandler {
       for (let i = 0; i < BOTTOM_MARGIN; i++) {
         output += "\n";
       }
-      output += ansiEscapes.cursorUp(BOTTOM_MARGIN);
+      // +1 for the separator line
+      output += ansiEscapes.cursorUp(BOTTOM_MARGIN + 1);
     }
 
-    // Move cursor to the correct position within the input
-    output += `\r${ansiEscapes.cursorForward(prompt.visualLen + cursorPos)}`;
+    // Account for the separator line: cursor is now on the separator line.
+    // Move down 1 to the prompt line.
+    output += ansiEscapes.cursorDown(1);
+
+    // Position cursor correctly within the input, accounting for wrapping
+    const cursorAbsolutePos = prompt.visualLen + cursorPos;
+    const finalLine = Math.floor(cursorAbsolutePos / termCols);
+    const finalCol = cursorAbsolutePos % termCols;
+
+    output += "\r";
+    if (finalLine > 0) {
+      output += ansiEscapes.cursorDown(finalLine);
+    }
+    if (finalCol > 0) {
+      output += ansiEscapes.cursorForward(finalCol);
+    }
 
     // Write everything at once
     process.stdout.write(output);
@@ -396,7 +430,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
           // Ctrl+C - exit
           if (key === "\x03") {
             cleanup();
-            console.log("\n👋 Goodbye!");
+            console.log("\n\u{1F44B} Goodbye!");
             saveHistory(sessionHistory);
             process.exit(0);
           }
@@ -405,7 +439,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
           if (key === "\x04") {
             if (currentLine.length === 0) {
               cleanup();
-              console.log("\n👋 Goodbye!");
+              console.log("\n\u{1F44B} Goodbye!");
               saveHistory(sessionHistory);
               process.exit(0);
             }
@@ -470,7 +504,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
             const promptInfo = getPrompt();
             process.stdout.write("\r" + ansiEscapes.eraseDown);
             process.stdout.write(
-              promptInfo.str + currentLine + chalk.dim(" 📋 reading clipboard…"),
+              promptInfo.str + currentLine + chalk.dim(" \u{1F4CB} reading clipboard\u2026"),
             );
 
             readClipboardImage()
@@ -478,10 +512,10 @@ export function createInputHandler(_session: ReplSession): InputHandler {
                 isReadingClipboard = false;
 
                 if (!imageData) {
-                  // No image → brief feedback, then restore prompt
+                  // No image -> brief feedback, then restore prompt
                   process.stdout.write("\r" + ansiEscapes.eraseDown);
                   process.stdout.write(
-                    promptInfo.str + currentLine + chalk.yellow(" ⚠ no image in clipboard"),
+                    promptInfo.str + currentLine + chalk.yellow(" \u26A0 no image in clipboard"),
                   );
                   setTimeout(() => render(), 1500);
                   return;
@@ -494,28 +528,27 @@ export function createInputHandler(_session: ReplSession): InputHandler {
 
                 setPendingImage(imageData.data, imageData.media_type, imagePrompt);
 
-                // Success feedback
+                // Success feedback - brief message, then restore prompt with image indicator
                 const truncatedPrompt =
-                  imagePrompt.length > 40 ? imagePrompt.slice(0, 40) + "…" : imagePrompt;
+                  imagePrompt.length > 40 ? imagePrompt.slice(0, 40) + "\u2026" : imagePrompt;
                 process.stdout.write("\r" + ansiEscapes.eraseDown);
                 process.stdout.write(
-                  chalk.green("  ✓ Image captured") +
+                  chalk.green("  \u2713 Image captured") +
                     chalk.dim(` (${sizeKB} KB)`) +
-                    chalk.dim(` — "${truncatedPrompt}"`),
+                    chalk.dim(` \u2014 "${truncatedPrompt}"`),
                 );
 
-                // Auto-submit: same sequence as Enter
-                cleanup();
-                console.log();
-                const result = currentLine.trim();
-                if (result) {
-                  sessionHistory.push(result);
-                }
-                // Resolve with empty string (not null) so REPL doesn't interpret as EOF
-                resolve(result || "");
+                // Restore the prompt after brief feedback -- user presses Enter to submit
+                setTimeout(() => render(), 1200);
               })
-              .catch(() => {
+              .catch((err: unknown) => {
                 isReadingClipboard = false;
+                // Suppress JP2/JPEG2000 color space errors silently
+                const msg = err instanceof Error ? err.message : String(err);
+                if (msg.includes("color space")) {
+                  render();
+                  return;
+                }
                 render();
               });
 
@@ -534,7 +567,10 @@ export function createInputHandler(_session: ReplSession): InputHandler {
             }
 
             cleanup();
+            // Print closing separator after submission
+            const termWidth = process.stdout.columns || 80;
             console.log(); // New line after input
+            console.log(chalk.dim("\u2500".repeat(termWidth)));
             const result = currentLine.trim();
             if (result) {
               sessionHistory.push(result);

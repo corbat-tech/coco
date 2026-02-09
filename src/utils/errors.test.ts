@@ -413,9 +413,10 @@ describe("formatError", () => {
     expect(formatted).not.toContain("Suggestion");
   });
 
-  it("should format regular Error", () => {
+  it("should format regular Error with default suggestion", () => {
     const error = new Error("Regular error");
-    expect(formatError(error)).toBe("Regular error");
+    expect(formatError(error)).toContain("Regular error");
+    expect(formatError(error)).toContain("Suggestion:");
   });
 
   it("should format non-error values", () => {

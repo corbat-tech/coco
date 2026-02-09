@@ -2,6 +2,8 @@
  * REPL main entry point
  */
 
+import { existsSync } from "node:fs";
+import path from "node:path";
 import chalk from "chalk";
 import {
   createSession,
@@ -24,6 +26,7 @@ import { createSpinner, type Spinner } from "./output/spinner.js";
 import { executeAgentTurn, formatAbortSummary } from "./agent-loop.js";
 import { createProvider } from "../../providers/index.js";
 import { createFullToolRegistry } from "../../tools/index.js";
+import { setAgentProvider, setAgentToolRegistry } from "../../agents/provider-bridge.js";
 import {
   isSlashCommand,
   parseSlashCommand,
@@ -61,6 +64,50 @@ import {
 } from "./coco-mode.js";
 
 /**
+ * Calculate the visual width of a string, accounting for ANSI escape codes
+ * and wide characters (emoji, CJK).
+ *
+ * - Strips ANSI escape sequences (zero width)
+ * - Counts emoji and wide Unicode characters as width 2
+ * - Counts all other printable characters as width 1
+ */
+function visualWidth(str: string): number {
+  // Strip ANSI escape codes
+  const stripped = str.replace(/\x1b\[[0-9;]*m/g, "");
+  let width = 0;
+  for (const char of stripped) {
+    const cp = char.codePointAt(0) || 0;
+    // Emoji ranges (common emoji blocks)
+    if (
+      cp > 0x1f600 ||
+      (cp >= 0x2600 && cp <= 0x27bf) ||
+      (cp >= 0x1f300 && cp <= 0x1fad6) ||
+      (cp >= 0x1f900 && cp <= 0x1f9ff) ||
+      (cp >= 0x2702 && cp <= 0x27b0) ||
+      (cp >= 0xfe00 && cp <= 0xfe0f) ||
+      (cp >= 0x200d && cp <= 0x200d)
+    ) {
+      width += 2;
+    } else if (
+      // CJK Unified Ideographs and other wide characters
+      (cp >= 0x1100 && cp <= 0x115f) ||
+      (cp >= 0x2e80 && cp <= 0x303e) ||
+      (cp >= 0x3040 && cp <= 0x33bf) ||
+      (cp >= 0x4e00 && cp <= 0x9fff) ||
+      (cp >= 0xf900 && cp <= 0xfaff) ||
+      (cp >= 0xfe30 && cp <= 0xfe6f) ||
+      (cp >= 0xff01 && cp <= 0xff60) ||
+      (cp >= 0xffe0 && cp <= 0xffe6)
+    ) {
+      width += 2;
+    } else {
+      width += 1;
+    }
+  }
+  return width;
+}
+
+/**
  * Start the REPL
  */
 export async function startRepl(
@@ -86,7 +133,7 @@ export async function startRepl(
   // Ensure provider is configured (onboarding if needed)
   const configured = await ensureConfiguredV2(session.config);
   if (!configured) {
-    p.log.message(chalk.dim("\n👋 Setup cancelled. See you next time!"));
+    p.log.message(chalk.dim("\n\u{1F44B} Setup cancelled. See you next time!"));
     process.exit(0);
   }
 
@@ -112,7 +159,7 @@ export async function startRepl(
   // Check provider availability
   const available = await provider.isAvailable();
   if (!available) {
-    p.log.error("❌ Provider is not available. Your API key may be invalid.");
+    p.log.error("\u274C Provider is not available. Your API key may be invalid.");
     p.log.message(chalk.dim("\nTo reconfigure, run: coco --setup"));
     process.exit(1);
   }
@@ -138,6 +185,8 @@ export async function startRepl(
 
   // Initialize tool registry
   const toolRegistry = createFullToolRegistry();
+  setAgentProvider(provider);
+  setAgentToolRegistry(toolRegistry);
 
   // Create input handler
   const inputHandler = createInputHandler(session);
@@ -152,13 +201,13 @@ export async function startRepl(
   while (true) {
     const input = await inputHandler.prompt();
 
-    // Handle EOF (Ctrl+D) — but not if Ctrl+V set a pending image
+    // Handle EOF (Ctrl+D) -- but not if Ctrl+V set a pending image
     if (input === null && !hasPendingImage()) {
       console.log(chalk.dim("\nGoodbye!"));
       break;
     }
 
-    // Skip empty input — but not if Ctrl+V set a pending image
+    // Skip empty input -- but not if Ctrl+V set a pending image
     if (!input && !hasPendingImage()) continue;
 
     // Handle slash commands
@@ -314,7 +363,7 @@ export async function startRepl(
         },
         onToolSkipped: (tc, reason) => {
           clearSpinner();
-          console.log(chalk.yellow(`⊘ Skipped ${tc.name}: ${reason}`));
+          console.log(chalk.yellow(`\u2298 Skipped ${tc.name}: ${reason}`));
         },
         onThinkingStart: () => {
           setSpinner("Thinking...");
@@ -323,7 +372,7 @@ export async function startRepl(
           clearSpinner();
         },
         onToolPreparing: (toolName) => {
-          setSpinner(`Preparing: ${toolName}…`);
+          setSpinner(`Preparing: ${toolName}\u2026`);
         },
         onBeforeConfirmation: () => {
           // Clear spinner before showing confirmation dialog
@@ -418,7 +467,7 @@ export async function startRepl(
       if (errorMsg.includes("context length") || errorMsg.includes("tokens to keep")) {
         renderError(errorMsg);
         console.log();
-        console.log(chalk.yellow("   💡 This is a context length error."));
+        console.log(chalk.yellow("   \u{1F4A1} This is a context length error."));
         console.log(chalk.yellow("   The model's context window is too small for Coco.\n"));
         console.log(chalk.white("   To fix this in LM Studio:"));
         console.log(chalk.dim("   1. Click on the model name in the top bar"));
@@ -454,49 +503,64 @@ export async function startRepl(
 
 /**
  * Print welcome message - retro terminal style, compact
- * Brand color: Magenta/Purple 🟣
+ * Brand color: Magenta/Purple
  */
 async function printWelcome(session: { projectPath: string; config: ReplConfig }): Promise<void> {
+  const providerType = session.config.provider.type;
+  const model = session.config.provider.model || "default";
+
+  // Compact welcome for returning users
+  const isReturningUser = existsSync(path.join(session.projectPath, ".coco"));
+  if (isReturningUser) {
+    const versionStr = chalk.dim(`v${VERSION}`);
+    const providerStr = chalk.dim(`${providerType}/${model}`);
+    console.log(`\n  \u{1F965} Coco ${versionStr} ${chalk.dim("\u2502")} ${providerStr} ${chalk.dim("\u2502")} ${chalk.yellow("/help")}\n`);
+    return;
+  }
+
   const trustStore = createTrustStore();
   await trustStore.init();
   const trustLevel = trustStore.getLevel(session.projectPath);
 
   // Box dimensions - fixed width for consistency
   const boxWidth = 41;
-  const innerWidth = boxWidth - 4; // Account for "│ " and " │"
+  const innerWidth = boxWidth - 4; // Account for "\u2502 " and " \u2502"
 
-  // Build content lines with proper padding
-  // Note: Emoji 🥥 takes 2 visual chars, so we subtract 1 from padding calculation
-  const titleText = "CORBAT-COCO";
+  // Build content lines with proper padding using visualWidth()
+  const titleContent = "\u{1F965} CORBAT-COCO";
   const versionText = `v${VERSION}`;
-  const titlePadding = innerWidth - titleText.length - versionText.length - 2; // -2 for emoji visual width adjustment
-  const subtitleText = "open source • corbat.tech";
-  const subtitlePadding = innerWidth - subtitleText.length;
+  const titleContentVisualWidth = visualWidth(titleContent);
+  const versionVisualWidth = visualWidth(versionText);
+  const titlePadding = innerWidth - titleContentVisualWidth - versionVisualWidth;
+
+  const subtitleText = "open source \u2022 corbat.tech";
+  const subtitleVisualWidth = visualWidth(subtitleText);
+  const subtitlePadding = innerWidth - subtitleVisualWidth;
 
   console.log();
-  console.log(chalk.magenta("  ╭" + "─".repeat(boxWidth - 2) + "╮"));
+  console.log(chalk.magenta("  \u256D" + "\u2500".repeat(boxWidth - 2) + "\u256E"));
   console.log(
-    chalk.magenta("  │ ") +
-      "🥥 " +
-      chalk.bold.white(titleText) +
-      " ".repeat(titlePadding) +
+    chalk.magenta("  \u2502 ") +
+      "\u{1F965} " +
+      chalk.bold.white("CORBAT-COCO") +
+      " ".repeat(Math.max(0, titlePadding)) +
       chalk.dim(versionText) +
-      chalk.magenta(" │"),
+      chalk.magenta(" \u2502"),
   );
   console.log(
-    chalk.magenta("  │ ") +
+    chalk.magenta("  \u2502 ") +
       chalk.dim(subtitleText) +
-      " ".repeat(subtitlePadding) +
-      chalk.magenta(" │"),
+      " ".repeat(Math.max(0, subtitlePadding)) +
+      chalk.magenta(" \u2502"),
   );
-  console.log(chalk.magenta("  ╰" + "─".repeat(boxWidth - 2) + "╯"));
+  console.log(chalk.magenta("  \u2570" + "\u2500".repeat(boxWidth - 2) + "\u256F"));
 
   // Check for updates (non-blocking, with 3s timeout)
   const updateInfo = await checkForUpdates();
   if (updateInfo) {
     console.log(
       chalk.yellow(
-        `  ⬆ ${chalk.dim(updateInfo.currentVersion)} → ${chalk.green(updateInfo.latestVersion)} ${chalk.dim(`(${updateInfo.updateCommand})`)}`,
+        `  \u2B06 ${chalk.dim(updateInfo.currentVersion)} \u2192 ${chalk.green(updateInfo.latestVersion)} ${chalk.dim(`(${updateInfo.updateCommand})`)}`,
       ),
     );
   }
@@ -520,18 +584,18 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
           : "";
 
   console.log();
-  console.log(chalk.dim(`  📁 ${displayPath}`));
+  console.log(chalk.dim(`  \u{1F4C1} ${displayPath}`));
   console.log(
-    chalk.dim(`  🤖 ${providerName}/`) +
+    chalk.dim(`  \u{1F916} ${providerName}/`) +
       chalk.magenta(modelName) +
-      (trustText ? chalk.dim(` • 🔐 ${trustText}`) : ""),
+      (trustText ? chalk.dim(` \u2022 \u{1F510} ${trustText}`) : ""),
   );
   // Show COCO mode status
   const cocoStatus = isCocoMode()
-    ? chalk.magenta("  🔄 quality mode: ") +
+    ? chalk.magenta("  \u{1F504} quality mode: ") +
       chalk.green.bold("on") +
       chalk.dim(" (/coco to toggle)")
-    : chalk.dim("  💡 /coco — enable auto-test & quality iteration");
+    : chalk.dim("  \u{1F4A1} /coco \u2014 enable auto-test & quality iteration");
   console.log(cocoStatus);
 
   console.log();
@@ -540,8 +604,8 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
   );
   const pasteHint =
     process.platform === "darwin"
-      ? chalk.dim("  📋 ⌘V paste text • ⌃V paste image")
-      : chalk.dim("  📋 Ctrl+V paste image from clipboard");
+      ? chalk.dim("  \u{1F4CB} \u2318V paste text \u2022 \u2303V paste image")
+      : chalk.dim("  \u{1F4CB} Ctrl+V paste image from clipboard");
   console.log(pasteHint);
   console.log();
 }
@@ -569,10 +633,10 @@ async function checkProjectTrust(projectPath: string): Promise<boolean> {
 
   // Compact first-time access warning
   console.log();
-  console.log(chalk.cyan.bold("  🥥 Corbat-Coco") + chalk.dim(` v${VERSION}`));
-  console.log(chalk.dim(`  📁 ${projectPath}`));
+  console.log(chalk.cyan.bold("  \u{1F965} Corbat-Coco") + chalk.dim(` v${VERSION}`));
+  console.log(chalk.dim(`  \u{1F4C1} ${projectPath}`));
   console.log();
-  console.log(chalk.yellow("  ⚠ First time accessing this directory"));
+  console.log(chalk.yellow("  \u26A0 First time accessing this directory"));
   console.log(chalk.dim("  This agent can: read/write files, run commands, git ops"));
   console.log();
 
@@ -580,9 +644,9 @@ async function checkProjectTrust(projectPath: string): Promise<boolean> {
   const approved = await p.select({
     message: "Grant access?",
     options: [
-      { value: "write", label: "✓ Write access (recommended)" },
-      { value: "read", label: "◐ Read-only" },
-      { value: "no", label: "✗ Deny & exit" },
+      { value: "write", label: "\u2713 Write access (recommended)" },
+      { value: "read", label: "\u25D0 Read-only" },
+      { value: "no", label: "\u2717 Deny & exit" },
     ],
   });
 
@@ -606,7 +670,7 @@ async function checkProjectTrust(projectPath: string): Promise<boolean> {
     await trustStore.addTrust(projectPath, approved as TrustLevel);
   }
 
-  console.log(chalk.green("  ✓ Access granted") + chalk.dim(" • /trust to manage"));
+  console.log(chalk.green("  \u2713 Access granted") + chalk.dim(" \u2022 /trust to manage"));
   return true;
 }
 
@@ -664,73 +728,73 @@ function parseCocoQualityReport(content: string): CocoQualityResult | null {
 function getToolRunningDescription(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case "codebase_map":
-      return "Analyzing codebase structure…";
+      return "Analyzing codebase structure\u2026";
     case "web_search": {
       const query = typeof input.query === "string" ? input.query.slice(0, 40) : "";
-      return query ? `Searching the web: "${query}"…` : "Searching the web…";
+      return query ? `Searching the web: "${query}"\u2026` : "Searching the web\u2026";
     }
     case "web_fetch": {
       const url = typeof input.url === "string" ? input.url.slice(0, 50) : "";
-      return url ? `Fetching ${url}…` : "Fetching web page…";
+      return url ? `Fetching ${url}\u2026` : "Fetching web page\u2026";
     }
     case "read_file": {
       const filePath = typeof input.path === "string" ? input.path.split("/").pop() : "";
-      return filePath ? `Reading ${filePath}…` : "Reading file…";
+      return filePath ? `Reading ${filePath}\u2026` : "Reading file\u2026";
     }
     case "write_file": {
       const filePath = typeof input.path === "string" ? input.path.split("/").pop() : "";
-      return filePath ? `Writing ${filePath}…` : "Writing file…";
+      return filePath ? `Writing ${filePath}\u2026` : "Writing file\u2026";
     }
     case "edit_file": {
       const filePath = typeof input.path === "string" ? input.path.split("/").pop() : "";
-      return filePath ? `Editing ${filePath}…` : "Editing file…";
+      return filePath ? `Editing ${filePath}\u2026` : "Editing file\u2026";
     }
     case "list_directory":
-      return "Listing directory…";
+      return "Listing directory\u2026";
     case "bash_exec":
-      return "Running command…";
+      return "Running command\u2026";
     case "run_tests":
-      return "Running tests…";
+      return "Running tests\u2026";
     case "git_status":
-      return "Checking git status…";
+      return "Checking git status\u2026";
     case "git_diff":
-      return "Computing diff…";
+      return "Computing diff\u2026";
     case "git_log":
-      return "Reading git history…";
+      return "Reading git history\u2026";
     case "git_commit":
-      return "Creating commit…";
+      return "Creating commit\u2026";
     case "semantic_search": {
       const query = typeof input.query === "string" ? input.query.slice(0, 40) : "";
-      return query ? `Searching code: "${query}"…` : "Searching code…";
+      return query ? `Searching code: "${query}"\u2026` : "Searching code\u2026";
     }
     case "grep_search": {
       const pattern = typeof input.pattern === "string" ? input.pattern.slice(0, 40) : "";
-      return pattern ? `Searching for: "${pattern}"…` : "Searching files…";
+      return pattern ? `Searching for: "${pattern}"\u2026` : "Searching files\u2026";
     }
     case "generate_diagram":
-      return "Generating diagram…";
+      return "Generating diagram\u2026";
     case "read_pdf":
-      return "Reading PDF…";
+      return "Reading PDF\u2026";
     case "read_image":
-      return "Analyzing image…";
+      return "Analyzing image\u2026";
     case "sql_query":
-      return "Executing SQL query…";
+      return "Executing SQL query\u2026";
     case "code_review":
-      return "Reviewing code…";
+      return "Reviewing code\u2026";
     case "create_memory":
-      return "Saving memory…";
+      return "Saving memory\u2026";
     case "recall_memory":
-      return "Searching memories…";
+      return "Searching memories\u2026";
     case "create_checkpoint":
-      return "Creating checkpoint…";
+      return "Creating checkpoint\u2026";
     case "restore_checkpoint":
-      return "Restoring checkpoint…";
+      return "Restoring checkpoint\u2026";
     case "glob_files":
-      return "Finding files…";
+      return "Finding files\u2026";
     case "tree":
-      return "Building directory tree…";
+      return "Building directory tree\u2026";
     default:
-      return `Running ${name}…`;
+      return `Running ${name}\u2026`;
   }
 }
 
@@ -751,7 +815,7 @@ async function handleIntentConfirmation(
   console.log();
   console.log(
     chalk.cyan(
-      `🔍 Detected intent: /${intent.type} (confidence: ${(intent.confidence * 100).toFixed(0)}%)`,
+      `\u{1F50D} Detected intent: /${intent.type} (confidence: ${(intent.confidence * 100).toFixed(0)}%)`,
     ),
   );
 
@@ -771,9 +835,9 @@ async function handleIntentConfirmation(
   const action = await p.select({
     message: `Execute /${intent.type} command?`,
     options: [
-      { value: "yes", label: "✓ Yes, execute command" },
-      { value: "no", label: "✗ No, continue as chat" },
-      { value: "always", label: "⚡ Always execute this intent" },
+      { value: "yes", label: "\u2713 Yes, execute command" },
+      { value: "no", label: "\u2717 No, continue as chat" },
+      { value: "always", label: "\u26A1 Always execute this intent" },
     ],
   });
 

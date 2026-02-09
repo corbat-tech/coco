@@ -5,6 +5,8 @@
 
 import { z } from "zod";
 import { defineTool } from "./registry.js";
+import { getAgentProvider, getAgentToolRegistry } from "../agents/provider-bridge.js";
+import { AgentExecutor, AGENT_ROLES } from "../agents/executor.js";
 
 /**
  * Agent task with priority and dependencies
@@ -32,8 +34,8 @@ export class AgentTaskQueue {
   private tasks: Map<string, AgentTask> = new Map();
   private completionOrder: string[] = [];
 
-  addTask(task: Omit<AgentTask, "id" | "status">): string {
-    const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  addTask(task: Omit<AgentTask, "id" | "status">, idOverride?: string): string {
+    const id = idOverride ?? `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     this.tasks.set(id, {
       ...task,
       id,
@@ -89,20 +91,32 @@ export class AgentTaskQueue {
  * Plan multi-agent execution
  */
 export function planExecution(
-  tasks: Array<{ description: string; dependencies?: string[] }>,
+  tasks: Array<{ id?: string; description: string; dependencies?: string[] }>,
   strategy: ExecutionStrategy,
 ): {
   plan: string[];
   estimatedTime: number;
   maxParallelism: number;
+  unresolvedDependencies: Array<{ taskId: string; dependency: string }>;
 } {
   const taskGraph = new Map<string, string[]>();
+  const unresolvedDependencies: Array<{ taskId: string; dependency: string }> = [];
 
   // Build dependency graph
   tasks.forEach((task, idx) => {
-    const id = `task-${idx}`;
+    const id = task.id ?? `task-${idx}`;
     taskGraph.set(id, task.dependencies || []);
   });
+
+  const taskIds = new Set(taskGraph.keys());
+  for (const [id, deps] of taskGraph) {
+    const filtered = deps.filter((dep) => {
+      if (taskIds.has(dep)) return true;
+      unresolvedDependencies.push({ taskId: id, dependency: dep });
+      return false;
+    });
+    taskGraph.set(id, filtered);
+  }
 
   let plan: string[] = [];
   let estimatedTime = 0;
@@ -126,10 +140,14 @@ export function planExecution(
     }
 
     case "priority-based": {
-      // Sort by implied priority (shorter descriptions = simpler)
+      // Sort by priority field: high > medium > low
+      const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
       const sorted = tasks
-        .map((t, idx) => ({ id: `task-${idx}`, len: t.description.length }))
-        .sort((a, b) => a.len - b.len);
+        .map((t, idx) => ({
+          id: t.id ?? `task-${idx}`,
+          priority: (t as { priority?: string }).priority ?? "medium",
+        }))
+        .sort((a, b) => (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
       plan = sorted.map((t) => t.id);
       estimatedTime = tasks.length * 80;
       maxParallelism = 3;
@@ -165,7 +183,7 @@ export function planExecution(
     }
   }
 
-  return { plan, estimatedTime, maxParallelism };
+  return { plan, estimatedTime, maxParallelism, unresolvedDependencies };
 }
 
 /**
@@ -198,20 +216,44 @@ export const createAgentPlanTool = defineTool({
 
     const queue = new AgentTaskQueue();
     const taskIds: string[] = [];
+    const indexIdMap = new Map<number, string>();
 
-    // Add all tasks to queue
-    for (const task of typedInput.tasks) {
-      const id = queue.addTask({
-        description: task.description,
-        priority: task.priority,
-        estimatedDuration: 100,
-        dependencies: task.dependencies,
-      });
-      taskIds.push(id);
+    // Precompute deterministic IDs for dependencies and output consistency
+    for (let idx = 0; idx < typedInput.tasks.length; idx++) {
+      indexIdMap.set(idx, `task-${idx}`);
     }
 
+    const normalizeDependency = (dep: string): string => {
+      if (indexIdMap.has(Number(dep))) {
+        return indexIdMap.get(Number(dep)) as string;
+      }
+      return dep;
+    };
+
+    // Add all tasks to queue
+    for (const [idx, task] of typedInput.tasks.entries()) {
+      const id = indexIdMap.get(idx) as string;
+      const normalizedDependencies = (task.dependencies || []).map(normalizeDependency);
+      const finalId = queue.addTask(
+        {
+          description: task.description,
+          priority: task.priority,
+          estimatedDuration: 100,
+          dependencies: normalizedDependencies,
+        },
+        id,
+      );
+      taskIds.push(finalId);
+    }
+
+    const plannedTasks = typedInput.tasks.map((task, idx) => ({
+      id: indexIdMap.get(idx) as string,
+      description: task.description,
+      dependencies: (task.dependencies || []).map(normalizeDependency),
+    }));
+
     // Plan execution
-    const executionPlan = planExecution(typedInput.tasks, typedInput.strategy);
+    const executionPlan = planExecution(plannedTasks, typedInput.strategy);
 
     return {
       planId: `plan-${Date.now()}`,
@@ -220,6 +262,7 @@ export const createAgentPlanTool = defineTool({
       executionOrder: executionPlan.plan,
       estimatedTime: executionPlan.estimatedTime,
       maxParallelism: executionPlan.maxParallelism,
+      unresolvedDependencies: executionPlan.unresolvedDependencies,
       tasks: queue.getTasks().map((t) => ({
         id: t.id,
         description: t.description,
@@ -236,37 +279,73 @@ export const createAgentPlanTool = defineTool({
  */
 export const delegateTaskTool = defineTool({
   name: "delegateTask",
-  description: "Delegate a task to a virtual sub-agent (simulated for demonstration)",
+  description: "Delegate a task to a specialized sub-agent with real LLM tool-use execution.",
   category: "build" as const,
   parameters: z.object({
     taskId: z.string(),
+    task: z.string().describe("Description of the task for the agent to execute"),
     agentRole: z.enum(["researcher", "coder", "reviewer", "tester", "optimizer"]).default("coder"),
     context: z.string().optional(),
+    maxTurns: z.number().default(10),
   }),
 
   async execute(input) {
     const typedInput = input as {
       taskId: string;
+      task: string;
       agentRole: string;
       context?: string;
+      maxTurns: number;
     };
 
+    const provider = getAgentProvider();
+    const toolRegistry = getAgentToolRegistry();
+
+    if (!provider || !toolRegistry) {
+      return {
+        agentId: `agent-${Date.now()}-${typedInput.agentRole}`,
+        taskId: typedInput.taskId,
+        role: typedInput.agentRole,
+        status: "unavailable",
+        message: "Agent provider not initialized. Call setAgentProvider() during orchestrator startup.",
+        success: false,
+      };
+    }
+
     const agentId = `agent-${Date.now()}-${typedInput.agentRole}`;
+    const executor = new AgentExecutor(provider, toolRegistry);
+
+    const roleDef = AGENT_ROLES[typedInput.agentRole];
+    if (!roleDef) {
+      return {
+        agentId,
+        taskId: typedInput.taskId,
+        role: typedInput.agentRole,
+        status: "error",
+        message: `Unknown agent role: ${typedInput.agentRole}`,
+        success: false,
+      };
+    }
+
+    const agentDef = { ...roleDef, maxTurns: typedInput.maxTurns };
+
+    const result = await executor.execute(agentDef, {
+      id: typedInput.taskId,
+      description: typedInput.task,
+      context: typedInput.context ? { userContext: typedInput.context } : undefined,
+    });
 
     return {
       agentId,
       taskId: typedInput.taskId,
       role: typedInput.agentRole,
-      status: "simulated",
-      message: `Task delegated to ${typedInput.agentRole} agent`,
-      capabilities: {
-        researcher: ["web search", "document analysis", "information synthesis"],
-        coder: ["code generation", "refactoring", "debugging"],
-        reviewer: ["code review", "security analysis", "best practices"],
-        tester: ["test generation", "coverage analysis", "bug detection"],
-        optimizer: ["performance tuning", "complexity reduction", "resource optimization"],
-      }[typedInput.agentRole],
-      note: "This is a simulated agent. Full implementation requires provider integration.",
+      status: result.success ? "completed" : "failed",
+      output: result.output,
+      success: result.success,
+      turns: result.turns,
+      toolsUsed: result.toolsUsed,
+      tokensUsed: result.tokensUsed,
+      duration: result.duration,
     };
   },
 });
@@ -321,11 +400,18 @@ export const aggregateResultsTool = defineTool({
         aggregatedOutput = winner ? winner[0] : "";
         break;
 
-      case "best":
-        // Return longest output as "best" (simple heuristic)
-        const longest = completed.sort((a, b) => b.output.length - a.output.length)[0];
-        aggregatedOutput = longest ? longest.output : "";
+      case "best": {
+        // Select result based on success rate: prefer completed over failed,
+        // then pick the first successful result (earliest completion = most reliable agent)
+        const successRate = typedInput.results.length > 0
+          ? completed.length / typedInput.results.length
+          : 0;
+        const bestResult = completed.length > 0 ? completed[0] : undefined;
+        aggregatedOutput = bestResult
+          ? `[Success rate: ${Math.round(successRate * 100)}%]\n\n${bestResult.output}`
+          : "";
         break;
+      }
 
       case "summary":
         aggregatedOutput = `Completed: ${completed.length}, Failed: ${failed.length}\n\n${completed.map((r) => `- ${r.agentId}: Success`).join("\n")}`;

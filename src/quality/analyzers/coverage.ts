@@ -88,10 +88,28 @@ export async function detectCoverageTool(projectPath: string): Promise<"c8" | "n
   }
 }
 
+/** Shape of a single metric in the coverage-summary.json total section */
+interface CoverageSummaryMetric {
+  total: number;
+  covered: number;
+  skipped: number;
+  pct: number;
+}
+
+/** Shape of the coverage-summary.json report */
+interface CoverageSummaryReport {
+  total: {
+    lines: CoverageSummaryMetric;
+    branches: CoverageSummaryMetric;
+    functions: CoverageSummaryMetric;
+    statements: CoverageSummaryMetric;
+  };
+}
+
 /**
  * Parse c8/nyc coverage-summary.json format
  */
-function parseCoverageSummary(report: any): CoverageMetrics {
+function parseCoverageSummary(report: CoverageSummaryReport): CoverageMetrics {
   const total = report.total;
 
   return {
@@ -163,7 +181,7 @@ export class CoverageAnalyzer {
       try {
         await access(path, constants.R_OK);
         const content = await readFile(path, "utf-8");
-        const report = JSON.parse(content);
+        const report = JSON.parse(content) as CoverageSummaryReport;
         return parseCoverageSummary(report);
       } catch {
         // Try next path
@@ -201,7 +219,7 @@ export class CoverageAnalyzer {
 
       // Read coverage report
       const reportPath = join(this.projectPath, "coverage", "coverage-summary.json");
-      const report = JSON.parse(await readFile(reportPath, "utf-8"));
+      const report = JSON.parse(await readFile(reportPath, "utf-8")) as CoverageSummaryReport;
 
       return parseCoverageSummary(report);
     } catch (error) {

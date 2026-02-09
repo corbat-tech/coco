@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { DEFAULT_QUALITY_WEIGHTS } from "../../quality/types.js";
 
 vi.mock("../../providers/index.js", () => ({
   createProvider: vi.fn().mockReturnValue({
@@ -137,6 +138,13 @@ describe("CodeReviewer", () => {
 
       // Actual coverage should override LLM estimate
       expect(result.scores.dimensions.testCoverage).toBe(95);
+      const expectedOverall = Math.round(
+        Object.entries(DEFAULT_QUALITY_WEIGHTS).reduce((sum, [key, weight]) => {
+          const value = key === "testCoverage" ? 95 : 50;
+          return sum + value * weight;
+        }, 0),
+      );
+      expect(result.scores.overall).toBe(expectedOverall);
     });
 
     it("should handle parsing errors with default review", async () => {

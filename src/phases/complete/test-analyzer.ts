@@ -104,22 +104,27 @@ export class TestFailureAnalyzer {
     // - at file.ts:line:col
     // - file.ts:line:col
 
-    const patterns = [
-      /at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?/, // Node.js format
-      /^(.+?):(\d+):(\d+)/, // Simple format
-    ];
+    // Try Node.js format first: at functionName (file.ts:line:col) or at file.ts:line:col
+    const nodePattern = /at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?/;
+    const nodeMatch = stackTrace.match(nodePattern);
+    if (nodeMatch) {
+      return {
+        file: nodeMatch[2] || "unknown",
+        line: parseInt(nodeMatch[3] || "0", 10),
+        column: parseInt(nodeMatch[4] || "0", 10),
+        function: nodeMatch[1] || undefined,
+      };
+    }
 
-    for (const pattern of patterns) {
-      const match = stackTrace.match(pattern);
-      if (match) {
-        const isNodeFormat = match[1] && match[2];
-        return {
-          file: (isNodeFormat ? match[2] : match[1]) || "unknown",
-          line: parseInt((isNodeFormat ? match[3] : match[2]) || "0", 10),
-          column: parseInt((isNodeFormat ? match[4] : match[3]) || "0", 10),
-          function: isNodeFormat ? match[1] : undefined,
-        };
-      }
+    // Try simple format: file.ts:line:col
+    const simplePattern = /^(.+?):(\d+):(\d+)/;
+    const simpleMatch = stackTrace.match(simplePattern);
+    if (simpleMatch) {
+      return {
+        file: simpleMatch[1] || "unknown",
+        line: parseInt(simpleMatch[2] || "0", 10),
+        column: parseInt(simpleMatch[3] || "0", 10),
+      };
     }
 
     // Fallback
@@ -284,23 +289,23 @@ Respond in JSON format:
   private categorizeRootCause(rootCause: string): string {
     const lower = rootCause.toLowerCase();
 
+    if (lower.includes("syntax")) {
+      return "Syntax Error";
+    }
     if (lower.includes("undefined") || lower.includes("null")) {
       return "Null/Undefined Reference";
     }
-    if (lower.includes("type") || lower.includes("expected")) {
-      return "Type Mismatch";
-    }
-    if (lower.includes("assertion") || lower.includes("expect")) {
+    if (lower.includes("assertion") || lower.includes("expect(")) {
       return "Assertion Failure";
+    }
+    if (lower.includes("type") && (lower.includes("mismatch") || lower.includes("assignable") || lower.includes("incompatible") || lower.includes("not assignable") || lower.includes("expected"))) {
+      return "Type Mismatch";
     }
     if (lower.includes("async") || lower.includes("promise") || lower.includes("await")) {
       return "Async/Promise Issue";
     }
     if (lower.includes("import") || lower.includes("module") || lower.includes("require")) {
       return "Import/Module Issue";
-    }
-    if (lower.includes("syntax")) {
-      return "Syntax Error";
     }
     if (lower.includes("timeout")) {
       return "Timeout";

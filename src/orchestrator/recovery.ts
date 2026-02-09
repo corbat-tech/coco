@@ -16,8 +16,8 @@ export type ErrorClassification =
 
 export interface ExecutionContext {
   phase: string;
-  task?: any;
-  files?: any[];
+  task?: { id: string; description: string; [key: string]: unknown };
+  files?: Array<{ path: string; content?: string }>;
   iteration?: number;
   timeout?: number;
   provider?: string;
@@ -122,6 +122,8 @@ export class RecoverySystem {
       message.includes("rate limit") ||
       message.includes("api error") ||
       message.includes("model error") ||
+      message.includes("overloaded") ||
+      message.includes("capacity") ||
       stack.includes("anthropic") ||
       stack.includes("openai")
     ) {

@@ -85,18 +85,19 @@ export class BuildVerifier {
         stdout,
         stderr,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Build failed
-      const errors = this.parseErrors(error.stdout + error.stderr || error.message);
-      const warnings = this.parseWarnings(error.stdout + error.stderr || "");
+      const execError = error as { stdout?: string; stderr?: string; message?: string };
+      const errors = this.parseErrors((execError.stdout ?? "") + (execError.stderr ?? "") || (execError.message ?? ""));
+      const warnings = this.parseWarnings((execError.stdout ?? "") + (execError.stderr ?? "") || "");
 
       return {
         success: false,
         errors,
         warnings,
         duration: Date.now() - startTime,
-        stdout: error.stdout || "",
-        stderr: error.stderr || error.message || "",
+        stdout: execError.stdout || "",
+        stderr: execError.stderr || execError.message || "",
       };
     }
   }
@@ -140,17 +141,18 @@ export class BuildVerifier {
         stdout,
         stderr,
       };
-    } catch (error: any) {
-      const errors = this.parseTypeScriptErrors(error.stdout + error.stderr || error.message);
-      const warnings = this.parseTypeScriptWarnings(error.stdout + error.stderr || "");
+    } catch (error: unknown) {
+      const execError = error as { stdout?: string; stderr?: string; message?: string };
+      const errors = this.parseTypeScriptErrors((execError.stdout ?? "") + (execError.stderr ?? "") || (execError.message ?? ""));
+      const warnings = this.parseTypeScriptWarnings((execError.stdout ?? "") + (execError.stderr ?? "") || "");
 
       return {
         success: false,
         errors,
         warnings,
         duration: Date.now() - startTime,
-        stdout: error.stdout || "",
-        stderr: error.stderr || error.message || "",
+        stdout: execError.stdout || "",
+        stderr: execError.stderr || execError.message || "",
       };
     }
   }

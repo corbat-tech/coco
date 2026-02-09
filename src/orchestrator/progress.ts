@@ -10,11 +10,11 @@ import { createHash } from "node:crypto";
 export interface OrchestratorState {
   sessionId: string;
   currentPhase: "converge" | "orchestrate" | "complete" | "output";
-  tasks: any[];
+  tasks: Array<{ id: string; description: string; status: string; [key: string]: unknown }>;
   completedTasks: string[];
-  agentStates: Map<string, any>;
-  generatedFiles: any[];
-  qualityHistory: any[];
+  agentStates: Map<string, unknown>;
+  generatedFiles: Array<{ path: string; description?: string }>;
+  qualityHistory: Array<{ score: number; timestamp: number; [key: string]: unknown }>;
   metadata: {
     startTime: number;
     lastCheckpoint: number;
@@ -91,7 +91,7 @@ export class ProgressTracker {
 
       return state as OrchestratorState;
     } catch (error) {
-      if ((error as any).code === "ENOENT") {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         console.warn(`[ProgressTracker] No checkpoint found for session ${targetSessionId}`);
         return null;
       }
@@ -161,7 +161,7 @@ export class ProgressTracker {
       await fs.unlink(checkpointPath);
       console.log(`[ProgressTracker] Deleted checkpoint: ${checkpointPath}`);
     } catch (error) {
-      if ((error as any).code !== "ENOENT") {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw error;
       }
     }

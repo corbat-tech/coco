@@ -14,12 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Example projects
 - SECURITY.md with vulnerability reporting guidelines
 - Complete phase executor implementations
+- Agent coordination coverage tests
+- Unresolved dependency reporting in multi-agent planning
 
 ### Changed
 - Enhanced README with badges and demo
 - Connected Orchestrator with real Phase Executors
 - Improved CLI commands (plan, status, build, resume, config)
 - Reduced test coverage threshold to 55% temporarily
+- Multi-agent planning uses deterministic task IDs and normalized dependencies
+- REPL initializes multi-agent provider bridge automatically
+- Code review overall score recalculated after applying real coverage
 
 ### Fixed
 - Phase executor exports (Converge, Orchestrate, Complete, Output)
@@ -27,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TypeScript compilation errors in persistence.ts
 - Lint errors (unused imports, regex escapes, async/await)
 - Re-export conflicts in phases/index.ts
+- Agent coordinator now preserves task metadata through dependency levels
+- Avoid false build-failure issues when correctness analysis is unavailable
+- Multi-agent planning documentation updated with dependency notes
+- OAuth callback server cleanup and test reliability improvements
 
 ---
 

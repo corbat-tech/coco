@@ -12,6 +12,7 @@ import type {
   QualityConfig,
 } from "./types.js";
 import type { QualityScores, QualityDimensions } from "../../quality/types.js";
+import { DEFAULT_QUALITY_WEIGHTS } from "../../quality/types.js";
 import type { LLMProvider } from "../../providers/types.js";
 import {
   CODE_REVIEW_SYSTEM_PROMPT,
@@ -183,6 +184,7 @@ export class CodeReviewer {
       // Override testCoverage with actual coverage
       if (testResults.coverage) {
         dimensions.testCoverage = testResults.coverage.lines;
+        scores.overall = this.calculateOverallScore(dimensions);
       }
 
       const passed = this.checkPassed(scores);
@@ -232,24 +234,9 @@ export class CodeReviewer {
    * Calculate overall score from dimensions
    */
   private calculateOverallScore(dimensions: QualityDimensions): number {
-    const weights: QualityDimensions = {
-      correctness: 0.15,
-      completeness: 0.1,
-      robustness: 0.1,
-      readability: 0.1,
-      maintainability: 0.1,
-      complexity: 0.08,
-      duplication: 0.07,
-      testCoverage: 0.1,
-      testQuality: 0.05,
-      security: 0.08,
-      documentation: 0.04,
-      style: 0.03,
-    };
-
     let total = 0;
-    for (const key of Object.keys(weights) as (keyof QualityDimensions)[]) {
-      total += dimensions[key] * weights[key];
+    for (const key of Object.keys(DEFAULT_QUALITY_WEIGHTS) as (keyof QualityDimensions)[]) {
+      total += dimensions[key] * DEFAULT_QUALITY_WEIGHTS[key];
     }
 
     return Math.round(total);

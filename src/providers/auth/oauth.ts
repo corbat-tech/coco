@@ -202,6 +202,17 @@ export async function openBrowser(url: string): Promise<void> {
  */
 export function startCallbackServer(port: number, expectedState: string): Promise<string> {
   return new Promise((resolve, reject) => {
+    let finished = false;
+    let timeout: NodeJS.Timeout | null = null;
+    const finish = (fn: () => void) => {
+      if (finished) return;
+      finished = true;
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      server.close();
+      fn();
+    };
     const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", `http://localhost:${port}`);
 
@@ -228,8 +239,7 @@ export function startCallbackServer(port: number, expectedState: string): Promis
               </body>
             </html>
           `);
-          server.close();
-          reject(new Error(`OAuth error: ${error}`));
+          finish(() => reject(new Error(`OAuth error: ${error}`)));
           return;
         }
 
@@ -244,8 +254,7 @@ export function startCallbackServer(port: number, expectedState: string): Promis
               </body>
             </html>
           `);
-          server.close();
-          reject(new Error("Invalid state parameter"));
+          finish(() => reject(new Error("Invalid state parameter")));
           return;
         }
 
@@ -260,8 +269,7 @@ export function startCallbackServer(port: number, expectedState: string): Promis
               </body>
             </html>
           `);
-          server.close();
-          reject(new Error("No authorization code"));
+          finish(() => reject(new Error("No authorization code")));
           return;
         }
 
@@ -275,26 +283,28 @@ export function startCallbackServer(port: number, expectedState: string): Promis
             </body>
           </html>
         `);
-        server.close();
-        resolve(code);
+        finish(() => resolve(code));
       } else {
         res.writeHead(404);
         res.end();
       }
     });
 
-    server.listen(port, "localhost", () => {
-      // Server started
+    server.listen(port);
+    server.on("error", (error) => {
+      finish(() => reject(error));
     });
 
     // Timeout after 5 minutes
-    setTimeout(
+    timeout = setTimeout(
       () => {
-        server.close();
-        reject(new Error("Authentication timeout"));
+        finish(() => reject(new Error("Authentication timeout")));
       },
       5 * 60 * 1000,
     );
+    if (typeof timeout.unref === "function") {
+      timeout.unref();
+    }
   });
 }
 

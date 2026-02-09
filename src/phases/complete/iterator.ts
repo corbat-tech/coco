@@ -9,15 +9,19 @@ import type {
   TaskExecutionContext,
   ConvergenceCheck,
   CodeReviewResult,
+  ReviewIssue,
   TestExecutionResult,
   GeneratedFile,
   QualityConfig,
 } from "./types.js";
-import type { TaskVersion, TaskChanges, IssueCategory } from "../../types/task.js";
+import type { TaskVersion, TaskChanges, TaskImprovement, IssueCategory } from "../../types/task.js";
 import type { QualityDimensions } from "../../quality/types.js";
+import { DEFAULT_QUALITY_WEIGHTS } from "../../quality/types.js";
+import { QualityEvaluator } from "../../quality/evaluator.js";
 import { CodeGenerator } from "./generator.js";
 import { CodeReviewer } from "./reviewer.js";
 import type { LLMProvider } from "../../providers/types.js";
+import { join } from "node:path";
 
 /**
  * Task Iterator
@@ -28,11 +32,15 @@ export class TaskIterator {
   private generator: CodeGenerator;
   private reviewer: CodeReviewer;
   private config: QualityConfig;
+  private qualityEvaluator: QualityEvaluator | null = null;
 
-  constructor(llm: LLMProvider, config: QualityConfig) {
+  constructor(llm: LLMProvider, config: QualityConfig, projectPath?: string) {
     this.generator = new CodeGenerator(llm);
     this.reviewer = new CodeReviewer(llm, config);
     this.config = config;
+    if (projectPath) {
+      this.qualityEvaluator = new QualityEvaluator(projectPath);
+    }
   }
 
   /**
@@ -76,6 +84,58 @@ export class TaskIterator {
           testResults,
         );
 
+        // Enhance LLM review with real analyzer measurements
+        if (this.qualityEvaluator) {
+          try {
+            const filePaths = currentFiles
+              .filter((f) => f.action !== "delete")
+              .map((f) => join(context.projectPath, f.path));
+            const realScores = await this.qualityEvaluator.evaluate(filePaths);
+
+            // Override all dimensions with real measurements
+            const dims = review.scores.dimensions;
+            const real = realScores.scores.dimensions;
+            dims.testCoverage = real.testCoverage;
+            dims.security = real.security;
+            dims.complexity = real.complexity;
+            dims.duplication = real.duplication;
+            dims.style = real.style;
+            dims.readability = real.readability;
+            dims.maintainability = real.maintainability;
+            dims.correctness = real.correctness;
+            dims.completeness = real.completeness;
+            dims.robustness = real.robustness;
+            dims.testQuality = real.testQuality;
+            dims.documentation = real.documentation;
+
+            // Recalculate overall with real weights
+            review.scores.overall = Math.round(
+              Object.entries(dims).reduce((sum, [key, value]) => {
+                const weight =
+                  DEFAULT_QUALITY_WEIGHTS[key as keyof typeof DEFAULT_QUALITY_WEIGHTS] ?? 0;
+                return sum + value * weight;
+              }, 0),
+            );
+
+            // Merge issues from real analyzers
+            for (const issue of realScores.issues) {
+              review.issues.push({
+                severity: issue.severity,
+                category: issue.dimension,
+                message: issue.message,
+                file: issue.file,
+                line: issue.line,
+                suggestion: issue.suggestion,
+              });
+            }
+          } catch {
+            // If real evaluation fails, continue with LLM-only scores
+          }
+        }
+
+        // Capture previous review issues before updating lastReview
+        const previousIssues = lastReview ? lastReview.issues : [];
+
         lastReview = review;
         scoreHistory.push(review.scores.overall);
 
@@ -84,8 +144,8 @@ export class TaskIterator {
           onProgress(iteration, review.scores.overall);
         }
 
-        // Create version snapshot
-        const version = this.createVersion(iteration, currentFiles, review, testResults);
+        // Create version snapshot with improvement tracking
+        const version = this.createVersion(iteration, currentFiles, review, testResults, previousIssues);
         versions.push(version);
 
         // Check if we should stop
@@ -316,6 +376,45 @@ export class TaskIterator {
   }
 
   /**
+   * Detect improvements by comparing current and previous review issues.
+   * An improvement is an issue from the previous review that no longer appears
+   * in the current review (resolved).
+   */
+  private detectImprovements(
+    currentIssues: ReviewIssue[],
+    previousIssues: ReviewIssue[],
+  ): TaskImprovement[] {
+    if (previousIssues.length === 0) return [];
+
+    const currentIssueKeys = new Set(
+      currentIssues.map((i) => `${i.category}::${i.message}`),
+    );
+
+    const improvements: TaskImprovement[] = [];
+    for (const prev of previousIssues) {
+      const key = `${prev.category}::${prev.message}`;
+      if (!currentIssueKeys.has(key)) {
+        const impactLevel = prev.severity === "critical" || prev.severity === "major"
+          ? "high" as const
+          : prev.severity === "minor"
+            ? "medium" as const
+            : "low" as const;
+        improvements.push({
+          category: this.mapToIssueCategory(prev.category),
+          description: `Resolved: ${prev.message}`,
+          impact: impactLevel,
+          scoreImpact: prev.severity === "critical" ? 10
+            : prev.severity === "major" ? 5
+            : prev.severity === "minor" ? 2
+            : 1,
+        });
+      }
+    }
+
+    return improvements;
+  }
+
+  /**
    * Create a version snapshot
    */
   private createVersion(
@@ -323,12 +422,25 @@ export class TaskIterator {
     files: GeneratedFile[],
     review: CodeReviewResult,
     testResults: TestExecutionResult,
+    previousIssues: ReviewIssue[],
   ): TaskVersion {
     const changes: TaskChanges = {
       filesCreated: files.filter((f) => f.action === "create").map((f) => f.path),
       filesModified: files.filter((f) => f.action === "modify").map((f) => f.path),
       filesDeleted: files.filter((f) => f.action === "delete").map((f) => f.path),
     };
+
+    // Calculate confidence from review scores, convergence progress, and critical issues
+    const criticalIssues = review.issues.filter(
+      (i) => i.severity === "critical" || i.severity === "major",
+    );
+    const scoreComponent = Math.round((review.scores.overall / 100) * 50);
+    const convergenceComponent = iteration >= this.config.minConvergenceIterations ? 25 : 0;
+    const issueComponent = criticalIssues.length === 0 ? 25 : 0;
+    const confidence = Math.min(100, scoreComponent + convergenceComponent + issueComponent);
+
+    // Track resolved issues by comparing current and previous review issues
+    const improvementsApplied = this.detectImprovements(review.issues, previousIssues);
 
     return {
       version: iteration,
@@ -366,12 +478,12 @@ export class TaskIterator {
           line: i.line,
           suggestion: i.suggestion,
         })),
-        improvementsApplied: [],
+        improvementsApplied,
         reasoning: review.suggestions
           .map((s) => s.description)
           .slice(0, 3)
           .join("; "),
-        confidence: 70, // Would calculate based on review
+        confidence,
       },
     };
   }
@@ -380,6 +492,10 @@ export class TaskIterator {
 /**
  * Create a task iterator
  */
-export function createTaskIterator(llm: LLMProvider, config: QualityConfig): TaskIterator {
-  return new TaskIterator(llm, config);
+export function createTaskIterator(
+  llm: LLMProvider,
+  config: QualityConfig,
+  projectPath?: string,
+): TaskIterator {
+  return new TaskIterator(llm, config, projectPath);
 }

@@ -4,6 +4,56 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+type MockRequest = { url?: string };
+type MockResponse = {
+  statusCode?: number;
+  headers?: Record<string, string>;
+  writeHead: (statusCode: number, headers?: Record<string, string>) => void;
+  end: (body?: string) => void;
+};
+type MockHandler = (req: MockRequest, res: MockResponse) => void;
+
+let currentHandler: MockHandler | null = null;
+
+class MockServer {
+  listen = vi.fn((_port?: number, cb?: () => void) => {
+    cb?.();
+    return this;
+  });
+  close = vi.fn();
+  on = vi.fn();
+}
+
+function simulateRequest(url: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    if (!currentHandler) {
+      reject(new Error("No server handler registered"));
+      return;
+    }
+
+    const responseState: { status: number; body: string } = {
+      status: 200,
+      body: "",
+    };
+
+    const res: MockResponse = {
+      writeHead: (statusCode, headers) => {
+        responseState.status = statusCode;
+        responseState.body = responseState.body;
+        responseState.headers = headers;
+      },
+      end: (body) => {
+        if (body) {
+          responseState.body = body;
+        }
+        resolve(responseState);
+      },
+    };
+
+    currentHandler({ url }, res);
+  });
+}
+
 // ── Mocks ────────────────────────────────────────────────────────────────
 
 // Mock node:fs/promises for token-store tests
@@ -16,6 +66,14 @@ vi.mock("node:fs/promises", () => ({
 // Mock node:child_process for openBrowser
 vi.mock("node:child_process", () => ({
   exec: vi.fn(),
+}));
+
+// Mock node:http to avoid binding real sockets during tests
+vi.mock("node:http", () => ({
+  createServer: vi.fn((handler: MockHandler) => {
+    currentHandler = handler;
+    return new MockServer();
+  }),
 }));
 
 // We need to import after mocks are set up
@@ -94,6 +152,7 @@ describe("oauth", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    currentHandler = null;
   });
 
   // ── generatePKCE ────────────────────────────────────────────────────
@@ -582,12 +641,8 @@ describe("oauth", () => {
       const state = "test-state-abc";
       const codePromise = startCallbackServer(port, state);
 
-      // Give the server a moment to start listening
-      await new Promise((r) => setTimeout(r, 50));
-
-      // Make a request to the callback endpoint
-      const response = await fetch(
-        `http://localhost:${port}/callback?code=auth-code-xyz&state=${state}`,
+      const response = await simulateRequest(
+        `/callback?code=auth-code-xyz&state=${state}`,
       );
       expect(response.status).toBe(200);
 
@@ -603,9 +658,7 @@ describe("oauth", () => {
       // Attach catch handler immediately to prevent unhandled rejection
       const resultPromise = codePromise.catch((e: Error) => e);
 
-      await new Promise((r) => setTimeout(r, 50));
-
-      const response = await fetch(`http://localhost:${port}/callback?error=access_denied`);
+      const response = await simulateRequest(`/callback?error=access_denied`);
       expect(response.status).toBe(400);
 
       const error = await resultPromise;
@@ -621,9 +674,7 @@ describe("oauth", () => {
       // Attach catch handler immediately to prevent unhandled rejection
       const resultPromise = codePromise.catch((e: Error) => e);
 
-      await new Promise((r) => setTimeout(r, 50));
-
-      const response = await fetch(`http://localhost:${port}/callback?code=abc&state=wrong-state`);
+      const response = await simulateRequest(`/callback?code=abc&state=wrong-state`);
       expect(response.status).toBe(400);
 
       const error = await resultPromise;
@@ -639,9 +690,7 @@ describe("oauth", () => {
       // Attach catch handler immediately to prevent unhandled rejection
       const resultPromise = codePromise.catch((e: Error) => e);
 
-      await new Promise((r) => setTimeout(r, 50));
-
-      const response = await fetch(`http://localhost:${port}/callback?state=${state}`);
+      const response = await simulateRequest(`/callback?state=${state}`);
       expect(response.status).toBe(400);
 
       const error = await resultPromise;
@@ -654,13 +703,11 @@ describe("oauth", () => {
       const state = "test-state";
       const codePromise = startCallbackServer(port, state);
 
-      await new Promise((r) => setTimeout(r, 50));
-
-      const response = await fetch(`http://localhost:${port}/other-path`);
+      const response = await simulateRequest(`/other-path`);
       expect(response.status).toBe(404);
 
       // Clean up: send a valid callback to close the server
-      await fetch(`http://localhost:${port}/callback?code=cleanup&state=${state}`);
+      await simulateRequest(`/callback?code=cleanup&state=${state}`);
       await codePromise;
     });
   });
@@ -702,29 +749,12 @@ describe("oauth", () => {
         capturedUrl = url;
       });
 
-      // Wait for server to start
-      await new Promise((r) => setTimeout(r, 100));
-
       // Extract state from the captured URL
       expect(capturedUrl).toBeDefined();
       const parsed = new URL(capturedUrl!);
       const state = parsed.searchParams.get("state")!;
 
-      // Simulate the callback by using real fetch (not mocked, since we stubbed global)
-      // We need to temporarily restore real fetch for the HTTP request to the local server
-      // Actually, the global fetch is mocked, so we need to use http module directly
-      const http = await import("node:http");
-      await new Promise<void>((resolve, reject) => {
-        const req = http.request(
-          `http://localhost:18906/callback?code=browser-code&state=${state}`,
-          (res) => {
-            res.resume();
-            res.on("end", resolve);
-          },
-        );
-        req.on("error", reject);
-        req.end();
-      });
+      await simulateRequest(`/callback?code=browser-code&state=${state}`);
 
       const tokens = await flowPromise;
       expect(tokens.accessToken).toBe("browser-access");

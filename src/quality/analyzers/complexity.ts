@@ -94,16 +94,16 @@ function calculateComplexity(node: TSESTree.Node): number {
 
     // Recursively traverse children
     for (const key of Object.keys(n)) {
-      const child = (n as any)[key];
+      const child = (n as unknown as Record<string, unknown>)[key];
       if (child && typeof child === "object") {
         if (Array.isArray(child)) {
           for (const item of child) {
-            if (item && typeof item === "object" && item.type) {
-              traverse(item);
+            if (item && typeof item === "object" && (item as TSESTree.Node).type) {
+              traverse(item as TSESTree.Node);
             }
           }
-        } else if (child.type) {
-          traverse(child);
+        } else if ((child as TSESTree.Node).type) {
+          traverse(child as TSESTree.Node);
         }
       }
     }
@@ -193,16 +193,16 @@ function extractFunctionComplexities(
 
     // Traverse children
     for (const key of Object.keys(node)) {
-      const child = (node as any)[key];
+      const child = (node as unknown as Record<string, unknown>)[key];
       if (child && typeof child === "object") {
         if (Array.isArray(child)) {
           for (const item of child) {
-            if (item && typeof item === "object" && item.type) {
-              traverse(item);
+            if (item && typeof item === "object" && (item as TSESTree.Node).type) {
+              traverse(item as TSESTree.Node);
             }
           }
-        } else if (child.type) {
-          traverse(child);
+        } else if ((child as TSESTree.Node).type) {
+          traverse(child as TSESTree.Node);
         }
       }
     }

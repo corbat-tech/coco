@@ -20,14 +20,17 @@ export default defineConfig({
         "src/tools/context-enhancer.ts",
         "src/tools/git-enhanced.ts",
         "src/tools/git-simple.ts",
-        "src/tools/simple-agent.ts",
+        "src/tools/simple-agent.ts", // Real agent execution, needs live provider for integration tests
+        "src/tools/agent-coordinator.ts", // Real agent delegation, needs live provider for integration tests
         "src/tools/skill-enhancer.ts",
         "src/tools/smart-suggestions.ts",
         "src/cli/repl/diff-preview.ts",
         "src/providers/cost-estimator.ts",
         "src/hooks/**", // Lifecycle hooks - will add integration tests
+        // Agent coordination - executor.ts is tested, these need live provider for integration tests
+        "src/agents/coordinator.ts",
+        "src/agents/provider-bridge.ts",
         // Quality scoring & iteration improvements - will add tests in follow-up
-        "src/agents/**",
         "src/orchestrator/progress.ts",
         "src/orchestrator/recovery.ts",
         "src/phases/complete/convergence-analyzer.ts",
@@ -37,11 +40,10 @@ export default defineConfig({
         "src/quality/analyzers/import-analyzer.ts",
       ],
       thresholds: {
-        // Adjusted for new features - will improve in follow-up PRs
-        lines: 70,
+        lines: 71,
         functions: 78,
         branches: 76,
-        statements: 70,
+        statements: 71,
       },
     },
     testTimeout: 30000,

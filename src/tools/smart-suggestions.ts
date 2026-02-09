@@ -89,7 +89,13 @@ export async function analyzeAndSuggest(
     }
 
     // Detect empty catch blocks
-    if (line.trim() === "catch (error) {" || line.trim() === "catch (e) {") {
+    const trimmedLine = line.trim();
+    if (
+      trimmedLine.endsWith("catch (error) {") ||
+      trimmedLine.endsWith("catch (e) {") ||
+      trimmedLine === "catch (error) {" ||
+      trimmedLine === "catch (e) {"
+    ) {
       const nextLine = lines[i + 1];
       if (nextLine && nextLine.trim() === "}") {
         suggestions.push({

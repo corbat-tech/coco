@@ -45,6 +45,7 @@ export const helpCommand: SlashCommand = {
         commands: [
           { cmd: "/help, /?", desc: "Show this help message" },
           { cmd: "/help tools", desc: "Show available agent tools" },
+          { cmd: "/tutorial, /tut", desc: "Quick guide to using Coco" },
           { cmd: "/clear, /c", desc: "Clear conversation history" },
           { cmd: "/exit, /quit, /q", desc: "Exit the REPL" },
         ],
