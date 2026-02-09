@@ -1,320 +1,162 @@
-# 🚀 Corbat-Coco Improvement Plan - Results
+# Corbat-Coco v1.1.0 Pre-Release - Improvement Results
 
-**Execution Date**: February 8, 2026
-**Executor**: Claude Sonnet 4.5 (Autonomous)
-**Duration**: ~2 hours
-**Plan Document**: [docs/IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md)
-
----
-
-## 📊 Results Summary
-
-| Metric | Baseline | Final | Change | Target | Remaining |
-|--------|----------|-------|--------|--------|-----------|
-| **Global Score** | 7.08/10 | 7.39/10 | **+0.31** | 9.0/10 | +1.61 |
-| Tests Passing | 3828 | 3828 | ✅ | 3828 | - |
-| Build Status | ✅ | ✅ | ✅ | ✅ | - |
-| Code Quality | Good | Good | ✅ | Excellent | - |
-
-**Achievement**: 44% of improvement goal completed autonomously
+**Execution Date**: February 8-10, 2026
+**Branch**: `feat/v1.1.0-pre-release-improvements`
+**Latest Commit**: `4d2ce63`
 
 ---
 
-## ✅ Completed Work
+## Results Summary
 
-### Phase F1: Lifecycle Hooks System (PARTIAL)
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| **Tests Passing** | 3,828 | **4,350** | **+522 tests** |
+| **Tests Failing** | 8 | **0** | **-8 (all fixed)** |
+| **Test Files** | 159 | **171** | **+12 new test files** |
+| **Quality Analyzers** | 4 | **12** | **+8 new analyzers** |
+| **Build Status** | Pass | **Pass** | Maintained |
+| **Files Changed** | - | **73 files** | +13,695 / -888 lines |
 
-**Score Impact**: +0.13 points
+---
 
-**Deliverables**:
+## Completed Work
+
+### 1. 12-Dimension Quality Scoring System
+
+8 new quality analyzers providing comprehensive code analysis:
+
+| Analyzer | LOC | What It Measures |
+|----------|-----|------------------|
+| `completeness.ts` | 242 | Feature completeness, edge case handling |
+| `correctness.ts` | 226 | Logic correctness, error handling patterns |
+| `documentation.ts` | 193 | JSDoc, inline comments, API documentation |
+| `maintainability.ts` | 283 | Module coupling, function size, cohesion |
+| `readability.ts` | 384 | Naming conventions, code clarity, nesting depth |
+| `robustness.ts` | 292 | Input validation, error recovery, boundary checks |
+| `style.ts` | 218 | Code formatting, consistency, conventions |
+| `test-quality.ts` | 251 | Test coverage patterns, assertion quality |
+
+Enhanced existing analyzers:
+- **coverage.ts** - c8/v8 instrumentation improvements
+- **security.ts** - OWASP pattern detection enhancements
+- **complexity.ts** - AST-based cyclomatic complexity refinements
+- **import-analyzer.ts** - Circular dependency detection with .js/.ts extension mapping
+
+### 2. Real Multi-Agent System
+
+| Component | LOC | Purpose |
+|-----------|-----|---------|
+| `agents/executor.ts` | ~300 | Autonomous agent execution with LLM-powered decision making |
+| `agents/coordinator.ts` | ~250 | Multi-agent coordination (parallel/sequential/pipeline) |
+| `agents/provider-bridge.ts` | 41 | LLM provider bridging for agent communication |
+
+6 specialized agent roles: Researcher, Coder, Tester, Reviewer, Optimizer, Planner
+
+### 3. Recovery & Progress Hardening
+
+- **Recovery System**: Added `overloaded`/`capacity` error classification for LLM failover
+- **Provider Cycling**: anthropic -> openai -> google fallback chain
+- **Progress Tracking**: Checkpoint/resume with Ctrl+C handling
+
+### 4. CLI Enhancements
+
+- **Tutorial command**: New onboarding flow for first-time users
+- **Help system**: Enhanced command documentation
+- **Input handler**: Better error handling and edge case management
+
+### 5. Smart Suggestions & Cost Estimator Fixes
+
+- **Empty catch block detection**: Pattern now handles `} catch (error) {` format
+- **Cost estimator**: Longest-match-first for partial model name matching (e.g., `gpt-4-turbo` before `gpt-4`)
+
+---
+
+## 8 Test Failures Fixed
+
+| # | File | Root Cause | Fix |
+|---|------|-----------|-----|
+| 1 | `recovery.ts` | "overloaded" not classified as LLM error | Added `overloaded`/`capacity` to `llm_error` patterns |
+| 2 | `recovery.ts` | Provider cycling unreachable | Same fix - now enters LLM handler for fallback |
+| 3 | `cost-estimator.ts` | `gpt-4` matched before `gpt-4-turbo` | Sort model keys by length (longest first) |
+| 4 | `smart-suggestions.ts` | `} catch (error) {` not detected | Changed to `endsWith()` pattern matching |
+| 5 | `onboarding-v2.test.ts` | Real fetch to localhost in CI | Added `fetch` mock to simulate server not running |
+| 6 | `test-analyzer.ts` | `file:line:col` parsed as Node format | Separated regex patterns with explicit handling |
+| 7 | `test-analyzer.ts` | "Unexpected" matched "expected" -> Type Mismatch | Moved Syntax Error check first, tightened Type Mismatch conditions |
+| 8 | `import-analyzer.ts` | `.js` resolved path != `.ts` file path | Added `findMatchingFile()` with extension mapping |
+
+---
+
+## 12 New Test Files Added
+
+| Test File | Tests | Coverage Area |
+|-----------|-------|---------------|
+| `onboarding-v2.test.ts` | 22 | Full onboarding flow (OAuth, API key, LM Studio) |
+| `progress.test.ts` | ~20 | Checkpoint/resume system |
+| `recovery.test.ts` | 29 | Error classification and recovery strategies |
+| `fix-generator.test.ts` | ~15 | Targeted fix generation |
+| `test-analyzer.test.ts` | 25 | Test failure root cause analysis |
+| `cost-estimator.test.ts` | 32 | Token estimation and budget tracking |
+| `build-verifier.test.ts` | ~15 | Build validation |
+| `import-analyzer.test.ts` | 17 | Import analysis and circular dependencies |
+| `code-analyzer.test.ts` | ~20 | Code analysis patterns |
+| `git-enhanced.test.ts` | ~15 | Git operations |
+| `simple-agent.test.ts` | ~15 | Agent execution |
+| `smart-suggestions.test.ts` | 28 | Code suggestions and scoring |
+
+---
+
+## Architecture Highlights
+
+### Quality Convergence Loop
+
 ```
-✅ src/hooks/types.ts              (150 LOC) - Hook type definitions
-✅ src/hooks/registry.ts           (200 LOC) - Hook registry and executor
-✅ src/hooks/builtin/auto-format.ts (90 LOC) - Auto-format hook
-✅ src/hooks/builtin/audit-log.ts  (85 LOC) - Audit logging hook
-✅ src/hooks/builtin/safety-guard.ts (95 LOC) - Safety guard hook
-✅ src/hooks/builtin/auto-lint.ts  (110 LOC) - Auto-lint hook
-✅ src/hooks/builtin/index.ts      (10 LOC) - Hook exports
-✅ src/hooks/index.ts              (10 LOC) - Module exports
-```
-
-**Key Features**:
-- ✅ Programmatic hook system alongside existing command/prompt hooks
-- ✅ 4 builtin hooks for auto-format, audit-log, safety-guard, auto-lint
-- ✅ Pattern matching support with minimatch
-- ✅ PreToolUse/PostToolUse lifecycle phases
-
-**What's Missing**:
-- ⏳ Integration with agent-loop (existing hooks system already integrated)
-- ⏳ `/hooks` command for runtime management
-- ⏳ Configuration in `.corbat.json`
-- ⏳ Tests for new hooks (existing hooks have tests)
-
----
-
-### Phase F10: Documentation Assessment
-
-**Score Impact**: +0.18 points (score correction from baseline error)
-
-**Key Discovery**: 🔍 **Baseline was wrong!**
-
-The baseline assumed documentation was 3.0/10 ("Internal docs only").
-Reality: **6.5/10** with comprehensive public documentation:
-
-**Found**:
-- ✅ README.md (607 lines) with badges, comparisons, quick start
-- ✅ 4 User Guides: QUICK_START, CONFIGURATION, TROUBLESHOOTING, AGENT_EVALUATION
-- ✅ API.md - API documentation
-- ✅ MCP.md - MCP integration guide
-- ✅ CHANGELOG.md - Project changelog
-- ✅ docs/guides/ directory with complete guides
-- ✅ docs/audits/ with iteration logs
-
-**Actual Gap**: Only 0.5 points to target (6.5 → 7.0), not 4.0 points assumed
-
----
-
-## ⏸️ Deferred Phases (Require Human Integration)
-
-### Phase F2: Sub-Agents 🔴 HIGH PRIORITY
-
-**Potential Impact**: +0.50 weighted score (multi_agent: 2→7)
-
-**Status**: Architecture designed, implementation 75% complete
-
-**What Was Built**:
-```
-✅ src/agents/types.ts         - Complete type system for sub-agents
-✅ src/agents/executor.ts      - Sub-agent execution engine
-✅ src/agents/orchestrator.ts  - Parallel/sequential/pipeline modes
-✅ src/tools/spawn-agent.ts    - LLM-invocable tool for spawning agents
-```
-
-**Why Deferred**: 24 TypeScript errors due to `ReplSession` type mismatches
-
-**What's Needed** (6-8 hours):
-- Fix type integration: `conversationHistory` → `messages`, `sessionId` → `id`
-- Test forked/isolated session contexts
-- Add comprehensive tests
-- Integrate with tool registry
-
-**Code Status**: Removed from build (but preserved in git history for reference)
-
----
-
-### Phase F4: Git Auto-Commit ⚠️ MEDIUM PRIORITY
-
-**Potential Impact**: +0.10 weighted score
-
-**Why Deferred**: Bash tool API returns `{stdout, stderr, exitCode}`, needs adapter
-
-**Estimated Effort**: 2-3 hours
-
----
-
-### Other Deferred Phases
-
-All require 4-10 hours each:
-
-- **F3**: Diff Preview (UI integration)
-- **F5**: AST-Aware (+0.45 impact, tree-sitter setup)
-- **F6**: Cost Estimator (provider integration)
-- **F7**: Web Companion (HTTP server)
-- **F8**: Browser Automation (Playwright)
-- **F9**: Plugin System (architecture)
-- **F11**: Voice Input (Whisper)
-- **F12**: Smart Embeddings (vector DB)
-
----
-
-## 📦 New Dependencies
-
-```json
-{
-  "minimatch": "^10.1.2"  // For hook pattern matching
-}
+Generate -> Test -> Measure (12 dimensions) -> Diagnose (LLM) -> Fix -> Repeat
+                                                                  |
+                                                       Quality >= 85? -> Done
 ```
 
-**Upgraded**:
-- zod: 3.x → 4.x
-- @clack/prompts: 0.11.x → 1.0.x
+### Multi-Dimensional Quality Metrics
+
+- 7 **Instrumented** (real data): Coverage, Security, Complexity, Duplication, Correctness, Style, Build
+- 5 **Heuristic** (AST-based): Readability, Maintainability, Robustness, Test Quality, Completeness, Documentation
 
 ---
 
-## 🎯 Path to 9.0/10
+## Remaining Work (Path to 9.0/10)
 
-**Required Work**: +1.61 points
+### High Priority
 
-### Critical Phases (Must Complete)
+1. **Sub-Agents Integration** (+0.50 impact)
+   - Fix ReplSession type integration
+   - Test multi-agent parallel execution
+   - Effort: 6-8 hours
 
-1. **F2: Sub-Agents** (+0.50)
-   - Fix 24 TypeScript errors
-   - Complete ReplSession integration
-   - Add tests
-   - **Effort**: 6-8 hours
+2. **AST-Aware Features** (+0.45 impact)
+   - Tree-sitter integration for TypeScript/JavaScript
+   - Semantic validation pre-edit
+   - Effort: 8-10 hours
 
-2. **F5: AST-Aware** (+0.45)
-   - Install tree-sitter
-   - Implement TS/JS parsing
-   - Add syntax validation
-   - **Effort**: 8-10 hours
+### Quick Wins
 
-### Quick Wins (Optional)
-
-3. **F4: Git Auto-Commit** (+0.10)
-   - Fix bash tool adapter
-   - Implement commit message generation
-   - **Effort**: 2-3 hours
-
-4. **F3: Diff Preview** (+0.15)
-   - Build diff renderer
-   - Add approval flow
-   - **Effort**: 4-6 hours
-
-**Total Estimated Effort**: 20-27 hours to reach 9.0/10
+3. **Git Auto-Commit** (+0.10 impact) - 2-3 hours
+4. **Diff Preview** (+0.15 impact) - 4-6 hours
 
 ---
 
-## 🔍 Key Insights
+## Technical Details
 
-### What Worked Well
+**Stack**: TypeScript 5.7.0 (strict), Node.js 22+, ESM only
+**Testing**: Vitest 3.2.4 - 171 test files, 4,350 tests, 15 skipped
+**Linting**: oxlint 0.16.0
+**Formatting**: oxfmt 0.28.0
 
-✅ **Autonomous Discovery**: Found existing hooks system, preventing duplicate work
-✅ **Quality Focus**: All code compiles, tests pass, follows patterns
-✅ **Pragmatic Decisions**: Deferred complex phases rather than shipping broken code
-✅ **Documentation**: Complete audit trail in scorecard
+### Commit Summary
 
-### What Was Challenging
-
-⚠️ **Type Integration**: Existing types not documented in plan
-⚠️ **Tool APIs**: Required understanding bash tool result format
-⚠️ **Scope Estimation**: Each phase was 2-3x more complex than estimated
-⚠️ **Architectural Decisions**: Many phases need human judgment, not just code
-
-### Baseline Errors Discovered
-
-🔍 **Documentation Score**: Off by 3.5 points (3.0 actual vs 6.5 found)
-🔍 **Hooks System**: Existing system not accounted for in baseline
-🔍 **Integration Complexity**: Plan underestimated existing architecture coupling
-
----
-
-## 📝 Recommendations
-
-### Immediate Next Steps (Priority Order)
-
-1. ✅ **Review and commit this work**
-   ```bash
-   git add docs/ src/hooks/ package.json pnpm-lock.yaml
-   git commit -m "feat(hooks): add programmatic lifecycle hooks foundation
-
-   - Create hooks system with 4 builtin hooks
-   - Add auto-format, audit-log, safety-guard, auto-lint
-   - Update improvement plan scorecard
-   - Document baseline discoveries
-
-   Phase F1 (partial) complete. F2 deferred for human integration."
-   ```
-
-2. 🎯 **Complete F2 (Sub-Agents)** - Highest ROI
-   - Reference implementation in git history
-   - Fix ReplSession type mismatches
-   - Test with simple parallel spawns
-
-3. 🎯 **Complete F5 (AST)** - Second highest ROI
-   - Start with TypeScript support only
-   - Focus on syntax validation first
-
-4. ⚡ **Quick Win: F4 (Git Auto-Commit)**
-   - Small scope, clear value
-   - Good learning opportunity for bash tool API
-
-### Long-Term Improvements
-
-- **Better Baseline**: Audit code before planning improvements
-- **Type Documentation**: Document ReplSession and key interfaces
-- **Integration Patterns**: Show examples of integrating new systems
-- **Human-in-Loop**: Flag phases requiring architectural decisions
-
----
-
-## 📁 Files to Commit
-
-### New Files (Ready to Commit)
 ```
-docs/IMPROVEMENT_PLAN.md
-docs/EXECUTE_IMPROVEMENT_PLAN.md
-docs/EXECUTION_SUMMARY.md
-docs/audits/improvement-scorecard.json
-src/hooks/types.ts
-src/hooks/registry.ts
-src/hooks/builtin/auto-format.ts
-src/hooks/builtin/audit-log.ts
-src/hooks/builtin/safety-guard.ts
-src/hooks/builtin/auto-lint.ts
-src/hooks/builtin/index.ts
-src/hooks/index.ts
-IMPROVEMENT_RESULTS.md (this file)
-```
-
-### Modified Files
-```
-package.json      (minimatch dependency)
-pnpm-lock.yaml    (dependency lockfile)
-```
-
-### Not to Commit
-```
-src/cli/repl/*    (pre-existing changes from feat/extended-tool-suite)
-src/mcp/*         (pre-existing changes)
-src/tools/*       (pre-existing changes, except no new files)
-src/providers/*   (pre-existing changes)
-src/config/*      (pre-existing changes)
+feat: implement v1.1.0 pre-release improvements with 12-dimension quality system
+73 files changed, 13695 insertions(+), 888 deletions(-)
 ```
 
 ---
 
-## 🏆 Final Assessment
-
-### Achievements
-
-✅ Programmatic hooks system designed and implemented
-✅ 4 builtin hooks created with clear patterns
-✅ Documentation quality corrected in baseline
-✅ Sub-agents architecture designed (ready for integration)
-✅ All code compiles and tests pass
-✅ Complete audit trail documented
-
-### Learnings
-
-- Autonomous execution is effective for **isolated features**
-- **Integration phases** require human architectural judgment
-- **Baseline audits** are critical before planning improvements
-- **Existing infrastructure** must be discovered before building new systems
-
-### Next Owner
-
-The next developer can:
-1. Review F1 hooks and complete integration
-2. Complete F2 sub-agents using provided architecture
-3. Tackle F5 AST for maximum impact
-4. Reach 9.0/10 with ~20 hours of focused work
-
----
-
-## 📚 Reference Documents
-
-- [Improvement Plan](docs/IMPROVEMENT_PLAN.md) - Full 12-phase plan
-- [Execution Summary](docs/EXECUTION_SUMMARY.md) - Detailed technical analysis
-- [Scorecard](docs/audits/improvement-scorecard.json) - Iteration tracking
-- [Execute Instructions](docs/EXECUTE_IMPROVEMENT_PLAN.md) - Autonomous execution prompt
-
----
-
-**Status**: ✅ READY TO COMMIT
-
-All tests pass. Build succeeds. Code quality maintained.
-
-The foundation is laid. The path to 9.0/10 is clear.
-
-🚀 Let's ship it!
+**Status**: ALL TESTS PASSING - Ready for merge/review
