@@ -144,7 +144,7 @@ function displaySection(sectionName: string, memoryContext: MemoryContext): bool
 function createPlaceholderContext(): MemoryContext {
   const context = createEmptyMemoryContext();
   context.files = [
-    createMissingMemoryFile("~/.config/corbat-coco/COCO.md", "user"),
+    createMissingMemoryFile("~/.coco/COCO.md", "user"),
     createMissingMemoryFile("./CLAUDE.md", "project"),
     createMissingMemoryFile("./CLAUDE.local.md", "local"),
   ];

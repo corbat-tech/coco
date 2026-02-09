@@ -274,8 +274,7 @@ describe("storage.ts", () => {
     it("should return a path in home directory", () => {
       const dir = getDefaultStorageDir();
 
-      expect(dir).toContain(".config");
-      expect(dir).toContain("corbat-coco");
+      expect(dir).toContain(".coco");
       expect(dir).toContain("sessions");
     });
   });

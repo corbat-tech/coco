@@ -8,7 +8,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
-import { homedir } from "node:os";
 
 import type { Message } from "../../../providers/types.js";
 import type {
@@ -20,6 +19,7 @@ import type {
   RewindOptions,
   RewindResult,
 } from "./types.js";
+import { CONFIG_PATHS } from "../../../config/paths.js";
 
 // =============================================================================
 // Constants
@@ -29,7 +29,7 @@ import type {
  * Default configuration values for the checkpoint manager.
  */
 const DEFAULT_CONFIG: CheckpointConfig = {
-  storageDir: path.join(homedir(), ".config", "corbat-coco", "checkpoints"),
+  storageDir: CONFIG_PATHS.checkpoints,
   maxCheckpoints: 50,
   autoCheckpointFiles: true,
   conversationCheckpointInterval: 10,
@@ -179,7 +179,7 @@ async function writeJson(filePath: string, data: unknown): Promise<void> {
  *
  * The checkpoint manager stores data in the following structure:
  * ```
- * ~/.config/corbat-coco/checkpoints/
+ * ~/.coco/checkpoints/
  *   <session-id>/
  *     index.json           # Quick lookup index
  *     <checkpoint-id>.json # Checkpoint metadata

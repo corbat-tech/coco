@@ -534,7 +534,7 @@ export function getContextUsageFormatted(session: ReplSession): string {
  * Initialize session memory from COCO.md/CLAUDE.md files
  *
  * Loads memory from:
- * - User level: ~/.config/corbat-coco/COCO.md
+ * - User level: ~/.coco/COCO.md
  * - Project level: ./COCO.md or ./CLAUDE.md
  * - Local level: ./COCO.local.md or ./CLAUDE.local.md
  */

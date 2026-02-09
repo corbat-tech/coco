@@ -281,7 +281,7 @@ export interface CheckpointConfig {
   /**
    * Directory to store checkpoint data.
    * Checkpoints are stored as JSON files in this directory.
-   * Default: `~/.corbat-coco/checkpoints`
+   * Default: `~/.coco/checkpoints`
    */
   storageDir: string;
 

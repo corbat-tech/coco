@@ -5,7 +5,7 @@
  * mirroring Claude Code's CLAUDE.md memory hierarchy.
  *
  * Memory is loaded from three levels:
- * - User level: Global configuration (~/.config/corbat-coco/COCO.md)
+ * - User level: Global configuration (~/.coco/COCO.md)
  * - Project level: Repository-specific (./COCO.md or ./CLAUDE.md, committed)
  * - Local level: Personal overrides (./COCO.local.md, not committed)
  *
@@ -60,7 +60,7 @@ export const MEMORY_DEFAULTS = {
  * Memory source level indicating where a memory file originates.
  *
  * The levels form a hierarchy with increasing specificity:
- * - `user`: Global user preferences (~/.config/corbat-coco/COCO.md)
+ * - `user`: Global user preferences (~/.coco/COCO.md)
  * - `project`: Project-specific instructions (./COCO.md, committed to repo)
  * - `local`: Personal overrides (./COCO.local.md, gitignored)
  *
@@ -391,7 +391,7 @@ export interface MemoryConfig {
   filePatterns: string[];
 
   /**
-   * Whether to include user-level memory from ~/.config/corbat-coco/.
+   * Whether to include user-level memory from ~/.coco/.
    *
    * Set to false to disable global user preferences, using only
    * project and local memory.

@@ -5,7 +5,7 @@
  * Uses a directory-per-session structure for efficient reads and writes.
  *
  * Storage Structure:
- *   ~/.config/corbat-coco/sessions/
+ *   ~/.coco/sessions/
  *     <session-id>/
  *       metadata.json       - PersistedSession info
  *       conversation.jsonl  - Messages, one per line
@@ -14,7 +14,6 @@
 
 import { readFile, writeFile, mkdir, readdir, rm, access } from "node:fs/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import type {
   PersistedSession,
   SessionStorage,
@@ -25,6 +24,7 @@ import type {
 } from "./types.js";
 import type { ReplSession } from "../types.js";
 import type { Message } from "../../../providers/types.js";
+import { CONFIG_PATHS } from "../../../config/paths.js";
 
 // =============================================================================
 // Default Configuration
@@ -34,7 +34,7 @@ import type { Message } from "../../../providers/types.js";
  * Default session persistence configuration
  */
 const DEFAULT_CONFIG: SessionPersistenceConfig = {
-  storageDir: join(homedir(), ".config", "corbat-coco", "sessions"),
+  storageDir: CONFIG_PATHS.sessions,
   autoSaveInterval: 30000,
   maxSessionsPerProject: 20,
   compressOldSessions: false,

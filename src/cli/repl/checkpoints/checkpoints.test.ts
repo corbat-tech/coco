@@ -244,7 +244,7 @@ describe("manager.ts", () => {
       const manager = createCheckpointManager();
       const config = manager.getConfig();
 
-      expect(config.storageDir).toContain("corbat-coco");
+      expect(config.storageDir).toContain(".coco");
       expect(config.storageDir).toContain("checkpoints");
     });
   });

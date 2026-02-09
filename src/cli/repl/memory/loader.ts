@@ -26,6 +26,7 @@ import {
   LOCAL_SUFFIX,
   MEMORY_LEVELS,
 } from "./types.js";
+import { CONFIG_PATHS } from "../../../config/paths.js";
 
 /**
  * Regular expression to match section headings: ## Heading
@@ -33,9 +34,9 @@ import {
 const SECTION_HEADING_REGEX = /^## (.+)$/;
 
 /**
- * User config directory for global memory files
+ * User config directory for global memory files (~/.coco/)
  */
-const USER_CONFIG_DIR = "~/.config/corbat-coco";
+const USER_CONFIG_DIR = CONFIG_PATHS.home;
 
 /**
  * Result of finding memory files at each level
@@ -63,7 +64,7 @@ export interface ImportResolutionResult {
  * Memory loader for loading and parsing memory files.
  *
  * Loads memory from three levels in order:
- * 1. User level: ~/.config/corbat-coco/COCO.md
+ * 1. User level: ~/.coco/COCO.md
  * 2. Project level: ./COCO.md or ./CLAUDE.md
  * 3. Local level: ./COCO.local.md or ./CLAUDE.local.md
  *
@@ -203,7 +204,7 @@ export class MemoryLoader {
   async findMemoryFiles(projectPath: string): Promise<MemoryFilePaths> {
     const result: MemoryFilePaths = {};
 
-    // User level: ~/.config/corbat-coco/COCO.md
+    // User level: ~/.coco/COCO.md
     if (this.config.includeUserLevel) {
       const userDir = this.resolvePath(USER_CONFIG_DIR);
       for (const pattern of this.config.filePatterns) {

@@ -559,7 +559,7 @@ Line 4`;
 
       const files = [
         {
-          path: "/home/user/.config/corbat-coco/COCO.md",
+          path: "/home/user/.coco/COCO.md",
           level: "user" as const,
           content: "User level content",
           sections: [],
