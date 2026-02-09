@@ -56,13 +56,22 @@ async function loadConfigFile(
     const content = await fs.readFile(configPath, "utf-8");
     const parsed = JSON5.parse(content);
 
-    // Validate partial config
-    const result = CocoConfigSchema.partial().safeParse(parsed);
-    if (!result.success) {
+    // Validate partial config without applying defaults.
+    // Using CocoConfigSchema.partial().safeParse() would fill in defaults
+    // for sub-objects (provider, quality, etc.), which would override
+    // values from lower-priority config sources during deep merge.
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       if (!strict) {
-        // Non-project config files (e.g., user preferences) may not match the schema.
         return null;
       }
+      throw new ConfigError("Invalid configuration: expected an object", {
+        configPath,
+      });
+    }
+
+    // Light validation: check that known keys have the right shape
+    const result = CocoConfigSchema.partial().safeParse(parsed);
+    if (!result.success && strict) {
       const issues = result.error.issues.map((i) => ({
         path: i.path.join("."),
         message: i.message,
@@ -73,7 +82,9 @@ async function loadConfigFile(
       });
     }
 
-    return result.data;
+    // Return the raw parsed object (without Zod defaults applied)
+    // so that deep merge only sees values actually present in the file.
+    return parsed as Partial<CocoConfig>;
   } catch (error) {
     if (error instanceof ConfigError) {
       throw error;

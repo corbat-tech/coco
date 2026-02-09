@@ -103,7 +103,7 @@ Examples:
       .optional()
       .describe("Package manager to use"),
     args: z.array(z.string()).optional().describe("Additional arguments"),
-    env: z.record(z.string()).optional().describe("Environment variables"),
+    env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
     timeout: z.number().optional().describe("Timeout in milliseconds"),
   }),
   async execute({ script, cwd, packageManager, args, env, timeout }) {
@@ -292,7 +292,7 @@ Examples:
     target: z.string().optional().describe("Make target(s) to run"),
     cwd: z.string().optional().describe("Working directory"),
     args: z.array(z.string()).optional().describe("Additional arguments or variables"),
-    env: z.record(z.string()).optional().describe("Environment variables"),
+    env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
     timeout: z.number().optional().describe("Timeout in milliseconds"),
   }),
   async execute({ target, cwd, args, env, timeout }) {

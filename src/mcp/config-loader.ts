@@ -183,28 +183,28 @@ export async function loadMCPServersFromCOCOConfig(
 
   for (const entry of config.mcp.servers) {
     try {
-      // Validate entry
-      MCPServerConfigEntrySchema.parse(entry);
+      // Validate and parse entry (fills defaults)
+      const parsed = MCPServerConfigEntrySchema.parse(entry);
 
       // Convert to MCPServerConfig
       const serverConfig: MCPServerConfig = {
-        name: entry.name,
-        description: entry.description,
-        transport: entry.transport,
-        enabled: entry.enabled,
-        ...(entry.transport === "stdio" &&
-          entry.command && {
+        name: parsed.name,
+        description: parsed.description,
+        transport: parsed.transport,
+        enabled: parsed.enabled,
+        ...(parsed.transport === "stdio" &&
+          parsed.command && {
             stdio: {
-              command: entry.command,
-              args: entry.args,
-              env: entry.env,
+              command: parsed.command,
+              args: parsed.args,
+              env: parsed.env,
             },
           }),
-        ...(entry.transport === "http" &&
-          entry.url && {
+        ...(parsed.transport === "http" &&
+          parsed.url && {
             http: {
-              url: entry.url,
-              auth: entry.auth,
+              url: parsed.url,
+              auth: parsed.auth,
             },
           }),
       };

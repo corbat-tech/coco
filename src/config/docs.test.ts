@@ -146,7 +146,7 @@ describe("generateSchemaDocs", () => {
 
   it("should handle record types", () => {
     const schema = z.object({
-      data: z.record(z.string()),
+      data: z.record(z.string(), z.string()),
     });
 
     const docs = generateSchemaDocs(schema, "Test");

@@ -287,7 +287,7 @@ async function runInteractiveMode(session: ReplSession): Promise<boolean> {
     message: `Select session (1-${totalCount}) or 'q' to cancel`,
     placeholder: "1",
     validate: (value) => {
-      if (value.toLowerCase() === "q") return;
+      if (!value || value.toLowerCase() === "q") return;
       const num = parseInt(value, 10);
       if (isNaN(num) || num < 1 || num > totalCount) {
         return `Enter a number between 1 and ${totalCount}, or 'q' to cancel`;
@@ -296,7 +296,7 @@ async function runInteractiveMode(session: ReplSession): Promise<boolean> {
     },
   });
 
-  if (p.isCancel(selection) || selection.toLowerCase() === "q") {
+  if (p.isCancel(selection) || !selection || selection.toLowerCase() === "q") {
     p.outro("Cancelled");
     return false;
   }

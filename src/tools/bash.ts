@@ -127,7 +127,7 @@ Examples:
     command: z.string().describe("Command to execute"),
     cwd: z.string().optional().describe("Working directory"),
     timeout: z.number().optional().describe("Timeout in milliseconds"),
-    env: z.record(z.string()).optional().describe("Environment variables"),
+    env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
   }),
   async execute({ command, cwd, timeout, env }) {
     // Check for dangerous commands
@@ -205,7 +205,7 @@ Examples:
   parameters: z.object({
     command: z.string().describe("Command to execute"),
     cwd: z.string().optional().describe("Working directory"),
-    env: z.record(z.string()).optional().describe("Environment variables"),
+    env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
   }),
   async execute({ command, cwd, env }) {
     // Check for dangerous commands

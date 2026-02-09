@@ -139,13 +139,13 @@ async function runConfigInit(): Promise<void> {
     placeholder: "85",
     initialValue: "85",
     validate: (value) => {
-      const num = parseInt(value, 10);
+      const num = parseInt(value ?? "", 10);
       if (isNaN(num) || num < 0 || num > 100) return "Must be a number between 0 and 100";
       return undefined;
     },
   });
 
-  if (p.isCancel(quality)) {
+  if (p.isCancel(quality) || !quality) {
     p.cancel("Configuration cancelled.");
     process.exit(0);
   }

@@ -59,7 +59,7 @@ Examples:
       .optional()
       .default("GET")
       .describe("HTTP method"),
-    headers: z.record(z.string()).optional().describe("Request headers"),
+    headers: z.record(z.string(), z.string()).optional().describe("Request headers"),
     body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
     timeout: z.number().optional().describe("Timeout in milliseconds"),
     maxSize: z.number().optional().describe("Max response size in bytes"),
@@ -180,8 +180,8 @@ Examples:
       .optional()
       .default("GET")
       .describe("HTTP method"),
-    headers: z.record(z.string()).optional().describe("Additional headers"),
-    data: z.record(z.unknown()).optional().describe("JSON data to send"),
+    headers: z.record(z.string(), z.string()).optional().describe("Additional headers"),
+    data: z.record(z.string(), z.unknown()).optional().describe("JSON data to send"),
     timeout: z.number().optional().describe("Timeout in milliseconds"),
   }),
   async execute({ url, method, headers, data, timeout }) {

@@ -737,12 +737,12 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
         message: "Port:",
         placeholder: "1234",
         validate: (v) => {
-          const num = parseInt(v, 10);
+          const num = parseInt(v ?? "", 10);
           if (isNaN(num) || num < 1 || num > 65535) return "Invalid port";
           return;
         },
       });
-      if (p.isCancel(newPort)) return null;
+      if (p.isCancel(newPort) || !newPort) return null;
       port = parseInt(newPort, 10);
     }
     // retry: just loop again

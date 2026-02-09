@@ -1,6 +1,8 @@
 /**
  * Schema documentation generator for Corbat-Coco
  * Generates markdown documentation from Zod schemas
+ *
+ * Compatible with Zod 4 using instanceof checks instead of _def.typeName
  */
 
 import { z } from "zod";
@@ -69,19 +71,15 @@ export function generateSchemaDocs(
 }
 
 /**
- * Extract description from schema
+ * Extract description from schema.
+ * In Zod 4, description is directly on the schema object.
  */
 function extractDescription(schema: z.ZodTypeAny): string | undefined {
-  // Check for description in _def
-  const def = schema._def;
-  if (def.description) {
-    return def.description;
-  }
-  return undefined;
+  return schema.description ?? undefined;
 }
 
 /**
- * Extract fields from schema
+ * Extract fields from schema using instanceof checks (Zod 4 compatible)
  */
 function extractFields(
   schema: z.ZodTypeAny,
@@ -92,26 +90,29 @@ function extractFields(
     return [];
   }
 
-  const def = schema._def;
-
-  // Handle different schema types
-  switch (def.typeName) {
-    case "ZodObject":
-      return extractObjectFields(schema as z.ZodObject<z.ZodRawShape>, options, depth);
-
-    case "ZodOptional":
-    case "ZodNullable":
-      return extractFields(def.innerType, options, depth);
-
-    case "ZodDefault":
-      return extractFields(def.innerType, options, depth);
-
-    case "ZodEffects":
-      return extractFields(def.schema, options, depth);
-
-    default:
-      return [];
+  if (schema instanceof z.ZodObject) {
+    return extractObjectFields(schema as z.ZodObject<z.ZodRawShape>, options, depth);
   }
+
+  if (schema instanceof z.ZodOptional) {
+    return extractFields((schema as z.ZodOptional<z.ZodTypeAny>).unwrap(), options, depth);
+  }
+
+  if (schema instanceof z.ZodNullable) {
+    return extractFields((schema as z.ZodNullable<z.ZodTypeAny>).unwrap(), options, depth);
+  }
+
+  if (schema instanceof z.ZodDefault) {
+    return extractFields((schema as z.ZodDefault<z.ZodTypeAny>).removeDefault(), options, depth);
+  }
+
+  // ZodEffects is replaced by ZodPipe in Zod 4 (e.g. from .transform())
+  if (schema instanceof z.ZodPipe) {
+    const pipeDef = (schema as any)._zod.def;
+    return extractFields(pipeDef.in, options, depth);
+  }
+
+  return [];
 }
 
 /**
@@ -135,7 +136,7 @@ function extractObjectFields(
 }
 
 /**
- * Extract information about a single field
+ * Extract information about a single field using instanceof checks (Zod 4 compatible)
  */
 function extractFieldInfo(
   name: string,
@@ -147,20 +148,20 @@ function extractFieldInfo(
   let isOptional = false;
   let defaultValue: string | undefined;
 
-  // Unwrap optional/nullable/default
+  // Unwrap optional/nullable/default using instanceof checks
   while (true) {
-    const innerDef = innerSchema._def;
-
-    if (innerDef.typeName === "ZodOptional") {
+    if (innerSchema instanceof z.ZodOptional) {
       isOptional = true;
-      innerSchema = innerDef.innerType;
-    } else if (innerDef.typeName === "ZodNullable") {
+      innerSchema = (innerSchema as z.ZodOptional<z.ZodTypeAny>).unwrap();
+    } else if (innerSchema instanceof z.ZodNullable) {
       isOptional = true;
-      innerSchema = innerDef.innerType;
-    } else if (innerDef.typeName === "ZodDefault") {
+      innerSchema = (innerSchema as z.ZodNullable<z.ZodTypeAny>).unwrap();
+    } else if (innerSchema instanceof z.ZodDefault) {
       isOptional = true;
-      defaultValue = formatDefaultValue(innerDef.defaultValue());
-      innerSchema = innerDef.innerType;
+      // In Zod 4, defaultValue is a direct value on _zod.def (not a function)
+      const defValue = (innerSchema as any)._zod.def.defaultValue;
+      defaultValue = formatDefaultValue(defValue);
+      innerSchema = (innerSchema as z.ZodDefault<z.ZodTypeAny>).removeDefault();
     } else {
       break;
     }
@@ -172,7 +173,7 @@ function extractFieldInfo(
 
   // Extract nested fields for objects
   let nested: FieldDoc[] | undefined;
-  if (innerSchema._def.typeName === "ZodObject" && depth < options.maxDepth) {
+  if (innerSchema instanceof z.ZodObject && depth < options.maxDepth) {
     nested = extractObjectFields(innerSchema as z.ZodObject<z.ZodRawShape>, options, depth + 1);
   }
 
@@ -188,73 +189,87 @@ function extractFieldInfo(
 }
 
 /**
- * Get type name for a schema
+ * Get type name for a schema using instanceof checks (Zod 4 compatible)
  */
 function getTypeName(schema: z.ZodTypeAny): string {
-  const def = schema._def;
-
-  switch (def.typeName) {
-    case "ZodString":
-      return "string";
-    case "ZodNumber":
-      return "number";
-    case "ZodBoolean":
-      return "boolean";
-    case "ZodArray":
-      const itemType = getTypeName(def.type);
-      return `${itemType}[]`;
-    case "ZodObject":
-      return "object";
-    case "ZodEnum":
-      return "enum";
-    case "ZodLiteral":
-      return `"${def.value}"`;
-    case "ZodUnion":
-      const unionTypes = def.options.map((opt: z.ZodTypeAny) => getTypeName(opt));
-      return unionTypes.join(" | ");
-    case "ZodRecord":
-      const valueType = getTypeName(def.valueType);
-      return `Record<string, ${valueType}>`;
-    case "ZodTuple":
-      const tupleTypes = def.items.map((item: z.ZodTypeAny) => getTypeName(item));
-      return `[${tupleTypes.join(", ")}]`;
-    case "ZodNativeEnum":
-      return "enum";
-    case "ZodAny":
-      return "any";
-    case "ZodUnknown":
-      return "unknown";
-    case "ZodNull":
-      return "null";
-    case "ZodUndefined":
-      return "undefined";
-    case "ZodVoid":
-      return "void";
-    case "ZodNever":
-      return "never";
-    case "ZodDate":
-      return "Date";
-    case "ZodBigInt":
-      return "bigint";
-    case "ZodSymbol":
-      return "symbol";
-    default:
-      return "unknown";
+  if (schema instanceof z.ZodString) {
+    return "string";
   }
+  if (schema instanceof z.ZodNumber) {
+    return "number";
+  }
+  if (schema instanceof z.ZodBoolean) {
+    return "boolean";
+  }
+  if (schema instanceof z.ZodArray) {
+    const itemType = getTypeName((schema as z.ZodArray<z.ZodTypeAny>).element);
+    return `${itemType}[]`;
+  }
+  if (schema instanceof z.ZodObject) {
+    return "object";
+  }
+  if (schema instanceof z.ZodEnum) {
+    return "enum";
+  }
+  if (schema instanceof z.ZodLiteral) {
+    return `"${(schema as z.ZodLiteral<any>).value}"`;
+  }
+  if (schema instanceof z.ZodUnion) {
+    const unionOptions = (schema as z.ZodUnion<any>).options as z.ZodTypeAny[];
+    const unionTypes = unionOptions.map((opt: z.ZodTypeAny) => getTypeName(opt));
+    return unionTypes.join(" | ");
+  }
+  if (schema instanceof z.ZodRecord) {
+    // In Zod 4: single-arg z.record(valueSchema) stores schema in _zod.def.keyType
+    // Two-arg z.record(keySchema, valueSchema) stores value in _zod.def.valueType
+    const recordDef = (schema as any)._zod.def;
+    const valueSchema = recordDef.valueType || recordDef.keyType;
+    const valueType = getTypeName(valueSchema);
+    return `Record<string, ${valueType}>`;
+  }
+  if (schema instanceof z.ZodTuple) {
+    // In Zod 4, tuple items are on _zod.def.items
+    const tupleItems: z.ZodTypeAny[] = (schema as any)._zod.def.items;
+    const tupleTypes = tupleItems.map((item: z.ZodTypeAny) => getTypeName(item));
+    return `[${tupleTypes.join(", ")}]`;
+  }
+  if (schema instanceof z.ZodAny) {
+    return "any";
+  }
+  if (schema instanceof z.ZodUnknown) {
+    return "unknown";
+  }
+  if (schema instanceof z.ZodNull) {
+    return "null";
+  }
+  if (schema instanceof z.ZodUndefined) {
+    return "undefined";
+  }
+  if (schema instanceof z.ZodVoid) {
+    return "void";
+  }
+  if (schema instanceof z.ZodNever) {
+    return "never";
+  }
+  if (schema instanceof z.ZodDate) {
+    return "Date";
+  }
+  if (schema instanceof z.ZodBigInt) {
+    return "bigint";
+  }
+  if (schema instanceof z.ZodSymbol) {
+    return "symbol";
+  }
+
+  return "unknown";
 }
 
 /**
- * Get enum values if applicable
+ * Get enum values if applicable using instanceof checks (Zod 4 compatible)
  */
 function getEnumValues(schema: z.ZodTypeAny): string[] | undefined {
-  const def = schema._def;
-
-  if (def.typeName === "ZodEnum") {
-    return def.values;
-  }
-
-  if (def.typeName === "ZodNativeEnum") {
-    return Object.values(def.values).filter((v): v is string => typeof v === "string");
+  if (schema instanceof z.ZodEnum) {
+    return (schema as z.ZodEnum<any>).options as string[];
   }
 
   return undefined;

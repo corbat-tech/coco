@@ -49,7 +49,7 @@ function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodType {
       const required = schema.required as string[] | undefined;
 
       if (!properties) {
-        return z.record(z.unknown());
+        return z.record(z.string(), z.unknown());
       }
 
       const shape: Record<string, z.ZodType> = {};

@@ -14,7 +14,8 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   name: string;
   description: string;
   category: ToolCategory;
-  parameters: z.ZodSchema<TInput>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  parameters: z.ZodType<TInput, any, any>;
   execute: (params: TInput) => Promise<TOutput>;
 }
 
@@ -233,10 +234,8 @@ function zodToJsonSchema(schema: z.ZodSchema): Record<string, unknown> {
   // For now, use a basic conversion
   // In production, use a library like zod-to-json-schema
   try {
-    const jsonSchema = (schema as z.ZodObject<z.ZodRawShape>)._def;
-
-    if (jsonSchema.typeName === "ZodObject") {
-      const shape = (schema as z.ZodObject<z.ZodRawShape>).shape;
+    if (schema instanceof z.ZodObject) {
+      const shape = schema.shape;
       const properties: Record<string, unknown> = {};
       const required: string[] = [];
 
@@ -267,32 +266,19 @@ function zodToJsonSchema(schema: z.ZodSchema): Record<string, unknown> {
  * Convert a Zod field to JSON schema
  */
 function zodFieldToJsonSchema(field: z.ZodTypeAny): Record<string, unknown> {
-  const def = field._def;
-
-  switch (def.typeName) {
-    case "ZodString":
-      return { type: "string" };
-    case "ZodNumber":
-      return { type: "number" };
-    case "ZodBoolean":
-      return { type: "boolean" };
-    case "ZodArray":
-      return {
-        type: "array",
-        items: zodFieldToJsonSchema(def.type),
-      };
-    case "ZodOptional":
-      return zodFieldToJsonSchema(def.innerType);
-    case "ZodDefault":
-      return zodFieldToJsonSchema(def.innerType);
-    case "ZodEnum":
-      return {
-        type: "string",
-        enum: def.values,
-      };
-    default:
-      return {};
+  if (field instanceof z.ZodString) return { type: "string" };
+  if (field instanceof z.ZodNumber) return { type: "number" };
+  if (field instanceof z.ZodBoolean) return { type: "boolean" };
+  if (field instanceof z.ZodArray) {
+    return { type: "array", items: zodFieldToJsonSchema(field.element as z.ZodTypeAny) };
   }
+  if (field instanceof z.ZodOptional) return zodFieldToJsonSchema(field.unwrap() as z.ZodTypeAny);
+  if (field instanceof z.ZodDefault)
+    return zodFieldToJsonSchema(field.removeDefault() as z.ZodTypeAny);
+  if (field instanceof z.ZodEnum) {
+    return { type: "string", enum: field.options };
+  }
+  return {};
 }
 
 /**

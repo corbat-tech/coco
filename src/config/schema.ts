@@ -97,7 +97,7 @@ export const MCPServerConfigEntrySchema = z.object({
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
   url: z.string().optional(),
-  env: z.record(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
   auth: z
     .object({
       type: z.enum(["oauth", "bearer", "apikey"]),
@@ -128,9 +128,27 @@ export type MCPConfig = z.infer<typeof MCPConfigSchema>;
  */
 export const CocoConfigSchema = z.object({
   project: ProjectConfigSchema,
-  provider: ProviderConfigSchema.default({}),
-  quality: QualityConfigSchema.default({}),
-  persistence: PersistenceConfigSchema.default({}),
+  provider: ProviderConfigSchema.default({
+    type: "anthropic",
+    model: "claude-sonnet-4-20250514",
+    maxTokens: 8192,
+    temperature: 0,
+    timeout: 120000,
+  }),
+  quality: QualityConfigSchema.default({
+    minScore: 85,
+    minCoverage: 80,
+    maxIterations: 10,
+    minIterations: 2,
+    convergenceThreshold: 2,
+    securityThreshold: 100,
+  }),
+  persistence: PersistenceConfigSchema.default({
+    checkpointInterval: 300000,
+    maxCheckpoints: 50,
+    retentionDays: 7,
+    compressOldCheckpoints: true,
+  }),
   stack: StackConfigSchema.optional(),
   integrations: IntegrationsConfigSchema.optional(),
   mcp: MCPConfigSchema.optional(),
