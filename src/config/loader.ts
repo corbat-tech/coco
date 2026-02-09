@@ -302,6 +302,10 @@ export function setConfigValue<T>(config: CocoConfig, configPath: string, value:
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
     if (!key) continue;
+    // Prevent prototype pollution by rejecting dangerous keys
+    if (key === "__proto__" || key === "constructor" || key === "prototype") {
+      throw new Error(`Invalid config path: cannot set ${key}`);
+    }
     if (!(key in current) || typeof current[key] !== "object") {
       current[key] = {};
     }
@@ -310,6 +314,10 @@ export function setConfigValue<T>(config: CocoConfig, configPath: string, value:
 
   const lastKey = keys[keys.length - 1];
   if (lastKey) {
+    // Prevent prototype pollution on the final key as well
+    if (lastKey === "__proto__" || lastKey === "constructor" || lastKey === "prototype") {
+      throw new Error(`Invalid config path: cannot set ${lastKey}`);
+    }
     current[lastKey] = value;
   }
 

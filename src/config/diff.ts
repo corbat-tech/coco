@@ -61,7 +61,9 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function shouldIgnore(path: string, patterns: string[]): boolean {
   for (const pattern of patterns) {
     // Simple glob matching: * matches any segment, ** matches any path
+    // Escape backslashes first to prevent incomplete sanitization
     const regex = pattern
+      .replace(/\\/g, "\\\\")
       .replace(/\./g, "\\.")
       .replace(/\*\*/g, "{{GLOBSTAR}}")
       .replace(/\*/g, "[^.]+")

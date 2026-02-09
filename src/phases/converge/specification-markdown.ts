@@ -84,7 +84,8 @@ function addRequirementsTable(sections: string[], requirements: Requirement[]): 
 
   for (const req of requirements) {
     const priority = formatPriority(req.priority);
-    const desc = req.description.substring(0, 100).replace(/\|/g, "\\|");
+    // Properly escape both | and \ for markdown tables
+    const desc = req.description.substring(0, 100).replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
     sections.push(`| ${req.id.substring(0, 8)} | ${req.title} | ${priority} | ${desc} |`);
   }
 

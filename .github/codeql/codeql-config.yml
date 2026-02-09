@@ -1,0 +1,9 @@
+name: "CodeQL Config"
+
+paths-ignore:
+  - coverage-temp/**
+  - lcov-report/**
+  - dist/**
+  - node_modules/**
+  - "**/*.test.ts"
+  - "**/*.spec.ts"

@@ -130,7 +130,9 @@ export class CodeGenerator {
    */
   private parseGenerationResponse(content: string): CodeGenerationResponse {
     try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      // Limit content length to prevent ReDoS with [\s\S]* pattern
+      const limitedContent = content.substring(0, 50000);
+      const jsonMatch = limitedContent.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error("No JSON found in response");
       }
@@ -164,7 +166,9 @@ export class CodeGenerator {
    */
   private parseImprovementResponse(content: string): CodeGenerationResponse {
     try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      // Limit content length to prevent ReDoS with [\s\S]* pattern
+      const limitedContent = content.substring(0, 50000);
+      const jsonMatch = limitedContent.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error("No JSON found in response");
       }

@@ -282,12 +282,16 @@ export function getADRFilename(adr: ADR): string {
  * Convert string to URL-friendly slug
  */
 function slugify(str: string): string {
-  return str
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/[\s_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  return (
+    str
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, "")
+      // Limit input length to prevent ReDoS
+      .substring(0, 200)
+      .replace(/[\s_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+  );
 }
 
 /**

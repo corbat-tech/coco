@@ -141,7 +141,9 @@ export class CodeReviewer {
    */
   private parseReviewResponse(content: string, testResults: TestExecutionResult): CodeReviewResult {
     try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      // Limit content length to prevent ReDoS with [\s\S]* pattern
+      const limitedContent = content.substring(0, 50000);
+      const jsonMatch = limitedContent.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error("No JSON found in response");
       }

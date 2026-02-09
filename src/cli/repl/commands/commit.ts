@@ -46,8 +46,9 @@ export const commitCommand: SlashCommand = {
         message = prompted;
       }
 
-      // Create commit
-      execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
+      // Create commit - escape both backslashes and quotes for shell safety
+      const escapedMessage = message.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      execSync(`git commit -m "${escapedMessage}"`, {
         cwd: session.projectPath,
         encoding: "utf-8",
         timeout: 10000,

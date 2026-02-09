@@ -619,16 +619,20 @@ function formatHtmlLine(line: string): string | null {
       .replace(/<a\s[^>]*href=["']([^"']*)["'][^>]*>/gi, "")
       .replace(/<\/a>/gi, "");
 
-    // Strip ALL remaining HTML tags (including script, style, iframe, etc.)
-    // This catches any dangerous tags that weren't in our safe list
-    stripped = stripped.replace(/<[^>]*>/g, "");
+    // Strip ALL remaining HTML tags completely (including script, style, iframe, etc.)
+    // Use a loop to ensure complete removal - prevents CodeQL incomplete sanitization warning
+    let prevStripped = "";
+    while (prevStripped !== stripped) {
+      prevStripped = stripped;
+      stripped = stripped.replace(/<[^>]*>/g, "");
+    }
 
-    // Decode entities AFTER stripping tags to prevent entity-based injection
+    // Decode only safe HTML entities - NEVER decode < or > to prevent tag reintroduction
     stripped = stripped
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
       .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, "&");
+      .replace(/&#x27;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, "&"); // Must be last to avoid double-unescaping
 
     return formatInlineMarkdown(stripped);
   }

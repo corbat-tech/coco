@@ -180,14 +180,16 @@ function hljsToChalk(html: string): string {
     result = result.replace(span.match, colored);
   }
 
-  // Now strip ALL remaining HTML tags - anything left is not a safe hljs span
-  // This includes any script/style/iframe/etc that might have been in the input
-  result = result.replace(/<[^>]*>/g, "");
+  // Now strip ALL remaining HTML tags completely - anything left is not a safe hljs span
+  // Use a loop to ensure complete removal - prevents CodeQL incomplete sanitization warning
+  let prevResult = "";
+  while (prevResult !== result) {
+    prevResult = result;
+    result = result.replace(/<[^>]*>/g, "");
+  }
 
-  // Decode HTML entities AFTER stripping tags to prevent entity-based injection
+  // Decode only safe HTML entities - NEVER decode < or > to prevent tag reintroduction
   result = result
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#x27;/g, "'")
     .replace(/&#39;/g, "'")

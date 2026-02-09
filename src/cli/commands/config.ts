@@ -220,6 +220,10 @@ function setNestedValue(obj: ConfigObject, path: string, value: unknown): void {
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
     if (!key) continue;
+    // Prevent prototype pollution by rejecting dangerous keys
+    if (key === "__proto__" || key === "constructor" || key === "prototype") {
+      throw new Error(`Invalid config path: cannot set ${key}`);
+    }
     if (!(key in current) || typeof current[key] !== "object") {
       current[key] = {};
     }
@@ -228,6 +232,10 @@ function setNestedValue(obj: ConfigObject, path: string, value: unknown): void {
 
   const lastKey = keys[keys.length - 1];
   if (lastKey) {
+    // Prevent prototype pollution on the final key as well
+    if (lastKey === "__proto__" || lastKey === "constructor" || lastKey === "prototype") {
+      throw new Error(`Invalid config path: cannot set ${lastKey}`);
+    }
     current[lastKey] = value;
   }
 }

@@ -16,7 +16,8 @@ async function testKimiConnection() {
     process.exit(1);
   }
 
-  console.log(`API Key: ${apiKey.substring(0, 10)}...`);
+  // Don't log API key to avoid clear-text logging security issue
+  console.log(`API Key: [REDACTED]`);
   console.log(`Base URL: https://api.moonshot.cn/v1\n`);
 
   // Test 1: Direct OpenAI client
