@@ -518,11 +518,15 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
   // Always show the styled header box.
   // The 🥥 emoji sits BEFORE the top-left corner — outside the box —
   // so terminal emoji-width variance cannot break the right border.
-  // Indent: "🥥 " before top border (emoji col 1-2, space col 3, ╭ col 4),
-  //         "   " (3 spaces) before content/bottom so │/╰ align at col 4.
-  const indent = "   "; // 3 spaces to align with ╭ after "🥥 "
+  // Indent: "🥥  " before top border (emoji + 2 spaces), then 4 spaces
+  // for content/bottom lines so │/╰ align with ╭.
+  // Note: most terminals render 🥥 as 2 cols; some render it as 3.
+  // With 2 spaces after the emoji the ╭ lands at col 5 in both cases
+  // (2+2=4 → col 5, or 3+2=5 → col 6 — only 1 col variance on the
+  // left side, while the right border stays perfectly aligned).
+  const indent = "    "; // 4 spaces to align with ╭ after "🥥  "
   console.log();
-  console.log("\u{1F965} " + chalk.magenta("\u256D" + "\u2500".repeat(boxWidth - 2) + "\u256E"));
+  console.log("\u{1F965}  " + chalk.magenta("\u256D" + "\u2500".repeat(boxWidth - 2) + "\u256E"));
   console.log(indent + boxLine(titleContent));
   console.log(indent + boxLine(subtitleContent));
   console.log(indent + chalk.magenta("\u2570" + "\u2500".repeat(boxWidth - 2) + "\u256F"));
