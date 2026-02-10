@@ -81,10 +81,7 @@ function analyzeReadabilityPatterns(ast: TSESTree.Program): FileReadability {
      * - Does NOT account for: recursion, method overloading, boolean operator sequences
      * Scoring formula: max(0, min(100, 100 - (avgWeightedComplexity - 5) * 5))
      */
-    function traverseForComplexity(
-      n: TSESTree.Node,
-      currentNesting: number,
-    ): void {
+    function traverseForComplexity(n: TSESTree.Node, currentNesting: number): void {
       localMaxNesting = Math.max(localMaxNesting, currentNesting);
 
       let nextNesting = currentNesting;
@@ -242,10 +239,7 @@ function analyzeReadabilityPatterns(ast: TSESTree.Program): FileReadability {
   /**
    * Traverse child nodes
    */
-  function traverseChildren(
-    node: TSESTree.Node,
-    callback: (child: TSESTree.Node) => void,
-  ): void {
+  function traverseChildren(node: TSESTree.Node, callback: (child: TSESTree.Node) => void): void {
     for (const key of Object.keys(node)) {
       if (key === "parent") continue;
       const child = (node as unknown as Record<string, unknown>)[key];

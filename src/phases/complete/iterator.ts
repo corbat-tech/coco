@@ -145,7 +145,13 @@ export class TaskIterator {
         }
 
         // Create version snapshot with improvement tracking
-        const version = this.createVersion(iteration, currentFiles, review, testResults, previousIssues);
+        const version = this.createVersion(
+          iteration,
+          currentFiles,
+          review,
+          testResults,
+          previousIssues,
+        );
         versions.push(version);
 
         // Check if we should stop
@@ -386,27 +392,30 @@ export class TaskIterator {
   ): TaskImprovement[] {
     if (previousIssues.length === 0) return [];
 
-    const currentIssueKeys = new Set(
-      currentIssues.map((i) => `${i.category}::${i.message}`),
-    );
+    const currentIssueKeys = new Set(currentIssues.map((i) => `${i.category}::${i.message}`));
 
     const improvements: TaskImprovement[] = [];
     for (const prev of previousIssues) {
       const key = `${prev.category}::${prev.message}`;
       if (!currentIssueKeys.has(key)) {
-        const impactLevel = prev.severity === "critical" || prev.severity === "major"
-          ? "high" as const
-          : prev.severity === "minor"
-            ? "medium" as const
-            : "low" as const;
+        const impactLevel =
+          prev.severity === "critical" || prev.severity === "major"
+            ? ("high" as const)
+            : prev.severity === "minor"
+              ? ("medium" as const)
+              : ("low" as const);
         improvements.push({
           category: this.mapToIssueCategory(prev.category),
           description: `Resolved: ${prev.message}`,
           impact: impactLevel,
-          scoreImpact: prev.severity === "critical" ? 10
-            : prev.severity === "major" ? 5
-            : prev.severity === "minor" ? 2
-            : 1,
+          scoreImpact:
+            prev.severity === "critical"
+              ? 10
+              : prev.severity === "major"
+                ? 5
+                : prev.severity === "minor"
+                  ? 2
+                  : 1,
         });
       }
     }

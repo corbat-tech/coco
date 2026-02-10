@@ -21,20 +21,23 @@ export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 /**
  * Quality configuration schema
  */
-export const QualityConfigSchema = z.object({
-  minScore: z.number().min(0).max(100).default(85),
-  minCoverage: z.number().min(0).max(100).default(80),
-  maxIterations: z.number().min(1).max(20).default(10),
-  minIterations: z.number().min(1).max(10).default(2),
-  convergenceThreshold: z.number().min(0).max(10).default(2),
-  securityThreshold: z.number().min(0).max(100).default(100),
-}).refine(
-  (data) => data.minIterations <= data.maxIterations,
-  { message: "minIterations must be <= maxIterations", path: ["minIterations"] }
-).refine(
-  (data) => data.convergenceThreshold < data.minScore,
-  { message: "convergenceThreshold must be < minScore", path: ["convergenceThreshold"] }
-);
+export const QualityConfigSchema = z
+  .object({
+    minScore: z.number().min(0).max(100).default(85),
+    minCoverage: z.number().min(0).max(100).default(80),
+    maxIterations: z.number().min(1).max(20).default(10),
+    minIterations: z.number().min(1).max(10).default(2),
+    convergenceThreshold: z.number().min(0).max(10).default(2),
+    securityThreshold: z.number().min(0).max(100).default(100),
+  })
+  .refine((data) => data.minIterations <= data.maxIterations, {
+    message: "minIterations must be <= maxIterations",
+    path: ["minIterations"],
+  })
+  .refine((data) => data.convergenceThreshold < data.minScore, {
+    message: "convergenceThreshold must be < minScore",
+    path: ["convergenceThreshold"],
+  });
 
 export type QualityConfig = z.infer<typeof QualityConfigSchema>;
 

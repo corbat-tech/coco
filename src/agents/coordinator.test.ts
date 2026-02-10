@@ -44,10 +44,7 @@ describe("AgentCoordinator", () => {
       ],
     ]);
 
-    const coordinator = new AgentCoordinator(
-      mockExecutor as any,
-      agentDefinitions,
-    );
+    const coordinator = new AgentCoordinator(mockExecutor as any, agentDefinitions);
 
     const tasks: AgentTask[] = [
       {

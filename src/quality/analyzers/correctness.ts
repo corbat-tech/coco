@@ -113,7 +113,9 @@ export class CorrectnessAnalyzer {
   async analyze(): Promise<CorrectnessResult> {
     const [testResult, buildResult] = await Promise.all([
       this.runTests(),
-      this.buildVerifier.verifyTypes().catch(() => ({ success: false, errors: [] as BuildError[] })),
+      this.buildVerifier
+        .verifyTypes()
+        .catch(() => ({ success: false, errors: [] as BuildError[] })),
     ]);
 
     const total = testResult.passed + testResult.failed;
@@ -204,9 +206,7 @@ export class CorrectnessAnalyzer {
   ): string {
     const parts: string[] = [];
     if (total > 0) {
-      parts.push(
-        `Tests: ${testResult.passed}/${total} passed (${testPassRate.toFixed(1)}%)`,
-      );
+      parts.push(`Tests: ${testResult.passed}/${total} passed (${testPassRate.toFixed(1)}%)`);
       if (testResult.failed > 0) {
         parts.push(`${testResult.failed} failed`);
       }

@@ -252,10 +252,7 @@ export function helper(): void {}
 
     it("should report hasChangelog false when neither changelog file exists", async () => {
       const tempDir = await createTempProject();
-      await writeFile(
-        join(tempDir, "lib.ts"),
-        `export function helper(): void {}`,
-      );
+      await writeFile(join(tempDir, "lib.ts"), `export function helper(): void {}`);
 
       const analyzer = new DocumentationAnalyzer(tempDir);
       const result = await analyzer.analyze([join(tempDir, "lib.ts")]);

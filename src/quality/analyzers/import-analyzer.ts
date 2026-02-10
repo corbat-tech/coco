@@ -181,7 +181,8 @@ export class ImportAnalyzer {
           if (child && typeof child === "object") {
             if (Array.isArray(child)) {
               child.forEach((c: unknown) => {
-                if (c && typeof c === "object" && (c as TSESTree.Node).type) traverse(c as TSESTree.Node);
+                if (c && typeof c === "object" && (c as TSESTree.Node).type)
+                  traverse(c as TSESTree.Node);
               });
             } else if ((child as TSESTree.Node).type) {
               traverse(child as TSESTree.Node);

@@ -358,12 +358,16 @@ export const ERROR_SUGGESTIONS: Record<string, string> = {
   FILESYSTEM_ERROR: "Check that the path exists and you have read/write permissions.",
   VALIDATION_ERROR: "Check the input data format. See 'coco --help' for usage.",
   PHASE_ERROR: "Phase execution failed. Try 'coco resume' to continue from the last checkpoint.",
-  TASK_ERROR: "Task execution failed. The task can be retried from the last checkpoint with 'coco resume'.",
-  QUALITY_ERROR: "Quality score below threshold. Review the issues listed above and iterate on the code.",
+  TASK_ERROR:
+    "Task execution failed. The task can be retried from the last checkpoint with 'coco resume'.",
+  QUALITY_ERROR:
+    "Quality score below threshold. Review the issues listed above and iterate on the code.",
   RECOVERY_ERROR: "Checkpoint may be corrupted. Try 'coco init --force' to start fresh.",
   TOOL_ERROR: "A tool execution failed. Check the error details above and retry.",
-  TIMEOUT_ERROR: "Operation timed out. Try increasing the timeout in config or simplifying the request.",
-  UNEXPECTED_ERROR: "An unexpected error occurred. Please report at github.com/corbat/corbat-coco/issues.",
+  TIMEOUT_ERROR:
+    "Operation timed out. Try increasing the timeout in config or simplifying the request.",
+  UNEXPECTED_ERROR:
+    "An unexpected error occurred. Please report at github.com/corbat/corbat-coco/issues.",
 };
 
 /**

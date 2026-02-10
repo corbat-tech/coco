@@ -641,9 +641,7 @@ describe("oauth", () => {
       const state = "test-state-abc";
       const codePromise = startCallbackServer(port, state);
 
-      const response = await simulateRequest(
-        `/callback?code=auth-code-xyz&state=${state}`,
-      );
+      const response = await simulateRequest(`/callback?code=auth-code-xyz&state=${state}`);
       expect(response.status).toBe(200);
 
       const code = await codePromise;

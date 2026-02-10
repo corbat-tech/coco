@@ -170,10 +170,7 @@ describe("FixGenerator", () => {
       const llm = createMockLLM(["// fixed A"]);
       const generator = new FixGenerator(llm);
 
-      const files = [
-        makeFile("src/a.ts", "// original A"),
-        makeFile("src/b.ts", "// original B"),
-      ];
+      const files = [makeFile("src/a.ts", "// original A"), makeFile("src/b.ts", "// original B")];
 
       const analysis = makeAnalysis([
         {
@@ -195,7 +192,7 @@ describe("FixGenerator", () => {
 
   describe("extractCode (via generateFixes)", () => {
     it("should extract code from markdown code blocks", async () => {
-      const llmResponse = '```typescript\nconst x = 42;\n```';
+      const llmResponse = "```typescript\nconst x = 42;\n```";
       const llm = createMockLLM([llmResponse]);
       const generator = new FixGenerator(llm);
 
@@ -216,7 +213,7 @@ describe("FixGenerator", () => {
     });
 
     it("should extract code from javascript code blocks", async () => {
-      const llmResponse = '```javascript\nfunction add(a, b) { return a + b; }\n```';
+      const llmResponse = "```javascript\nfunction add(a, b) { return a + b; }\n```";
       const llm = createMockLLM([llmResponse]);
       const generator = new FixGenerator(llm);
 

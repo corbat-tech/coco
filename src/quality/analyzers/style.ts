@@ -49,9 +49,7 @@ async function detectLinter(projectPath: string): Promise<LinterType> {
 /**
  * Run oxlint and parse output
  */
-async function runOxlint(
-  projectPath: string,
-): Promise<{ errors: number; warnings: number }> {
+async function runOxlint(projectPath: string): Promise<{ errors: number; warnings: number }> {
   try {
     const result = await execa("npx", ["oxlint", "src", "--format=json"], {
       cwd: projectPath,
@@ -93,9 +91,7 @@ async function runOxlint(
 /**
  * Run eslint and parse output
  */
-async function runEslint(
-  projectPath: string,
-): Promise<{ errors: number; warnings: number }> {
+async function runEslint(projectPath: string): Promise<{ errors: number; warnings: number }> {
   try {
     const result = await execa("npx", ["eslint", "src", "--format=json"], {
       cwd: projectPath,
@@ -122,19 +118,13 @@ async function runEslint(
 /**
  * Run biome and parse output
  */
-async function runBiome(
-  projectPath: string,
-): Promise<{ errors: number; warnings: number }> {
+async function runBiome(projectPath: string): Promise<{ errors: number; warnings: number }> {
   try {
-    const result = await execa(
-      "npx",
-      ["@biomejs/biome", "lint", "src", "--reporter=json"],
-      {
-        cwd: projectPath,
-        reject: false,
-        timeout: 60000,
-      },
-    );
+    const result = await execa("npx", ["@biomejs/biome", "lint", "src", "--reporter=json"], {
+      cwd: projectPath,
+      reject: false,
+      timeout: 60000,
+    });
 
     try {
       const output = JSON.parse(result.stdout);

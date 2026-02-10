@@ -85,11 +85,7 @@ vi.mock("../../config/env.js", () => ({
 
 import * as p from "@clack/prompts";
 import * as fs from "node:fs/promises";
-import {
-  runOnboardingV2,
-  saveConfiguration,
-  setupLMStudioProvider,
-} from "./onboarding-v2.js";
+import { runOnboardingV2, saveConfiguration, setupLMStudioProvider } from "./onboarding-v2.js";
 import {
   getAllProviders,
   getProviderDefinition,
@@ -346,7 +342,15 @@ describe("onboarding-v2", () => {
         id: "codex" as any,
         name: "Codex",
         envVar: "OPENAI_CODEX_TOKEN",
-        models: [{ id: "gpt-4o", name: "GPT-4o", contextWindow: 128000, maxOutputTokens: 4096, description: "Latest" }],
+        models: [
+          {
+            id: "gpt-4o",
+            name: "GPT-4o",
+            contextWindow: 128000,
+            maxOutputTokens: 4096,
+            description: "Latest",
+          },
+        ],
       });
 
       mockedGetConfiguredProviders.mockReturnValue([]);
@@ -364,7 +368,10 @@ describe("onboarding-v2", () => {
       mockedSelect.mockResolvedValueOnce("oauth");
 
       // OAuth succeeds
-      mockedRunOAuthFlow.mockResolvedValue({ accessToken: "oauth-token-123", expiresAt: Date.now() + 3600000 });
+      mockedRunOAuthFlow.mockResolvedValue({
+        accessToken: "oauth-token-123",
+        expiresAt: Date.now() + 3600000,
+      });
 
       // Select model for codex
       mockedSelect.mockResolvedValueOnce("gpt-4o");

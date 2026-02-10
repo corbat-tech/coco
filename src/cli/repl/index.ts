@@ -515,7 +515,9 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
   if (isReturningUser) {
     const versionStr = chalk.dim(`v${VERSION}`);
     const providerStr = chalk.dim(`${providerType}/${model}`);
-    console.log(`\n  \u{1F965} Coco ${versionStr} ${chalk.dim("\u2502")} ${providerStr} ${chalk.dim("\u2502")} ${chalk.yellow("/help")}\n`);
+    console.log(
+      `\n  \u{1F965} Coco ${versionStr} ${chalk.dim("\u2502")} ${providerStr} ${chalk.dim("\u2502")} ${chalk.yellow("/help")}\n`,
+    );
     return;
   }
 

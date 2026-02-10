@@ -172,7 +172,13 @@ export class QualityEvaluator {
       location: { file: string; line?: number };
       description: string;
     }>,
-    complexityResult: { score: number; files: Array<{ file: string; functions: Array<{ name: string; complexity: number; line: number }> }> },
+    complexityResult: {
+      score: number;
+      files: Array<{
+        file: string;
+        functions: Array<{ name: string; complexity: number; line: number }>;
+      }>;
+    },
     duplicationResult: { percentage: number; duplicateLines?: number; totalLines?: number },
     correctnessResult: { score: number; testsFailed?: number; buildSuccess?: boolean },
     styleResult: { score: number; errors?: number; warnings?: number },

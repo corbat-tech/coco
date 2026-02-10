@@ -307,7 +307,8 @@ export const delegateTaskTool = defineTool({
         taskId: typedInput.taskId,
         role: typedInput.agentRole,
         status: "unavailable",
-        message: "Agent provider not initialized. Call setAgentProvider() during orchestrator startup.",
+        message:
+          "Agent provider not initialized. Call setAgentProvider() during orchestrator startup.",
         success: false,
       };
     }
@@ -403,9 +404,8 @@ export const aggregateResultsTool = defineTool({
       case "best": {
         // Select result based on success rate: prefer completed over failed,
         // then pick the first successful result (earliest completion = most reliable agent)
-        const successRate = typedInput.results.length > 0
-          ? completed.length / typedInput.results.length
-          : 0;
+        const successRate =
+          typedInput.results.length > 0 ? completed.length / typedInput.results.length : 0;
         const bestResult = completed.length > 0 ? completed[0] : undefined;
         aggregatedOutput = bestResult
           ? `[Success rate: ${Math.round(successRate * 100)}%]\n\n${bestResult.output}`

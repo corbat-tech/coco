@@ -84,9 +84,7 @@ describe("ImportAnalyzer", () => {
           {
             type: "ImportDeclaration",
             source: { value: "express" },
-            specifiers: [
-              { type: "ImportDefaultSpecifier", local: { name: "express" } },
-            ],
+            specifiers: [{ type: "ImportDefaultSpecifier", local: { name: "express" } }],
             importKind: "value",
             loc: { start: { line: 1, column: 0 } },
           },

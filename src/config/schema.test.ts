@@ -222,7 +222,6 @@ describe("QualityConfigSchema", () => {
   });
 });
 
-
 describe("QualityConfigSchema cross-field validation", () => {
   it("should reject minIterations > maxIterations", () => {
     const result = QualityConfigSchema.safeParse({

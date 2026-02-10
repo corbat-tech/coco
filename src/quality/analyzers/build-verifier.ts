@@ -88,8 +88,12 @@ export class BuildVerifier {
     } catch (error: unknown) {
       // Build failed
       const execError = error as { stdout?: string; stderr?: string; message?: string };
-      const errors = this.parseErrors((execError.stdout ?? "") + (execError.stderr ?? "") || (execError.message ?? ""));
-      const warnings = this.parseWarnings((execError.stdout ?? "") + (execError.stderr ?? "") || "");
+      const errors = this.parseErrors(
+        (execError.stdout ?? "") + (execError.stderr ?? "") || (execError.message ?? ""),
+      );
+      const warnings = this.parseWarnings(
+        (execError.stdout ?? "") + (execError.stderr ?? "") || "",
+      );
 
       return {
         success: false,
@@ -143,8 +147,12 @@ export class BuildVerifier {
       };
     } catch (error: unknown) {
       const execError = error as { stdout?: string; stderr?: string; message?: string };
-      const errors = this.parseTypeScriptErrors((execError.stdout ?? "") + (execError.stderr ?? "") || (execError.message ?? ""));
-      const warnings = this.parseTypeScriptWarnings((execError.stdout ?? "") + (execError.stderr ?? "") || "");
+      const errors = this.parseTypeScriptErrors(
+        (execError.stdout ?? "") + (execError.stderr ?? "") || (execError.message ?? ""),
+      );
+      const warnings = this.parseTypeScriptWarnings(
+        (execError.stdout ?? "") + (execError.stderr ?? "") || "",
+      );
 
       return {
         success: false,

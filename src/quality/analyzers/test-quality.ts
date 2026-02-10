@@ -179,8 +179,7 @@ export class TestQualityAnalyzer {
     const trivialAssertionRatio =
       totalAssertions > 0 ? (trivialAssertions / totalAssertions) * 100 : 0;
     const edgeCaseRatio = totalTests > 0 ? (edgeCaseTests / totalTests) * 100 : 0;
-    const assertionDiversity =
-      (allMatchersUsed.size / MATCHER_PATTERNS.length) * 100;
+    const assertionDiversity = (allMatchersUsed.size / MATCHER_PATTERNS.length) * 100;
 
     // Score calculation
     // Start at 100, penalize for problems, bonus for good practices

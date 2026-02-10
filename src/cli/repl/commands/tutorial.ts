@@ -49,7 +49,9 @@ export const tutorialCommand: SlashCommand = {
     }
 
     console.log(chalk.bold("Useful commands:"));
-    console.log(`  ${chalk.yellow("/coco")}       ${chalk.dim("Toggle quality mode (auto-iteration)")}`);
+    console.log(
+      `  ${chalk.yellow("/coco")}       ${chalk.dim("Toggle quality mode (auto-iteration)")}`,
+    );
     console.log(`  ${chalk.yellow("/init")}       ${chalk.dim("Initialize a new project")}`);
     console.log(`  ${chalk.yellow("/help")}       ${chalk.dim("See all available commands")}`);
     console.log(`  ${chalk.yellow("/help tools")} ${chalk.dim("See available agent tools")}`);

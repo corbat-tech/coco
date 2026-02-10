@@ -298,7 +298,14 @@ Respond in JSON format:
     if (lower.includes("assertion") || lower.includes("expect(")) {
       return "Assertion Failure";
     }
-    if (lower.includes("type") && (lower.includes("mismatch") || lower.includes("assignable") || lower.includes("incompatible") || lower.includes("not assignable") || lower.includes("expected"))) {
+    if (
+      lower.includes("type") &&
+      (lower.includes("mismatch") ||
+        lower.includes("assignable") ||
+        lower.includes("incompatible") ||
+        lower.includes("not assignable") ||
+        lower.includes("expected"))
+    ) {
       return "Type Mismatch";
     }
     if (lower.includes("async") || lower.includes("promise") || lower.includes("await")) {

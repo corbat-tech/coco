@@ -83,10 +83,9 @@ describe("ProgressTracker", () => {
 
       await tracker.saveCheckpoint(state);
 
-      expect(fs.mkdir).toHaveBeenCalledWith(
-        expect.stringContaining("checkpoints"),
-        { recursive: true },
-      );
+      expect(fs.mkdir).toHaveBeenCalledWith(expect.stringContaining("checkpoints"), {
+        recursive: true,
+      });
       expect(fs.writeFile).toHaveBeenCalledWith(
         expect.stringContaining("test-session.json"),
         expect.any(String),
@@ -247,9 +246,7 @@ describe("ProgressTracker", () => {
 
       await tracker.hasCheckpoint();
 
-      expect(fs.stat).toHaveBeenCalledWith(
-        expect.stringContaining("test-session-id.json"),
-      );
+      expect(fs.stat).toHaveBeenCalledWith(expect.stringContaining("test-session-id.json"));
     });
   });
 
@@ -273,14 +270,12 @@ describe("ProgressTracker", () => {
         callIndex++;
         return { mtimeMs: callIndex === 1 ? 100 : 200 } as any;
       });
-      fs.readFile.mockResolvedValue(
-        JSON.stringify({ sessionId: "s", currentPhase: "complete" }),
-      );
+      fs.readFile.mockResolvedValue(JSON.stringify({ sessionId: "s", currentPhase: "complete" }));
 
       const result = await tracker.listCheckpoints();
 
       if (result.length >= 2) {
-        expect((result[0]?.timestamp ?? 0)).toBeGreaterThanOrEqual(result[1]?.timestamp ?? 0);
+        expect(result[0]?.timestamp ?? 0).toBeGreaterThanOrEqual(result[1]?.timestamp ?? 0);
       }
     });
 
@@ -312,9 +307,7 @@ describe("ProgressTracker", () => {
 
       await tracker.deleteCheckpoint("old-session");
 
-      expect(fs.unlink).toHaveBeenCalledWith(
-        expect.stringContaining("old-session.json"),
-      );
+      expect(fs.unlink).toHaveBeenCalledWith(expect.stringContaining("old-session.json"));
     });
 
     it("should silently ignore ENOENT errors", async () => {

@@ -128,9 +128,7 @@ describe("BuildVerifier", () => {
     });
 
     it("should parse TypeScript errors from build output", async () => {
-      mockFs.readFile.mockResolvedValue(
-        JSON.stringify({ scripts: { build: "tsc" } }),
-      );
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ scripts: { build: "tsc" } }));
       mockExecAsync.mockRejectedValue({
         stdout: "src/index.ts(10,5): error TS2345: Argument of type 'string' is not assignable",
         stderr: "",
@@ -148,9 +146,7 @@ describe("BuildVerifier", () => {
     });
 
     it("should parse warnings from build output", async () => {
-      mockFs.readFile.mockResolvedValue(
-        JSON.stringify({ scripts: { build: "tsc" } }),
-      );
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ scripts: { build: "tsc" } }));
       mockExecAsync.mockResolvedValue({
         stdout: "src/utils.ts(3,1): warning TS6133: 'x' is declared but never used",
         stderr: "",
@@ -165,9 +161,7 @@ describe("BuildVerifier", () => {
     });
 
     it("should handle build failure with error output", async () => {
-      mockFs.readFile.mockResolvedValue(
-        JSON.stringify({ scripts: { build: "tsc" } }),
-      );
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ scripts: { build: "tsc" } }));
       mockExecAsync.mockRejectedValue({
         stdout: "",
         stderr: "Error: some build failure",
@@ -181,9 +175,7 @@ describe("BuildVerifier", () => {
     });
 
     it("should handle build failure with only message", async () => {
-      mockFs.readFile.mockResolvedValue(
-        JSON.stringify({ scripts: { build: "tsc" } }),
-      );
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ scripts: { build: "tsc" } }));
       mockExecAsync.mockRejectedValue({
         message: "Command timed out",
       });
@@ -194,9 +186,7 @@ describe("BuildVerifier", () => {
     });
 
     it("should report duration even on failure", async () => {
-      mockFs.readFile.mockResolvedValue(
-        JSON.stringify({ scripts: { build: "tsc" } }),
-      );
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ scripts: { build: "tsc" } }));
       mockExecAsync.mockRejectedValue({
         stdout: "",
         stderr: "failed",
@@ -287,9 +277,7 @@ describe("BuildVerifier", () => {
 
   describe("error/warning parsing edge cases", () => {
     it("should handle output with no parseable errors", async () => {
-      mockFs.readFile.mockResolvedValue(
-        JSON.stringify({ scripts: { build: "tsc" } }),
-      );
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ scripts: { build: "tsc" } }));
       mockExecAsync.mockResolvedValue({
         stdout: "Some random build output\nAnother line",
         stderr: "",
@@ -302,9 +290,7 @@ describe("BuildVerifier", () => {
     });
 
     it("should handle empty build output", async () => {
-      mockFs.readFile.mockResolvedValue(
-        JSON.stringify({ scripts: { build: "tsc" } }),
-      );
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ scripts: { build: "tsc" } }));
       mockExecAsync.mockResolvedValue({ stdout: "", stderr: "" });
 
       const result = await verifier.verifyBuild();

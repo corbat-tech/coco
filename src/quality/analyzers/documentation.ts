@@ -143,10 +143,7 @@ export class DocumentationAnalyzer {
     const score = Math.round(
       Math.max(
         0,
-        Math.min(
-          100,
-          jsdocCoverage * 0.7 + (hasReadme ? 20 : 0) + (hasChangelog ? 10 : 0),
-        ),
+        Math.min(100, jsdocCoverage * 0.7 + (hasReadme ? 20 : 0) + (hasChangelog ? 10 : 0)),
       ),
     );
 

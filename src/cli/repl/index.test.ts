@@ -215,9 +215,8 @@ describe("REPL index", () => {
       const { createSession } = await import("./session.js");
       const { createInputHandler } = await import("./input/handler.js");
       const { createFullToolRegistry } = await import("../../tools/index.js");
-      const { setAgentProvider, setAgentToolRegistry } = await import(
-        "../../agents/provider-bridge.js"
-      );
+      const { setAgentProvider, setAgentToolRegistry } =
+        await import("../../agents/provider-bridge.js");
 
       const mockProvider: Partial<LLMProvider> = {
         isAvailable: vi.fn().mockResolvedValue(true),

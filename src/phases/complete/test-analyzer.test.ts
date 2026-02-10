@@ -19,7 +19,9 @@ function createMockLLM(responses: string[]): LLMProvider {
     name: "Mock Provider",
     initialize: vi.fn(),
     chat: vi.fn().mockImplementation(async () => {
-      const content = responses[callIndex] ?? '{"rootCause":"unknown","suggestedFix":"unknown","confidence":50,"affectedFiles":[]}';
+      const content =
+        responses[callIndex] ??
+        '{"rootCause":"unknown","suggestedFix":"unknown","confidence":50,"affectedFiles":[]}';
       callIndex++;
       return {
         id: "resp-1",
@@ -76,9 +78,7 @@ describe("TestFailureAnalyzer", () => {
       const llm = createMockLLM([]);
       const analyzer = new TestFailureAnalyzer(llm);
 
-      const results: TestResult[] = [
-        { name: "skipped test", status: "skipped" },
-      ];
+      const results: TestResult[] = [{ name: "skipped test", status: "skipped" }];
 
       const analysis = await analyzer.analyzeFailures(results);
       expect(analysis.totalFailures).toBe(0);
@@ -399,7 +399,9 @@ describe("TestFailureAnalyzer", () => {
     });
 
     it("should categorize type mismatches", async () => {
-      const summary = await analyzeSingleFailure("Type string is not assignable to expected number");
+      const summary = await analyzeSingleFailure(
+        "Type string is not assignable to expected number",
+      );
       expect(summary).toContain("Type Mismatch");
     });
 
@@ -502,9 +504,24 @@ describe("TestFailureAnalyzer", () => {
   describe("summary generation", () => {
     it("should generate summary with confidence breakdown", async () => {
       const responses = [
-        JSON.stringify({ rootCause: "null ref", suggestedFix: "fix", confidence: 90, affectedFiles: [] }),
-        JSON.stringify({ rootCause: "type error", suggestedFix: "fix", confidence: 55, affectedFiles: [] }),
-        JSON.stringify({ rootCause: "random issue", suggestedFix: "fix", confidence: 20, affectedFiles: [] }),
+        JSON.stringify({
+          rootCause: "null ref",
+          suggestedFix: "fix",
+          confidence: 90,
+          affectedFiles: [],
+        }),
+        JSON.stringify({
+          rootCause: "type error",
+          suggestedFix: "fix",
+          confidence: 55,
+          affectedFiles: [],
+        }),
+        JSON.stringify({
+          rootCause: "random issue",
+          suggestedFix: "fix",
+          confidence: 20,
+          affectedFiles: [],
+        }),
       ];
 
       const llm = createMockLLM(responses);

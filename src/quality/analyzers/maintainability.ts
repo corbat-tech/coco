@@ -208,34 +208,21 @@ export class MaintainabilityAnalyzer {
 
     // 1. File Length Score (30%)
     // Formula: max(0, min(100, 100 - (avgFileLOC - 200) * 0.33))
-    const fileLengthScore = Math.max(
-      0,
-      Math.min(100, 100 - (averageFileLength - 200) * 0.33),
-    );
+    const fileLengthScore = Math.max(0, Math.min(100, 100 - (averageFileLength - 200) * 0.33));
 
     // 2. Function Count Score (25%)
     // Formula: max(0, min(100, 100 - (avgFuncsPerFile - 10) * 5))
-    const functionCountScore = Math.max(
-      0,
-      Math.min(100, 100 - (averageFunctionsPerFile - 10) * 5),
-    );
+    const functionCountScore = Math.max(0, Math.min(100, 100 - (averageFunctionsPerFile - 10) * 5));
 
     // 3. Dependency Count Score (25%)
     // Formula: max(0, min(100, 100 - (avgImports - 5) * 5))
-    const dependencyCountScore = Math.max(
-      0,
-      Math.min(100, 100 - (averageImportsPerFile - 5) * 5),
-    );
+    const dependencyCountScore = Math.max(0, Math.min(100, 100 - (averageImportsPerFile - 5) * 5));
 
     // 4. Coupling Score (20%)
     // crossBoundaryRatio = crossBoundaryImports / totalImports
     // Formula: max(0, min(100, 100 - crossBoundaryRatio * 100 * 0.5))
-    const crossBoundaryRatio =
-      totalImports > 0 ? totalCrossBoundaryImports / totalImports : 0;
-    const couplingScore = Math.max(
-      0,
-      Math.min(100, 100 - crossBoundaryRatio * 100 * 0.5),
-    );
+    const crossBoundaryRatio = totalImports > 0 ? totalCrossBoundaryImports / totalImports : 0;
+    const couplingScore = Math.max(0, Math.min(100, 100 - crossBoundaryRatio * 100 * 0.5));
 
     // Overall score: weighted average
     const score = Math.round(

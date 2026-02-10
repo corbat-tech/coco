@@ -121,7 +121,8 @@ describe("RecoverySystem", () => {
 
     it("should classify LLM API errors from stack trace", async () => {
       const error = new Error("API Error occurred");
-      error.stack = "Error: API Error occurred\n    at Anthropic.request (/node_modules/anthropic/index.js:42)";
+      error.stack =
+        "Error: API Error occurred\n    at Anthropic.request (/node_modules/anthropic/index.js:42)";
       const context = createContext();
 
       const result = await recovery.recover(error, context);

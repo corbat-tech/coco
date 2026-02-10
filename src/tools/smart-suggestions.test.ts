@@ -56,9 +56,7 @@ describe("smart-suggestions", () => {
 
       const suggestions = await analyzeAndSuggest("/src/app.ts");
 
-      const consoleSuggestion = suggestions.find((s) =>
-        s.message.includes("Console.log found"),
-      );
+      const consoleSuggestion = suggestions.find((s) => s.message.includes("Console.log found"));
       expect(consoleSuggestion).toBeDefined();
       expect(consoleSuggestion?.type).toBe("readability");
       expect(consoleSuggestion?.severity).toBe("medium");
@@ -70,9 +68,7 @@ describe("smart-suggestions", () => {
 
       const suggestions = await analyzeAndSuggest("/src/app.test.ts");
 
-      const consoleSuggestion = suggestions.find((s) =>
-        s.message.includes("Console.log found"),
-      );
+      const consoleSuggestion = suggestions.find((s) => s.message.includes("Console.log found"));
       expect(consoleSuggestion).toBeUndefined();
     });
 
@@ -160,9 +156,7 @@ describe("smart-suggestions", () => {
     });
 
     it("should detect synchronous fs operations", async () => {
-      fsModule.readFile.mockResolvedValue(
-        'const data = fs.readFileSync("file.txt", "utf-8");\n',
-      );
+      fsModule.readFile.mockResolvedValue('const data = fs.readFileSync("file.txt", "utf-8");\n');
       fsModule.access.mockResolvedValue(undefined);
 
       const suggestions = await analyzeAndSuggest("/src/app.ts");
@@ -176,9 +170,7 @@ describe("smart-suggestions", () => {
     });
 
     it("should detect fs.writeFileSync as synchronous operation", async () => {
-      fsModule.readFile.mockResolvedValue(
-        'fs.writeFileSync("file.txt", "data");\n',
-      );
+      fsModule.readFile.mockResolvedValue('fs.writeFileSync("file.txt", "data");\n');
       fsModule.access.mockResolvedValue(undefined);
 
       const suggestions = await analyzeAndSuggest("/src/app.ts");
@@ -223,9 +215,7 @@ describe("smart-suggestions", () => {
 
       const suggestions = await analyzeAndSuggest("/src/utils.ts");
 
-      const testSuggestion = suggestions.find((s) =>
-        s.message.includes("no test file found"),
-      );
+      const testSuggestion = suggestions.find((s) => s.message.includes("no test file found"));
       expect(testSuggestion).toBeDefined();
       expect(testSuggestion?.type).toBe("testing");
     });
@@ -236,9 +226,7 @@ describe("smart-suggestions", () => {
 
       const suggestions = await analyzeAndSuggest("/src/utils.ts");
 
-      const testSuggestion = suggestions.find((s) =>
-        s.message.includes("no test file found"),
-      );
+      const testSuggestion = suggestions.find((s) => s.message.includes("no test file found"));
       expect(testSuggestion).toBeUndefined();
     });
 
@@ -253,8 +241,7 @@ describe("smart-suggestions", () => {
     });
 
     it("should report multiple issues on different lines", async () => {
-      const code =
-        '// TODO: fix this\nconsole.log("debug");\nconst data: any = null;\n';
+      const code = '// TODO: fix this\nconsole.log("debug");\nconst data: any = null;\n';
       fsModule.readFile.mockResolvedValue(code);
       fsModule.access.mockResolvedValue(undefined);
 
@@ -269,8 +256,7 @@ describe("smart-suggestions", () => {
 
   describe("suggestImprovementsTool", () => {
     it("should group suggestions by severity", async () => {
-      const code =
-        '// TODO: fix\nconst x: any = 1;\nconsole.log("test");\n';
+      const code = '// TODO: fix\nconst x: any = 1;\nconsole.log("test");\n';
       fsModule.readFile.mockResolvedValue(code);
       fsModule.access.mockResolvedValue(undefined);
 
@@ -286,8 +272,7 @@ describe("smart-suggestions", () => {
     });
 
     it("should group suggestions by type", async () => {
-      const code =
-        '// TODO: fix\nconst x: any = 1;\nfs.readFileSync("f");\n';
+      const code = '// TODO: fix\nconst x: any = 1;\nfs.readFileSync("f");\n';
       fsModule.readFile.mockResolvedValue(code);
       fsModule.access.mockResolvedValue(undefined);
 
@@ -380,10 +365,7 @@ describe("smart-suggestions", () => {
 
     it("should never return score below 0", async () => {
       // Code with many issues to bring score very low
-      const badLines = Array.from(
-        { length: 15 },
-        () => "const x: any = 1;\n",
-      ).join("");
+      const badLines = Array.from({ length: 15 }, () => "const x: any = 1;\n").join("");
       fsModule.readFile.mockResolvedValue(badLines);
       fsModule.access.mockResolvedValue(undefined);
 

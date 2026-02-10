@@ -126,10 +126,7 @@ function getPort() { return config.port; }`,
 
   describe("project with src/index.ts entry point", () => {
     it("should detect hasEntryPoint as true when src/index.ts exists", async () => {
-      await writeFile(
-        join(testDir, "src", "index.ts"),
-        `export const version = "1.0.0";`,
-      );
+      await writeFile(join(testDir, "src", "index.ts"), `export const version = "1.0.0";`);
 
       const analyzer = new CompletenessAnalyzer(testDir);
       const result = await analyzer.analyze();
@@ -168,10 +165,7 @@ function getPort() { return config.port; }`,
     });
 
     it("should return hasEntryPoint false when no entry point exists", async () => {
-      await writeFile(
-        join(testDir, "src", "lib.ts"),
-        `export function lib() { return "lib"; }`,
-      );
+      await writeFile(join(testDir, "src", "lib.ts"), `export function lib() { return "lib"; }`);
 
       const analyzer = new CompletenessAnalyzer(testDir);
       const result = await analyzer.analyze();
@@ -233,10 +227,7 @@ function getPort() { return config.port; }`,
 
   describe("analyze with explicit file list", () => {
     it("should analyze only the specified files when files argument is provided", async () => {
-      await writeFile(
-        join(testDir, "src", "a.ts"),
-        `export function a() { return "a"; }`,
-      );
+      await writeFile(join(testDir, "src", "a.ts"), `export function a() { return "a"; }`);
       await writeFile(
         join(testDir, "src", "b.ts"),
         `function b() { return "b"; }`, // no export
@@ -260,10 +251,7 @@ function getPort() { return config.port; }`,
 
   describe("details string", () => {
     it("should include file counts, export density, test ratio, and entry point status", async () => {
-      await writeFile(
-        join(testDir, "src", "index.ts"),
-        `export const value = 42;`,
-      );
+      await writeFile(join(testDir, "src", "index.ts"), `export const value = 42;`);
       await writeFile(
         join(testDir, "src", "index.test.ts"),
         `describe("test", () => { it("works", () => {}); });`,

@@ -24,8 +24,16 @@ const mockProvider = {
 const mockToolRegistry = {
   execute: vi.fn(),
   getToolDefinitionsForLLM: vi.fn().mockReturnValue([
-    { name: "read_file", description: "Read a file", input_schema: { type: "object", properties: {} } },
-    { name: "write_file", description: "Write a file", input_schema: { type: "object", properties: {} } },
+    {
+      name: "read_file",
+      description: "Read a file",
+      input_schema: { type: "object", properties: {} },
+    },
+    {
+      name: "write_file",
+      description: "Write a file",
+      input_schema: { type: "object", properties: {} },
+    },
   ]),
 } as unknown as ToolRegistry;
 
@@ -94,9 +102,7 @@ describe("AgentExecutor", () => {
         makeChatResponse({
           content: "Let me read the file.",
           stopReason: "tool_use",
-          toolCalls: [
-            { id: "call-1", name: "read_file", input: { path: "/src/main.ts" } },
-          ],
+          toolCalls: [{ id: "call-1", name: "read_file", input: { path: "/src/main.ts" } }],
         }),
       );
 
@@ -134,9 +140,7 @@ describe("AgentExecutor", () => {
         makeChatResponse({
           content: "Still working...",
           stopReason: "tool_use",
-          toolCalls: [
-            { id: "call-loop", name: "read_file", input: { path: "/file.ts" } },
-          ],
+          toolCalls: [{ id: "call-loop", name: "read_file", input: { path: "/file.ts" } }],
         }),
       );
 
@@ -146,10 +150,7 @@ describe("AgentExecutor", () => {
         duration: 5,
       });
 
-      const result = await executor.execute(
-        createAgent({ maxTurns: 2 }),
-        createTask(),
-      );
+      const result = await executor.execute(createAgent({ maxTurns: 2 }), createTask());
 
       expect(result.success).toBe(false);
       expect(result.turns).toBe(2);
@@ -170,9 +171,7 @@ describe("AgentExecutor", () => {
       );
 
       // Tool execution throws an error
-      vi.mocked(mockToolRegistry.execute).mockRejectedValueOnce(
-        new Error("Permission denied"),
-      );
+      vi.mocked(mockToolRegistry.execute).mockRejectedValueOnce(new Error("Permission denied"));
 
       // Turn 2: LLM recovers and finishes
       vi.mocked(mockProvider.chatWithTools).mockResolvedValueOnce(
@@ -221,9 +220,7 @@ describe("AgentExecutor", () => {
     });
 
     it("should handle provider error with non-Error thrown value", async () => {
-      vi.mocked(mockProvider.chatWithTools).mockRejectedValueOnce(
-        "string error",
-      );
+      vi.mocked(mockProvider.chatWithTools).mockRejectedValueOnce("string error");
 
       const result = await executor.execute(createAgent(), createTask());
 
@@ -241,10 +238,7 @@ describe("AgentExecutor", () => {
       );
 
       // Agent only allows read_file
-      await executor.execute(
-        createAgent({ allowedTools: ["read_file"] }),
-        createTask(),
-      );
+      await executor.execute(createAgent({ allowedTools: ["read_file"] }), createTask());
 
       expect(mockToolRegistry.getToolDefinitionsForLLM).toHaveBeenCalled();
 
@@ -264,15 +258,15 @@ describe("AgentExecutor", () => {
         }),
       );
 
-      await executor.execute(
-        createAgent({ allowedTools: [] }),
-        createTask(),
-      );
+      await executor.execute(createAgent({ allowedTools: [] }), createTask());
 
       const callArgs = vi.mocked(mockProvider.chatWithTools).mock.calls[0];
       const options = callArgs[1];
       expect(options.tools).toHaveLength(2);
-      expect(options.tools.map((t: { name: string }) => t.name)).toEqual(["read_file", "write_file"]);
+      expect(options.tools.map((t: { name: string }) => t.name)).toEqual([
+        "read_file",
+        "write_file",
+      ]);
     });
 
     it("should pass the system prompt to chatWithTools", async () => {
@@ -284,10 +278,7 @@ describe("AgentExecutor", () => {
         }),
       );
 
-      await executor.execute(
-        createAgent({ systemPrompt: "You are a test agent." }),
-        createTask(),
-      );
+      await executor.execute(createAgent({ systemPrompt: "You are a test agent." }), createTask());
 
       const callArgs = vi.mocked(mockProvider.chatWithTools).mock.calls[0];
       const options = callArgs[1];
@@ -330,10 +321,7 @@ describe("AgentExecutor", () => {
         }),
       );
 
-      await executor.execute(
-        createAgent(),
-        createTask({ description: "Simple task" }),
-      );
+      await executor.execute(createAgent(), createTask({ description: "Simple task" }));
 
       const callArgs = vi.mocked(mockProvider.chatWithTools).mock.calls[0];
       const messages = callArgs[0];
@@ -385,9 +373,7 @@ describe("AgentExecutor", () => {
         makeChatResponse({
           content: "",
           stopReason: "tool_use",
-          toolCalls: [
-            { id: "call-fail", name: "read_file", input: { path: "/missing.ts" } },
-          ],
+          toolCalls: [{ id: "call-fail", name: "read_file", input: { path: "/missing.ts" } }],
         }),
       );
 
@@ -430,9 +416,7 @@ describe("AgentExecutor", () => {
         makeChatResponse({
           content: "",
           stopReason: "tool_use",
-          toolCalls: [
-            { id: "call-1", name: "read_file", input: { path: "/a.ts" } },
-          ],
+          toolCalls: [{ id: "call-1", name: "read_file", input: { path: "/a.ts" } }],
         }),
       );
       vi.mocked(mockToolRegistry.execute).mockResolvedValueOnce({
@@ -446,9 +430,7 @@ describe("AgentExecutor", () => {
         makeChatResponse({
           content: "",
           stopReason: "tool_use",
-          toolCalls: [
-            { id: "call-2", name: "read_file", input: { path: "/b.ts" } },
-          ],
+          toolCalls: [{ id: "call-2", name: "read_file", input: { path: "/b.ts" } }],
         }),
       );
       vi.mocked(mockToolRegistry.execute).mockResolvedValueOnce({

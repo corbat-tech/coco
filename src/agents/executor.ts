@@ -124,17 +124,12 @@ export class AgentExecutor {
           toolsUsed.add(toolCall.name);
 
           try {
-            const result = await this.toolRegistry.execute(
-              toolCall.name,
-              toolCall.input,
-            );
+            const result = await this.toolRegistry.execute(toolCall.name, toolCall.input);
 
             toolResults.push({
               type: "tool_result",
               tool_use_id: toolCall.id,
-              content: result.success
-                ? JSON.stringify(result.data)
-                : `Error: ${result.error}`,
+              content: result.success ? JSON.stringify(result.data) : `Error: ${result.error}`,
               is_error: !result.success,
             });
           } catch (error) {
@@ -280,6 +275,9 @@ Use tools to analyze requirements and explore the codebase.`,
 /**
  * Create an agent executor
  */
-export function createAgentExecutor(provider: LLMProvider, toolRegistry: ToolRegistry): AgentExecutor {
+export function createAgentExecutor(
+  provider: LLMProvider,
+  toolRegistry: ToolRegistry,
+): AgentExecutor {
   return new AgentExecutor(provider, toolRegistry);
 }

@@ -25,13 +25,46 @@ export interface CoordinationResult {
 const ROLE_PATTERNS: Record<string, Array<{ keywords: string[]; weight: number }>> = {
   researcher: [
     {
-      keywords: ["research", "find", "analyze", "explore", "investigate", "discover", "understand", "examine"],
+      keywords: [
+        "research",
+        "find",
+        "analyze",
+        "explore",
+        "investigate",
+        "discover",
+        "understand",
+        "examine",
+      ],
       weight: 3,
     },
-    { keywords: ["pattern", "example", "reference", "dependency", "structure", "architecture", "how", "why"], weight: 1 },
+    {
+      keywords: [
+        "pattern",
+        "example",
+        "reference",
+        "dependency",
+        "structure",
+        "architecture",
+        "how",
+        "why",
+      ],
+      weight: 1,
+    },
   ],
   tester: [
-    { keywords: ["test", "coverage", "spec", "assertion", "mock", "unit test", "e2e", "integration test"], weight: 3 },
+    {
+      keywords: [
+        "test",
+        "coverage",
+        "spec",
+        "assertion",
+        "mock",
+        "unit test",
+        "e2e",
+        "integration test",
+      ],
+      weight: 3,
+    },
     { keywords: ["validate", "verify", "check", "expect", "should"], weight: 1 },
   ],
   reviewer: [
@@ -39,7 +72,10 @@ const ROLE_PATTERNS: Record<string, Array<{ keywords: string[]; weight: number }
     { keywords: ["issue", "problem", "vulnerability", "smell", "concern", "feedback"], weight: 1 },
   ],
   optimizer: [
-    { keywords: ["optimize", "refactor", "performance", "simplify", "reduce", "improve efficiency"], weight: 3 },
+    {
+      keywords: ["optimize", "refactor", "performance", "simplify", "reduce", "improve efficiency"],
+      weight: 3,
+    },
     { keywords: ["clean", "improve", "deduplicate", "consolidate", "streamline"], weight: 1 },
   ],
   planner: [
@@ -52,7 +88,10 @@ const ROLE_PATTERNS: Record<string, Array<{ keywords: string[]; weight: number }
  * Score a task description against a role's keyword patterns.
  * Returns the total weighted score.
  */
-function scoreTaskForRole(description: string, patterns: Array<{ keywords: string[]; weight: number }>): number {
+function scoreTaskForRole(
+  description: string,
+  patterns: Array<{ keywords: string[]; weight: number }>,
+): number {
   const desc = description.toLowerCase();
   let score = 0;
   for (const pattern of patterns) {
@@ -172,10 +211,7 @@ export class AgentCoordinator {
    * Topological sort to determine execution order
    * Returns tasks grouped by execution level (all tasks in a level can run in parallel)
    */
-  private topologicalSort(
-    tasks: AgentTask[],
-    graph: Map<string, Set<string>>,
-  ): AgentTask[][] {
+  private topologicalSort(tasks: AgentTask[], graph: Map<string, Set<string>>): AgentTask[][] {
     const levels: AgentTask[][] = [];
     const completed = new Set<string>();
     const taskMap = new Map<string, AgentTask>();

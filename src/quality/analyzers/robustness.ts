@@ -126,8 +126,12 @@ function analyzeRobustnessPatterns(ast: TSESTree.Program): FileRobustness {
 
       case "BinaryExpression":
         // Check for null/undefined comparisons
-        if (node.operator === "===" || node.operator === "!==" ||
-            node.operator === "==" || node.operator === "!=") {
+        if (
+          node.operator === "===" ||
+          node.operator === "!==" ||
+          node.operator === "==" ||
+          node.operator === "!="
+        ) {
           if (isNullOrUndefined(node.left) || isNullOrUndefined(node.right)) {
             nullChecks++;
           }
@@ -238,9 +242,7 @@ export class RobustnessAnalyzer {
 
     // Defensive coding: optional chaining + nullish coalescing per function
     const defensivePerFunction =
-      totalFunctions > 0
-        ? (totalOptionalChaining + totalNullishCoalescing) / totalFunctions
-        : 0;
+      totalFunctions > 0 ? (totalOptionalChaining + totalNullishCoalescing) / totalFunctions : 0;
     const defensiveCodingScore = Math.min(100, defensivePerFunction * 40);
 
     // Overall score: weighted average

@@ -187,10 +187,7 @@ describe("Convergence Loop E2E", () => {
     }
 
     /** Build a minimal CodeReviewResult for convergence checking. */
-    function makeReview(
-      overall: number,
-      options?: { criticalIssues?: number },
-    ): CodeReviewResult {
+    function makeReview(overall: number, options?: { criticalIssues?: number }): CodeReviewResult {
       const issues = Array.from({ length: options?.criticalIssues ?? 0 }, (_, i) => ({
         severity: "critical" as const,
         category: "correctness" as keyof QualityDimensions,
@@ -315,8 +312,7 @@ describe("Convergence Loop E2E", () => {
 
         // Detect whether this is a generate/improve call or a review call
         // by inspecting the system prompt (first message).
-        const systemContent =
-          typeof messages[0]?.content === "string" ? messages[0].content : "";
+        const systemContent = typeof messages[0]?.content === "string" ? messages[0].content : "";
         const isReview = systemContent.includes("code review");
         const isGenerate = !isReview;
 
