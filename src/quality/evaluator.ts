@@ -89,17 +89,17 @@ export class QualityEvaluator {
       maintainabilityResult,
     ] = await Promise.all([
       this.coverageAnalyzer.analyze().catch(() => null),
-      this.securityScanner.scan(fileContents),
-      this.complexityAnalyzer.analyze(targetFiles),
-      this.duplicationAnalyzer.analyze(targetFiles),
+      this.securityScanner.scan(fileContents).catch(() => ({ score: 0, vulnerabilities: [] })),
+      this.complexityAnalyzer.analyze(targetFiles).catch(() => ({ score: 0, files: [] })),
+      this.duplicationAnalyzer.analyze(targetFiles).catch(() => ({ score: 0, percentage: 0 })),
       this.correctnessAnalyzer.analyze().catch(() => ({ score: 0 })),
       this.completenessAnalyzer.analyze(targetFiles).catch(() => ({ score: 0 })),
       this.robustnessAnalyzer.analyze(targetFiles).catch(() => ({ score: 0 })),
       this.testQualityAnalyzer.analyze().catch(() => ({ score: 0 })),
       this.documentationAnalyzer.analyze(targetFiles).catch(() => ({ score: 0 })),
-      this.styleAnalyzer.analyze().catch(() => ({ score: 50 })),
-      this.readabilityAnalyzer.analyze(targetFiles).catch(() => ({ score: 50 })),
-      this.maintainabilityAnalyzer.analyze(targetFiles).catch(() => ({ score: 50 })),
+      this.styleAnalyzer.analyze().catch(() => ({ score: 0 })),
+      this.readabilityAnalyzer.analyze(targetFiles).catch(() => ({ score: 0 })),
+      this.maintainabilityAnalyzer.analyze(targetFiles).catch(() => ({ score: 0 })),
     ]);
 
     // Calculate dimensions — ALL real, ZERO hardcoded

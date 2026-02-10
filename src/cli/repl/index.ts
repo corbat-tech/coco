@@ -198,6 +198,19 @@ export async function startRepl(
   // Print welcome
   await printWelcome(session);
 
+  // Ensure terminal state is restored on exit (bracketed paste, raw mode, etc.)
+  const cleanupTerminal = () => {
+    process.stdout.write("\x1b[?2004l"); // Disable bracketed paste
+    if (process.stdin.isTTY && process.stdin.isRaw) {
+      process.stdin.setRawMode(false);
+    }
+  };
+  process.on("exit", cleanupTerminal);
+  process.on("SIGTERM", () => {
+    cleanupTerminal();
+    process.exit(0);
+  });
+
   // Main loop
   while (true) {
     const input = await inputHandler.prompt();
@@ -306,6 +319,17 @@ export async function startRepl(
       }
     };
 
+    // Create abort controller for Ctrl+C cancellation (outside try for catch access)
+    const abortController = new AbortController();
+    let wasAborted = false;
+
+    const sigintHandler = () => {
+      wasAborted = true;
+      abortController.abort();
+      clearSpinner();
+      renderInfo("\nOperation cancelled");
+    };
+
     try {
       // Show contextual hint for first feature-like prompt when COCO mode is off
       if (
@@ -329,17 +353,6 @@ export async function startRepl(
 
       // Pause input to prevent typing interference during agent response
       inputHandler.pause();
-
-      // Create abort controller for Ctrl+C cancellation
-      const abortController = new AbortController();
-      let wasAborted = false;
-
-      const sigintHandler = () => {
-        wasAborted = true;
-        abortController.abort();
-        clearSpinner();
-        renderInfo("\nOperation cancelled");
-      };
 
       process.once("SIGINT", sigintHandler);
 
@@ -382,7 +395,7 @@ export async function startRepl(
         signal: abortController.signal,
       });
 
-      // Remove SIGINT handler after agent turn completes
+      // Remove SIGINT handler after agent turn completes (also in catch/finally)
       process.off("SIGINT", sigintHandler);
 
       // Show abort summary if cancelled, preserving partial content
@@ -455,8 +468,9 @@ export async function startRepl(
 
       console.log(); // Extra spacing
     } catch (error) {
-      // Always clear spinner on error
+      // Always clear spinner on error and remove SIGINT handler
       clearSpinner();
+      process.off("SIGINT", sigintHandler);
       // Don't show error for abort
       if (error instanceof Error && error.name === "AbortError") {
         continue;

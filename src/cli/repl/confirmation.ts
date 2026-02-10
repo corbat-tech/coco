@@ -584,8 +584,11 @@ async function promptEditCommand(originalCommand: string): Promise<string | null
   console.log(chalk.dim("  Edit command (or press Enter to cancel):"));
   console.log(chalk.cyan(`  Current: ${originalCommand}`));
 
+  // Track raw mode state so we can restore it
+  const wasRaw = process.stdin.isTTY ? process.stdin.isRaw : false;
+
   // Switch to cooked mode for line editing
-  if (process.stdin.isTTY && process.stdin.isRaw) {
+  if (process.stdin.isTTY && wasRaw) {
     process.stdin.setRawMode(false);
   }
 
@@ -600,6 +603,10 @@ async function promptEditCommand(originalCommand: string): Promise<string | null
     return trimmed || null;
   } finally {
     rl.close();
+    // Restore raw mode if it was active before
+    if (process.stdin.isTTY && wasRaw) {
+      process.stdin.setRawMode(true);
+    }
   }
 }
 

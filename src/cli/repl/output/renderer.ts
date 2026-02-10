@@ -86,7 +86,12 @@ export function flushLineBuffer(): void {
   // If we have an unclosed code block, render it
   if (inCodeBlock && codeBlockLines.length > 0) {
     stopStreamingIndicator();
-    renderCodeBlock(codeBlockLang, codeBlockLines);
+    try {
+      renderCodeBlock(codeBlockLang, codeBlockLines);
+    } finally {
+      // Ensure indicator is always stopped even if render fails
+      stopStreamingIndicator();
+    }
     inCodeBlock = false;
     codeBlockLang = "";
     codeBlockLines = [];
@@ -668,30 +673,60 @@ function formatInlineMarkdown(text: string): string {
 // ============================================================================
 
 function wrapText(text: string, maxWidth: number): string[] {
+  if (maxWidth <= 0) return [text];
   const plainText = stripAnsi(text);
   if (plainText.length <= maxWidth) {
     return [text];
   }
 
-  // Simple wrap - just cut at maxWidth
-  // Note: This doesn't handle ANSI codes perfectly, but works for most cases
+  // For ANSI-safe wrapping: operate on plain text to find break points,
+  // then slice the original string at corresponding positions.
   const lines: string[] = [];
   let remaining = text;
 
   while (stripAnsi(remaining).length > maxWidth) {
-    // Find a good break point
-    let breakPoint = maxWidth;
     const plain = stripAnsi(remaining);
 
-    // Try to break at space
+    // Find break point on plain text
+    let breakPoint = maxWidth;
     const lastSpace = plain.lastIndexOf(" ", maxWidth);
     if (lastSpace > maxWidth * 0.5) {
       breakPoint = lastSpace;
     }
 
-    // This is approximate - ANSI codes make exact cutting tricky
-    lines.push(remaining.slice(0, breakPoint));
-    remaining = remaining.slice(breakPoint).trimStart();
+    // Map plain text position to position in ANSI string
+    const ansiRegex = /\x1b\[[0-9;]*m/g;
+    let match: RegExpExecArray | null;
+    const ansiPositions: Array<{ start: number; end: number }> = [];
+
+    ansiRegex.lastIndex = 0;
+    while ((match = ansiRegex.exec(remaining)) !== null) {
+      ansiPositions.push({ start: match.index, end: match.index + match[0].length });
+    }
+
+    let rawPos = 0;
+    let visualPos = 0;
+    let ansiIdx = 0;
+
+    while (visualPos < breakPoint && rawPos < remaining.length) {
+      // Skip any ANSI sequences at current position
+      while (ansiIdx < ansiPositions.length && ansiPositions[ansiIdx]!.start === rawPos) {
+        rawPos = ansiPositions[ansiIdx]!.end;
+        ansiIdx++;
+      }
+      if (rawPos >= remaining.length) break;
+      rawPos++;
+      visualPos++;
+    }
+
+    // Include any trailing ANSI sequences at the break point
+    while (ansiIdx < ansiPositions.length && ansiPositions[ansiIdx]!.start === rawPos) {
+      rawPos = ansiPositions[ansiIdx]!.end;
+      ansiIdx++;
+    }
+
+    lines.push(remaining.slice(0, rawPos));
+    remaining = remaining.slice(rawPos).trimStart();
   }
 
   if (remaining) {

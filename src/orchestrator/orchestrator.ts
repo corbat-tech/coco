@@ -83,6 +83,21 @@ export function createOrchestrator(config: OrchestratorConfig): Orchestrator {
     async transitionTo(phase: Phase): Promise<PhaseResult> {
       const previousPhase = state.currentPhase;
 
+      // Validate phase transition is legal
+      const validTransitions: Record<Phase, Phase[]> = {
+        idle: ["converge"],
+        converge: ["orchestrate"],
+        orchestrate: ["complete"],
+        complete: ["output"],
+        output: [],
+      };
+      const allowed = validTransitions[previousPhase];
+      if (allowed && !allowed.includes(phase)) {
+        throw new Error(
+          `Invalid phase transition: ${previousPhase} → ${phase}. Allowed: ${allowed.join(", ") || "none"}`,
+        );
+      }
+
       // Record transition
       state.phaseHistory.push({
         from: previousPhase,
@@ -179,7 +194,12 @@ async function saveState(state: ProjectState): Promise<void> {
   const statePath = `${state.path}/.coco/state`;
 
   await fs.mkdir(statePath, { recursive: true });
-  await fs.writeFile(`${statePath}/project.json`, JSON.stringify(state, null, 2), "utf-8");
+
+  // Atomic write: write to temp file then rename to prevent corruption
+  const filePath = `${statePath}/project.json`;
+  const tmpPath = `${filePath}.tmp.${Date.now()}`;
+  await fs.writeFile(tmpPath, JSON.stringify(state, null, 2), "utf-8");
+  await fs.rename(tmpPath, filePath);
 }
 
 /**
@@ -578,7 +598,12 @@ export async function loadCheckpointVersion(
  * Restore state from snapshot
  */
 function restoreFromSnapshot(target: ProjectState, snapshot: ProjectState): void {
-  Object.assign(target, snapshot);
+  // Deep clone to avoid shared references between target and snapshot
+  const deep = JSON.parse(JSON.stringify(snapshot)) as ProjectState;
+  // Restore Date objects
+  deep.createdAt = new Date(deep.createdAt);
+  deep.updatedAt = new Date(deep.updatedAt);
+  Object.assign(target, deep);
 }
 
 /**

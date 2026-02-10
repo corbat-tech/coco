@@ -284,8 +284,10 @@ async function saveTrustSettings(settings: TrustSettings): Promise<void> {
     await fs.mkdir(TRUST_SETTINGS_DIR, { recursive: true });
     settings.updatedAt = new Date().toISOString();
     await fs.writeFile(TRUST_SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
-  } catch {
-    // Silently fail if we can't save trust settings
+  } catch (error) {
+    // Log but don't throw — trust save is non-critical
+    const msg = error instanceof Error ? error.message : String(error);
+    console.warn(`[Trust] Failed to save trust settings: ${msg}`);
   }
 }
 

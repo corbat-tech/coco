@@ -139,6 +139,8 @@ export function createInputHandler(_session: ReplSession): InputHandler {
   let historyIndex = -1;
   let tempLine = "";
   let lastMenuLines = 0;
+  let lastCursorRow = 0; // Track cursor row from previous render for accurate clearing
+  let isFirstRender = true;
 
   // Bracketed paste mode state
   let isPasting = false;
@@ -190,15 +192,16 @@ export function createInputHandler(_session: ReplSession): InputHandler {
     const termCols = process.stdout.columns || 80;
     const prompt = getPrompt();
 
-    // Calculate how many terminal lines the previous prompt+text occupied
-    // so we can move up to clear all wrapped lines
-    const totalVisualLen = prompt.visualLen + currentLine.length;
-    const wrappedLines = Math.max(0, Math.ceil(totalVisualLen / termCols) - 1);
-
-    // Move cursor up to the first line of the prompt, then clear everything
-    if (wrappedLines > 0) {
-      process.stdout.write(ansiEscapes.cursorUp(wrappedLines));
+    // On re-renders, move cursor up from previous position to the separator line,
+    // then clear everything. lastCursorRow tracks where the cursor was left,
+    // +1 accounts for the separator line drawn above the prompt.
+    if (!isFirstRender) {
+      const linesToGoUp = lastCursorRow + 1;
+      if (linesToGoUp > 0) {
+        process.stdout.write(ansiEscapes.cursorUp(linesToGoUp));
+      }
     }
+    isFirstRender = false;
     process.stdout.write("\r" + ansiEscapes.eraseDown);
 
     // Build separator line above input area
@@ -320,6 +323,9 @@ export function createInputHandler(_session: ReplSession): InputHandler {
       output += ansiEscapes.cursorForward(finalCol);
     }
 
+    // Track cursor row for next render's clearing calculation
+    lastCursorRow = finalLine;
+
     // Write everything at once
     process.stdout.write(output);
   }
@@ -365,6 +371,8 @@ export function createInputHandler(_session: ReplSession): InputHandler {
         historyIndex = -1;
         tempLine = "";
         lastMenuLines = 0;
+        lastCursorRow = 0;
+        isFirstRender = true;
 
         // Initial render
         render();
@@ -379,10 +387,15 @@ export function createInputHandler(_session: ReplSession): InputHandler {
         // between \x1b[200~ and \x1b[201~ markers
         process.stdout.write("\x1b[?2004h");
 
+        // Re-render on terminal resize to fix layout
+        const onResize = () => render();
+        process.stdout.on("resize", onResize);
+
         const cleanup = () => {
           // Disable bracketed paste mode
           process.stdout.write("\x1b[?2004l");
           process.stdin.removeListener("data", onData);
+          process.stdout.removeListener("resize", onResize);
           if (process.stdin.isTTY) {
             process.stdin.setRawMode(false);
           }

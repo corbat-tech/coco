@@ -80,8 +80,15 @@ Examples:
     const effectivePrompt =
       prompt ?? "Describe this image in detail. If it's code or a UI, identify the key elements.";
 
-    // Resolve path
+    // Resolve path and validate it's within the working directory
     const absPath = path.resolve(filePath);
+    const cwd = process.cwd();
+    if (!absPath.startsWith(cwd + path.sep) && absPath !== cwd) {
+      throw new ToolError(
+        `Path traversal denied: '${filePath}' resolves outside the project directory`,
+        { tool: "read_image" },
+      );
+    }
     const ext = path.extname(absPath).toLowerCase();
 
     // Validate format

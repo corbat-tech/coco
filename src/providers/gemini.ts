@@ -291,7 +291,16 @@ export class GeminiProvider implements LLMProvider {
           for (const part of candidate.content.parts) {
             if ("functionCall" in part && part.functionCall) {
               const funcCall = part.functionCall;
-              const callKey = `${funcCall.name}-${JSON.stringify(funcCall.args)}`;
+              const sortedArgs = funcCall.args
+                ? Object.keys(funcCall.args)
+                    .sort()
+                    .map(
+                      (k) =>
+                        `${k}:${JSON.stringify((funcCall.args as Record<string, unknown>)[k])}`,
+                    )
+                    .join(",")
+                : "";
+              const callKey = `${funcCall.name}-${sortedArgs}`;
 
               // Only emit if we haven't seen this exact call before
               if (!emittedToolCalls.has(callKey)) {
@@ -331,10 +340,18 @@ export class GeminiProvider implements LLMProvider {
 
   /**
    * Count tokens (approximate)
+   *
+   * Gemini uses a SentencePiece tokenizer. The average ratio varies:
+   * - English text: ~4 characters per token
+   * - Code: ~3.2 characters per token
+   * - Mixed content: ~3.5 characters per token
+   *
+   * Using 3.5 as the default provides a better estimate for typical
+   * coding agent workloads which mix code and natural language.
    */
   countTokens(text: string): number {
-    // Gemini uses ~4 characters per token on average
-    return Math.ceil(text.length / 4);
+    if (!text) return 0;
+    return Math.ceil(text.length / 3.5);
   }
 
   /**

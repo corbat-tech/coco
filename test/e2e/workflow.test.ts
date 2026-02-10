@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockFs = {
   mkdir: vi.fn().mockResolvedValue(undefined),
   writeFile: vi.fn().mockResolvedValue(undefined),
+  rename: vi.fn().mockResolvedValue(undefined),
   readFile: vi.fn().mockImplementation(async (path: string) => {
     if (path.includes("package.json")) {
       return JSON.stringify({

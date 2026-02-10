@@ -110,6 +110,24 @@ function deepMergeConfig(base: CocoConfig, override: Partial<CocoConfig>): CocoC
     provider: { ...base.provider, ...override.provider },
     quality: { ...base.quality, ...override.quality },
     persistence: { ...base.persistence, ...override.persistence },
+    // Merge optional sections only if present in either base or override
+    ...(base.stack || override.stack
+      ? { stack: { ...base.stack, ...override.stack } as CocoConfig["stack"] }
+      : {}),
+    ...(base.integrations || override.integrations
+      ? {
+          integrations: {
+            ...base.integrations,
+            ...override.integrations,
+          } as CocoConfig["integrations"],
+        }
+      : {}),
+    ...(base.mcp || override.mcp
+      ? { mcp: { ...base.mcp, ...override.mcp } as CocoConfig["mcp"] }
+      : {}),
+    ...(base.tools || override.tools
+      ? { tools: { ...base.tools, ...override.tools } as CocoConfig["tools"] }
+      : {}),
   };
 }
 
@@ -329,12 +347,5 @@ export function setConfigValue<T>(config: CocoConfig, configPath: string, value:
  */
 export function mergeWithDefaults(partial: Partial<CocoConfig>, projectName: string): CocoConfig {
   const defaults = createDefaultConfig(projectName);
-  return {
-    ...defaults,
-    ...partial,
-    project: { ...defaults.project, ...partial.project },
-    provider: { ...defaults.provider, ...partial.provider },
-    quality: { ...defaults.quality, ...partial.quality },
-    persistence: { ...defaults.persistence, ...partial.persistence },
-  };
+  return deepMergeConfig(defaults, partial);
 }

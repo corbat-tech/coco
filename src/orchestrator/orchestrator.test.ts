@@ -10,12 +10,14 @@ const mockReadFile = vi.fn().mockRejectedValue(new Error("Not found"));
 const mockWriteFile = vi.fn().mockResolvedValue(undefined);
 const mockMkdir = vi.fn().mockResolvedValue(undefined);
 const mockAccess = vi.fn().mockResolvedValue(undefined);
+const mockRename = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("node:fs/promises", () => ({
   readFile: mockReadFile,
   writeFile: mockWriteFile,
   mkdir: mockMkdir,
   access: mockAccess,
+  rename: mockRename,
 }));
 
 // Create mock for node:path
@@ -159,6 +161,7 @@ describe("createOrchestrator", () => {
     mockReadFile.mockRejectedValue(new Error("Not found"));
     mockWriteFile.mockResolvedValue(undefined);
     mockMkdir.mockResolvedValue(undefined);
+    mockRename.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -224,6 +227,7 @@ describe("createOrchestrator", () => {
 
       const orchestrator = createOrchestrator(createTestConfig());
 
+      await orchestrator.transitionTo("converge");
       await orchestrator.transitionTo("orchestrate");
 
       // Now calling start should not change the phase
@@ -282,6 +286,7 @@ describe("createOrchestrator", () => {
 
       const orchestrator = createOrchestrator(createTestConfig());
 
+      await orchestrator.transitionTo("converge");
       const result = await orchestrator.transitionTo("orchestrate");
 
       expect(result.phase).toBe("orchestrate");
@@ -314,6 +319,8 @@ describe("createOrchestrator", () => {
       orchestrator.on("phase:start", startHandler);
       orchestrator.on("phase:complete", completeHandler);
 
+      await orchestrator.transitionTo("converge");
+      await orchestrator.transitionTo("orchestrate");
       await orchestrator.transitionTo("complete");
 
       expect(startHandler).toHaveBeenCalledWith("complete");
@@ -345,6 +352,7 @@ describe("createOrchestrator", () => {
 
       const orchestrator = createOrchestrator(createTestConfig());
 
+      await orchestrator.transitionTo("converge");
       const result = await orchestrator.transitionTo("orchestrate");
 
       expect(result.success).toBe(false);
@@ -359,6 +367,8 @@ describe("createOrchestrator", () => {
 
       const orchestrator = createOrchestrator(createTestConfig());
 
+      await orchestrator.transitionTo("converge");
+      await orchestrator.transitionTo("orchestrate");
       const result = await orchestrator.transitionTo("complete");
 
       expect(result.success).toBe(false);
@@ -372,10 +382,9 @@ describe("createOrchestrator", () => {
       const orchestrator = createOrchestrator(createTestConfig());
 
       // @ts-expect-error Testing unknown phase
-      const result = await orchestrator.transitionTo("unknown_phase");
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("Unknown phase");
+      await expect(orchestrator.transitionTo("unknown_phase")).rejects.toThrow(
+        "Invalid phase transition",
+      );
     });
   });
 
@@ -387,6 +396,9 @@ describe("createOrchestrator", () => {
 
       expect(orchestrator.getCurrentPhase()).toBe("idle");
 
+      await orchestrator.transitionTo("converge");
+      await orchestrator.transitionTo("orchestrate");
+      await orchestrator.transitionTo("complete");
       await orchestrator.transitionTo("output");
 
       expect(orchestrator.getCurrentPhase()).toBe("output");
@@ -442,6 +454,7 @@ describe("createOrchestrator", () => {
 
       const orchestrator = createOrchestrator(createTestConfig());
 
+      await orchestrator.transitionTo("converge");
       await orchestrator.transitionTo("orchestrate");
 
       const progress = orchestrator.getProgress();
@@ -1109,6 +1122,7 @@ describe("createOrchestrator", () => {
 
       const orchestrator = createOrchestrator(createTestConfig());
 
+      await orchestrator.transitionTo("converge");
       const result = await orchestrator.transitionTo("orchestrate");
 
       expect(result.success).toBe(false);
@@ -1135,6 +1149,7 @@ describe("createOrchestrator", () => {
 
       const orchestrator = createOrchestrator(createTestConfig());
 
+      await orchestrator.transitionTo("converge");
       const result = await orchestrator.transitionTo("orchestrate");
 
       expect(result.phase).toBe("orchestrate");
@@ -1147,6 +1162,8 @@ describe("createOrchestrator", () => {
 
       const orchestrator = createOrchestrator(createTestConfig());
 
+      await orchestrator.transitionTo("converge");
+      await orchestrator.transitionTo("orchestrate");
       const result = await orchestrator.transitionTo("complete");
 
       expect(result.phase).toBe("complete");
@@ -1159,11 +1176,25 @@ describe("createOrchestrator", () => {
 
       const orchestrator = createOrchestrator(createTestConfig());
 
+      await orchestrator.transitionTo("converge");
+      await orchestrator.transitionTo("orchestrate");
+      await orchestrator.transitionTo("complete");
       const result = await orchestrator.transitionTo("output");
 
       expect(result.phase).toBe("output");
       expect(result.success).toBe(true);
       expect(mockOutputExecutor.execute).toHaveBeenCalled();
+    });
+
+    it("should reject invalid phase transitions", async () => {
+      const { createOrchestrator } = await import("./orchestrator.js");
+
+      const orchestrator = createOrchestrator(createTestConfig());
+
+      // idle -> orchestrate should be invalid (must go idle -> converge first)
+      await expect(orchestrator.transitionTo("orchestrate")).rejects.toThrow(
+        "Invalid phase transition",
+      );
     });
   });
 });

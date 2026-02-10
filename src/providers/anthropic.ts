@@ -255,6 +255,9 @@ export class AnthropicProvider implements LLMProvider {
             try {
               currentToolCall.input = currentToolInputJson ? JSON.parse(currentToolInputJson) : {};
             } catch {
+              console.warn(
+                `[Anthropic] Failed to parse tool call arguments: ${currentToolInputJson?.slice(0, 100)}`,
+              );
               currentToolCall.input = {};
             }
             yield {

@@ -445,7 +445,9 @@ export class OpenAIProvider implements LLMProvider {
           try {
             input = builder.arguments ? JSON.parse(builder.arguments) : {};
           } catch {
-            // Invalid JSON, use empty object
+            console.warn(
+              `[OpenAI] Failed to parse tool call arguments: ${builder.arguments?.slice(0, 100)}`,
+            );
           }
 
           yield {
@@ -816,7 +818,16 @@ export class OpenAIProvider implements LLMProvider {
       .map((tc) => ({
         id: tc.id,
         name: tc.function.name,
-        input: JSON.parse(tc.function.arguments || "{}"),
+        input: (() => {
+          try {
+            return JSON.parse(tc.function.arguments || "{}");
+          } catch {
+            console.warn(
+              `[OpenAI] Failed to parse tool call arguments: ${tc.function.arguments?.slice(0, 100)}`,
+            );
+            return {};
+          }
+        })(),
       }));
   }
 

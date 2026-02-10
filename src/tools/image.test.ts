@@ -46,22 +46,33 @@ describe("image", () => {
     it("should throw for non-existent file", async () => {
       const { readImageTool } = await import("./image.js");
 
+      // Use a path within the project directory so it passes the traversal check
       await expect(
         readImageTool.execute({
-          path: "/nonexistent/image.png",
+          path: "nonexistent-image.png",
           prompt: "describe",
         }),
       ).rejects.toThrow("not found");
     });
 
+    it("should throw for path traversal attempt", async () => {
+      const { readImageTool } = await import("./image.js");
+
+      await expect(
+        readImageTool.execute({
+          path: "/nonexistent/image.png",
+          prompt: "describe",
+        }),
+      ).rejects.toThrow("Path traversal denied");
+    });
+
     it("should throw for unsupported format", async () => {
       const { readImageTool } = await import("./image.js");
       const fs = await import("node:fs/promises");
-      const os = await import("node:os");
       const path = await import("node:path");
 
-      // Create a temp file with unsupported extension
-      const tmpFile = path.join(os.tmpdir(), `test-${Date.now()}.tiff`);
+      // Create a temp file with unsupported extension inside the project directory
+      const tmpFile = path.join(process.cwd(), `test-image-${Date.now()}.tiff`);
       await fs.writeFile(tmpFile, "fake image data");
 
       try {

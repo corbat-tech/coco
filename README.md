@@ -1,120 +1,150 @@
-# 🥥 Corbat-Coco
+<p align="center">
+  <img src="https://img.shields.io/badge/v1.2.0-stable-blueviolet?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/TypeScript-5.7-3178c6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Node.js-22+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
+  <img src="https://img.shields.io/badge/License-MIT-f5c542?style=for-the-badge" alt="MIT License">
+  <img src="https://img.shields.io/badge/Tests-4350%2B_passing-22c55e?style=for-the-badge" alt="Tests">
+</p>
 
-**The open-source coding agent that iterates until your code is actually good.**
+<h1 align="center">🥥 Corbat-Coco</h1>
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-22+-green)](https://nodejs.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](./LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-4000%2B%20passing-brightgreen)](./)
-[![Coverage](https://img.shields.io/badge/Coverage-80%25%2B-brightgreen)](./)
+<p align="center">
+  <strong>The open-source coding agent that iterates on your code until it's actually production-ready.</strong>
+</p>
+
+<p align="center">
+  <em>Generate → Test → Measure → Fix → Repeat — autonomously.</em>
+</p>
 
 ---
 
-## The Problem
+## Why Coco?
 
-AI coding assistants generate code and hope for the best. You paste it in, tests fail, you iterate manually, you lose an hour. Studies show **67% of AI-generated PRs get rejected** on first review.
+Most AI coding tools generate code and hand it to you. If something breaks — tests fail, types don't match, a security issue slips in — that's your problem.
 
-## The Solution
-
-Coco doesn't stop at code generation. It runs your tests, measures quality across 12 dimensions, diagnoses failures, generates targeted fixes, and repeats — autonomously — until quality reaches a configurable threshold (default: 85/100).
+Coco takes a different approach. After generating code, it **runs your tests, measures quality across 12 dimensions, diagnoses what's wrong, and fixes it** — in a loop, autonomously — until the code actually meets a quality bar you define.
 
 ```
-Generate → Test → Measure → Diagnose → Fix → Repeat
-                                                 ↓
-                                          Quality ≥ 85? → Done ✅
+ ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+ │ Generate │ ──► │   Test   │ ──► │ Measure  │ ──► │   Fix    │
+ └──────────┘     └──────────┘     └──────────┘     └──────────┘
+                                                          │
+                                              Score < 85? │ ──► Loop back
+                                              Score ≥ 85? │ ──► Done ✅
 ```
 
-**This is the Quality Convergence Loop.** No other open-source coding agent does this.
+This is the **Quality Convergence Loop** — Coco's core differentiator.
 
 ---
 
 ## Quick Start
 
 ```bash
-npm install -g corbat-coco
-coco init                                    # Configure your LLM provider
-coco "Build a REST API with authentication"  # That's it
+npm install -g @corbat-tech/coco
+coco                        # Opens interactive REPL — guided setup on first run
 ```
 
-Coco will generate code, run tests, iterate until quality passes, and generate CI/CD + docs.
+That's it. Coco walks you through provider configuration on first launch.
+
+```bash
+# Or use it directly:
+coco "Add a REST API endpoint for user authentication with tests"
+```
 
 ---
 
-## What Makes Coco Different
+## What Coco Does Well
 
-### 1. Quality Convergence Loop (Unique Differentiator)
+### Quality Convergence Loop
 
-Other agents generate code once. Coco iterates:
+Coco doesn't just generate code — it iterates until quality converges:
 
-| Iteration | Score | What Happened |
-|-----------|-------|---------------|
-| 1 | 52/100 | Generated code, 3 tests failing |
-| 2 | 71/100 | Fixed test failures, found security issue |
-| 3 | 84/100 | Fixed security, improved coverage |
-| 4 | 91/100 | All tests pass, quality converged ✅ |
+| Iteration | Score | What happened |
+|:---------:|:-----:|---------------|
+| 1 | 52 | Code generated — 3 tests failing, no error handling |
+| 2 | 71 | Tests fixed, security vulnerability found |
+| 3 | 84 | Security patched, coverage improved to 82% |
+| 4 | 91 | All green — quality converged ✅ |
 
-The loop stops when:
-- Score ≥ 85/100 (configurable)
-- Score stabilized (delta < 2 between iterations)
-- All critical issues resolved
-- Or max 10 iterations reached
+The loop is configurable: target score, max iterations, convergence threshold, security requirements. You control the bar.
 
-### 2. 12-Dimension Quality Scoring
+### 12-Dimension Quality Scoring
 
-Every iteration measures code across 12 real dimensions:
+Every iteration measures your code across 12 dimensions using real static analysis:
 
-| Dimension | Method | Type |
-|-----------|--------|------|
-| **Test Coverage** | c8/v8 instrumentation | Instrumented |
-| **Security** | Pattern matching + optional Snyk | Instrumented |
-| **Complexity** | Cyclomatic complexity via AST | Instrumented |
-| **Duplication** | Line-based similarity detection | Instrumented |
-| **Correctness** | Test pass rate + build verification | Instrumented |
-| **Style** | oxlint/eslint/biome integration | Instrumented |
-| **Documentation** | JSDoc coverage analysis | Instrumented |
-| **Readability** | AST: naming quality, function length, nesting depth | Heuristic |
-| **Maintainability** | AST: file length, coupling, function count | Heuristic |
-| **Test Quality** | Assertion density, trivial ratio, edge cases | Heuristic |
-| **Completeness** | Export density + test file coverage ratio | Heuristic |
-| **Robustness** | Error handling pattern detection via AST | Heuristic |
+| Dimension | How it's measured |
+|-----------|-------------------|
+| Test Coverage | c8/v8 instrumentation |
+| Security | Pattern matching + optional Snyk |
+| Complexity | Cyclomatic complexity via AST parsing |
+| Duplication | Line-based similarity detection |
+| Correctness | Test pass rate + build verification |
+| Style | oxlint / eslint / biome integration |
+| Documentation | JSDoc coverage analysis |
+| Readability | AST: naming quality, function length, nesting |
+| Maintainability | AST: file size, coupling, function count |
+| Test Quality | Assertion density, edge case coverage |
+| Completeness | Export density + test file coverage |
+| Robustness | Error handling pattern detection |
 
-> **Transparency**: 7 dimensions use instrumented analysis (real measurements). 5 use heuristic-based static analysis (directional signals via pattern detection). We label which is which.
+> **Transparency note**: 7 dimensions use instrumented measurements. 5 use heuristic-based static analysis. We label which is which — no black boxes.
 
-### 3. Multi-Agent with Weighted Scoring Routing
+### Multi-Provider Support
 
-Six specialized agents, each with real LLM tool-use execution:
+Bring your own API keys. Coco works with:
 
-| Agent | Primary Keywords (weight 3) | Tools |
-|-------|----------------------------|-------|
-| **Researcher** | research, analyze, explore, investigate | read_file, grep, glob |
-| **Coder** | (default) | read_file, write_file, edit_file, bash |
-| **Tester** | test, coverage, spec, mock | read_file, write_file, run_tests |
-| **Reviewer** | review, quality, audit, lint | read_file, calculate_quality, grep |
-| **Optimizer** | optimize, refactor, performance | read_file, write_file, analyze_complexity |
-| **Planner** | plan, design, architect, decompose | read_file, grep, glob, codebase_map |
+| Provider | Auth | Models |
+|----------|------|--------|
+| **Anthropic** | API key / OAuth PKCE | Claude Opus, Sonnet, Haiku |
+| **OpenAI** | API key | GPT-4o, o1, o3 |
+| **Google** | API key / gcloud ADC | Gemini Pro, Flash |
+| **Ollama** | Local | Any local model |
+| **LM Studio** | Local | Any GGUF model |
+| **Moonshot** | API key | Kimi models |
 
-Task routing scores each role against the task description. The highest-scoring role is selected; below threshold, it defaults to "coder". Each agent runs a multi-turn tool-use loop via the LLM protocol.
+### Multi-Agent Architecture
 
-### 4. Production Hardening
+Six specialized agents with weighted-scoring routing:
 
-- **Error Recovery**: 9 error types with automatic retry strategies and exponential backoff
-- **Checkpoint/Resume**: Ctrl+C saves state. `coco resume` continues from where you left off
-- **Error Messages**: Every error includes an actionable suggestion for how to fix it
-- **Convergence Analysis**: Detects oscillation, diminishing returns, and stuck patterns
-- **AST Validation**: Parses and validates syntax before saving files
+- **Researcher** — Explores, analyzes, maps the codebase
+- **Coder** — Writes and edits code (default route)
+- **Tester** — Generates tests, improves coverage
+- **Reviewer** — Code review, quality auditing
+- **Optimizer** — Refactoring and performance
+- **Planner** — Architecture design, task decomposition
+
+Coco picks the right agent for each task automatically. When confidence is low, it defaults to the coder — no guessing games.
+
+### Interactive REPL
+
+A terminal-first experience with:
+
+- **Ghost-text completion** — Tab to accept inline suggestions
+- **Slash commands** — `/coco`, `/plan`, `/build`, `/diff`, `/commit`, `/help`
+- **Image paste** — `Ctrl+V` to paste screenshots for visual context
+- **Intent recognition** — Natural language mapped to commands
+- **Context management** — Automatic compaction when context grows large
+
+### Production Hardening
+
+- **Error recovery** with typed error strategies and exponential backoff
+- **Checkpoint/Resume** — `Ctrl+C` saves state, `coco resume` picks up where you left off
+- **AST validation** — Syntax-checks generated code before saving
+- **Convergence analysis** — Detects oscillation, diminishing returns, and stuck patterns
+- **Path sandboxing** — Tools can only access files within the project
 
 ---
 
-## Architecture: COCO Methodology
+## COCO Methodology
 
-Four phases, each with its own executor:
+Four phases, each with a dedicated executor:
 
 ```
- CONVERGE          ORCHESTRATE         COMPLETE           OUTPUT
+ CONVERGE          ORCHESTRATE         COMPLETE            OUTPUT
 ┌──────────┐     ┌──────────────┐   ┌──────────────┐   ┌──────────┐
 │ Gather   │     │ Design       │   │ Execute with │   │ Generate │
 │ reqs     │ ──► │ architecture │──►│ quality      │──►│ CI/CD,   │
-│ + spec   │     │ + backlog    │   │ iteration    │   │ docs     │
+│ + spec   │     │ + backlog    │   │ convergence  │   │ docs     │
 └──────────┘     └──────────────┘   └──────────────┘   └──────────┘
                                          ↑    ↓
                                     ┌─────────────┐
@@ -123,78 +153,23 @@ Four phases, each with its own executor:
                                     └─────────────┘
 ```
 
-### Technology Stack
-
-| Component | Technology |
-|-----------|-----------|
-| Language | TypeScript (ESM, strict mode) |
-| Runtime | Node.js 22+ |
-| Testing | Vitest (4,000+ tests) |
-| Linting | oxlint |
-| Build | tsup |
-| LLM Providers | Anthropic Claude, OpenAI GPT, Google Gemini, Ollama, LM Studio |
-| Auth | OAuth 2.0 PKCE (browser + device code flow) |
+1. **Converge** — Understand what needs to be built. Gather requirements, produce a spec.
+2. **Orchestrate** — Design the architecture, decompose into a task backlog.
+3. **Complete** — Execute each task with the quality convergence loop.
+4. **Output** — Generate CI/CD pipelines, documentation, and deployment config.
 
 ---
 
-## Comparison with Alternatives
+## Use Cases
 
-| Feature | Cursor | Aider | Goose | Devin | **Coco** |
-|---------|--------|-------|-------|-------|----------|
-| Quality Convergence Loop | ❌ | ❌ | ❌ | Partial¹ | **✅** |
-| Multi-Dimensional Scoring | ❌ | ❌ | ❌ | Internal | **12 dimensions** |
-| Multi-Agent | ❌ | ❌ | Via MCP | ✅ | **✅ (weighted routing)** |
-| AST Validation | ❌ | ❌ | ❌ | ✅ | **✅** |
-| Error Recovery + Resume | ❌ | ❌ | ❌ | ✅ | **✅ (9 error types)** |
-| Open Source | ❌ | ✅ | ✅ | ❌ | **✅** |
-| Price | $20/mo | Free² | Free² | $500/mo | **Free²** |
+Coco is designed for developers who want AI assistance with **accountability**:
 
-¹ Devin iterates internally but doesn't expose a configurable quality scoring system.
-² Free beyond LLM API costs (bring your own keys).
-
-### Where Coco Excels
-- **Quality iteration**: The only open-source agent with a configurable multi-dimensional convergence loop
-- **Transparency**: Every score is computed, not estimated. You can inspect the analyzers
-- **Cost**: $0 subscription. ~$2-5 in API costs per project
-
-### Where Coco is Behind
-- **IDE integration**: CLI-only today. VS Code extension planned
-- **Maturity**: Earlier stage than Cursor (millions of users) or Devin (2+ years production)
-- **Speed**: Iteration takes time. For quick edits, use Cursor or Copilot
-- **Language support**: Best with TypeScript/JavaScript. Python/Go experimental
-
----
-
-## CLI Experience
-
-### Interactive REPL
-
-```bash
-coco  # Opens interactive REPL
-```
-
-**Slash commands**:
-- `/coco` — Toggle quality convergence mode (auto-test + iterate)
-- `/tutorial` — Quick 5-step guide for new users
-- `/init` — Initialize a new project
-- `/plan` — Design architecture and backlog
-- `/build` — Build with quality iteration
-- `/task <desc>` — Execute a single task
-- `/status` — Check project state
-- `/diff` — Review changes
-- `/commit` — Commit with message
-- `/help` — See all commands
-
-### Provider Support
-
-| Provider | Auth Method | Models |
-|----------|------------|--------|
-| Anthropic | API key or OAuth PKCE | Claude Opus, Sonnet, Haiku |
-| OpenAI | API key | GPT-4o, GPT-4, o1, o3 |
-| Google | API key or gcloud ADC | Gemini Pro, Flash |
-| Ollama | Local (no key) | Any local model |
-| LM Studio | Local (no key) | Any GGUF model |
-| Moonshot | API key | Kimi models |
+- **Feature development** — Describe what you want, get tested and reviewed code
+- **Vibe coding** — Explore ideas interactively; Coco handles the quality checks
+- **Refactoring** — Point at code and say "make this better" — Coco iterates until metrics improve
+- **Test generation** — Improve coverage with meaningful tests, not boilerplate
+- **Code review** — Get multi-dimensional quality feedback on existing code
+- **Learning** — See how code quality improves across iterations
 
 ---
 
@@ -204,64 +179,75 @@ coco  # Opens interactive REPL
 git clone https://github.com/corbat/corbat-coco
 cd corbat-coco
 pnpm install
-pnpm dev          # Run in dev mode
-pnpm test         # Run 4,000+ tests
+pnpm dev          # Run in dev mode (tsx)
+pnpm test         # 4,350+ tests via Vitest
 pnpm check        # typecheck + lint + test
+pnpm build        # Production build (tsup)
 ```
 
 ### Project Structure
 
 ```
-corbat-coco/
-├── src/
-│   ├── agents/           # Multi-agent coordination + weighted routing
-│   ├── cli/              # REPL, commands, input handling
-│   ├── orchestrator/     # Phase coordinator + recovery
-│   ├── phases/           # COCO phases (converge/orchestrate/complete/output)
-│   ├── quality/          # 12 quality analyzers
-│   ├── providers/        # 6 LLM providers + OAuth
-│   ├── tools/            # 20+ tool implementations
-│   ├── hooks/            # Lifecycle hooks (safety, lint, format, audit)
-│   ├── mcp/              # MCP server for external integration
-│   └── config/           # Zod-validated configuration
-├── test/e2e/             # End-to-end pipeline tests
-└── docs/                 # Architecture docs + ADRs
+src/
+├── agents/           # Multi-agent coordination + weighted routing
+├── cli/              # REPL, commands, input handling, output rendering
+├── orchestrator/     # Phase coordinator + state recovery
+├── phases/           # COCO phases (converge/orchestrate/complete/output)
+├── quality/          # 12 quality analyzers + convergence engine
+├── providers/        # 6 LLM providers + OAuth flows
+├── tools/            # 20+ tool implementations
+├── hooks/            # Lifecycle hooks (safety, lint, format, audit)
+├── mcp/              # MCP server for external integration
+└── config/           # Zod-validated configuration system
 ```
+
+### Technology Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Language | TypeScript (ESM, strict mode) |
+| Runtime | Node.js 22+ |
+| Testing | Vitest (4,350+ tests) |
+| Linting | oxlint |
+| Formatting | oxfmt |
+| Build | tsup |
+| Schema validation | Zod |
 
 ---
 
-## Limitations (Honest)
+## Known Limitations
 
-- **TypeScript/JavaScript first**: Other languages have basic support
-- **CLI-only**: No IDE integration yet
-- **Heuristic analyzers**: 5 of 12 dimensions use pattern matching, not deep semantic analysis
-- **Early stage**: Not yet battle-tested at enterprise scale
-- **Iteration takes time**: 2-5 minutes per task with convergence loop
-- **LLM-dependent**: Quality of generated code depends on the LLM you use
+We'd rather you know upfront:
+
+- **TypeScript/JavaScript first** — Other languages have basic support but fewer analyzers
+- **CLI-only** — No IDE extension yet (VS Code integration is planned)
+- **Iteration takes time** — The convergence loop adds 2-5 minutes per task. For quick one-line fixes, a simpler tool may be faster
+- **Heuristic analyzers** — 5 of 12 quality dimensions use pattern-based heuristics, not deep semantic analysis
+- **LLM-dependent** — Output quality depends on the model you connect. Larger models produce better results
+- **Early stage** — Actively developed. Not yet battle-tested at large enterprise scale
 
 ---
 
 ## Contributing
 
-MIT License. We welcome contributions:
+We welcome contributions of all kinds:
+
 - Bug reports and feature requests
 - New quality analyzers
 - Additional LLM provider integrations
-- Documentation improvements
+- Documentation and examples
 - Real-world usage feedback
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
 ---
 
-## About Corbat
+## About
 
-Corbat-Coco is built by [Corbat](https://corbat.tech), a boutique technology consultancy. We believe AI coding tools should be transparent, measurable, and open source.
+Corbat-Coco is built by [Corbat](https://corbat.tech), a technology consultancy that believes AI coding tools should be transparent, measurable, and open source.
 
-**Links**:
-- [GitHub](https://github.com/corbat/corbat-coco)
-- [corbat.tech](https://corbat.tech)
+<p align="center">
+  <a href="https://github.com/corbat/corbat-coco">GitHub</a> · <a href="https://corbat.tech">corbat.tech</a>
+</p>
 
----
-
-**Made with 🥥 by developers who measure before they ship.**
+<p align="center"><strong>MIT License</strong> · Made by developers who measure before they ship. 🥥</p>

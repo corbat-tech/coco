@@ -235,16 +235,16 @@ describe("QualityConfigSchema cross-field validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("should reject convergenceThreshold >= minScore", () => {
+  it("should accept convergenceThreshold regardless of minScore (different units)", () => {
     const result = QualityConfigSchema.safeParse({
       minScore: 85,
       minCoverage: 80,
       maxIterations: 10,
       minIterations: 2,
-      convergenceThreshold: 85,
+      convergenceThreshold: 8,
       securityThreshold: 100,
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it("should accept valid cross-field values", () => {

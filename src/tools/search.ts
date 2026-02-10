@@ -90,13 +90,26 @@ Examples:
     let truncated = false;
 
     try {
-      // Build regex
+      // Build regex with validation to prevent ReDoS
       let regexPattern = pattern;
       if (wholeWord) {
         regexPattern = `\\b${pattern}\\b`;
       }
       const flags = caseSensitive ? "g" : "gi";
-      const regex = new RegExp(regexPattern, flags);
+
+      let regex: RegExp;
+      try {
+        regex = new RegExp(regexPattern, flags);
+      } catch {
+        throw new ToolError(`Invalid regex pattern: ${pattern}`, { tool: "grep" });
+      }
+
+      // Safety: reject patterns with nested quantifiers (main ReDoS vector)
+      if (/(\.\*|\.\+|\[.*\][*+])\s*(\.\*|\.\+|\[.*\][*+])/.test(regexPattern)) {
+        throw new ToolError(`Regex pattern rejected: nested quantifiers may cause slow matching`, {
+          tool: "grep",
+        });
+      }
 
       // Find files to search
       const stats = await fs.stat(targetPath);

@@ -93,9 +93,12 @@ function parseFileBlock(lines: string[], start: number): { file: DiffFile; nextI
   let i = start + 1;
 
   // Extract paths from "diff --git a/path b/path"
-  const pathMatch = diffLine.match(/^diff --git a\/(.+?) b\/(.+)$/);
-  const oldPath = pathMatch?.[1] ?? "";
-  const newPath = pathMatch?.[2] ?? oldPath;
+  // Use lastIndexOf to correctly handle paths containing " b/"
+  const gitPrefix = "diff --git a/";
+  const pathPart = diffLine.slice(gitPrefix.length);
+  const lastBSlash = pathPart.lastIndexOf(" b/");
+  const oldPath = lastBSlash >= 0 ? pathPart.slice(0, lastBSlash) : pathPart;
+  const newPath = lastBSlash >= 0 ? pathPart.slice(lastBSlash + 3) : oldPath;
 
   let fileType: DiffFile["type"] = "modified";
 
@@ -279,7 +282,7 @@ export function renderDiff(diff: ParsedDiff, options?: DiffRenderOptions): void 
 function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): void {
   const { maxWidth, showLineNumbers, compact } = opts;
   const lang = detectLanguage(file.path);
-  const contentWidth = maxWidth - 4;
+  const contentWidth = Math.max(1, maxWidth - 4);
 
   // File header
   const typeLabel =
@@ -365,13 +368,8 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
 
 function formatLineNo(line: DiffLine, show: boolean): string {
   if (!show) return "";
-
-  if (line.type === "add") {
-    return chalk.dim(`${String(line.newLineNo ?? "").padStart(4)} `);
-  } else if (line.type === "delete") {
-    return chalk.dim(`${String(line.oldLineNo ?? "").padStart(4)} `);
-  }
-  return chalk.dim(`${String(line.newLineNo ?? "").padStart(4)} `);
+  const lineNo = line.type === "delete" ? line.oldLineNo : line.newLineNo;
+  return chalk.dim(`${String(lineNo ?? "").padStart(5)} `);
 }
 
 /**

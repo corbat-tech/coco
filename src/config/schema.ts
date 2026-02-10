@@ -33,10 +33,6 @@ export const QualityConfigSchema = z
   .refine((data) => data.minIterations <= data.maxIterations, {
     message: "minIterations must be <= maxIterations",
     path: ["minIterations"],
-  })
-  .refine((data) => data.convergenceThreshold < data.minScore, {
-    message: "convergenceThreshold must be < minScore",
-    path: ["convergenceThreshold"],
   });
 
 export type QualityConfig = z.infer<typeof QualityConfigSchema>;
