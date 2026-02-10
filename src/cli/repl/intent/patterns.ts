@@ -150,6 +150,36 @@ export const INTENT_PATTERNS: Record<IntentType, RegExp[]> = {
     /i'?m\s+done/i,
   ],
 
+  // Ship / Release
+  ship: [
+    // Spanish
+    /^(publica|lanza|env[ií]a|sube)\s*(los\s+cambios)?/i,
+    /listo\s+para\s+(publicar|lanzar|subir)/i,
+    /^(crea|abre)\s+(un\s+)?(pr|pull\s*request)/i,
+    /quiero\s+(publicar|lanzar|hacer\s+release)/i,
+    /^(haz|genera)\s+(un\s+)?release/i,
+    // English
+    /^(ship|release|publish|deploy)\s*(it|this|changes)?$/i,
+    /let'?s\s+(ship|release|publish)/i,
+    /ready\s+to\s+(ship|release|merge)/i,
+    /^(create|make|open)\s+(a\s+)?(pr|pull\s*request)/i,
+    /push\s+(to|and)\s+(main|production|release)/i,
+  ],
+
+  // Open / Execute files
+  open: [
+    // Spanish
+    /^(abre|abrir|muestra|mostrar)\s+(el\s+)?(archivo|fichero)/i,
+    /^(ejecuta|ejecutar|corre|correr|lanza)\s+(el\s+)?(archivo|script|programa)/i,
+    /^(puedes?\s+)?(abrir|ejecutar|correr|mostrar|visualizar)\s+/i,
+    /^(abre|ejecuta|corre)\s+\S+/i,
+    // English
+    /^(open|show|view|display)\s+(the\s+)?(file|image|page|document)/i,
+    /^(run|execute|launch)\s+(the\s+)?(file|script|program|binary)/i,
+    /^(can\s+you\s+)?(open|run|execute|launch)\s+/i,
+    /^(open|run|exec)\s+\S+\.\w+/i,
+  ],
+
   // Chat (default - no specific patterns, matches everything with low confidence)
   chat: [
     /.*/, // Matches anything as fallback
@@ -197,7 +227,7 @@ export function calculateConfidenceBoost(input: string): number {
 
   // Input starting with action verbs
   if (
-    /^(haz|crea|genera|construye|implementa|ejecuta|inicializa|create|make|build|run|start)/i.test(
+    /^(haz|crea|genera|construye|implementa|ejecuta|inicializa|abre|create|make|build|run|start|open|exec)/i.test(
       input,
     )
   ) {
@@ -205,7 +235,11 @@ export function calculateConfidenceBoost(input: string): number {
   }
 
   // Input with explicit phase names
-  if (/(converge|orchestrate|complete|output|plan|build|init)/i.test(input)) {
+  if (
+    /(converge|orchestrate|complete|output|plan|build|init|ship|release|publish|open|exec)/i.test(
+      input,
+    )
+  ) {
     boost += 0.1;
   }
 

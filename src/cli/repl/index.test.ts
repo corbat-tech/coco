@@ -95,6 +95,23 @@ vi.mock("../../tools/allowed-paths.js", () => ({
   loadAllowedPaths: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Mock coco-mode to prevent systemPrompt access on unmocked session.config.agent
+vi.mock("./coco-mode.js", () => ({
+  isCocoMode: vi.fn().mockReturnValue(false),
+  loadCocoModePreference: vi.fn().mockResolvedValue(undefined),
+  looksLikeFeatureRequest: vi.fn().mockReturnValue(false),
+  wasHintShown: vi.fn().mockReturnValue(true),
+  markHintShown: vi.fn(),
+  formatCocoHint: vi.fn().mockReturnValue(""),
+  formatQualityResult: vi.fn().mockReturnValue(""),
+  getCocoModeSystemPrompt: vi.fn().mockReturnValue(""),
+}));
+
+// Mock version-check to prevent network calls
+vi.mock("./version-check.js", () => ({
+  checkForUpdates: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("./input/handler.js", () => ({
   createInputHandler: vi.fn(),
 }));

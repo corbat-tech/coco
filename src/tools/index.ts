@@ -263,6 +263,22 @@ export {
   gitEnhancedTools,
 } from "./git-enhanced.js";
 
+// GitHub CLI tools
+export {
+  ghCheckAuthTool,
+  ghRepoInfoTool,
+  ghPrCreateTool,
+  ghPrMergeTool,
+  ghPrChecksTool,
+  ghPrListTool,
+  ghReleaseCreateTool,
+  githubTools,
+  type PRCheck,
+} from "./github.js";
+
+// Open / Execute tools
+export { openFileTool, openTools, type OpenFileOutput } from "./open.js";
+
 /**
  * Register all tools with a registry
  */
@@ -296,6 +312,8 @@ import { smartSuggestionsTools } from "./smart-suggestions.js";
 import { contextEnhancerTools } from "./context-enhancer.js";
 import { skillEnhancerTools } from "./skill-enhancer.js";
 import { gitEnhancedTools } from "./git-enhanced.js";
+import { githubTools } from "./github.js";
+import { openTools } from "./open.js";
 import { authorizePathTools } from "./authorize-path.js";
 
 export function registerAllTools(registry: ToolRegistry): void {
@@ -329,6 +347,8 @@ export function registerAllTools(registry: ToolRegistry): void {
     ...contextEnhancerTools,
     ...skillEnhancerTools,
     ...gitEnhancedTools,
+    ...githubTools,
+    ...openTools,
     ...authorizePathTools,
   ];
 

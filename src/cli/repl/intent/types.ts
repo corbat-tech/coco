@@ -15,6 +15,8 @@ export type IntentType =
   | "output" // Generate CI/CD and docs
   | "status" // Check project status
   | "trust" // Trust management
+  | "ship" // Ship/release workflow
+  | "open" // Open files or execute scripts
   | "help" // Help request
   | "exit" // Exit REPL
   | "chat"; // General chat (default)

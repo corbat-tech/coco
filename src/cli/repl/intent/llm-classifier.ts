@@ -42,6 +42,8 @@ const VALID_INTENTS: IntentType[] = [
   "chat",
   "output",
   "trust",
+  "ship",
+  "open",
 ];
 
 /**
@@ -59,6 +61,8 @@ Your task is to classify user input into one of these intent types:
 - exit: User wants to exit or quit the REPL
 - output: User wants to generate documentation, CI/CD configs, or deployment artifacts
 - trust: User wants to check or configure trust/permission levels
+- ship: User wants to release, publish, create a PR, or deploy changes
+- open: User wants to open a file with the system application or execute a script/program
 - chat: General conversation that doesn't match any specific command
 
 Respond with ONLY a JSON object in this exact format:

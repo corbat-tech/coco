@@ -87,7 +87,7 @@ export function formatCommitMessage(summary: CommitSummary): string {
 export function inferCommitType(changedFiles: string[]): { type: string; scope?: string } {
   const hasTests = changedFiles.some((f) => /\.(test|spec)\.(ts|tsx|js|jsx)$/.test(f));
   const hasSrc = changedFiles.some(
-    (f) => /^src\//.test(f) && !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(f),
+    (f) => f.startsWith("src/") && !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(f),
   );
   const hasDocs = changedFiles.some((f) => /^(docs?\/|README|CHANGELOG|\.md$)/i.test(f));
   const hasConfig = changedFiles.some((f) =>

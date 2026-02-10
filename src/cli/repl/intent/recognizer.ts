@@ -167,6 +167,8 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
       "output",
       "status",
       "trust",
+      "ship",
+      "open",
       "help",
       "exit",
     ];
@@ -306,6 +308,24 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
 
       case "trust":
         return { command: "trust", args: ["status"] };
+
+      case "ship":
+        if (intent.entities.flags?.includes("draft")) {
+          args.push("--draft");
+        }
+        if (intent.entities.flags?.includes("skip-tests")) {
+          args.push("--skip-tests");
+        }
+        return { command: "ship", args };
+
+      case "open":
+        if (intent.entities.args?.[0]) {
+          args.push(intent.entities.args[0]);
+        }
+        if (intent.entities.flags?.includes("exec")) {
+          args.push("--exec");
+        }
+        return { command: "open", args };
 
       case "help":
         return { command: "help", args };

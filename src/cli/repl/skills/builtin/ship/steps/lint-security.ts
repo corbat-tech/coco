@@ -111,9 +111,10 @@ export async function runLintSecurity(ctx: ShipContext): Promise<ShipStepResult>
   return {
     step: "lint-security",
     status: "passed",
-    message: issues.length > 0
-      ? `Completed with issues: ${issues.join("; ")}`
-      : "Lint and security checks passed",
+    message:
+      issues.length > 0
+        ? `Completed with issues: ${issues.join("; ")}`
+        : "Lint and security checks passed",
     durationMs: performance.now() - start,
   };
 }

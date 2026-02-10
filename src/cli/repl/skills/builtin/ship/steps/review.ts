@@ -44,9 +44,7 @@ export async function runReview(ctx: ShipContext): Promise<ShipStepResult> {
 
     if (criticalCount > 0 || majorCount > 0) {
       // Show findings
-      p.log.warn(
-        `Review found ${criticalCount} critical and ${majorCount} major issue(s)`,
-      );
+      p.log.warn(`Review found ${criticalCount} critical and ${majorCount} major issue(s)`);
       for (const finding of result.required.slice(0, 10)) {
         const loc = finding.line ? `${finding.file}:${finding.line}` : finding.file;
         p.log.warn(`  [${finding.severity.toUpperCase()}] ${loc}: ${finding.message}`);
@@ -70,9 +68,10 @@ export async function runReview(ctx: ShipContext): Promise<ShipStepResult> {
     return {
       step: "review",
       status: "passed",
-      message: result.summary.status === "approved"
-        ? `Review approved (${suggestionCount} suggestions)`
-        : `Review: ${criticalCount} critical, ${majorCount} major — user acknowledged`,
+      message:
+        result.summary.status === "approved"
+          ? `Review approved (${suggestionCount} suggestions)`
+          : `Review: ${criticalCount} critical, ${majorCount} major — user acknowledged`,
       durationMs: performance.now() - start,
     };
   } catch (error) {

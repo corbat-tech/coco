@@ -6,6 +6,9 @@ dist/
 
 # Test coverage
 coverage/
+cov-temp/
+coverage-temp/
+benchmark-results.json
 
 # IDE
 .vscode/
