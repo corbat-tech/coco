@@ -164,25 +164,38 @@ export const AGENT_PROMPTS: Record<AgentType, string> = {
  */
 export const AGENT_TOOLS: Record<AgentType, string[]> = {
   explore: [
-    "glob", "read_file", "list_dir", "bash_exec",
-    "git_status", "git_diff", "git_log", "git_branch",
+    "glob",
+    "read_file",
+    "list_dir",
+    "bash_exec",
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_branch",
   ],
-  plan: [
-    "glob", "read_file", "list_dir",
-    "git_status", "git_diff", "git_log", "git_branch",
-  ],
+  plan: ["glob", "read_file", "list_dir", "git_status", "git_diff", "git_log", "git_branch"],
   test: [
-    "glob", "read_file", "write_file", "edit_file", "run_tests", "bash_exec",
-    "git_status", "git_diff",
+    "glob",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "run_tests",
+    "bash_exec",
+    "git_status",
+    "git_diff",
   ],
   debug: [
-    "glob", "read_file", "write_file", "edit_file", "bash_exec", "run_tests",
-    "git_status", "git_diff", "git_log",
+    "glob",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "bash_exec",
+    "run_tests",
+    "git_status",
+    "git_diff",
+    "git_log",
   ],
-  review: [
-    "glob", "read_file", "list_dir",
-    "git_status", "git_diff", "git_log", "git_branch",
-  ],
+  review: ["glob", "read_file", "list_dir", "git_status", "git_diff", "git_log", "git_branch"],
 };
 
 /**

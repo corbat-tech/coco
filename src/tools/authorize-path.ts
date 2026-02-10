@@ -13,10 +13,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { z } from "zod";
 import { defineTool, type ToolDefinition } from "./registry.js";
-import {
-  getAllowedPaths,
-  isWithinAllowedPath,
-} from "./allowed-paths.js";
+import { getAllowedPaths, isWithinAllowedPath } from "./allowed-paths.js";
 
 /**
  * System paths that can never be authorized
@@ -62,10 +59,7 @@ Examples:
     category: "config",
     parameters: z.object({
       path: z.string().min(1).describe("Absolute path to the directory to authorize"),
-      reason: z
-        .string()
-        .optional()
-        .describe("Why access is needed (shown to user for context)"),
+      reason: z.string().optional().describe("Why access is needed (shown to user for context)"),
     }),
     async execute({ path: dirPath, reason }) {
       const absolute = path.resolve(dirPath);
@@ -82,10 +76,7 @@ Examples:
       // Block system paths
       for (const blocked of BLOCKED_SYSTEM_PATHS) {
         const normalizedBlocked = path.normalize(blocked);
-        if (
-          absolute === normalizedBlocked ||
-          absolute.startsWith(normalizedBlocked + path.sep)
-        ) {
+        if (absolute === normalizedBlocked || absolute.startsWith(normalizedBlocked + path.sep)) {
           return {
             authorized: false,
             path: absolute,
