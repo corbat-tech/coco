@@ -117,7 +117,7 @@ export function getDefaultModel(provider: ProviderType): string {
     case "anthropic":
       return process.env["ANTHROPIC_MODEL"] ?? "claude-opus-4-6-20260115";
     case "openai":
-      return process.env["OPENAI_MODEL"] ?? "gpt-5.2-codex";
+      return process.env["OPENAI_MODEL"] ?? "gpt-5.3-codex";
     case "gemini":
       return process.env["GEMINI_MODEL"] ?? "gemini-3-flash-preview";
     case "kimi":
@@ -130,9 +130,9 @@ export function getDefaultModel(provider: ProviderType): string {
       return process.env["OLLAMA_MODEL"] ?? "llama3.1";
     case "codex":
       // Codex via ChatGPT subscription uses different models
-      return process.env["CODEX_MODEL"] ?? "gpt-5.2-codex";
+      return process.env["CODEX_MODEL"] ?? "gpt-5.3-codex";
     default:
-      return "gpt-5.2-codex";
+      return "gpt-5.3-codex";
   }
 }
 

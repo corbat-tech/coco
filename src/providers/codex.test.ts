@@ -320,13 +320,13 @@ describe("CodexProvider", () => {
       expect(response.stopReason).toBe("end_turn");
     });
 
-    it("should use default model gpt-5.2-codex", async () => {
+    it("should use default model gpt-5.3-codex", async () => {
       const provider = await initProvider();
       mockSuccessfulChatResponse("Hi");
 
       const response = await provider.chat([{ role: "user", content: "Hello" }]);
 
-      expect(response.model).toBe("gpt-5.2-codex");
+      expect(response.model).toBe("gpt-5.3-codex");
     });
 
     it("should use model from options", async () => {

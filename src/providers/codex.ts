@@ -32,17 +32,18 @@ const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses";
 /**
  * Default model for Codex (via ChatGPT Plus/Pro subscription)
  * Note: ChatGPT subscription uses different models than the API
- * Updated January 2026
+ * Updated February 2026
  */
-const DEFAULT_MODEL = "gpt-5.2-codex";
+const DEFAULT_MODEL = "gpt-5.3-codex";
 
 /**
  * Context windows for Codex models (ChatGPT Plus/Pro)
  * These are the models available via the chatgpt.com/backend-api/codex endpoint
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
-  "gpt-5-codex": 200000,
+  "gpt-5.3-codex": 200000,
   "gpt-5.2-codex": 200000,
+  "gpt-5-codex": 200000,
   "gpt-5.1-codex": 200000,
   "gpt-5": 200000,
   "gpt-5.2": 200000,

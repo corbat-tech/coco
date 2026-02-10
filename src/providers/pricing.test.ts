@@ -21,13 +21,13 @@ describe("MODEL_PRICING", () => {
   });
 
   it("should have pricing for OpenAI models", () => {
-    expect(MODEL_PRICING["gpt-4o"]).toBeDefined();
-    expect(MODEL_PRICING["gpt-4o-mini"]).toBeDefined();
+    expect(MODEL_PRICING["gpt-5.3-codex"]).toBeDefined();
+    expect(MODEL_PRICING["gpt-4.1"]).toBeDefined();
     expect(MODEL_PRICING["o1"]).toBeDefined();
   });
 
   it("should have pricing for Gemini models", () => {
-    expect(MODEL_PRICING["gemini-2.0-flash"]).toBeDefined();
+    expect(MODEL_PRICING["gemini-2.5-pro"]).toBeDefined();
     expect(MODEL_PRICING["gemini-1.5-pro"]).toBeDefined();
   });
 
@@ -74,13 +74,13 @@ describe("estimateCost", () => {
     expect(result.totalCost).toBe(18);
   });
 
-  it("should calculate correct cost for GPT-4o", () => {
-    // GPT-4o: $2.5/1M input, $10/1M output
-    const result = estimateCost("gpt-4o", 1_000_000, 1_000_000);
+  it("should calculate correct cost for GPT-5.3 Codex", () => {
+    // GPT-5.3 Codex: $2/1M input, $8/1M output
+    const result = estimateCost("gpt-5.3-codex", 1_000_000, 1_000_000);
 
-    expect(result.inputCost).toBe(2.5);
-    expect(result.outputCost).toBe(10);
-    expect(result.totalCost).toBe(12.5);
+    expect(result.inputCost).toBe(2);
+    expect(result.outputCost).toBe(8);
+    expect(result.totalCost).toBe(10);
   });
 
   it("should use default pricing for unknown model", () => {
@@ -152,8 +152,8 @@ describe("getModelPricing", () => {
 describe("hasKnownPricing", () => {
   it("should return true for known models", () => {
     expect(hasKnownPricing("claude-sonnet-4-20250514")).toBe(true);
-    expect(hasKnownPricing("gpt-4o")).toBe(true);
-    expect(hasKnownPricing("gemini-2.0-flash")).toBe(true);
+    expect(hasKnownPricing("gpt-5.3-codex")).toBe(true);
+    expect(hasKnownPricing("gemini-2.5-pro")).toBe(true);
   });
 
   it("should return false for unknown models", () => {
@@ -186,7 +186,7 @@ describe("listModelsWithPricing", () => {
     const modelNames = models.map((m) => m.model);
 
     expect(modelNames).toContain("claude-sonnet-4-20250514");
-    expect(modelNames).toContain("gpt-4o");
-    expect(modelNames).toContain("gemini-2.0-flash");
+    expect(modelNames).toContain("gpt-5.3-codex");
+    expect(modelNames).toContain("gemini-2.5-pro");
   });
 });

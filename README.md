@@ -53,6 +53,56 @@ coco "Add a REST API endpoint for user authentication with tests"
 
 ---
 
+## What You Can Do
+
+Coco works from the interactive REPL (`coco`). You can use **slash commands** or just **talk naturally** — Coco understands both.
+
+### Slash Commands
+
+| Command | What it does | Example |
+|---------|-------------|---------|
+| `/help` | Show available commands and usage | `/help review` |
+| `/status` | Project status, git info, session stats | `/status` |
+| `/review` | Code review with severity-rated findings | `/review --base main` |
+| `/diff` | Visual diff with syntax highlighting | `/diff --staged` |
+| `/ship` | Full release pipeline: review → test → lint → branch → version → commit → PR → CI → merge | `/ship --minor` |
+| `/compact` | Reduce context when conversation gets long | `/compact` |
+| `/clear` | Clear conversation history | `/clear` |
+
+### Natural Language
+
+You don't need to memorize commands. Just describe what you want:
+
+| What you say | What happens |
+|-------------|-------------|
+| "review the code" / "revisa el código" | Runs `/review` |
+| "let's ship it" / "publica los cambios" | Runs `/ship` |
+| "how are we doing?" / "cómo va?" | Runs `/status` |
+| "create a PR" / "crea un pull request" | Runs `/ship` |
+| "show me the diff" / "muéstrame los cambios" | Runs `/diff` |
+| "help" / "ayuda" | Runs `/help` |
+
+### `/ship` — Release Pipeline
+
+The most powerful command. Orchestrates the entire release flow in one step:
+
+```
+/ship                          # Full pipeline (10 steps)
+/ship --skip-tests             # Skip test step
+/ship --draft                  # Create draft PR
+/ship --patch                  # Force patch version bump
+/ship --minor                  # Force minor version bump
+/ship --major                  # Force major version bump
+/ship --no-version             # Skip version bumping
+/ship -m "feat: add auth"     # Pre-set commit message
+```
+
+Pipeline: **Preflight → Review → Tests → Lint → Branch → Version → Commit → PR → CI → Merge & Release**
+
+Each step is interactive — Coco asks before proceeding when decisions are needed. Press `Ctrl+C` at any point to cancel safely.
+
+---
+
 ## What Coco Does Well
 
 ### Quality Convergence Loop
@@ -103,8 +153,8 @@ Bring your own API keys. Coco works with:
 | Provider | Auth | Models |
 |----------|------|--------|
 | **Anthropic** | API key / OAuth PKCE | Claude Opus, Sonnet, Haiku |
-| **OpenAI** | API key | GPT-4o, o1, o3 |
-| **Google** | API key / gcloud ADC | Gemini Pro, Flash |
+| **OpenAI** | API key | GPT-5.3 Codex, GPT-4.1, o4-mini |
+| **Google** | API key / gcloud ADC | Gemini 3, 2.5 Pro/Flash |
 | **Ollama** | Local | Any local model |
 | **LM Studio** | Local | Any GGUF model |
 | **Moonshot** | API key | Kimi models |
@@ -127,7 +177,7 @@ Coco picks the right agent for each task automatically. When confidence is low, 
 A terminal-first experience with:
 
 - **Ghost-text completion** — Tab to accept inline suggestions
-- **Slash commands** — `/coco`, `/plan`, `/build`, `/diff`, `/commit`, `/help`
+- **Slash commands** — `/ship`, `/review`, `/diff`, `/status`, `/help`, `/compact`, `/clear`
 - **Image paste** — `Ctrl+V` to paste screenshots for visual context
 - **Intent recognition** — Natural language mapped to commands
 - **Context management** — Automatic compaction when context grows large
@@ -201,7 +251,7 @@ src/
 ├── orchestrator/     # Phase coordinator + state recovery
 ├── phases/           # COCO phases (converge/orchestrate/complete/output)
 ├── quality/          # 12 quality analyzers + convergence engine
-├── providers/        # 6 LLM providers + OAuth flows
+├── providers/        # 7 LLM providers + OAuth flows
 ├── tools/            # 20+ tool implementations
 ├── hooks/            # Lifecycle hooks (safety, lint, format, audit)
 ├── mcp/              # MCP server for external integration

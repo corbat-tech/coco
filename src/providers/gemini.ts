@@ -52,8 +52,6 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "gemini-2.5-flash-preview-05-20": 1048576,
   "gemini-2.5-pro": 1048576,
   "gemini-2.5-flash": 1048576,
-  // Gemini 2.0 series (GA stable)
-  "gemini-2.0-flash": 1048576,
   // Legacy
   "gemini-1.5-flash": 1000000,
   "gemini-1.5-pro": 2000000,

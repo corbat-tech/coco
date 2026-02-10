@@ -23,30 +23,32 @@ import { ProviderError } from "../utils/errors.js";
 import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 
 /**
- * Default model - Updated January 2026
+ * Default model - Updated February 2026
  */
-const DEFAULT_MODEL = "gpt-5.2-codex";
+const DEFAULT_MODEL = "gpt-5.3-codex";
 
 /**
  * Context windows for models
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
-  // OpenAI models
-  "gpt-4o": 128000,
-  "gpt-4o-mini": 128000,
+  // OpenAI models - Legacy
   "gpt-4-turbo": 128000,
   "gpt-4": 8192,
   "gpt-3.5-turbo": 16385,
   o1: 200000,
   "o1-mini": 128000,
   "o3-mini": 200000,
+  "o4-mini": 200000,
+  // GPT-4.1 series (Feb 2026)
+  "gpt-4.1": 1048576,
+  "gpt-4.1-mini": 1048576,
   // GPT-5 series (2025-2026)
   "gpt-5": 400000,
   "gpt-5.2": 400000,
   "gpt-5.2-codex": 400000,
   "gpt-5.2-thinking": 400000,
   "gpt-5.2-instant": 400000,
-  "gpt-5.2-pro": 400000,
+  "gpt-5.3-codex": 400000,
   // Kimi/Moonshot models
   "kimi-k2.5": 262144,
   "kimi-k2-0324": 131072,

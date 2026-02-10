@@ -118,7 +118,7 @@ describe("modelCommand", () => {
 
   describe("execute with model from different provider", () => {
     it("should warn about provider mismatch", async () => {
-      await modelCommand.execute(["gpt-4o"], mockSession);
+      await modelCommand.execute(["gpt-5.3-codex"], mockSession);
 
       const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
       expect(allOutput).toContain("OpenAI"); // Provider name (capitalized)
@@ -127,7 +127,7 @@ describe("modelCommand", () => {
 
     it("should not change the model", async () => {
       const originalModel = mockSession.config.provider.model;
-      await modelCommand.execute(["gpt-4o"], mockSession);
+      await modelCommand.execute(["gpt-5.3-codex"], mockSession);
 
       expect(mockSession.config.provider.model).toBe(originalModel);
     });

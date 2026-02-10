@@ -107,11 +107,11 @@ describe("GeminiProvider", () => {
   });
 
   describe("getContextWindow", () => {
-    it("should return context window for gemini-2.0-flash", async () => {
+    it("should return context window for gemini-2.5-pro", async () => {
       const { GeminiProvider } = await import("./gemini.js");
 
       const provider = new GeminiProvider();
-      await provider.initialize({ apiKey: "test", model: "gemini-2.0-flash" });
+      await provider.initialize({ apiKey: "test", model: "gemini-2.5-pro" });
 
       expect(provider.getContextWindow()).toBe(1048576);
     });

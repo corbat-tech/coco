@@ -65,14 +65,15 @@
  * - src/auth/flow.ts (getProviderDisplayInfo)
  *
  * ============================================================================
- * Last updated: February 5, 2026
+ * Last updated: February 10, 2026
  *
  * CURRENT MODELS (verified from official docs):
  * - Anthropic: claude-opus-4-6-20260115 (latest), claude-sonnet-4-5, claude-haiku-4-5
- * - OpenAI: gpt-5.2-codex, gpt-5.2-thinking, gpt-5.2-pro
- * - Gemini: gemini-3-flash-preview, gemini-3-pro-preview, gemini-2.5-pro
- * - Kimi: kimi-k2.5 (latest)
+ * - OpenAI: gpt-5.3-codex (latest), gpt-5.2-codex, gpt-4.1, o4-mini
+ * - Gemini: gemini-3-flash-preview, gemini-3-pro-preview, gemini-2.5-pro, gemini-2.5-flash
+ * - Kimi: kimi-k2.5, kimi-k2-thinking
  * - LM Studio: qwen3-coder series (best local option)
+ * - Ollama: qwen2.5-coder:14b (recommended), qwen3-coder:30b
  * ============================================================================
  */
 
@@ -187,7 +188,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     id: "openai",
     name: "OpenAI",
     emoji: "🟢",
-    description: "GPT-5.2 and Codex models",
+    description: "GPT-5.3 Codex and reasoning models",
     envVar: "OPENAI_API_KEY",
     apiKeyUrl: "https://platform.openai.com/api-keys",
     docsUrl: "https://platform.openai.com/docs",
@@ -200,15 +201,22 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true,
     },
-    // Updated: January 2026 - GPT-5.2 series is latest
+    // Updated: February 2026 - GPT-5.3 Codex is latest
     models: [
       {
-        id: "gpt-5.2-codex",
-        name: "GPT-5.2 Codex",
-        description: "Best for coding & software engineering (Jan 2026)",
+        id: "gpt-5.3-codex",
+        name: "GPT-5.3 Codex",
+        description: "Latest coding model, 25% faster than 5.2 (Feb 2026)",
         contextWindow: 400000,
         maxOutputTokens: 128000,
         recommended: true,
+      },
+      {
+        id: "gpt-5.2-codex",
+        name: "GPT-5.2 Codex",
+        description: "Previous coding model - stable (Jan 2026)",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
       },
       {
         id: "gpt-5.2-thinking",
@@ -218,25 +226,25 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         maxOutputTokens: 128000,
       },
       {
-        id: "gpt-5.2-instant",
-        name: "GPT-5.2 Instant",
-        description: "Fast everyday workhorse (Dec 2025)",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
+        id: "gpt-4.1",
+        name: "GPT-4.1",
+        description: "Best for long context — 1M window (Feb 2026)",
+        contextWindow: 1048576,
+        maxOutputTokens: 32768,
       },
       {
-        id: "gpt-5.2-pro",
-        name: "GPT-5.2 Pro",
-        description: "Most intelligent for hard problems (Dec 2025)",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
+        id: "gpt-4.1-mini",
+        name: "GPT-4.1 Mini",
+        description: "Fast & cheap long context — 1M window (Feb 2026)",
+        contextWindow: 1048576,
+        maxOutputTokens: 32768,
       },
       {
-        id: "gpt-4o",
-        name: "GPT-4o",
-        description: "Legacy multimodal model (retiring Feb 2026)",
-        contextWindow: 128000,
-        maxOutputTokens: 16384,
+        id: "o4-mini",
+        name: "o4-mini",
+        description: "Fast reasoning model (Feb 2026)",
+        contextWindow: 200000,
+        maxOutputTokens: 100000,
       },
     ],
   },
@@ -262,9 +270,9 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     },
     models: [
       {
-        id: "gpt-5-codex",
-        name: "GPT-5 Codex",
-        description: "Best coding model via ChatGPT subscription",
+        id: "gpt-5.3-codex",
+        name: "GPT-5.3 Codex",
+        description: "Latest coding model via ChatGPT subscription (Feb 2026)",
         contextWindow: 200000,
         maxOutputTokens: 128000,
         recommended: true,
@@ -272,21 +280,21 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       {
         id: "gpt-5.2-codex",
         name: "GPT-5.2 Codex",
-        description: "Latest advanced coding model",
+        description: "Previous coding model - stable",
         contextWindow: 200000,
         maxOutputTokens: 128000,
       },
       {
-        id: "gpt-5",
-        name: "GPT-5",
-        description: "General-purpose reasoning model",
+        id: "gpt-5-codex",
+        name: "GPT-5 Codex",
+        description: "Original GPT-5 coding model",
         contextWindow: 200000,
         maxOutputTokens: 128000,
       },
       {
         id: "gpt-5.2",
         name: "GPT-5.2",
-        description: "Latest general-purpose model",
+        description: "General-purpose reasoning model",
         contextWindow: 200000,
         maxOutputTokens: 128000,
       },
@@ -329,25 +337,18 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         maxOutputTokens: 65536,
       },
       {
-        id: "gemini-2.5-pro-preview-05-06",
+        id: "gemini-2.5-pro",
         name: "Gemini 2.5 Pro",
-        description: "Production tier - complex reasoning & coding (stable)",
+        description: "Production stable - complex reasoning & coding (GA)",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
       },
       {
-        id: "gemini-2.5-flash-preview-05-20",
+        id: "gemini-2.5-flash",
         name: "Gemini 2.5 Flash",
-        description: "Production tier - fast with thinking budgets",
+        description: "Production stable - fast with thinking budgets (GA)",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
-      },
-      {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
-        description: "Stable GA model - good for most tasks",
-        contextWindow: 1048576,
-        maxOutputTokens: 8192,
       },
     ],
   },
@@ -378,6 +379,13 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         contextWindow: 262144,
         maxOutputTokens: 8192,
         recommended: true,
+      },
+      {
+        id: "kimi-k2-thinking",
+        name: "Kimi K2 Thinking",
+        description: "Reasoning variant with extended thinking (256K context)",
+        contextWindow: 262144,
+        maxOutputTokens: 8192,
       },
       {
         id: "kimi-k2-0324",
@@ -462,6 +470,13 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         contextWindow: 256000,
         maxOutputTokens: 8192,
       },
+      {
+        id: "qwen3-coder-30b-a3b-instruct",
+        name: "🚀 Qwen3 Coder 30B MoE",
+        description: "Search: 'qwen3 coder 30b' — MoE 30B/3B active (24GB RAM)",
+        contextWindow: 262000,
+        maxOutputTokens: 8192,
+      },
       // DeepSeek - Great alternative
       {
         id: "deepseek-coder-v3-lite",
@@ -507,33 +522,41 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: false,
     },
+    // Updated: February 2026 - qwen2.5-coder:14b is best balance for most users
     models: [
       {
-        id: "qwen3:8b",
-        name: "⚡ Qwen3 8B",
-        description: "ollama pull qwen3:8b (16GB RAM)",
-        contextWindow: 128000,
+        id: "qwen2.5-coder:14b",
+        name: "⭐ Qwen 2.5 Coder 14B",
+        description: "ollama pull qwen2.5-coder:14b — best coding model (16GB RAM)",
+        contextWindow: 32768,
         maxOutputTokens: 8192,
         recommended: true,
       },
       {
-        id: "deepseek-coder-v2:16b",
-        name: "🎯 DeepSeek Coder V2 16B",
-        description: "ollama pull deepseek-coder-v2:16b (32GB RAM)",
+        id: "qwen3-coder:30b",
+        name: "🚀 Qwen3 Coder 30B",
+        description: "ollama pull qwen3-coder:30b — MoE 30B/3B active, 262K ctx (24GB RAM)",
+        contextWindow: 262144,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "deepseek-r1:14b",
+        name: "🧠 DeepSeek R1 14B",
+        description: "ollama pull deepseek-r1:14b — reasoning model (16GB RAM)",
         contextWindow: 128000,
         maxOutputTokens: 8192,
       },
       {
         id: "codestral:22b",
         name: "Codestral 22B",
-        description: "ollama pull codestral:22b (24GB RAM)",
+        description: "ollama pull codestral:22b — Mistral's coding model (24GB RAM)",
         contextWindow: 32768,
         maxOutputTokens: 8192,
       },
       {
         id: "llama3.1:8b",
         name: "Llama 3.1 8B",
-        description: "ollama pull llama3.1:8b (16GB RAM)",
+        description: "ollama pull llama3.1:8b — lightest option (8GB RAM)",
         contextWindow: 128000,
         maxOutputTokens: 8192,
       },

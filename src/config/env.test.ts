@@ -184,7 +184,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("openai");
 
-    expect(model).toBe("gpt-5.2-codex");
+    expect(model).toBe("gpt-5.3-codex");
   });
 
   it("should return custom GEMINI_MODEL if set", () => {
@@ -219,10 +219,10 @@ describe("getDefaultModel", () => {
     expect(model).toBe("kimi-k2.5");
   });
 
-  it("should return gpt-4o for unknown provider", () => {
+  it("should return default for unknown provider", () => {
     const model = getDefaultModel("unknown" as ProviderType);
 
-    expect(model).toBe("gpt-5.2-codex");
+    expect(model).toBe("gpt-5.3-codex");
   });
 });
 
