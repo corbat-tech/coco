@@ -16,8 +16,9 @@ import { CONFIG_PATHS } from "../../config/paths.js";
 
 /**
  * COCO mode state
+ * Default: enabled for better quality (users can disable with /coco off)
  */
-let cocoModeEnabled = false;
+let cocoModeEnabled = true;
 
 /**
  * Whether the contextual hint has been shown this session
@@ -191,9 +192,9 @@ export async function loadCocoModePreference(): Promise<boolean> {
       return config.cocoMode;
     }
   } catch {
-    // No config or parse error - default is off
+    // No config or parse error - default is ON
   }
-  return false;
+  return true; // Default to enabled
 }
 
 /**

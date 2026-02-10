@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] - 2026-02-10
+
+### Added
+- `/full-access` command: auto-approve safe commands within project directory with comprehensive safety guards
+  - Blacklist of 60+ dangerous commands that are never auto-approved
+  - Path sandboxing: only works within project directory
+  - Toggle with `/full-access [on|off|status]`
+- `/update-coco` command: self-update to latest npm version
+  - Checks npm for latest version
+  - Auto-runs `npm install -g @corbat-tech/coco@latest`
+  - Natural language support: "update coco" triggers the command
+  - Aliases: `/upgrade`, `/self-update`
+- Status bar infrastructure for persistent context display (project path, provider/model, mode indicators)
+- Interruption handler for queuing user input during agent processing (foundation for future feature)
+- Release workflow documentation (`docs/RELEASE_WORKFLOW.md`) with complete step-by-step guide
+
+### Changed
+- **COCO mode now enabled by default** for better out-of-the-box quality
+  - Users can disable with `/coco off` if they prefer faster responses
+  - Updated welcome message to reflect default state
+  - Default changed from OFF to ON in preference loading
+- **README completely redesigned** for better clarity and visual appeal
+  - Cleaner structure with badges and quick navigation
+  - Renamed branding from "Corbat-Coco" to just "Coco"
+  - Added "The Problem / The Solution" section
+  - Improved feature showcase with tables and examples
+  - Better command documentation with natural language examples
+- Welcome screen shows COCO mode as enabled by default with helpful context
+- Improved hint messages for COCO and full-access modes
+
+### Fixed
+- Removed unused `formatStatusBar` import causing TypeScript compilation error
+- Fixed lint warnings in test files (unused imports)
+
+### Documentation
+- Added `RELEASE_WORKFLOW.md` with complete release process ("sube versión")
+- Updated README with new branding and clearer value proposition
+- Improved command documentation with bilingual examples
+
+---
+
 ## [1.3.0] - 2026-02-10
 
 ### Added
@@ -233,6 +274,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 1.4.0 | 2026-02-10 | COCO mode default ON, /full-access, /update-coco, redesigned README |
 | 1.3.0 | 2026-02-10 | /open tool, /ship release pipeline, GitHub CLI tools, repo cleanup |
 | 1.2.3 | 2026-02-10 | Thinking feedback, git tools fix, authorize_path, review markdown output |
 | 1.2.2 | 2026-02-10 | Input line-wrap fix, header redesign, string-width |
@@ -261,7 +303,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.0...v1.2.2

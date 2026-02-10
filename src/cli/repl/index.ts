@@ -61,6 +61,7 @@ import {
   getCocoModeSystemPrompt,
   type CocoQualityResult,
 } from "./coco-mode.js";
+import { loadFullAccessPreference } from "./full-access-mode.js";
 
 // stringWidth (from 'string-width') is the industry-standard way to measure
 // visual terminal width of strings.  It correctly handles ANSI codes, emoji
@@ -141,6 +142,9 @@ export async function startRepl(
 
   // Load COCO mode preference
   await loadCocoModePreference();
+
+  // Load full-access mode preference
+  await loadFullAccessPreference();
 
   // Initialize tool registry
   const toolRegistry = createFullToolRegistry();
@@ -598,8 +602,8 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
   const cocoStatus = isCocoMode()
     ? chalk.magenta("  \u{1F504} quality mode: ") +
       chalk.green.bold("on") +
-      chalk.dim(" (/coco to toggle)")
-    : chalk.dim("  \u{1F4A1} /coco \u2014 enable auto-test & quality iteration");
+      chalk.dim(" — iterates until quality \u2265 85. /coco to disable")
+    : chalk.dim("  \u{1F4A1} /coco on — enable auto-test & quality iteration");
   console.log(cocoStatus);
 
   console.log();

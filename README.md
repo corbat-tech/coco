@@ -1,200 +1,181 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/v1.2.3-stable-blueviolet?style=for-the-badge" alt="Version">
-  <img src="https://img.shields.io/badge/TypeScript-5.7-3178c6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
-  <img src="https://img.shields.io/badge/Node.js-22+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
-  <img src="https://img.shields.io/badge/License-MIT-f5c542?style=for-the-badge" alt="MIT License">
-  <img src="https://img.shields.io/badge/Tests-4350%2B_passing-22c55e?style=for-the-badge" alt="Tests">
-</p>
+<div align="center">
 
-<h1 align="center">🥥 Corbat-Coco</h1>
+# 🥥 Coco
 
-<p align="center">
-  <strong>The open-source coding agent that iterates on your code until it's actually production-ready.</strong>
-</p>
+**The AI coding agent that actually delivers production-ready code**
 
-<p align="center">
-  <em>Generate → Test → Measure → Fix → Repeat — autonomously.</em>
-</p>
+[Features](#-features) •
+[Quick Start](#-quick-start) •
+[How It Works](#-how-it-works) •
+[Commands](#-commands) •
+[Documentation](#-documentation)
 
----
+[![NPM Version](https://img.shields.io/npm/v/@corbat-tech/coco?style=flat-square&color=blueviolet)](https://www.npmjs.com/package/@corbat-tech/coco)
+[![License](https://img.shields.io/badge/license-MIT-f5c542?style=flat-square)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node](https://img.shields.io/badge/Node.js-22+-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Tests](https://img.shields.io/badge/tests-4350%2B-22c55e?style=flat-square)](https://github.com/corbat/corbat-coco/actions)
 
-## Why Coco?
-
-Most AI coding tools generate code and hand it to you. If something breaks — tests fail, types don't match, a security issue slips in — that's your problem.
-
-Coco takes a different approach. After generating code, it **runs your tests, measures quality across 12 dimensions, diagnoses what's wrong, and fixes it** — in a loop, autonomously — until the code actually meets a quality bar you define.
-
-```
- ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
- │ Generate │ ──► │   Test   │ ──► │ Measure  │ ──► │   Fix    │
- └──────────┘     └──────────┘     └──────────┘     └──────────┘
-                                                          │
-                                              Score < 85? │ ──► Loop back
-                                              Score ≥ 85? │ ──► Done ✅
-```
-
-This is the **Quality Convergence Loop** — Coco's core differentiator.
+</div>
 
 ---
 
-## Quick Start
+## The Problem
 
-```bash
-npm install -g @corbat-tech/coco
-coco                        # Opens interactive REPL — guided setup on first run
+Most AI coding tools generate code and walk away. If tests fail, types don't match, or security issues creep in — **that's on you**.
+
+## The Solution
+
+**Coco doesn't just generate code. It iterates until it's right.**
+
+After writing code, Coco automatically:
+- ✅ Runs your tests
+- 📊 Measures quality across 12 dimensions
+- 🔍 Diagnoses what's wrong
+- 🔧 Fixes issues and repeats
+
+**Until your code hits production-quality standards you define.**
+
 ```
-
-That's it. Coco walks you through provider configuration on first launch.
-
-```bash
-# Or use it directly:
-coco "Add a REST API endpoint for user authentication with tests"
+┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+│ Generate │ ──► │   Test   │ ──► │ Measure  │ ──► │   Fix    │
+└──────────┘     └──────────┘     └──────────┘     └──────────┘
+                                                         │
+                                             Score < 85? │ ──► Loop
+                                             Score ≥ 85? │ ──► Done ✅
 ```
 
 ---
 
-## What You Can Do
+## ✨ Features
 
-Coco works from the interactive REPL (`coco`). You can use **slash commands** or just **talk naturally** — Coco understands both.
+### 🔄 **Quality Convergence Loop** (COCO Mode)
 
-### Slash Commands
+Not just code generation — **iterative quality improvement**:
 
-| Command | What it does | Example |
-|---------|-------------|---------|
-| `/help` | Show available commands and usage | `/help review` |
-| `/status` | Project status, git info, session stats | `/status` |
-| `/review` | Code review with severity-rated findings | `/review --base main` |
-| `/diff` | Visual diff with syntax highlighting | `/diff --staged` |
-| `/ship` | Full release pipeline: review → test → lint → branch → version → commit → PR → CI → merge | `/ship --minor` |
-| `/compact` | Reduce context when conversation gets long | `/compact` |
-| `/clear` | Clear conversation history | `/clear` |
+| Iteration | Score | Status |
+|:---------:|:-----:|--------|
+| **1** | 52 | Code generated — 3 tests failing, no error handling |
+| **2** | 71 | Tests fixed, security vulnerability found |
+| **3** | 84 | Security patched, coverage 82% |
+| **4** | **91** | ✅ **All green — quality converged** |
 
-### Natural Language
+> Enable with `/coco` — now **on by default** for better results
 
-You don't need to memorize commands. Just describe what you want:
+### 📊 **12-Dimension Quality Scoring**
 
-| What you say | What happens |
-|-------------|-------------|
-| "review the code" / "revisa el código" | Runs `/review` |
-| "let's ship it" / "publica los cambios" | Runs `/ship` |
-| "how are we doing?" / "cómo va?" | Runs `/status` |
-| "create a PR" / "crea un pull request" | Runs `/ship` |
-| "show me the diff" / "muéstrame los cambios" | Runs `/diff` |
-| "help" / "ayuda" | Runs `/help` |
+Real metrics, not guesses:
 
-### `/ship` — Release Pipeline
-
-The most powerful command. Orchestrates the entire release flow in one step:
-
-```
-/ship                          # Full pipeline (10 steps)
-/ship --skip-tests             # Skip test step
-/ship --draft                  # Create draft PR
-/ship --patch                  # Force patch version bump
-/ship --minor                  # Force minor version bump
-/ship --major                  # Force major version bump
-/ship --no-version             # Skip version bumping
-/ship -m "feat: add auth"     # Pre-set commit message
-```
-
-Pipeline: **Preflight → Review → Tests → Lint → Branch → Version → Commit → PR → CI → Merge & Release**
-
-Each step is interactive — Coco asks before proceeding when decisions are needed. Press `Ctrl+C` at any point to cancel safely.
-
----
-
-## What Coco Does Well
-
-### Quality Convergence Loop
-
-Coco doesn't just generate code — it iterates until quality converges:
-
-| Iteration | Score | What happened |
-|:---------:|:-----:|---------------|
-| 1 | 52 | Code generated — 3 tests failing, no error handling |
-| 2 | 71 | Tests fixed, security vulnerability found |
-| 3 | 84 | Security patched, coverage improved to 82% |
-| 4 | 91 | All green — quality converged ✅ |
-
-The quality bar is yours to set:
-
-```bash
-coco build --min-quality 90          # Per-run override
-coco config set quality.minScore 90  # Persist in project config
-```
-
-Default is **85** (senior-level). You can also configure max iterations, convergence threshold, coverage targets, and security requirements — see `coco config init`.
-
-### 12-Dimension Quality Scoring
-
-Every iteration measures your code across 12 dimensions using real static analysis:
-
-| Dimension | How it's measured |
+| Dimension | How It's Measured |
 |-----------|-------------------|
 | Test Coverage | c8/v8 instrumentation |
 | Security | Pattern matching + optional Snyk |
-| Complexity | Cyclomatic complexity via AST parsing |
-| Duplication | Line-based similarity detection |
+| Complexity | Cyclomatic complexity (AST) |
+| Duplication | Line-based similarity |
 | Correctness | Test pass rate + build verification |
-| Style | oxlint / eslint / biome integration |
-| Documentation | JSDoc coverage analysis |
-| Readability | AST: naming quality, function length, nesting |
-| Maintainability | AST: file size, coupling, function count |
-| Test Quality | Assertion density, edge case coverage |
-| Completeness | Export density + test file coverage |
-| Robustness | Error handling pattern detection |
+| Style | oxlint / eslint / biome |
+| Documentation | JSDoc coverage |
+| + 5 more | Readability, Maintainability, Test Quality, Completeness, Robustness |
 
-> **Transparency note**: 7 dimensions use instrumented measurements. 5 use heuristic-based static analysis. We label which is which — no black boxes.
+### 🚀 **Full Release Pipeline**
 
-### Multi-Provider Support
+Ship with confidence using `/ship`:
 
-Bring your own API keys. Coco works with:
+```bash
+/ship                          # Complete 10-step pipeline
+```
+
+**Pipeline:** Preflight → Review → Tests → Lint → Branch → Version → Commit → PR → CI → Merge
+
+Each step is interactive — press `Ctrl+C` anytime to safely cancel.
+
+### 🤖 **Multi-Agent Architecture**
+
+Six specialized agents with automatic routing:
+
+- **Researcher** — Codebase exploration and analysis
+- **Coder** — Code implementation (default)
+- **Tester** — Test generation and coverage
+- **Reviewer** — Quality auditing and code review
+- **Optimizer** — Refactoring and performance
+- **Planner** — Architecture and task decomposition
+
+### 🌐 **Multi-Provider Support**
+
+Bring your own API key:
 
 | Provider | Auth | Models |
 |----------|------|--------|
-| **Anthropic** | API key / OAuth PKCE | Claude Opus, Sonnet, Haiku |
+| **Anthropic** | API key / OAuth | Claude Opus, Sonnet, Haiku |
 | **OpenAI** | API key | GPT-5.3 Codex, GPT-4.1, o4-mini |
-| **Google** | API key / gcloud ADC | Gemini 3, 2.5 Pro/Flash |
-| **Ollama** | Local | Any local model (8-24GB RAM) |
-| **LM Studio** | Local | Any GGUF model (8-32GB RAM) |
+| **Google** | API key / gcloud | Gemini 3, 2.5 Pro/Flash |
+| **Ollama** | Local | Any local model |
+| **LM Studio** | Local | Any GGUF model |
 | **Moonshot** | API key | Kimi models |
 
-### Multi-Agent Architecture
+### ⚡ **Modern Terminal UX**
 
-Six specialized agents with weighted-scoring routing:
-
-- **Researcher** — Explores, analyzes, maps the codebase
-- **Coder** — Writes and edits code (default route)
-- **Tester** — Generates tests, improves coverage
-- **Reviewer** — Code review, quality auditing
-- **Optimizer** — Refactoring and performance
-- **Planner** — Architecture design, task decomposition
-
-Coco picks the right agent for each task automatically. When confidence is low, it defaults to the coder — no guessing games.
-
-### Interactive REPL
-
-A terminal-first experience with:
-
-- **Ghost-text completion** — Tab to accept inline suggestions
-- **Slash commands** — `/ship`, `/review`, `/diff`, `/status`, `/help`, `/compact`, `/clear`
-- **Image paste** — `Ctrl+V` to paste screenshots for visual context
-- **Intent recognition** — Natural language mapped to commands
-- **Context management** — Automatic compaction when context grows large
-
-### Production Hardening
-
-- **Error recovery** with typed error strategies and exponential backoff
-- **Checkpoint/Resume** — `Ctrl+C` saves state, `coco resume` picks up where you left off
-- **AST validation** — Syntax-checks generated code before saving
-- **Convergence analysis** — Detects oscillation, diminishing returns, and stuck patterns
-- **Path sandboxing** — Tools can only access files within the project
+- **Ghost-text completion** — Tab to accept suggestions
+- **Image paste** — `Ctrl+V` to paste screenshots
+- **Intent recognition** — Natural language → commands
+- **Full-access mode** — `/full-access` for auto-approvals (with safety guards)
+- **Self-update** — Type "update coco" anytime
 
 ---
 
-## COCO Methodology
+## 🚀 Quick Start
 
-Four phases, each with a dedicated executor:
+```bash
+# Install globally
+npm install -g @corbat-tech/coco
+
+# Start interactive mode
+coco
+
+# Or use directly
+coco "Add user authentication with tests"
+```
+
+That's it. Coco walks you through provider setup on first launch.
+
+---
+
+## 💬 Commands
+
+### Slash Commands
+
+| Command | What it does |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/status` | Project status, git info, session stats |
+| `/review` | Code review with severity-rated findings |
+| `/diff` | Visual diff with syntax highlighting |
+| `/ship` | Full release pipeline (review → test → PR → merge) |
+| `/coco [on\|off]` | Toggle quality mode (default: ON) |
+| `/full-access [on\|off]` | Auto-approve safe commands |
+| `/compact` | Reduce context when conversation grows |
+| `/clear` | Clear conversation history |
+
+### Natural Language
+
+You don't need slash commands. Just talk:
+
+| You say | Coco does |
+|---------|-----------|
+| "review the code" | Runs `/review` |
+| "let's ship it" | Runs `/ship` |
+| "show me the changes" | Runs `/diff` |
+| **"update coco"** | **Runs `/update-coco`** |
+
+Bilingual support (English/Spanish).
+
+---
+
+## 🎯 How It Works
+
+### COCO Methodology
+
+Four phases for production-ready output:
 
 ```
  CONVERGE          ORCHESTRATE         COMPLETE            OUTPUT
@@ -210,101 +191,95 @@ Four phases, each with a dedicated executor:
                                     └─────────────┘
 ```
 
-1. **Converge** — Understand what needs to be built. Gather requirements, produce a spec.
-2. **Orchestrate** — Design the architecture, decompose into a task backlog.
-3. **Complete** — Execute each task with the quality convergence loop.
-4. **Output** — Generate CI/CD pipelines, documentation, and deployment config.
+1. **Converge** — Understand requirements
+2. **Orchestrate** — Design architecture
+3. **Complete** — Build with quality iteration
+4. **Output** — Generate deployment config
 
 ---
 
-## Use Cases
+## 📖 Documentation
 
-Coco is designed for developers who want AI assistance with **accountability**:
-
-- **Feature development** — Describe what you want, get tested and reviewed code
-- **Vibe coding** — Explore ideas interactively; Coco handles the quality checks
-- **Refactoring** — Point at code and say "make this better" — Coco iterates until metrics improve
-- **Test generation** — Improve coverage with meaningful tests, not boilerplate
-- **Code review** — Get multi-dimensional quality feedback on existing code
-- **Learning** — See how code quality improves across iterations
+- [Configuration Guide](docs/guides/CONFIGURATION.md)
+- [Quick Start Tutorial](docs/guides/QUICK_START.md)
+- [Troubleshooting](docs/guides/TROUBLESHOOTING.md)
+- [API Reference](docs/API.md)
+- [MCP Integration](docs/MCP.md)
 
 ---
 
-## Development
+## 🧑‍💻 Development
 
 ```bash
 git clone https://github.com/corbat/corbat-coco
 cd corbat-coco
 pnpm install
-pnpm dev          # Run in dev mode (tsx)
-pnpm test         # 4,350+ tests via Vitest
-pnpm check        # typecheck + lint + test
-pnpm build        # Production build (tsup)
+pnpm dev          # Run in dev mode
+pnpm test         # 4,350+ tests
+pnpm check        # Typecheck + lint + test
 ```
 
 ### Project Structure
 
 ```
 src/
-├── agents/           # Multi-agent coordination + weighted routing
-├── cli/              # REPL, commands, input handling, output rendering
-├── orchestrator/     # Phase coordinator + state recovery
-├── phases/           # COCO phases (converge/orchestrate/complete/output)
-├── quality/          # 12 quality analyzers + convergence engine
-├── providers/        # 7 LLM providers + OAuth flows
-├── tools/            # 20+ tool implementations
-├── hooks/            # Lifecycle hooks (safety, lint, format, audit)
-├── mcp/              # MCP server for external integration
-└── config/           # Zod-validated configuration system
+├── agents/           # Multi-agent coordination
+├── cli/              # REPL + commands
+├── phases/           # COCO phases
+├── quality/          # 12-dimension scoring
+├── providers/        # LLM provider integrations
+└── tools/            # File ops, git, tests, etc.
 ```
 
-### Technology Stack
-
-| Component | Technology |
-|-----------|-----------|
-| Language | TypeScript (ESM, strict mode) |
-| Runtime | Node.js 22+ |
-| Testing | Vitest (4,350+ tests) |
-| Linting | oxlint |
-| Formatting | oxfmt |
-| Build | tsup |
-| Schema validation | Zod |
+**Stack:** TypeScript + Node.js 22 + Vitest + oxlint/oxfmt + Zod
 
 ---
 
-## Known Limitations
+## 🎓 Use Cases
+
+- **Feature development** — Get tested, reviewed code
+- **Refactoring** — Improve quality with measurable progress
+- **Test generation** — Meaningful tests, not boilerplate
+- **Code review** — 12-dimensional quality feedback
+- **Learning** — See how quality improves across iterations
+
+---
+
+## ⚠️ Known Limitations
 
 We'd rather you know upfront:
 
-- **TypeScript/JavaScript first** — Other languages have basic support but fewer analyzers
-- **CLI-only** — No IDE extension yet (VS Code integration is planned)
-- **Iteration takes time** — The convergence loop adds 2-5 minutes per task. For quick one-line fixes, a simpler tool may be faster
-- **Heuristic analyzers** — 5 of 12 quality dimensions use pattern-based heuristics, not deep semantic analysis
-- **LLM-dependent** — Output quality depends on the model you connect. Larger models produce better results
-- **Early stage** — Actively developed. Not yet battle-tested at large enterprise scale
+- **TypeScript/JavaScript first** — Other languages have basic support
+- **CLI-only** — No IDE extension yet (VS Code planned)
+- **Iteration takes time** — Convergence adds 2-5 min per task
+- **LLM-dependent** — Quality depends on your model choice
+- **Early stage** — Not yet battle-tested at enterprise scale
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
-We welcome contributions of all kinds:
+Contributions welcome:
 
-- Bug reports and feature requests
-- New quality analyzers
-- Additional LLM provider integrations
-- Documentation and examples
-- Real-world usage feedback
+- 🐛 Bug reports and feature requests
+- 🔬 New quality analyzers
+- 🔌 Additional LLM providers
+- 📚 Documentation and examples
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ---
 
-## About
+## 📄 License
 
-Corbat-Coco is built by [Corbat](https://corbat.tech), a technology consultancy that believes AI coding tools should be transparent, measurable, and open source.
+MIT © [Corbat](https://corbat.tech)
 
-<p align="center">
-  <a href="https://github.com/corbat/corbat-coco">GitHub</a> · <a href="https://corbat.tech">corbat.tech</a>
-</p>
+---
 
-<p align="center"><strong>MIT License</strong> · Made by developers who measure before they ship. 🥥</p>
+<div align="center">
+
+**Built by developers who measure before they ship** 🥥
+
+[GitHub](https://github.com/corbat/corbat-coco) · [corbat.tech](https://corbat.tech) · [npm](https://www.npmjs.com/package/@corbat-tech/coco)
+
+</div>

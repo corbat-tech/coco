@@ -12,7 +12,7 @@ vi.mock("glob", () => ({
 
 import { access, readdir, readFile } from "node:fs/promises";
 import { glob } from "glob";
-import { detectMaturity, type MaturityLevel } from "./maturity.js";
+import { detectMaturity } from "./maturity.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
