@@ -505,10 +505,10 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
     return chalk.magenta("\u2502") + content + " ".repeat(pad) + chalk.magenta("\u2502");
   };
 
-  // Title line: " CORBAT-COCO             v1.2.x " (only ASCII inside the box)
-  const titleLeftRaw = " CORBAT-COCO";
+  // Title line: " COCO - Coding Agent     v1.2.x " (only ASCII inside the box)
+  const titleLeftRaw = " COCO - Coding Agent";
   const titleRightRaw = versionText + " ";
-  const titleLeftStyled = " " + chalk.bold.white("CORBAT-COCO");
+  const titleLeftStyled = " " + chalk.bold.white("COCO") + chalk.dim(" - Coding Agent");
   const titleGap = Math.max(1, innerWidth - stringWidth(titleLeftRaw) - stringWidth(titleRightRaw));
   const titleContent = titleLeftStyled + " ".repeat(titleGap) + chalk.dim(titleRightRaw);
 
@@ -601,7 +601,7 @@ async function checkProjectTrust(projectPath: string): Promise<boolean> {
 
   // Compact first-time access warning
   console.log();
-  console.log(chalk.cyan.bold("  \u{1F965} Corbat-Coco") + chalk.dim(` v${VERSION}`));
+  console.log(chalk.cyan.bold("  \u{1F965} Coco") + chalk.dim(` v${VERSION}`));
   console.log(chalk.dim(`  \u{1F4C1} ${projectPath}`));
   console.log();
   console.log(chalk.yellow("  \u26A0 First time accessing this directory"));
