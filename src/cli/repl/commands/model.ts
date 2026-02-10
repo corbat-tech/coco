@@ -189,16 +189,20 @@ async function selectModelInteractively(
         }
 
         if (model.disabled) {
-          // Disabled item — grayed out with hint
+          // Disabled item — grayed out with description (RAM info) and hint
           let line = chalk.dim("   ○ ");
-          line += chalk.dim(model.id.padEnd(35));
-          const star = model.recommended ? chalk.dim(" ⭐") : "";
+          line += chalk.dim(model.id.padEnd(30));
+          const star = model.recommended ? chalk.dim(" ⭐") : "   ";
           const ctx = model.contextWindow
             ? chalk.dim(` ${Math.round(model.contextWindow / 1000)}K`)
             : "";
           line += star + ctx;
+          // Show description (contains RAM requirements) + install hint
+          if (model.description) {
+            line += chalk.dim(`  ${model.description}`);
+          }
           if (model.hint) {
-            line += chalk.dim.italic(`  ${model.hint}`);
+            line += chalk.dim.italic(`  → ${model.hint}`);
           }
           console.log(line);
           totalLines++;
