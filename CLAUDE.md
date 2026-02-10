@@ -84,7 +84,6 @@ await fs.readFile(path, "utf-8");
 4. **Output**: Generate CI/CD, docs, deployment
 
 ## Important Files
-- `AGENT_PROMPT.md` - Current development priorities and agent prompt
 - `docs/MASTER_PLAN.md` - Complete development plan (reference)
 - `docs/architecture/ARCHITECTURE.md` - System architecture
 - `docs/architecture/adrs/` - Architecture Decision Records

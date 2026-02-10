@@ -43,8 +43,8 @@ export async function runBranch(ctx: ShipContext): Promise<ShipStepResult> {
   const branchName = await p.text({
     message: "Branch name:",
     initialValue: suggestion,
-    validate: (value) => {
-      if (!value.trim()) return "Branch name is required";
+    validate: (value: string | undefined) => {
+      if (!value?.trim()) return "Branch name is required";
       if (!/^[a-zA-Z0-9._/-]+$/.test(value)) return "Invalid branch name characters";
       return undefined;
     },

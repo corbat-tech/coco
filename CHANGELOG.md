@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-02-10
+
+### Added
+- `/open` skill and `open_file` tool: open files with system default app (HTML→browser, images→viewer) or execute scripts (.py, .sh, .js, .ts, .rb, etc.) with auto-detected interpreter
+- `/ship` skill: complete 10-step release pipeline (preflight → review → tests → lint → branch → version → commit → PR → CI checks → merge/release)
+- GitHub CLI tools (`gh_check_auth`, `gh_repo_info`, `gh_pr_create`, `gh_pr_merge`, `gh_pr_checks`, `gh_pr_list`, `gh_release_create`)
+- `ShipConfigSchema` for configuring release workflow defaults
+- Bilingual intent patterns (ES/EN) for `open`, `exec`, `ship`, and `release` commands
+- LLM classifier updated with `ship` and `open` intents for fallback classification
+
+### Changed
+- `.gitignore` now excludes `cov-temp/`, `coverage-temp/`, and `benchmark-results.json`
+- `CLAUDE.md` cleaned up (removed stale `AGENT_PROMPT.md` reference)
+- Minor formatting improvements in ship step files (lint-security, preflight, review, version)
+
+### Removed
+- Old audit documents (`docs/audits/`) and improvement roadmaps
+- Stale coverage-temp and cov-temp directories
+- Redundant markdown files (MASTER_PLAN, IMPROVEMENT_ROADMAP, IMPLEMENTATION_COMPLETE, etc.)
+
+---
+
 ## [1.2.3] - 2026-02-10
 
 ### Added
@@ -211,6 +233,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 1.3.0 | 2026-02-10 | /open tool, /ship release pipeline, GitHub CLI tools, repo cleanup |
 | 1.2.3 | 2026-02-10 | Thinking feedback, git tools fix, authorize_path, review markdown output |
 | 1.2.2 | 2026-02-10 | Input line-wrap fix, header redesign, string-width |
 | 1.2.0 | 2026-02-10 | 25 bug fixes, README rewrite, dependency updates |
@@ -238,7 +261,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.0...v1.2.2
 [1.2.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.1.0...v1.2.0

@@ -19,6 +19,8 @@ export {
   compactSkill,
   reviewSkill,
   diffSkill,
+  shipSkill,
+  openSkill,
 } from "./builtin/index.js";
 
 // Import for factory function
@@ -30,6 +32,8 @@ import {
   compactSkill,
   reviewSkill,
   diffSkill,
+  shipSkill,
+  openSkill,
 } from "./builtin/index.js";
 
 /**
@@ -47,6 +51,8 @@ export function createDefaultRegistry(): SkillRegistry {
   registry.register(compactSkill);
   registry.register(reviewSkill);
   registry.register(diffSkill);
+  registry.register(shipSkill);
+  registry.register(openSkill);
 
   return registry;
 }

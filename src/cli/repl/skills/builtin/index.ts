@@ -10,3 +10,5 @@ export { statusSkill } from "./status.js";
 export { compactSkill } from "./compact.js";
 export { reviewSkill } from "./review.js";
 export { diffSkill } from "./diff.js";
+export { shipSkill } from "./ship/index.js";
+export { openSkill } from "./open.js";

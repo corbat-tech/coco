@@ -8,11 +8,7 @@
 import * as p from "@clack/prompts";
 import { gitLogTool } from "../../../../../../tools/git.js";
 import { bashExecTool } from "../../../../../../tools/bash.js";
-import {
-  bumpVersion,
-  writeVersion,
-  detectBumpFromCommits,
-} from "../version-detector.js";
+import { bumpVersion, writeVersion, detectBumpFromCommits } from "../version-detector.js";
 import { insertChangelogEntry, generateChangelogEntries } from "../changelog.js";
 import type { ShipContext, ShipStepResult, VersionBump } from "../types.js";
 

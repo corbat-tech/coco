@@ -7,19 +7,13 @@
  */
 
 import path from "node:path";
-import * as p from "@clack/prompts";
 import { gitStatusTool } from "../../../../../../tools/git.js";
 import { bashExecTool } from "../../../../../../tools/bash.js";
 import { ghCheckAuthTool, ghRepoInfoTool } from "../../../../../../tools/github.js";
 import { fileExists } from "../../../../../../utils/files.js";
 import { detectVersionFile } from "../version-detector.js";
 import { detectChangelog } from "../changelog.js";
-import type {
-  ProjectProfile,
-  ProjectStack,
-  CISystem,
-  ShipStepResult,
-} from "../types.js";
+import type { ProjectProfile, ProjectStack, CISystem, ShipStepResult } from "../types.js";
 
 // ============================================================================
 // Stack detection
@@ -96,7 +90,12 @@ async function detectCI(cwd: string): Promise<CISystem> {
   }
 
   if (await fileExists(path.join(cwd, ".gitlab-ci.yml"))) {
-    return { type: "gitlab-ci", workflowFiles: [".gitlab-ci.yml"], hasCodeQL: false, hasLinting: false };
+    return {
+      type: "gitlab-ci",
+      workflowFiles: [".gitlab-ci.yml"],
+      hasCodeQL: false,
+      hasLinting: false,
+    };
   }
 
   if (await fileExists(path.join(cwd, ".circleci"))) {

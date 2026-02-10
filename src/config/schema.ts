@@ -165,6 +165,28 @@ export const ToolsConfigSchema = z.object({
 export type ToolsConfig = z.infer<typeof ToolsConfigSchema>;
 
 /**
+ * Ship workflow configuration schema
+ */
+export const ShipConfigSchema = z.object({
+  /** Default base branch for PRs */
+  defaultBaseBranch: z.string().default("main"),
+  /** Auto-detect version bump from commit history */
+  autoDetectBump: z.boolean().default(true),
+  /** Use squash merge for PRs */
+  squashMerge: z.boolean().default(true),
+  /** Delete feature branch after merge */
+  deleteBranchAfterMerge: z.boolean().default(true),
+  /** Create PRs as draft by default */
+  draftPr: z.boolean().default(false),
+  /** CI check timeout in ms (default 10 minutes) */
+  ciCheckTimeoutMs: z.number().default(600_000),
+  /** CI check poll interval in ms (default 15 seconds) */
+  ciCheckPollMs: z.number().default(15_000),
+});
+
+export type ShipConfig = z.infer<typeof ShipConfigSchema>;
+
+/**
  * Complete configuration schema
  */
 export const CocoConfigSchema = z.object({
@@ -194,6 +216,7 @@ export const CocoConfigSchema = z.object({
   integrations: IntegrationsConfigSchema.optional(),
   mcp: MCPConfigSchema.optional(),
   tools: ToolsConfigSchema.optional(),
+  ship: ShipConfigSchema.optional(),
 });
 
 export type CocoConfig = z.infer<typeof CocoConfigSchema>;
