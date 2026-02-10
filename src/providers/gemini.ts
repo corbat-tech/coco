@@ -294,7 +294,10 @@ export class GeminiProvider implements LLMProvider {
               const sortedArgs = funcCall.args
                 ? Object.keys(funcCall.args)
                     .sort()
-                    .map((k) => `${k}:${JSON.stringify((funcCall.args as Record<string, unknown>)[k])}`)
+                    .map(
+                      (k) =>
+                        `${k}:${JSON.stringify((funcCall.args as Record<string, unknown>)[k])}`,
+                    )
                     .join(",")
                 : "";
               const callKey = `${funcCall.name}-${sortedArgs}`;

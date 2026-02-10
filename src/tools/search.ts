@@ -106,10 +106,9 @@ Examples:
 
       // Safety: reject patterns with nested quantifiers (main ReDoS vector)
       if (/(\.\*|\.\+|\[.*\][*+])\s*(\.\*|\.\+|\[.*\][*+])/.test(regexPattern)) {
-        throw new ToolError(
-          `Regex pattern rejected: nested quantifiers may cause slow matching`,
-          { tool: "grep" },
-        );
+        throw new ToolError(`Regex pattern rejected: nested quantifiers may cause slow matching`, {
+          tool: "grep",
+        });
       }
 
       // Find files to search
