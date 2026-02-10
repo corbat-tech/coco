@@ -109,9 +109,9 @@ export async function runOnboardingV2(): Promise<OnboardingResult | null> {
 
     const selectedProvider = getProviderDefinition(providerChoice as ProviderType);
 
-    // Si es LM Studio, ir directo al setup local
-    if (selectedProvider.requiresApiKey === false) {
-      return await setupLMStudioProvider();
+    // Local providers (LM Studio, Ollama) go to their own setup flow
+    if (selectedProvider.id === "lmstudio" || selectedProvider.id === "ollama") {
+      return await setupLocalProvider(selectedProvider.id);
     }
 
     // Para cloud providers, elegir método de autenticación
@@ -498,11 +498,71 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
 }
 
 /**
- * Test LM Studio model with a realistic request
+ * Configuration for local providers (LM Studio, Ollama)
+ */
+const LOCAL_PROVIDER_CONFIG = {
+  lmstudio: {
+    defaultPort: 1234,
+    apiKeyPlaceholder: "lm-studio",
+    displayName: "LM Studio",
+    setupUrl: "https://lmstudio.ai",
+    setupInstructions: [
+      "1. Open LM Studio → https://lmstudio.ai",
+      "2. Download a model (Discover → Search → Download)",
+      "3. Load the model (double-click it)",
+      "4. Start server: Menu → Developer → Start Server",
+    ],
+    noModelInstructions: [
+      "Make sure you have a model loaded in LM Studio:",
+      "1. In LM Studio: Discover → Search for a model",
+      "2. Download it, then double-click to load",
+      "3. The model name appears in the top bar of LM Studio",
+    ],
+    modelPlaceholder: "e.g. qwen2.5-coder-3b-instruct",
+    envKeyModel: "LMSTUDIO_MODEL",
+    envKeyBaseUrl: "LMSTUDIO_BASE_URL",
+    contextLengthFix: [
+      "1. Click on the model name in the top bar",
+      "2. Find 'Context Length' setting",
+      "3. Increase it (recommended: 8192 or higher)",
+      "4. Click 'Reload Model'",
+    ],
+  },
+  ollama: {
+    defaultPort: 11434,
+    apiKeyPlaceholder: "ollama",
+    displayName: "Ollama",
+    setupUrl: "https://ollama.com",
+    setupInstructions: [
+      "1. Install Ollama → https://ollama.com",
+      "2. Pull a model: ollama pull qwen3:8b",
+      "3. Start server: ollama serve (runs on port 11434)",
+    ],
+    noModelInstructions: [
+      "Make sure you have a model available in Ollama:",
+      "1. Pull a model: ollama pull qwen3:8b",
+      "2. List models: ollama list",
+      "3. The model name is in the NAME column",
+    ],
+    modelPlaceholder: "e.g. qwen3:8b",
+    envKeyModel: "OLLAMA_MODEL",
+    envKeyBaseUrl: "OLLAMA_BASE_URL",
+    contextLengthFix: [
+      "1. Check model parameters: ollama show <model>",
+      "2. Use a model with larger context (e.g. qwen3:8b supports 128K)",
+      "3. Or set context: ollama run <model> /set parameter num_ctx 8192",
+    ],
+  },
+} as const;
+
+type LocalProviderType = keyof typeof LOCAL_PROVIDER_CONFIG;
+
+/**
+ * Test local model with a realistic request
  * Uses a longer system prompt to detect context length issues early
  * This must simulate Coco's real system prompt size (~8000+ tokens)
  */
-async function testLMStudioModel(
+async function testLocalModel(
   port: number,
   model: string,
 ): Promise<{ success: boolean; error?: string }> {
@@ -577,16 +637,20 @@ Use Zod for configuration schemas. Use Commander for CLI. Use Clack for prompts.
 /**
  * Show context length error with fix instructions
  */
-async function showContextLengthError(model: string): Promise<void> {
+async function showContextLengthError(
+  model: string,
+  providerType: LocalProviderType = "lmstudio",
+): Promise<void> {
+  const cfg = LOCAL_PROVIDER_CONFIG[providerType];
   p.log.message("");
   p.log.message(chalk.red("   ❌ Context length too small"));
   p.log.message("");
   p.log.message(chalk.yellow("   The model's context window is too small for Coco."));
-  p.log.message(chalk.yellow("   To fix this in LM Studio:\n"));
-  p.log.message(chalk.white("   1. Click on the model name in the top bar"));
-  p.log.message(chalk.white("   2. Find 'Context Length' setting"));
-  p.log.message(chalk.white("   3. Increase it (recommended: 8192 or higher)"));
-  p.log.message(chalk.white("   4. Click 'Reload Model'\n"));
+  p.log.message(chalk.yellow(`   To fix this in ${cfg.displayName}:\n`));
+  for (const line of cfg.contextLengthFix) {
+    p.log.message(chalk.white(`   ${line}`));
+  }
+  p.log.message("");
   p.log.message(chalk.dim(`   Model: ${model}`));
   p.log.message("");
 
@@ -597,23 +661,27 @@ async function showContextLengthError(model: string): Promise<void> {
 }
 
 /**
- * Setup LM Studio (flujo simplificado - sin API key)
- * Exported for use by /provider command
+ * Setup a local provider (LM Studio or Ollama)
  */
-export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResult | null> {
-  const provider = getProviderDefinition("lmstudio");
-  const baseUrl = `http://localhost:${port}/v1`;
+async function setupLocalProvider(
+  providerType: LocalProviderType,
+  port?: number,
+): Promise<OnboardingResult | null> {
+  const cfg = LOCAL_PROVIDER_CONFIG[providerType];
+  const effectivePort = port ?? cfg.defaultPort;
+  const provider = getProviderDefinition(providerType);
+  const baseUrl = `http://localhost:${effectivePort}/v1`;
 
-  p.log.step(`${provider.emoji} LM Studio (free, local)`);
+  p.log.step(`${provider.emoji} ${cfg.displayName} (free, local)`);
 
   // Loop hasta que el servidor esté conectado
   while (true) {
     const spinner = p.spinner();
-    spinner.start(`Checking LM Studio server on port ${port}...`);
+    spinner.start(`Checking ${cfg.displayName} server on port ${effectivePort}...`);
 
     let serverRunning = false;
     try {
-      const response = await fetch(`http://localhost:${port}/v1/models`, {
+      const response = await fetch(`http://localhost:${effectivePort}/v1/models`, {
         method: "GET",
         signal: AbortSignal.timeout(3000),
       });
@@ -623,11 +691,11 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
     }
 
     if (serverRunning) {
-      spinner.stop(chalk.green("✅ LM Studio server connected!"));
+      spinner.stop(chalk.green(`✅ ${cfg.displayName} server connected!`));
 
-      // Try to get loaded models from LM Studio
+      // Try to get loaded models from local server
       try {
-        const modelsResponse = await fetch(`http://localhost:${port}/v1/models`, {
+        const modelsResponse = await fetch(`http://localhost:${effectivePort}/v1/models`, {
           method: "GET",
           signal: AbortSignal.timeout(3000),
         });
@@ -643,26 +711,29 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
               p.log.message(chalk.green(`   📦 Using loaded model: ${model}`));
 
               // Test the model before returning
-              const testResult = await testLMStudioModel(port, model);
+              const testResult = await testLocalModel(effectivePort, model);
               if (!testResult.success) {
                 if (
                   testResult.error?.includes("context length") ||
                   testResult.error?.includes("tokens to keep")
                 ) {
-                  await showContextLengthError(model);
-                  return setupLMStudioProvider(port);
+                  await showContextLengthError(model, providerType);
+                  return setupLocalProvider(providerType, effectivePort);
                 }
                 p.log.message(chalk.yellow(`\n   ⚠️  Model test failed: ${testResult.error}\n`));
-                return setupLMStudioProvider(port);
+                return setupLocalProvider(providerType, effectivePort);
               }
 
               p.log.message(chalk.green("   ✅ Model ready!\n"));
 
               return {
-                type: "lmstudio",
+                type: providerType,
                 model,
-                apiKey: "lm-studio",
-                baseUrl: port === 1234 ? undefined : `http://localhost:${port}/v1`,
+                apiKey: cfg.apiKeyPlaceholder,
+                baseUrl:
+                  effectivePort === cfg.defaultPort
+                    ? undefined
+                    : `http://localhost:${effectivePort}/v1`,
               };
             } else {
               // Multiple models loaded - let user choose
@@ -679,26 +750,29 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
               if (p.isCancel(modelChoice)) return null;
 
               // Test the selected model
-              const testResult = await testLMStudioModel(port, modelChoice);
+              const testResult = await testLocalModel(effectivePort, modelChoice);
               if (!testResult.success) {
                 if (
                   testResult.error?.includes("context length") ||
                   testResult.error?.includes("tokens to keep")
                 ) {
                   await showContextLengthError(modelChoice);
-                  return setupLMStudioProvider(port);
+                  return setupLocalProvider(providerType, effectivePort);
                 }
                 p.log.message(chalk.yellow(`\n   ⚠️  Model test failed: ${testResult.error}\n`));
-                return setupLMStudioProvider(port);
+                return setupLocalProvider(providerType, effectivePort);
               }
 
               p.log.message(chalk.green("   ✅ Model ready!\n"));
 
               return {
-                type: "lmstudio",
+                type: providerType,
                 model: modelChoice,
-                apiKey: "lm-studio",
-                baseUrl: port === 1234 ? undefined : `http://localhost:${port}/v1`,
+                apiKey: cfg.apiKeyPlaceholder,
+                baseUrl:
+                  effectivePort === cfg.defaultPort
+                    ? undefined
+                    : `http://localhost:${effectivePort}/v1`,
               };
             }
           }
@@ -712,15 +786,14 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
 
     spinner.stop(chalk.yellow("⚠️  Server not detected"));
     p.log.message("");
-    p.log.message(chalk.yellow("   To connect LM Studio:"));
-    p.log.message(chalk.dim("   1. Open LM Studio → https://lmstudio.ai"));
-    p.log.message(chalk.dim("   2. Download a model (Discover → Search → Download)"));
-    p.log.message(chalk.dim("   3. Load the model (double-click it)"));
-    p.log.message(chalk.dim("   4. Start server: Menu → Developer → Start Server"));
+    p.log.message(chalk.yellow(`   To connect ${cfg.displayName}:`));
+    for (const line of cfg.setupInstructions) {
+      p.log.message(chalk.dim(`   ${line}`));
+    }
     p.log.message("");
 
     const action = await p.select({
-      message: `Is LM Studio server running on port ${port}?`,
+      message: `Is ${cfg.displayName} server running on port ${effectivePort}?`,
       options: [
         { value: "retry", label: "🔄 Retry connection", hint: "Check again" },
         { value: "port", label: "🔧 Change port", hint: "Use different port" },
@@ -735,7 +808,7 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
     if (action === "port") {
       const newPort = await p.text({
         message: "Port:",
-        placeholder: "1234",
+        placeholder: String(cfg.defaultPort),
         validate: (v) => {
           const num = parseInt(v ?? "", 10);
           if (isNaN(num) || num < 1 || num > 65535) return "Invalid port";
@@ -743,7 +816,7 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
         },
       });
       if (p.isCancel(newPort) || !newPort) return null;
-      port = parseInt(newPort, 10);
+      return setupLocalProvider(providerType, parseInt(newPort, 10));
     }
     // retry: just loop again
   }
@@ -751,10 +824,10 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
   // Server connected but no models detected - need manual selection
   p.log.message("");
   p.log.message(chalk.yellow("   ⚠️  No loaded model detected"));
-  p.log.message(chalk.dim("   Make sure you have a model loaded in LM Studio:"));
-  p.log.message(chalk.dim("   1. In LM Studio: Discover → Search for a model"));
-  p.log.message(chalk.dim("   2. Download it, then double-click to load"));
-  p.log.message(chalk.dim("   3. The model name appears in the top bar of LM Studio\n"));
+  for (const line of cfg.noModelInstructions) {
+    p.log.message(chalk.dim(`   ${line}`));
+  }
+  p.log.message("");
 
   const action = await p.select({
     message: "What would you like to do?",
@@ -774,13 +847,13 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
   }
 
   if (action === "retry") {
-    return setupLMStudioProvider(port);
+    return setupLocalProvider(providerType, effectivePort);
   }
 
   // Manual model entry
   const manualModel = await p.text({
-    message: "Enter the model name (exactly as shown in LM Studio):",
-    placeholder: "e.g. qwen2.5-coder-3b-instruct",
+    message: `Enter the model name (exactly as shown in ${cfg.displayName}):`,
+    placeholder: cfg.modelPlaceholder,
     validate: (v) => (!v || !v.trim() ? "Model name is required" : undefined),
   });
 
@@ -792,21 +865,23 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
 
   const valid = await testConnectionQuiet(
     provider,
-    "lm-studio",
+    cfg.apiKeyPlaceholder,
     manualModel,
-    port === 1234 ? undefined : baseUrl,
+    effectivePort === cfg.defaultPort ? undefined : baseUrl,
   );
 
   if (!valid) {
     testSpinner.stop(chalk.yellow("⚠️  Model not responding"));
-    p.log.message(chalk.dim("   The model name might not match what's loaded in LM Studio\n"));
+    p.log.message(
+      chalk.dim(`   The model name might not match what's loaded in ${cfg.displayName}\n`),
+    );
 
     const retry = await p.confirm({
       message: "Try again?",
       initialValue: true,
     });
     if (retry && !p.isCancel(retry)) {
-      return setupLMStudioProvider(port);
+      return setupLocalProvider(providerType, effectivePort);
     }
     return null;
   }
@@ -814,11 +889,27 @@ export async function setupLMStudioProvider(port = 1234): Promise<OnboardingResu
   testSpinner.stop(chalk.green("✅ Model connected!"));
 
   return {
-    type: "lmstudio",
+    type: providerType,
     model: manualModel,
-    apiKey: "lm-studio",
-    baseUrl: port === 1234 ? undefined : `http://localhost:${port}/v1`,
+    apiKey: cfg.apiKeyPlaceholder,
+    baseUrl: effectivePort === cfg.defaultPort ? undefined : `http://localhost:${effectivePort}/v1`,
   };
+}
+
+/**
+ * Setup LM Studio (convenience wrapper)
+ * Exported for use by /provider command
+ */
+export async function setupLMStudioProvider(port?: number): Promise<OnboardingResult | null> {
+  return setupLocalProvider("lmstudio", port);
+}
+
+/**
+ * Setup Ollama (convenience wrapper)
+ * Exported for use by /provider command
+ */
+export async function setupOllamaProvider(port?: number): Promise<OnboardingResult | null> {
+  return setupLocalProvider("ollama", port);
 }
 
 /**
@@ -880,9 +971,9 @@ async function setupNewProvider(): Promise<OnboardingResult | null> {
 
   const provider = getProviderDefinition(providerChoice as ProviderType);
 
-  // LM Studio goes to its own flow
-  if (provider.requiresApiKey === false) {
-    return setupLMStudioProvider();
+  // Local providers go to their own flow
+  if (provider.id === "lmstudio" || provider.id === "ollama") {
+    return setupLocalProvider(provider.id);
   }
 
   // Cloud providers use auth method selection
@@ -946,10 +1037,10 @@ async function selectModel(provider: ProviderDefinition): Promise<string | null>
 
   // Añadir opción de modelo personalizado
   if (provider.supportsCustomModels) {
-    const customLabel =
-      provider.id === "lmstudio"
-        ? "✏️  Enter model name manually"
-        : "✏️  Custom model (enter ID manually)";
+    const isLocal = provider.id === "lmstudio" || provider.id === "ollama";
+    const customLabel = isLocal
+      ? "✏️  Enter model name manually"
+      : "✏️  Custom model (enter ID manually)";
     modelOptions.push({
       value: "__custom__",
       label: customLabel,
@@ -965,12 +1056,13 @@ async function selectModel(provider: ProviderDefinition): Promise<string | null>
 
   // Manejar modelo personalizado
   if (choice === "__custom__") {
-    const isLMStudio = provider.id === "lmstudio";
+    const isLocalProv = provider.id === "lmstudio" || provider.id === "ollama";
+    const localCfg = isLocalProv ? LOCAL_PROVIDER_CONFIG[provider.id as LocalProviderType] : null;
     const custom = await p.text({
-      message: isLMStudio ? "Enter the model name (as shown in LM Studio):" : "Enter model ID:",
-      placeholder: isLMStudio
-        ? "e.g. qwen2.5-coder-7b-instruct"
-        : provider.models[0]?.id || "model-name",
+      message: isLocalProv
+        ? `Enter the model name (as shown in ${localCfg!.displayName}):`
+        : "Enter model ID:",
+      placeholder: localCfg ? localCfg.modelPlaceholder : provider.models[0]?.id || "model-name",
       validate: (v) => (!v || !v.trim() ? "Model name is required" : undefined),
     });
 
@@ -1097,12 +1189,12 @@ export async function saveConfiguration(result: OnboardingResult): Promise<void>
   }
 
   // API keys are user-level credentials — always saved globally in ~/.coco/.env
-  const message =
-    result.type === "lmstudio"
-      ? "Save your LM Studio configuration?"
-      : result.type === "codex"
-        ? "Save your configuration?"
-        : "Save your API key?";
+  const isLocalProvider = result.type === "lmstudio" || result.type === "ollama";
+  const message = isLocalProvider
+    ? `Save your ${result.type === "ollama" ? "Ollama" : "LM Studio"} configuration?`
+    : result.type === "codex"
+      ? "Save your configuration?"
+      : "Save your API key?";
 
   const saveOptions = await p.select({
     message,
@@ -1124,12 +1216,13 @@ export async function saveConfiguration(result: OnboardingResult): Promise<void>
 
   const envVarsToSave: Record<string, string> = {};
 
-  if (result.type === "lmstudio") {
-    // LM Studio: save config (no API key)
+  if (isLocalProvider) {
+    // Local providers: save config (no API key)
+    const localCfg = LOCAL_PROVIDER_CONFIG[result.type as LocalProviderType];
     envVarsToSave["COCO_PROVIDER"] = result.type;
-    envVarsToSave["LMSTUDIO_MODEL"] = result.model;
+    envVarsToSave[localCfg.envKeyModel] = result.model;
     if (result.baseUrl) {
-      envVarsToSave["LMSTUDIO_BASE_URL"] = result.baseUrl;
+      envVarsToSave[localCfg.envKeyBaseUrl] = result.baseUrl;
     }
   } else if (result.type === "codex") {
     // Codex/ChatGPT OAuth: save provider and model (token managed by OAuth flow)

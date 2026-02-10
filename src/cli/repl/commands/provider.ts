@@ -16,7 +16,7 @@ import {
 } from "../providers-config.js";
 import type { ProviderType } from "../../../providers/index.js";
 import { createProvider } from "../../../providers/index.js";
-import { setupLMStudioProvider, saveConfiguration } from "../onboarding-v2.js";
+import { setupLMStudioProvider, setupOllamaProvider, saveConfiguration } from "../onboarding-v2.js";
 import {
   runOAuthFlow,
   supportsOAuth,
@@ -216,9 +216,10 @@ async function switchProvider(
   let internalProviderId = initialProvider.id; // What we use internally (e.g., "codex" for OAuth)
   let selectedAuthMethod: AuthMethod = "apikey"; // Default to API key
 
-  // LM Studio uses special setup flow (auto-detect models, no API key)
-  if (newProvider.requiresApiKey === false) {
-    const result = await setupLMStudioProvider();
+  // Local providers use special setup flow (auto-detect models, no API key)
+  if (newProvider.id === "lmstudio" || newProvider.id === "ollama") {
+    const result =
+      newProvider.id === "ollama" ? await setupOllamaProvider() : await setupLMStudioProvider();
     if (!result) {
       console.log(chalk.dim("Cancelled\n"));
       return false;
