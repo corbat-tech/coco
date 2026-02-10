@@ -3,6 +3,7 @@
  */
 
 import chalk from "chalk";
+import stringWidth from "string-width";
 import {
   createSession,
   initializeSessionTrust,
@@ -61,50 +62,9 @@ import {
   type CocoQualityResult,
 } from "./coco-mode.js";
 
-/**
- * Calculate the visual width of a string, accounting for ANSI escape codes
- * and wide characters (emoji, CJK).
- *
- * - Strips ANSI escape sequences (zero width)
- * - Counts emoji and wide Unicode characters as width 2
- * - Counts all other printable characters as width 1
- */
-function visualWidth(str: string): number {
-  // Strip ANSI escape codes
-  // eslint-disable-next-line no-control-regex
-  const stripped = str.replace(/\x1b\[[0-9;]*m/g, "");
-  let width = 0;
-  for (const char of stripped) {
-    const cp = char.codePointAt(0) || 0;
-    // Emoji ranges (common emoji blocks)
-    if (
-      cp > 0x1f600 ||
-      (cp >= 0x2600 && cp <= 0x27bf) ||
-      (cp >= 0x1f300 && cp <= 0x1fad6) ||
-      (cp >= 0x1f900 && cp <= 0x1f9ff) ||
-      (cp >= 0x2702 && cp <= 0x27b0) ||
-      (cp >= 0xfe00 && cp <= 0xfe0f) ||
-      cp === 0x200d
-    ) {
-      width += 2;
-    } else if (
-      // CJK Unified Ideographs and other wide characters
-      (cp >= 0x1100 && cp <= 0x115f) ||
-      (cp >= 0x2e80 && cp <= 0x303e) ||
-      (cp >= 0x3040 && cp <= 0x33bf) ||
-      (cp >= 0x4e00 && cp <= 0x9fff) ||
-      (cp >= 0xf900 && cp <= 0xfaff) ||
-      (cp >= 0xfe30 && cp <= 0xfe6f) ||
-      (cp >= 0xff01 && cp <= 0xff60) ||
-      (cp >= 0xffe0 && cp <= 0xffe6)
-    ) {
-      width += 2;
-    } else {
-      width += 1;
-    }
-  }
-  return width;
-}
+// stringWidth (from 'string-width') is the industry-standard way to measure
+// visual terminal width of strings.  It correctly handles ANSI codes, emoji
+// (including ZWJ sequences), CJK, and grapheme clusters via Intl.Segmenter.
 
 /**
  * Start the REPL
@@ -523,52 +483,33 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
   await trustStore.init();
   const trustLevel = trustStore.getLevel(session.projectPath);
 
-  // Box dimensions - fixed width for consistency
+  // Box dimensions — fixed width for consistency.
+  // Using the same approach as `boxen`: measure content with `stringWidth`,
+  // pad with spaces to a uniform inner width, then wrap with border chars.
   const boxWidth = 41;
-  const innerWidth = boxWidth - 4; // Account for "│ " and " │"
+  const innerWidth = boxWidth - 2; // space between the two │ characters
 
   const versionText = `v${VERSION}`;
   const subtitleText = "open source \u2022 corbat.tech";
 
-  // We use ANSI CHA (Cursor Horizontal Absolute – \x1b[<col>G) to place
-  // the right "│" at a fixed terminal column.  This guarantees perfect
-  // alignment with the top/bottom corners regardless of how wide the
-  // terminal renders the emoji (some show 🥥 as 2-wide, others as 3).
-  //
-  // Column layout (1-indexed):
-  //   cols 1-2    "  " indent
-  //   col  3      ╭ / │ / ╰
-  //   cols 4-42   ─ content ─   (boxWidth-2 = 39 inner chars)
-  //   col  43     ╮ / │ / ╯
-  //
-  // So the right border character must land on column 2 + boxWidth = 43.
-  const rightCol = 2 + boxWidth; // column where │/╮/╯ sits (43)
-
-  // Helper: build a content line whose right "│" is always at `rightCol`.
-  // We jump the cursor to `rightCol`, erase anything to the right (\x1b[K),
-  // then write the "│" character.
+  // Helper: build a padded content line inside the box.
+  // Measures the visual width of `content` with stringWidth, then pads it
+  // with trailing spaces so every line has exactly `innerWidth` visible
+  // columns.  The right │ is always placed immediately after the padding.
   const boxLine = (content: string): string => {
-    return (
-      chalk.magenta("  \u2502 ") +
-      content +
-      `\x1b[${rightCol}G` + // CHA: move cursor to rightCol
-      "\x1b[K" + // EL: erase from cursor to end of line (clear any overflow)
-      chalk.magenta("\u2502")
-    );
+    const pad = Math.max(0, innerWidth - stringWidth(content));
+    return chalk.magenta("  \u2502") + content + " ".repeat(pad) + chalk.magenta("\u2502");
   };
 
-  // Title line: "🥥 CORBAT-COCO" ... "v1.2.x"
-  const titleLeft = "\u{1F965} CORBAT-COCO";
-  const titleRight = versionText;
-  const titleUsed = visualWidth(titleLeft) + visualWidth(titleRight);
-  const titleGap = Math.max(1, innerWidth - titleUsed);
-  const titleContent =
-    titleLeft.replace("CORBAT-COCO", chalk.bold.white("CORBAT-COCO")) +
-    " ".repeat(titleGap) +
-    chalk.dim(titleRight);
+  // Title line: " 🥥 CORBAT-COCO      v1.2.x "
+  const titleLeftRaw = " \u{1F965} CORBAT-COCO";
+  const titleRightRaw = versionText + " ";
+  const titleLeftStyled = titleLeftRaw.replace("CORBAT-COCO", chalk.bold.white("CORBAT-COCO"));
+  const titleGap = Math.max(1, innerWidth - stringWidth(titleLeftRaw) - stringWidth(titleRightRaw));
+  const titleContent = titleLeftStyled + " ".repeat(titleGap) + chalk.dim(titleRightRaw);
 
-  // Subtitle line
-  const subtitleContent = chalk.dim(subtitleText);
+  // Subtitle line: " open source • corbat.tech "
+  const subtitleContent = " " + chalk.dim(subtitleText) + " ";
 
   // Always show the styled header box
   console.log();
