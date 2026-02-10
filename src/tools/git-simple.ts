@@ -12,9 +12,11 @@ import { execSync } from "node:child_process";
  * Generate simple commit message from git diff
  */
 function generateSimpleCommitMessage(): string {
+  const cwd = process.cwd();
   try {
     const diff = execSync("git diff --cached --name-only", {
       encoding: "utf-8",
+      cwd,
       stdio: ["pipe", "pipe", "ignore"],
     });
 
@@ -62,6 +64,7 @@ export const checkProtectedBranchTool = defineTool({
     try {
       const branch = execSync("git rev-parse --abbrev-ref HEAD", {
         encoding: "utf-8",
+        cwd: process.cwd(),
         stdio: ["pipe", "pipe", "ignore"],
       }).trim();
 
@@ -108,7 +111,7 @@ export const simpleAutoCommitTool = defineTool({
     try {
       // Check if there are staged changes
       try {
-        execSync("git diff --cached --quiet", { stdio: "ignore" });
+        execSync("git diff --cached --quiet", { cwd: process.cwd(), stdio: "ignore" });
         return {
           stdout: "",
           stderr: "No staged changes to commit",
@@ -125,6 +128,7 @@ export const simpleAutoCommitTool = defineTool({
       // Commit
       execSync(`git commit -m "${message}"`, {
         encoding: "utf-8",
+        cwd: process.cwd(),
         stdio: "pipe",
       });
 

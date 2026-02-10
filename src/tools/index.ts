@@ -296,6 +296,7 @@ import { smartSuggestionsTools } from "./smart-suggestions.js";
 import { contextEnhancerTools } from "./context-enhancer.js";
 import { skillEnhancerTools } from "./skill-enhancer.js";
 import { gitEnhancedTools } from "./git-enhanced.js";
+import { authorizePathTools } from "./authorize-path.js";
 
 export function registerAllTools(registry: ToolRegistry): void {
   const allTools = [
@@ -328,6 +329,7 @@ export function registerAllTools(registry: ToolRegistry): void {
     ...contextEnhancerTools,
     ...skillEnhancerTools,
     ...gitEnhancedTools,
+    ...authorizePathTools,
   ];
 
   for (const tool of allTools) {

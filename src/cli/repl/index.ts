@@ -277,6 +277,18 @@ export async function startRepl(
       }
     };
 
+    // Thinking progress feedback - evolving messages while LLM processes
+    let thinkingInterval: NodeJS.Timeout | null = null;
+    let thinkingStartTime: number | null = null;
+
+    const clearThinkingInterval = () => {
+      if (thinkingInterval) {
+        clearInterval(thinkingInterval);
+        thinkingInterval = null;
+      }
+      thinkingStartTime = null;
+    };
+
     // Create abort controller for Ctrl+C cancellation (outside try for catch access)
     const abortController = new AbortController();
     let wasAborted = false;
@@ -284,6 +296,7 @@ export async function startRepl(
     const sigintHandler = () => {
       wasAborted = true;
       abortController.abort();
+      clearThinkingInterval();
       clearSpinner();
       renderInfo("\nOperation cancelled");
     };
@@ -339,8 +352,19 @@ export async function startRepl(
         },
         onThinkingStart: () => {
           setSpinner("Thinking...");
+          thinkingStartTime = Date.now();
+          thinkingInterval = setInterval(() => {
+            if (!thinkingStartTime) return;
+            const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
+            if (elapsed < 4) return;
+            if (elapsed < 8) setSpinner("Analyzing request...");
+            else if (elapsed < 12) setSpinner("Planning approach...");
+            else if (elapsed < 16) setSpinner("Preparing tools...");
+            else setSpinner(`Still working... (${elapsed}s)`);
+          }, 2000);
         },
         onThinkingEnd: () => {
+          clearThinkingInterval();
           clearSpinner();
         },
         onToolPreparing: (toolName) => {
@@ -353,7 +377,8 @@ export async function startRepl(
         signal: abortController.signal,
       });
 
-      // Remove SIGINT handler after agent turn completes (also in catch/finally)
+      // Remove SIGINT handler and clean up thinking interval after agent turn
+      clearThinkingInterval();
       process.off("SIGINT", sigintHandler);
 
       // Show abort summary if cancelled, preserving partial content
@@ -426,7 +451,8 @@ export async function startRepl(
 
       console.log(); // Extra spacing
     } catch (error) {
-      // Always clear spinner on error and remove SIGINT handler
+      // Always clear spinner and thinking interval on error, remove SIGINT handler
+      clearThinkingInterval();
       clearSpinner();
       process.off("SIGINT", sigintHandler);
       // Don't show error for abort
@@ -545,6 +571,11 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
     displayPath = "..." + displayPath.slice(-maxPathLen + 3);
   }
 
+  // Split path to highlight project folder name
+  const lastSep = displayPath.lastIndexOf("/");
+  const parentPath = lastSep > 0 ? displayPath.slice(0, lastSep + 1) : "";
+  const projectName = lastSep > 0 ? displayPath.slice(lastSep + 1) : displayPath;
+
   const providerName = session.config.provider.type;
   const modelName = session.config.provider.model || "default";
   const trustText =
@@ -557,7 +588,7 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
           : "";
 
   console.log();
-  console.log(chalk.dim(`  \u{1F4C1} ${displayPath}`));
+  console.log(chalk.dim(`  \u{1F4C1} ${parentPath}`) + chalk.magenta.bold(projectName));
   console.log(
     chalk.dim(`  \u{1F916} ${providerName}/`) +
       chalk.magenta(modelName) +

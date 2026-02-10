@@ -2,8 +2,14 @@
  * Tests for review tool
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { parseDiff } from "../cli/repl/output/diff-renderer.js";
+import { analyzePatterns, checkTestCoverage } from "./review.js";
+
+// Mock fileExists for checkTestCoverage tests
+vi.mock("../utils/files.js", () => ({
+  fileExists: vi.fn().mockResolvedValue(false),
+}));
 
 // We test the analysis functions indirectly by creating diffs and checking results.
 // Since analyzePatterns is not exported, we test through the patterns via parseDiff integration.
@@ -181,5 +187,139 @@ describe("review tool: severity ordering", () => {
     expect(order.critical).toBeLessThan(order.major);
     expect(order.major).toBeLessThan(order.minor);
     expect(order.minor).toBeLessThan(order.info);
+  });
+});
+
+// ==========================================================================
+// False positive fixes
+// ==========================================================================
+
+const DIFF_CONSOLE_LOG_IN_CLI = `diff --git a/src/cli/repl/output.ts b/src/cli/repl/output.ts
+index abc1234..def5678 100644
+--- a/src/cli/repl/output.ts
++++ b/src/cli/repl/output.ts
+@@ -1,3 +1,5 @@
++export function showWelcome() {
++  console.log("Welcome to Corbat-Coco!");
++}
+ export const VERSION = "1.0";`;
+
+const DIFF_CONSOLE_LOG_IN_SERVICE = `diff --git a/src/services/auth.ts b/src/services/auth.ts
+index abc1234..def5678 100644
+--- a/src/services/auth.ts
++++ b/src/services/auth.ts
+@@ -1,3 +1,5 @@
++export function login() {
++  console.log("debug: logging in");
++}
+ export const AUTH_URL = "https://auth.example.com";`;
+
+// 12 additions — below the 15-line threshold for "test exists" noise suppression
+const DIFF_SRC_SMALL_CHANGE = `diff --git a/src/tools/git.ts b/src/tools/git.ts
+index abc1234..def5678 100644
+--- a/src/tools/git.ts
++++ b/src/tools/git.ts
+@@ -1,3 +1,15 @@
++import { simpleGit } from "simple-git";
++function getGit(cwd) {
++  const baseDir = cwd ?? process.cwd();
++  return simpleGit({ baseDir });
++}
++export async function gitStatus(cwd) {
++  const git = getGit(cwd);
++  return git.status();
++}
++export async function gitDiff(cwd) {
++  const git = getGit(cwd);
++  return git.diff();
++}
+ export const GIT_VERSION = "1.0";`;
+
+// 18 additions — above the 15-line threshold
+const DIFF_SRC_LARGE_CHANGE = `diff --git a/src/tools/auth.ts b/src/tools/auth.ts
+index abc1234..def5678 100644
+--- a/src/tools/auth.ts
++++ b/src/tools/auth.ts
+@@ -1,3 +1,21 @@
++import { hash } from "node:crypto";
++export async function login(user, pass) {
++  const hashed = hash("sha256", pass);
++  const result = await db.query("SELECT * FROM users WHERE name = ?", [user]);
++  if (!result) throw new Error("User not found");
++  if (result.password !== hashed) throw new Error("Invalid password");
++  const token = generateToken(result.id);
++  await saveSession(token, result.id);
++  return { token, user: result.name };
++}
++export async function logout(token) {
++  await deleteSession(token);
++  return { success: true };
++}
++export async function register(user, pass, email) {
++  const hashed = hash("sha256", pass);
++  await db.insert("users", { name: user, password: hashed, email });
++  return login(user, pass);
++}
+ export const AUTH_VERSION = "1.0";`;
+
+describe("review tool: console.log path exclusion", () => {
+  it("should NOT flag console.log in CLI/REPL files", () => {
+    const diff = parseDiff(DIFF_CONSOLE_LOG_IN_CLI);
+    const findings = analyzePatterns(diff);
+
+    const consoleFindings = findings.filter((f) => f.message.includes("console.log"));
+    expect(consoleFindings).toHaveLength(0);
+  });
+
+  it("should still flag console.log in non-CLI source files", () => {
+    const diff = parseDiff(DIFF_CONSOLE_LOG_IN_SERVICE);
+    const findings = analyzePatterns(diff);
+
+    const consoleFindings = findings.filter((f) => f.message.includes("console.log"));
+    expect(consoleFindings).toHaveLength(1);
+    expect(consoleFindings[0]!.severity).toBe("minor");
+    expect(consoleFindings[0]!.file).toBe("src/services/auth.ts");
+  });
+});
+
+describe("review tool: test file existence check", () => {
+  it("should suppress finding when test exists and change is small (< 15 additions)", async () => {
+    const { fileExists } = await import("../utils/files.js");
+    const mockFileExists = fileExists as ReturnType<typeof vi.fn>;
+    mockFileExists.mockResolvedValue(true);
+
+    const diff = parseDiff(DIFF_SRC_SMALL_CHANGE);
+    const findings = await checkTestCoverage(diff, "/project");
+
+    const testFindings = findings.filter((f) => f.category === "testing");
+    expect(testFindings).toHaveLength(0);
+  });
+
+  it("should emit info when test exists but change is large (>= 15 additions)", async () => {
+    const { fileExists } = await import("../utils/files.js");
+    const mockFileExists = fileExists as ReturnType<typeof vi.fn>;
+    mockFileExists.mockResolvedValue(true);
+
+    const diff = parseDiff(DIFF_SRC_LARGE_CHANGE);
+    const findings = await checkTestCoverage(diff, "/project");
+
+    const testFindings = findings.filter((f) => f.category === "testing");
+    expect(testFindings).toHaveLength(1);
+    expect(testFindings[0]!.severity).toBe("info");
+    expect(testFindings[0]!.message).toContain("exists but was not updated");
+  });
+
+  it("should keep minor severity when no test file exists", async () => {
+    const { fileExists } = await import("../utils/files.js");
+    const mockFileExists = fileExists as ReturnType<typeof vi.fn>;
+    mockFileExists.mockResolvedValue(false);
+
+    const diff = parseDiff(DIFF_SRC_SMALL_CHANGE);
+    const findings = await checkTestCoverage(diff, "/project");
+
+    const testFindings = findings.filter((f) => f.category === "testing");
+    expect(testFindings).toHaveLength(1);
+    expect(testFindings[0]!.severity).toBe("minor");
+    expect(testFindings[0]!.message).toContain("without corresponding test updates");
   });
 });

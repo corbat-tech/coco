@@ -9,10 +9,16 @@ import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
 
 /**
- * Get git instance for a directory
+ * Get git instance for a directory.
+ *
+ * Uses the `baseDir` option object so simple-git resolves the repo root
+ * by walking up from the given directory — matching native `git` behavior.
+ * The string-only overload `simpleGit(path)` can misbehave on macOS when
+ * the binary is installed globally via npm.
  */
 function getGit(cwd?: string): SimpleGit {
-  return simpleGit(cwd ?? process.cwd());
+  const baseDir = cwd ?? process.cwd();
+  return simpleGit({ baseDir });
 }
 
 /**

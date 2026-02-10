@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.3] - 2026-02-10
+
+### Added
+- Thinking feedback: LLM thinking blocks displayed in real-time during REPL sessions
+- `authorize_path` tool for runtime directory access authorization
+- Git tools available to sub-agents (explore, plan, test, debug, review)
+- Review output rendered as markdown tables via `marked-terminal`
+
+### Changed
+- Git tools (`git_status`, `git_diff`, `git_log`, `git_branch`) now respect `cwd` parameter correctly
+- Review pattern detection skips `console.log` in CLI/REPL files (`excludePaths`)
+- Test coverage check is filesystem-aware: suppresses noise when test file exists on disk for small changes (< 15 additions)
+- Review findings displayed as markdown tables ordered by severity instead of raw chalk output
+
+### Fixed
+- Git `simpleGit` initialization uses `{ baseDir }` object form for reliable cwd handling
+- `oxfmt` formatting issues in `prompts.ts` and `authorize-path.ts`
+- `no-control-regex` linter warning in `renderer.ts` (intentional ANSI regex)
+- False positive review findings for CLI console.log and already-tested files
+
+---
+
+## [1.2.2] - 2026-02-10
+
+### Fixed
+- Input line-wrap: extra blank line when user input fills first terminal row
+- Header box alignment: replaced custom `visualWidth()` with `string-width` package
+- Bottom separator disappearing after pressing Enter (`eraseDown` clearing too much)
+
+### Changed
+- New header design: "COCO" with tagline and color hierarchy
+- Added `string-width` dependency for reliable terminal string width measurement
+
+---
+
+## [1.2.0] - 2026-02-10
+
+### Fixed
+- 25 bug fixes across the codebase
+- README fully rewritten
+
+### Changed
+- Dependency updates: oxlint, @anthropic-ai/sdk, openai, ora, @types/node
+- CI: bump actions/upload-artifact from 4 to 6
+
+---
+
 ## [1.1.0] - 2025-02-10
 
 ### Added
@@ -164,6 +211,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 1.2.3 | 2026-02-10 | Thinking feedback, git tools fix, authorize_path, review markdown output |
+| 1.2.2 | 2026-02-10 | Input line-wrap fix, header redesign, string-width |
+| 1.2.0 | 2026-02-10 | 25 bug fixes, README rewrite, dependency updates |
 | 1.1.0 | 2025-02-10 | Pre-release quality improvements, 80%+ coverage, 12-dimension scoring |
 | 1.0.2 | 2025-01 | Package rename, dynamic version |
 | 1.0.1 | 2025-01 | Quality scoring improvements |
@@ -188,7 +238,10 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.2...v1.2.3
+[1.2.2]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.0...v1.2.2
+[1.2.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/corbat-tech/corbat-coco/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/corbat-tech/corbat-coco/compare/v1.0.0...v1.0.1

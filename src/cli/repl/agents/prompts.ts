@@ -163,11 +163,39 @@ export const AGENT_PROMPTS: Record<AgentType, string> = {
  * Default tools available to each agent type
  */
 export const AGENT_TOOLS: Record<AgentType, string[]> = {
-  explore: ["glob", "read_file", "list_dir", "bash_exec"],
-  plan: ["glob", "read_file", "list_dir"],
-  test: ["glob", "read_file", "write_file", "edit_file", "run_tests", "bash_exec"],
-  debug: ["glob", "read_file", "write_file", "edit_file", "bash_exec", "run_tests"],
-  review: ["glob", "read_file", "list_dir"],
+  explore: [
+    "glob",
+    "read_file",
+    "list_dir",
+    "bash_exec",
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_branch",
+  ],
+  plan: ["glob", "read_file", "list_dir", "git_status", "git_diff", "git_log", "git_branch"],
+  test: [
+    "glob",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "run_tests",
+    "bash_exec",
+    "git_status",
+    "git_diff",
+  ],
+  debug: [
+    "glob",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "bash_exec",
+    "run_tests",
+    "git_status",
+    "git_diff",
+    "git_log",
+  ],
+  review: ["glob", "read_file", "list_dir", "git_status", "git_diff", "git_log", "git_branch"],
 };
 
 /**

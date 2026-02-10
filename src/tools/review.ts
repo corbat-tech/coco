@@ -6,10 +6,12 @@
  * structured review findings ordered by severity.
  */
 
+import path from "node:path";
 import { z } from "zod";
 import { simpleGit, type SimpleGit } from "simple-git";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
+import { fileExists } from "../utils/files.js";
 import { parseDiff, getChangedLines, type ParsedDiff } from "../cli/repl/output/diff-renderer.js";
 import { detectMaturity, type MaturityLevel } from "../utils/maturity.js";
 import { runLinterTool, type LintIssue } from "./quality.js";
@@ -66,6 +68,8 @@ interface Pattern {
   category: ReviewCategory;
   message: string;
   suggestion?: { old: string; new: string };
+  /** Skip this pattern for files matching these paths (e.g. CLI output files) */
+  excludePaths?: RegExp;
 }
 
 const SECURITY_PATTERNS: Pattern[] = [
@@ -92,6 +96,7 @@ const SECURITY_PATTERNS: Pattern[] = [
     severity: "minor",
     category: "best-practice",
     message: "Remove console.log — use structured logging instead",
+    excludePaths: /\/(cli|repl|bin|scripts)\//,
   },
 ];
 
@@ -192,9 +197,11 @@ async function getDiff(
 }
 
 /**
- * Run pattern detection on diff lines.
+ * Run pattern detection on added diff lines.
+ * Checks each added line against security, correctness, and style patterns.
+ * Patterns with `excludePaths` are skipped for matching file paths (e.g. CLI files).
  */
-function analyzePatterns(diff: ParsedDiff): ReviewFinding[] {
+export function analyzePatterns(diff: ParsedDiff): ReviewFinding[] {
   const findings: ReviewFinding[] = [];
 
   for (const file of diff.files) {
@@ -204,6 +211,7 @@ function analyzePatterns(diff: ParsedDiff): ReviewFinding[] {
         if (line.type !== "add") continue;
 
         for (const pattern of ALL_PATTERNS) {
+          if (pattern.excludePaths?.test(file.path)) continue;
           if (pattern.regex.test(line.content)) {
             findings.push({
               file: file.path,
@@ -225,11 +233,21 @@ function analyzePatterns(diff: ParsedDiff): ReviewFinding[] {
 }
 
 /**
- * Check if source files changed without corresponding test changes.
+ * Minimum additions threshold before flagging test coverage when tests exist on disk.
+ * Changes below this are likely refactors or fixes already covered by existing tests.
  */
-function checkTestCoverage(diff: ParsedDiff): ReviewFinding[] {
+const TEST_COVERAGE_LARGE_CHANGE_THRESHOLD = 15;
+
+/**
+ * Check if source files changed without corresponding test changes.
+ * When a test file exists on disk but wasn't modified in the diff,
+ * small changes (< 15 additions) are silently skipped — existing tests
+ * almost certainly cover them. Large changes still get an "info" nudge.
+ * Files with no test file on disk always get flagged as "minor".
+ */
+export async function checkTestCoverage(diff: ParsedDiff, cwd: string): Promise<ReviewFinding[]> {
   const findings: ReviewFinding[] = [];
-  const changedSrc: string[] = [];
+  const changedSrc: { path: string; additions: number }[] = [];
   const changedTests = new Set<string>();
 
   for (const file of diff.files) {
@@ -239,25 +257,45 @@ function checkTestCoverage(diff: ParsedDiff): ReviewFinding[] {
     } else if (/\.(ts|tsx|js|jsx)$/.test(file.path)) {
       // Only flag source files with substantial changes
       if (file.additions > 5) {
-        changedSrc.push(file.path);
+        changedSrc.push({ path: file.path, additions: file.additions });
       }
     }
   }
 
   for (const src of changedSrc) {
     // Check if a corresponding test file was also changed
-    const baseName = src.replace(/\.(ts|tsx|js|jsx)$/, "");
+    const baseName = src.path.replace(/\.(ts|tsx|js|jsx)$/, "");
     const hasTestChange = [...changedTests].some(
       (t) => t.includes(baseName.split("/").pop()!) || t.startsWith(baseName),
     );
 
     if (!hasTestChange) {
-      findings.push({
-        file: src,
-        severity: "minor",
-        category: "testing",
-        message: "Logic changes without corresponding test updates",
-      });
+      // Check if a test file exists on disk (just not in the diff)
+      const ext = src.path.match(/\.(ts|tsx|js|jsx)$/)?.[0] ?? ".ts";
+      const testExists =
+        (await fileExists(path.join(cwd, `${baseName}.test${ext}`))) ||
+        (await fileExists(path.join(cwd, `${baseName}.spec${ext}`)));
+
+      if (testExists) {
+        // Test file exists — only flag large changes, skip small refactors
+        if (src.additions >= TEST_COVERAGE_LARGE_CHANGE_THRESHOLD) {
+          findings.push({
+            file: src.path,
+            severity: "info",
+            category: "testing",
+            message:
+              "Test file exists but was not updated — verify existing tests cover these changes",
+          });
+        }
+        // Small changes with existing tests → silent, no finding
+      } else {
+        findings.push({
+          file: src.path,
+          severity: "minor",
+          category: "testing",
+          message: "Logic changes without corresponding test updates",
+        });
+      }
     }
   }
 
@@ -487,7 +525,7 @@ Examples:
       allFindings.push(...analyzePatterns(diff));
 
       // 2. Test coverage check
-      allFindings.push(...checkTestCoverage(diff));
+      allFindings.push(...(await checkTestCoverage(diff, projectDir)));
 
       // 3. Documentation check
       allFindings.push(...checkDocumentation(diff));

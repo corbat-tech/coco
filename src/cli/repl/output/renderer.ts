@@ -695,6 +695,7 @@ function wrapText(text: string, maxWidth: number): string[] {
     }
 
     // Map plain text position to position in ANSI string
+    // eslint-disable-next-line no-control-regex -- Intentional: must match literal ANSI escape sequences
     const ansiRegex = /\x1b\[[0-9;]*m/g;
     let match: RegExpExecArray | null;
     const ansiPositions: Array<{ start: number; end: number }> = [];

@@ -2,7 +2,7 @@
  * Review Skill
  *
  * Performs code review on current changes compared to a base branch.
- * Shows findings ordered by severity with inline diffs for suggestions.
+ * Shows findings as formatted markdown tables ordered by severity.
  *
  * Usage:
  *   /review                    Compare current branch vs main
@@ -10,8 +10,8 @@
  *   /review --no-lint          Skip linter
  */
 
-import chalk from "chalk";
 import * as p from "@clack/prompts";
+import chalk from "chalk";
 import type { Skill, SkillContext, SkillResult } from "../types.js";
 import {
   reviewCodeTool,
@@ -19,7 +19,7 @@ import {
   type ReviewFinding,
   type ReviewSeverity,
 } from "../../../../tools/review.js";
-import { renderInlineDiff } from "../../output/diff-renderer.js";
+import { renderMarkdown } from "../../output/markdown.js";
 
 // ============================================================================
 // Argument parsing
@@ -50,14 +50,14 @@ function parseArgs(args: string): {
 }
 
 // ============================================================================
-// Severity display
+// Severity labels (plain text for markdown)
 // ============================================================================
 
-const SEVERITY_ICONS: Record<ReviewSeverity, string> = {
-  critical: chalk.red.bold("CRITICAL"),
-  major: chalk.red("MAJOR"),
-  minor: chalk.yellow("minor"),
-  info: chalk.dim("info"),
+const SEVERITY_LABELS: Record<ReviewSeverity, string> = {
+  critical: "**CRITICAL**",
+  major: "**MAJOR**",
+  minor: "minor",
+  info: "info",
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -72,79 +72,83 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 // ============================================================================
-// Rendering
+// Markdown builder
 // ============================================================================
 
-function renderFinding(finding: ReviewFinding): void {
-  const location = finding.line
-    ? `${chalk.cyan(finding.file)}:${chalk.yellow(String(finding.line))}`
-    : chalk.cyan(finding.file || "(project)");
-
-  const category = CATEGORY_LABELS[finding.category] ?? finding.category;
-  const severity = SEVERITY_ICONS[finding.severity];
-
-  console.log(`\n  ${location}`);
-  console.log(`  ${severity} ${chalk.dim(`[${category}]`)} ${finding.message}`);
-
-  if (finding.suggestion) {
-    console.log(renderInlineDiff(finding.suggestion.old, finding.suggestion.new));
-  }
+/**
+ * Format a finding's file location for a table cell.
+ */
+function findingLocation(f: ReviewFinding): string {
+  return f.line ? `\`${f.file}:${f.line}\`` : f.file ? `\`${f.file}\`` : "(project)";
 }
 
-function renderResults(result: ReviewResult): void {
+/**
+ * Build a markdown table from a list of findings.
+ */
+function buildFindingsTable(findings: ReviewFinding[]): string {
+  const lines: string[] = [];
+  lines.push("| File | Severity | Category | Issue |");
+  lines.push("|------|----------|----------|-------|");
+
+  for (const f of findings) {
+    const severity = SEVERITY_LABELS[f.severity];
+    const category = CATEGORY_LABELS[f.category] ?? f.category;
+    lines.push(`| ${findingLocation(f)} | ${severity} | ${category} | ${f.message} |`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Build the full review output as a markdown string.
+ */
+function buildReviewMarkdown(result: ReviewResult): string {
   const { summary, required, suggestions, maturity } = result;
+  const lines: string[] = [];
 
   // Header
-  console.log(chalk.cyan.bold(`\n═══ Code Review ═══\n`));
+  lines.push("## Code Review\n");
 
-  console.log(
-    `  ${chalk.dim("Branch:")} ${chalk.white(summary.branch)} → ${chalk.white(summary.baseBranch)}`,
+  const statusIcon = summary.status === "approved" ? "Approved" : "Needs Work";
+  lines.push(`**Branch:** \`${summary.branch}\` → \`${summary.baseBranch}\``);
+  lines.push(
+    `**Files:** ${summary.filesChanged} changed | +${summary.additions} -${summary.deletions}`,
   );
-  console.log(
-    `  ${chalk.dim("Files:")} ${summary.filesChanged} changed | ` +
-      chalk.green(`+${summary.additions}`) +
-      " " +
-      chalk.red(`-${summary.deletions}`),
-  );
-  console.log(`  ${chalk.dim("Maturity:")} ${maturity}`);
-
-  // Status
-  const statusIcon =
-    summary.status === "approved" ? chalk.green("Approved") : chalk.yellow("Needs Work");
-  console.log(`  ${chalk.dim("Status:")} ${statusIcon}`);
+  lines.push(`**Maturity:** ${maturity}`);
+  lines.push(`**Status:** ${statusIcon}`);
+  lines.push("");
 
   // Required changes
   if (required.length > 0) {
-    console.log(chalk.red.bold(`\n──── Required (${required.length}) ────`));
-    for (const finding of required) {
-      renderFinding(finding);
-    }
+    lines.push(`### Required (${required.length})\n`);
+    lines.push(buildFindingsTable(required));
+    lines.push("");
   }
 
   // Suggestions
   if (suggestions.length > 0) {
-    console.log(chalk.yellow.bold(`\n──── Suggestions (${suggestions.length}) ────`));
-    for (const finding of suggestions) {
-      renderFinding(finding);
-    }
+    lines.push(`### Suggestions (${suggestions.length})\n`);
+    lines.push(buildFindingsTable(suggestions));
+    lines.push("");
   }
 
   // Summary
-  console.log(chalk.dim(`\n──── Summary ────\n`));
+  lines.push("---\n");
   if (required.length > 0) {
-    console.log(
-      `  Fix ${chalk.red.bold(String(required.length))} required issue${required.length !== 1 ? "s" : ""} before merging.`,
+    lines.push(
+      `Fix **${required.length}** required issue${required.length !== 1 ? "s" : ""} before merging.`,
     );
   }
   if (suggestions.length > 0) {
-    console.log(
-      `  ${chalk.yellow(String(suggestions.length))} suggestion${suggestions.length !== 1 ? "s" : ""} to improve quality.`,
+    lines.push(
+      `${suggestions.length} suggestion${suggestions.length !== 1 ? "s" : ""} to improve quality.`,
     );
   }
   if (required.length === 0 && suggestions.length === 0) {
-    console.log(chalk.green("  No issues found. Looks good!"));
+    lines.push("No issues found. Looks good!");
   }
-  console.log();
+
+  return lines.join("\n");
 }
 
 // ============================================================================
@@ -181,11 +185,12 @@ export const reviewSkill: Skill = {
         return { success: true, output: "No changes" };
       }
 
-      renderResults(result);
+      const markdown = buildReviewMarkdown(result);
+      console.log(renderMarkdown(markdown));
 
       return {
         success: true,
-        output: `${result.required.length} required, ${result.suggestions.length} suggestions`,
+        output: markdown,
       };
     } catch (error) {
       spinner.stop("Review failed");

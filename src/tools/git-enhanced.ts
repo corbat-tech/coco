@@ -7,6 +7,11 @@ import { defineTool } from "./registry.js";
 import { z } from "zod";
 import { execSync } from "node:child_process";
 
+/** Shorthand for execSync with explicit cwd to avoid issues on global npm installs */
+function gitExec(cmd: string, opts: Record<string, unknown> = {}): string {
+  return execSync(cmd, { encoding: "utf-8", cwd: process.cwd(), ...opts }) as string;
+}
+
 /**
  * Analyze git repository health
  */
@@ -22,8 +27,8 @@ export function analyzeRepoHealth(): {
   try {
     // Check for uncommitted changes
     try {
-      execSync("git status --porcelain", { stdio: "pipe" });
-      const status = execSync("git status --porcelain", { encoding: "utf-8" });
+      gitExec("git status --porcelain", { stdio: "pipe" });
+      const status = gitExec("git status --porcelain");
       if (status.trim()) {
         issues.push("Uncommitted changes present");
         score -= 10;
@@ -34,7 +39,7 @@ export function analyzeRepoHealth(): {
 
     // Check for untracked files
     try {
-      const untracked = execSync("git ls-files --others --exclude-standard", { encoding: "utf-8" });
+      const untracked = gitExec("git ls-files --others --exclude-standard");
       if (untracked.trim()) {
         const count = untracked.trim().split("\n").length;
         issues.push(`${count} untracked files`);
@@ -47,9 +52,9 @@ export function analyzeRepoHealth(): {
 
     // Check if behind remote
     try {
-      const branch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf-8" }).trim();
-      const local = execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim();
-      const remote = execSync(`git rev-parse origin/${branch}`, { encoding: "utf-8" }).trim();
+      const branch = gitExec("git rev-parse --abbrev-ref HEAD").trim();
+      const local = gitExec("git rev-parse HEAD").trim();
+      const remote = gitExec(`git rev-parse origin/${branch}`).trim();
 
       if (local !== remote) {
         issues.push("Branch is not up-to-date with remote");
@@ -62,7 +67,7 @@ export function analyzeRepoHealth(): {
 
     // Check for large files
     try {
-      const files = execSync("git ls-files", { encoding: "utf-8" }).trim().split("\n");
+      const files = gitExec("git ls-files").trim().split("\n");
       // Sample check (full check would be expensive)
       if (files.length > 1000) {
         recommendations.push("Repository has many files, consider using .gitignore");
@@ -73,7 +78,7 @@ export function analyzeRepoHealth(): {
 
     // Check for merge conflicts
     try {
-      const conflicts = execSync("git diff --name-only --diff-filter=U", { encoding: "utf-8" });
+      const conflicts = gitExec("git diff --name-only --diff-filter=U");
       if (conflicts.trim()) {
         issues.push("Merge conflicts present");
         score -= 30;
@@ -99,15 +104,14 @@ export function getCommitStats(): {
   recentActivity: string;
 } {
   try {
-    const count = execSync("git rev-list --count HEAD", { encoding: "utf-8" }).trim();
-    const authors = execSync('git log --format="%an" | sort -u', {
-      encoding: "utf-8",
+    const count = gitExec("git rev-list --count HEAD").trim();
+    const authors = gitExec('git log --format="%an" | sort -u', {
       shell: "/bin/bash",
     })
       .trim()
       .split("\n");
 
-    const lastCommit = execSync('git log -1 --format="%cr"', { encoding: "utf-8" }).trim();
+    const lastCommit = gitExec('git log -1 --format="%cr"').trim();
 
     return {
       totalCommits: parseInt(count, 10),
@@ -214,7 +218,7 @@ export const recommendBranchTool = defineTool({
     // Check if branch exists
     let exists = false;
     try {
-      execSync(`git rev-parse --verify ${branchName}`, { stdio: "ignore" });
+      execSync(`git rev-parse --verify ${branchName}`, { cwd: process.cwd(), stdio: "ignore" });
       exists = true;
     } catch {
       exists = false;

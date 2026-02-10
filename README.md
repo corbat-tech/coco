@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/v1.2.0-stable-blueviolet?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/v1.2.3-stable-blueviolet?style=for-the-badge" alt="Version">
   <img src="https://img.shields.io/badge/TypeScript-5.7-3178c6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/License-MIT-f5c542?style=for-the-badge" alt="MIT License">
@@ -66,7 +66,14 @@ Coco doesn't just generate code — it iterates until quality converges:
 | 3 | 84 | Security patched, coverage improved to 82% |
 | 4 | 91 | All green — quality converged ✅ |
 
-The loop is configurable: target score, max iterations, convergence threshold, security requirements. You control the bar.
+The quality bar is yours to set:
+
+```bash
+coco build --min-quality 90          # Per-run override
+coco config set quality.minScore 90  # Persist in project config
+```
+
+Default is **85** (senior-level). You can also configure max iterations, convergence threshold, coverage targets, and security requirements — see `coco config init`.
 
 ### 12-Dimension Quality Scoring
 

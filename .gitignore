@@ -40,5 +40,9 @@ yarn.lock
 .coco/
 !.coco/README.md
 
+# Terminal recordings (local demo generation)
+*.tape
+*.gif
+
 # Development plans (internal, not published)
 .dev/
