@@ -213,11 +213,11 @@ async function selectModelInteractively(
         let line = "";
         if (isSelected) {
           line += chalk.bgBlue.white(" ▶ ");
-          line += chalk.bgBlue.white(model.id.padEnd(35));
+          line += chalk.bgBlue.white(model.id.padEnd(30));
         } else {
           const marker = isCurrent ? chalk.green(" ● ") : chalk.dim(" ○ ");
           line += marker;
-          line += isCurrent ? chalk.green(model.id.padEnd(35)) : model.id.padEnd(35);
+          line += isCurrent ? chalk.green(model.id.padEnd(30)) : model.id.padEnd(30);
         }
 
         const star = model.recommended ? chalk.magenta(" ⭐") : "";
@@ -226,8 +226,8 @@ async function selectModelInteractively(
           : "";
         line += star + ctx;
 
-        // Show description for selected item (RAM info, etc.)
-        if (isSelected && model.description) {
+        // Show description (RAM info, etc.) for all items
+        if (model.description) {
           line += chalk.dim(`  ${model.description}`);
         }
 

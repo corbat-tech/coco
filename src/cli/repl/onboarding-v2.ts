@@ -711,8 +711,11 @@ async function setupLocalProvider(
               p.log.message(chalk.green(`   📦 Using loaded model: ${model}`));
 
               // Test the model before returning
+              const testSpinner = p.spinner();
+              testSpinner.start(`Testing model ${model}...`);
               const testResult = await testLocalModel(effectivePort, model);
               if (!testResult.success) {
+                testSpinner.stop(`Model test failed`);
                 if (
                   testResult.error?.includes("context length") ||
                   testResult.error?.includes("tokens to keep")
@@ -724,7 +727,7 @@ async function setupLocalProvider(
                 return setupLocalProvider(providerType, effectivePort);
               }
 
-              p.log.message(chalk.green("   ✅ Model ready!\n"));
+              testSpinner.stop(`Model ready!`);
 
               return {
                 type: providerType,
@@ -739,19 +742,58 @@ async function setupLocalProvider(
               // Multiple models loaded - let user choose
               p.log.message(chalk.green(`   📦 Found ${loadedModels.length} loaded models\n`));
 
+              // Enrich loaded models with descriptions from providers-config
+              const providerModels = getProviderDefinition(providerType).models;
+
+              // Show recommended models not yet downloaded as suggestions
+              const notDownloaded = providerModels.filter(
+                (pm) =>
+                  !loadedModels.some(
+                    (m) =>
+                      m === pm.id ||
+                      m.toLowerCase().includes(pm.id.toLowerCase().replace(/:/g, "-")),
+                  ),
+              );
+              if (notDownloaded.length > 0) {
+                const suggestions = notDownloaded
+                  .map((m) => {
+                    const star = m.recommended ? "⭐ " : "   ";
+                    const cmd =
+                      providerType === "ollama"
+                        ? `ollama pull ${m.id}`
+                        : `search '${m.id}' in LM Studio`;
+                    return `   ${star}${m.id} — ${m.description ?? ""} → ${cmd}`;
+                  })
+                  .join("\n");
+                p.log.message(
+                  chalk.dim(`\n   Other recommended models you can install:\n${suggestions}\n`),
+                );
+              }
               const modelChoice = await p.select({
                 message: "Choose a loaded model:",
-                options: loadedModels.map((m) => ({
-                  value: m,
-                  label: m,
-                })),
+                options: loadedModels.map((m) => {
+                  const staticDef = providerModels.find(
+                    (pm) =>
+                      pm.id === m ||
+                      m.toLowerCase().includes(pm.id.toLowerCase().replace(/:/g, "-")),
+                  );
+                  const hint = staticDef ? ` — ${staticDef.description}` : "";
+                  const star = staticDef?.recommended ? "⭐ " : "";
+                  return {
+                    value: m,
+                    label: `${star}${m}${hint}`,
+                  };
+                }),
               });
 
               if (p.isCancel(modelChoice)) return null;
 
               // Test the selected model
+              const testSpinner2 = p.spinner();
+              testSpinner2.start(`Testing model ${modelChoice}...`);
               const testResult = await testLocalModel(effectivePort, modelChoice);
               if (!testResult.success) {
+                testSpinner2.stop(`Model test failed`);
                 if (
                   testResult.error?.includes("context length") ||
                   testResult.error?.includes("tokens to keep")
@@ -763,7 +805,7 @@ async function setupLocalProvider(
                 return setupLocalProvider(providerType, effectivePort);
               }
 
-              p.log.message(chalk.green("   ✅ Model ready!\n"));
+              testSpinner2.stop(`Model ready!`);
 
               return {
                 type: providerType,
