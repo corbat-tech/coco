@@ -31,7 +31,7 @@ export interface ReplSession {
  */
 export interface ReplConfig {
   provider: {
-    type: "anthropic" | "openai" | "codex" | "gemini" | "kimi" | "lmstudio";
+    type: "anthropic" | "openai" | "codex" | "gemini" | "kimi" | "lmstudio" | "ollama";
     model: string;
     maxTokens: number;
   };

@@ -86,7 +86,14 @@ import { getApiKey, getBaseUrl, getDefaultModel } from "../config/env.js";
 /**
  * Supported provider types
  */
-export type ProviderType = "anthropic" | "openai" | "codex" | "gemini" | "kimi" | "lmstudio";
+export type ProviderType =
+  | "anthropic"
+  | "openai"
+  | "codex"
+  | "gemini"
+  | "kimi"
+  | "lmstudio"
+  | "ollama";
 
 /**
  * Create a provider by type
@@ -133,9 +140,15 @@ export async function createProvider(
     case "lmstudio":
       // LM Studio uses OpenAI-compatible API
       provider = new OpenAIProvider();
-      // Override base URL for LM Studio
       mergedConfig.baseUrl = mergedConfig.baseUrl ?? "http://localhost:1234/v1";
       mergedConfig.apiKey = mergedConfig.apiKey ?? "lm-studio"; // LM Studio doesn't need real key
+      break;
+
+    case "ollama":
+      // Ollama uses OpenAI-compatible API
+      provider = new OpenAIProvider();
+      mergedConfig.baseUrl = mergedConfig.baseUrl ?? "http://localhost:11434/v1";
+      mergedConfig.apiKey = mergedConfig.apiKey ?? "ollama"; // Ollama doesn't need real key
       break;
 
     default:
@@ -190,6 +203,16 @@ export function listProviders(): Array<{
       id: "kimi",
       name: "Kimi (Moonshot)",
       configured: !!getApiKey("kimi"),
+    },
+    {
+      id: "lmstudio",
+      name: "LM Studio (Local)",
+      configured: true, // Always available locally
+    },
+    {
+      id: "ollama",
+      name: "Ollama (Local)",
+      configured: true, // Always available locally
     },
   ];
 }

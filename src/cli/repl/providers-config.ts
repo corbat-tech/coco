@@ -488,6 +488,57 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       },
     ],
   },
+
+  ollama: {
+    id: "ollama",
+    name: "Ollama (Local)",
+    emoji: "🦙",
+    description: "Run models locally with Ollama - free, private, easy setup",
+    envVar: "OLLAMA_API_KEY", // Placeholder, not actually required
+    apiKeyUrl: "https://ollama.com/",
+    docsUrl: "https://ollama.com/library",
+    baseUrl: "http://localhost:11434/v1",
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    askForCustomUrl: true,
+    requiresApiKey: false,
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: false,
+    },
+    models: [
+      {
+        id: "qwen3:8b",
+        name: "⚡ Qwen3 8B",
+        description: "ollama pull qwen3:8b (16GB RAM)",
+        contextWindow: 128000,
+        maxOutputTokens: 8192,
+        recommended: true,
+      },
+      {
+        id: "deepseek-coder-v2:16b",
+        name: "🎯 DeepSeek Coder V2 16B",
+        description: "ollama pull deepseek-coder-v2:16b (32GB RAM)",
+        contextWindow: 128000,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "codestral:22b",
+        name: "Codestral 22B",
+        description: "ollama pull codestral:22b (24GB RAM)",
+        contextWindow: 32768,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "llama3.1:8b",
+        name: "Llama 3.1 8B",
+        description: "ollama pull llama3.1:8b (16GB RAM)",
+        contextWindow: 128000,
+        maxOutputTokens: 8192,
+      },
+    ],
+  },
 };
 
 /**

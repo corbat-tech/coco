@@ -201,13 +201,15 @@ describe("Providers module exports", () => {
 
     it("should return list of providers", () => {
       const providers = ProviderExports.listProviders();
-      expect(providers).toHaveLength(5);
+      expect(providers).toHaveLength(7);
       expect(providers.map((p) => p.id)).toEqual([
         "anthropic",
         "openai",
         "codex",
         "gemini",
         "kimi",
+        "lmstudio",
+        "ollama",
       ]);
     });
   });
@@ -222,8 +224,9 @@ describe("Providers module exports", () => {
         "gemini",
         "kimi",
         "lmstudio",
+        "ollama",
       ];
-      expect(validTypes).toHaveLength(6);
+      expect(validTypes).toHaveLength(7);
     });
   });
 });

@@ -50,7 +50,14 @@ function loadGlobalCocoEnv(): void {
 /**
  * Supported provider types
  */
-export type ProviderType = "anthropic" | "openai" | "codex" | "gemini" | "kimi" | "lmstudio";
+export type ProviderType =
+  | "anthropic"
+  | "openai"
+  | "codex"
+  | "gemini"
+  | "kimi"
+  | "lmstudio"
+  | "ollama";
 
 /**
  * Get API key for a provider
@@ -68,6 +75,9 @@ export function getApiKey(provider: ProviderType): string | undefined {
     case "lmstudio":
       // LM Studio doesn't require API key, but we use a placeholder to mark it as configured
       return process.env["LMSTUDIO_API_KEY"] ?? "lm-studio";
+    case "ollama":
+      // Ollama doesn't require API key
+      return process.env["OLLAMA_API_KEY"] ?? "ollama";
     case "codex":
       // Codex uses OAuth tokens, not API keys - return undefined to trigger OAuth flow
       return undefined;
@@ -89,6 +99,8 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
       return process.env["KIMI_BASE_URL"] ?? "https://api.moonshot.ai/v1";
     case "lmstudio":
       return process.env["LMSTUDIO_BASE_URL"] ?? "http://localhost:1234/v1";
+    case "ollama":
+      return process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434/v1";
     case "codex":
       return "https://chatgpt.com/backend-api/codex/responses";
     default:
@@ -113,6 +125,9 @@ export function getDefaultModel(provider: ProviderType): string {
     case "lmstudio":
       // LM Studio model is selected in the app, we use a placeholder
       return process.env["LMSTUDIO_MODEL"] ?? "local-model";
+    case "ollama":
+      // Ollama model is pulled locally, user sets via env or config
+      return process.env["OLLAMA_MODEL"] ?? "llama3.1";
     case "codex":
       // Codex via ChatGPT subscription uses different models
       return process.env["CODEX_MODEL"] ?? "gpt-5.2-codex";
@@ -128,7 +143,7 @@ export function getDefaultProvider(): ProviderType {
   const provider = process.env["COCO_PROVIDER"]?.toLowerCase();
   if (
     provider &&
-    ["anthropic", "openai", "codex", "gemini", "kimi", "lmstudio"].includes(provider)
+    ["anthropic", "openai", "codex", "gemini", "kimi", "lmstudio", "ollama"].includes(provider)
   ) {
     return provider as ProviderType;
   }
@@ -274,7 +289,9 @@ export function getLastUsedProvider(): ProviderType {
   const prefs = loadUserPreferences();
   if (
     prefs.provider &&
-    ["anthropic", "openai", "codex", "gemini", "kimi", "lmstudio"].includes(prefs.provider)
+    ["anthropic", "openai", "codex", "gemini", "kimi", "lmstudio", "ollama"].includes(
+      prefs.provider,
+    )
   ) {
     return prefs.provider;
   }
@@ -282,7 +299,7 @@ export function getLastUsedProvider(): ProviderType {
   const envProvider = process.env["COCO_PROVIDER"]?.toLowerCase();
   if (
     envProvider &&
-    ["anthropic", "openai", "codex", "gemini", "kimi", "lmstudio"].includes(envProvider)
+    ["anthropic", "openai", "codex", "gemini", "kimi", "lmstudio", "ollama"].includes(envProvider)
   ) {
     return envProvider as ProviderType;
   }

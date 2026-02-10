@@ -8,7 +8,9 @@ import { z } from "zod";
  * Provider configuration schema
  */
 export const ProviderConfigSchema = z.object({
-  type: z.enum(["anthropic", "openai", "gemini", "kimi"]).default("anthropic"),
+  type: z
+    .enum(["anthropic", "openai", "gemini", "kimi", "lmstudio", "ollama"])
+    .default("anthropic"),
   apiKey: z.string().optional(),
   model: z.string().default("claude-sonnet-4-20250514"),
   maxTokens: z.number().min(1).max(200000).default(8192),
