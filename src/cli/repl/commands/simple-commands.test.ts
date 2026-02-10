@@ -75,7 +75,10 @@ describe("cocoCommand", () => {
     vi.mocked(isCocoMode).mockReturnValue(true);
     const result = await cocoCommand.execute(["status"], mockSession);
     expect(result).toBe(false);
-    const output = vi.mocked(console.log).mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+    const output = vi
+      .mocked(console.log)
+      .mock.calls.map((c) => String(c[0] ?? ""))
+      .join("\n");
     expect(output).toContain("ON");
   });
 
@@ -83,7 +86,10 @@ describe("cocoCommand", () => {
     vi.mocked(isCocoMode).mockReturnValue(false);
     const result = await cocoCommand.execute(["status"], mockSession);
     expect(result).toBe(false);
-    const output = vi.mocked(console.log).mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+    const output = vi
+      .mocked(console.log)
+      .mock.calls.map((c) => String(c[0] ?? ""))
+      .join("\n");
     expect(output).toContain("OFF");
   });
 
@@ -175,7 +181,9 @@ describe("copyCommand", () => {
 
   it("should extract markdown code block if present", async () => {
     vi.mocked(isClipboardAvailable).mockResolvedValue(true);
-    vi.mocked(getRawMarkdown).mockReturnValue("Some text\n```markdown\n# Title\nContent\n```\nMore");
+    vi.mocked(getRawMarkdown).mockReturnValue(
+      "Some text\n```markdown\n# Title\nContent\n```\nMore",
+    );
     vi.mocked(copyToClipboard).mockResolvedValue(true);
 
     await copyCommand.execute([], mockSession);
@@ -189,7 +197,10 @@ describe("copyCommand", () => {
 
     const result = await copyCommand.execute([], mockSession);
     expect(result).toBe(false);
-    const output = vi.mocked(console.log).mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+    const output = vi
+      .mocked(console.log)
+      .mock.calls.map((c) => String(c[0] ?? ""))
+      .join("\n");
     expect(output).toContain("Failed");
   });
 });

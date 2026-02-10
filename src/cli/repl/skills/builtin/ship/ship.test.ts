@@ -68,7 +68,12 @@ const mockProfile: ProjectProfile = {
   stack: "node",
   versionFile: { path: "package.json", stack: "node", currentVersion: "1.0.0", field: "version" },
   changelog: { path: "CHANGELOG.md", format: "keep-a-changelog" },
-  ci: { type: "github-actions", workflowFiles: [".github/workflows/ci.yml"], hasCodeQL: true, hasLinting: true },
+  ci: {
+    type: "github-actions",
+    workflowFiles: [".github/workflows/ci.yml"],
+    hasCodeQL: true,
+    hasLinting: true,
+  },
   defaultBranch: "main",
   currentBranch: "feat/test",
   hasUncommittedChanges: true,
@@ -151,7 +156,10 @@ describe("shipSkill", () => {
 
   describe("execute — step failure aborts", () => {
     it("should abort on review failure", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(failedStep("review"));
 
       const result = await shipSkill.execute("", context);
@@ -160,7 +168,10 @@ describe("shipSkill", () => {
     });
 
     it("should abort on test failure", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(passedStep("review"));
       vi.mocked(runTestCoverage).mockResolvedValue(failedStep("tests"));
 
@@ -170,7 +181,10 @@ describe("shipSkill", () => {
     });
 
     it("should abort on lint failure", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(passedStep("review"));
       vi.mocked(runTestCoverage).mockResolvedValue(passedStep("tests"));
       vi.mocked(runLintSecurity).mockResolvedValue(failedStep("lint"));
@@ -181,7 +195,10 @@ describe("shipSkill", () => {
     });
 
     it("should abort on branch failure", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(passedStep("review"));
       vi.mocked(runTestCoverage).mockResolvedValue(passedStep("tests"));
       vi.mocked(runLintSecurity).mockResolvedValue(passedStep("lint"));
@@ -192,8 +209,16 @@ describe("shipSkill", () => {
     });
 
     it("should abort on cancelled step", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
-      vi.mocked(runReview).mockResolvedValue({ step: "review", status: "cancelled", message: "User cancelled", durationMs: 0 });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
+      vi.mocked(runReview).mockResolvedValue({
+        step: "review",
+        status: "cancelled",
+        message: "User cancelled",
+        durationMs: 0,
+      });
 
       const result = await shipSkill.execute("", context);
       expect(result.success).toBe(false);
@@ -203,7 +228,10 @@ describe("shipSkill", () => {
 
   describe("execute — skipped steps", () => {
     it("should include skipped steps in summary", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(skippedStep("review"));
       vi.mocked(runTestCoverage).mockResolvedValue(passedStep("tests"));
       vi.mocked(runLintSecurity).mockResolvedValue(passedStep("lint"));
@@ -222,7 +250,10 @@ describe("shipSkill", () => {
 
   describe("execute — args parsing", () => {
     it("should pass --skip-tests to context", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(passedStep("review"));
       vi.mocked(runTestCoverage).mockResolvedValue(skippedStep("tests"));
       vi.mocked(runLintSecurity).mockResolvedValue(passedStep("lint"));
@@ -244,7 +275,10 @@ describe("shipSkill", () => {
     });
 
     it("should parse --no-version and --no-changelog", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(passedStep("review"));
       vi.mocked(runTestCoverage).mockResolvedValue(passedStep("tests"));
       vi.mocked(runLintSecurity).mockResolvedValue(passedStep("lint"));
@@ -263,7 +297,10 @@ describe("shipSkill", () => {
     });
 
     it("should parse -m commit message", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(passedStep("review"));
       vi.mocked(runTestCoverage).mockResolvedValue(passedStep("tests"));
       vi.mocked(runLintSecurity).mockResolvedValue(passedStep("lint"));
@@ -281,7 +318,10 @@ describe("shipSkill", () => {
     });
 
     it("should parse --patch force bump", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(failedStep("review"));
 
       await shipSkill.execute("--patch", context);
@@ -291,7 +331,10 @@ describe("shipSkill", () => {
     });
 
     it("should parse --major force bump", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(failedStep("review"));
 
       await shipSkill.execute("--major", context);
@@ -301,7 +344,10 @@ describe("shipSkill", () => {
     });
 
     it("should parse --no-tests alias", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(failedStep("review"));
 
       await shipSkill.execute("--no-tests", context);
@@ -311,7 +357,10 @@ describe("shipSkill", () => {
     });
 
     it("should parse --no-review alias", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(failedStep("review"));
 
       await shipSkill.execute("--no-review", context);
@@ -321,7 +370,10 @@ describe("shipSkill", () => {
     });
 
     it("should parse -b alias for --base", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(failedStep("review"));
 
       await shipSkill.execute("-b develop", context);
@@ -331,7 +383,10 @@ describe("shipSkill", () => {
     });
 
     it("should parse --message alias for -m", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(failedStep("review"));
 
       await shipSkill.execute("--message fix: bug repair", context);
@@ -343,7 +398,10 @@ describe("shipSkill", () => {
 
   describe("execute — PR url in output", () => {
     it("should include PR url in summary when available", async () => {
-      vi.mocked(runPreflight).mockResolvedValue({ result: passedStep("preflight"), profile: mockProfile });
+      vi.mocked(runPreflight).mockResolvedValue({
+        result: passedStep("preflight"),
+        profile: mockProfile,
+      });
       vi.mocked(runReview).mockResolvedValue(passedStep("review"));
       vi.mocked(runTestCoverage).mockResolvedValue(passedStep("tests"));
       vi.mocked(runLintSecurity).mockResolvedValue(passedStep("lint"));

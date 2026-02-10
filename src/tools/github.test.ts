@@ -93,7 +93,11 @@ describe("ghCheckAuthTool", () => {
     expect(result.authenticated).toBe(true);
     expect(result.user).toBe("octocat");
     expect(result.error).toBeUndefined();
-    expect(mockExeca).toHaveBeenCalledWith("gh", ["auth", "status"], expect.objectContaining({ timeout: 60_000 }));
+    expect(mockExeca).toHaveBeenCalledWith(
+      "gh",
+      ["auth", "status"],
+      expect.objectContaining({ timeout: 60_000 }),
+    );
   });
 
   it("returns authenticated true but no user when format differs", async () => {
@@ -295,9 +299,9 @@ describe("ghPrCreateTool", () => {
   it("throws ToolError on failure", async () => {
     mockExeca.mockRejectedValueOnce(new Error("no commits between branches"));
 
-    await expect(
-      ghPrCreateTool.execute({ title: "test", body: "test" }),
-    ).rejects.toThrow(ToolError);
+    await expect(ghPrCreateTool.execute({ title: "test", body: "test" })).rejects.toThrow(
+      ToolError,
+    );
   });
 });
 
@@ -463,8 +467,18 @@ describe("ghPrMergeTool", () => {
 describe("ghPrChecksTool", () => {
   it("returns all passing checks", async () => {
     const checks = [
-      { name: "build", state: "SUCCESS", conclusion: "SUCCESS", detailsUrl: "https://ci.example.com/1" },
-      { name: "test", state: "SUCCESS", conclusion: "SUCCESS", detailsUrl: "https://ci.example.com/2" },
+      {
+        name: "build",
+        state: "SUCCESS",
+        conclusion: "SUCCESS",
+        detailsUrl: "https://ci.example.com/1",
+      },
+      {
+        name: "test",
+        state: "SUCCESS",
+        conclusion: "SUCCESS",
+        detailsUrl: "https://ci.example.com/2",
+      },
     ];
     mockExeca.mockResolvedValueOnce({
       stdout: JSON.stringify(checks),
@@ -483,8 +497,18 @@ describe("ghPrChecksTool", () => {
 
   it("detects failing checks", async () => {
     const checks = [
-      { name: "build", state: "SUCCESS", conclusion: "SUCCESS", detailsUrl: "https://ci.example.com/1" },
-      { name: "lint", state: "FAILURE", conclusion: "FAILURE", detailsUrl: "https://ci.example.com/2" },
+      {
+        name: "build",
+        state: "SUCCESS",
+        conclusion: "SUCCESS",
+        detailsUrl: "https://ci.example.com/1",
+      },
+      {
+        name: "lint",
+        state: "FAILURE",
+        conclusion: "FAILURE",
+        detailsUrl: "https://ci.example.com/2",
+      },
     ];
     mockExeca.mockResolvedValueOnce({
       stdout: JSON.stringify(checks),
@@ -519,8 +543,18 @@ describe("ghPrChecksTool", () => {
 
   it("detects skipped checks and counts them as allPassed", async () => {
     const checks = [
-      { name: "build", state: "SUCCESS", conclusion: "SUCCESS", detailsUrl: "https://ci.example.com/1" },
-      { name: "optional", state: "SKIPPED", conclusion: "SKIPPED", detailsUrl: "https://ci.example.com/2" },
+      {
+        name: "build",
+        state: "SUCCESS",
+        conclusion: "SUCCESS",
+        detailsUrl: "https://ci.example.com/1",
+      },
+      {
+        name: "optional",
+        state: "SKIPPED",
+        conclusion: "SKIPPED",
+        detailsUrl: "https://ci.example.com/2",
+      },
     ];
     mockExeca.mockResolvedValueOnce({
       stdout: JSON.stringify(checks),
@@ -551,7 +585,12 @@ describe("ghPrChecksTool", () => {
 
   it("maps conclusion field when state does not match known values", async () => {
     const checks = [
-      { name: "deploy", state: "COMPLETED", conclusion: "FAILURE", detailsUrl: "https://ci.example.com/1" },
+      {
+        name: "deploy",
+        state: "COMPLETED",
+        conclusion: "FAILURE",
+        detailsUrl: "https://ci.example.com/1",
+      },
     ];
     mockExeca.mockResolvedValueOnce({
       stdout: JSON.stringify(checks),
@@ -566,7 +605,12 @@ describe("ghPrChecksTool", () => {
 
   it("maps conclusion SUCCESS when state is COMPLETED", async () => {
     const checks = [
-      { name: "deploy", state: "COMPLETED", conclusion: "SUCCESS", detailsUrl: "https://ci.example.com/1" },
+      {
+        name: "deploy",
+        state: "COMPLETED",
+        conclusion: "SUCCESS",
+        detailsUrl: "https://ci.example.com/1",
+      },
     ];
     mockExeca.mockResolvedValueOnce({
       stdout: JSON.stringify(checks),
@@ -580,7 +624,12 @@ describe("ghPrChecksTool", () => {
 
   it("maps conclusion SKIPPED when state is COMPLETED", async () => {
     const checks = [
-      { name: "skip-me", state: "COMPLETED", conclusion: "SKIPPED", detailsUrl: "https://ci.example.com/1" },
+      {
+        name: "skip-me",
+        state: "COMPLETED",
+        conclusion: "SKIPPED",
+        detailsUrl: "https://ci.example.com/1",
+      },
     ];
     mockExeca.mockResolvedValueOnce({
       stdout: JSON.stringify(checks),
@@ -636,7 +685,16 @@ describe("ghPrListTool", () => {
 
     expect(mockExeca).toHaveBeenCalledWith(
       "gh",
-      ["pr", "list", "--json", "number,title,url,state", "--state", "open", "--head", "feature/my-branch"],
+      [
+        "pr",
+        "list",
+        "--json",
+        "number,title,url,state",
+        "--state",
+        "open",
+        "--head",
+        "feature/my-branch",
+      ],
       expect.any(Object),
     );
   });
@@ -774,9 +832,13 @@ describe("ghReleaseCreateTool", () => {
     expect(mockExeca).toHaveBeenCalledWith(
       "gh",
       [
-        "release", "create", "v6.0.0-rc.1",
-        "--title", "Release Candidate 1",
-        "--notes", "Testing release",
+        "release",
+        "create",
+        "v6.0.0-rc.1",
+        "--title",
+        "Release Candidate 1",
+        "--notes",
+        "Testing release",
         "--draft",
         "--prerelease",
       ],

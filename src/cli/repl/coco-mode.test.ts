@@ -92,7 +92,9 @@ describe("coco-mode", () => {
 
     it("should return true for implement keywords", () => {
       expect(
-        looksLikeFeatureRequest("implement a new authentication system with JWT tokens and refresh"),
+        looksLikeFeatureRequest(
+          "implement a new authentication system with JWT tokens and refresh",
+        ),
       ).toBe(true);
     });
 
@@ -106,13 +108,17 @@ describe("coco-mode", () => {
 
     it("should return true for build keywords", () => {
       expect(
-        looksLikeFeatureRequest("build the payment processing pipeline with Stripe integration here"),
+        looksLikeFeatureRequest(
+          "build the payment processing pipeline with Stripe integration here",
+        ),
       ).toBe(true);
     });
 
     it("should return true for add feature keywords", () => {
       expect(
-        looksLikeFeatureRequest("add a feature for exporting data to CSV with custom column selection"),
+        looksLikeFeatureRequest(
+          "add a feature for exporting data to CSV with custom column selection",
+        ),
       ).toBe(true);
     });
 
@@ -134,37 +140,49 @@ describe("coco-mode", () => {
 
     it("should return true for migrate keywords", () => {
       expect(
-        looksLikeFeatureRequest("migrate the database from PostgreSQL to MySQL with data transformation"),
+        looksLikeFeatureRequest(
+          "migrate the database from PostgreSQL to MySQL with data transformation",
+        ),
       ).toBe(true);
     });
 
     it("should return true for integrate keywords", () => {
       expect(
-        looksLikeFeatureRequest("integrate the Stripe payment gateway with our checkout flow and webhooks"),
+        looksLikeFeatureRequest(
+          "integrate the Stripe payment gateway with our checkout flow and webhooks",
+        ),
       ).toBe(true);
     });
 
     it("should return true for setup keywords", () => {
       expect(
-        looksLikeFeatureRequest("setup the CI/CD pipeline with GitHub Actions for automated deployment"),
+        looksLikeFeatureRequest(
+          "setup the CI/CD pipeline with GitHub Actions for automated deployment",
+        ),
       ).toBe(true);
     });
 
     it("should return true for develop keywords", () => {
       expect(
-        looksLikeFeatureRequest("develop a REST API for the user management system with CRUD operations"),
+        looksLikeFeatureRequest(
+          "develop a REST API for the user management system with CRUD operations",
+        ),
       ).toBe(true);
     });
 
     it("should return true for design keywords", () => {
       expect(
-        looksLikeFeatureRequest("design the database schema for the e-commerce product catalog system"),
+        looksLikeFeatureRequest(
+          "design the database schema for the e-commerce product catalog system",
+        ),
       ).toBe(true);
     });
 
     it("should return false for non-feature text", () => {
       expect(
-        looksLikeFeatureRequest("the weather today is really nice and I enjoy walking in the park a lot"),
+        looksLikeFeatureRequest(
+          "the weather today is really nice and I enjoy walking in the park a lot",
+        ),
       ).toBe(false);
     });
   });

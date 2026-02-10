@@ -31,12 +31,7 @@ vi.mock("@clack/prompts", () => ({
   note: vi.fn(),
 }));
 
-import {
-  isSlashCommand,
-  parseSlashCommand,
-  executeSlashCommand,
-  getAllCommands,
-} from "./index.js";
+import { isSlashCommand, parseSlashCommand, executeSlashCommand, getAllCommands } from "./index.js";
 import { renderError } from "../output/renderer.js";
 
 describe("commands/index", () => {
@@ -149,9 +144,7 @@ describe("commands/index", () => {
       const session = {} as any;
       const result = await executeSlashCommand("nonexistent", [], session);
       expect(result).toBe(false);
-      expect(renderError).toHaveBeenCalledWith(
-        expect.stringContaining("Unknown command"),
-      );
+      expect(renderError).toHaveBeenCalledWith(expect.stringContaining("Unknown command"));
     });
 
     it("should execute exit command", async () => {
