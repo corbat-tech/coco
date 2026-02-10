@@ -151,7 +151,11 @@ Examples:
   category: "bash",
   parameters: z.object({
     path: z.string().describe("File path to open or execute"),
-    mode: z.enum(["open", "exec"]).optional().default("open").describe("open = system app, exec = run script"),
+    mode: z
+      .enum(["open", "exec"])
+      .optional()
+      .default("open")
+      .describe("open = system app, exec = run script"),
     args: z.array(z.string()).optional().default([]).describe("Arguments for exec mode"),
     cwd: z.string().optional().describe("Working directory"),
     timeout: z.number().optional().describe("Timeout in ms for exec mode (default 120000)"),
@@ -166,11 +170,15 @@ Examples:
     }
 
     const workDir = cwd ?? process.cwd();
-    const absolute = path.isAbsolute(filePath) ? path.normalize(filePath) : path.resolve(workDir, filePath);
+    const absolute = path.isAbsolute(filePath)
+      ? path.normalize(filePath)
+      : path.resolve(workDir, filePath);
 
     const blockedBy = isBlockedPath(absolute);
     if (blockedBy) {
-      throw new ToolError(`Access to system path '${blockedBy}' is not allowed`, { tool: "open_file" });
+      throw new ToolError(`Access to system path '${blockedBy}' is not allowed`, {
+        tool: "open_file",
+      });
     }
 
     // Verify file exists

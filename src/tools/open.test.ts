@@ -80,7 +80,9 @@ describe("openFileTool", () => {
       mockAccess.mockRejectedValueOnce(new Error("ENOENT"));
 
       const { openFileTool } = await import("./open.js");
-      await expect(openFileTool.execute({ path: "/tmp/nonexistent.html" })).rejects.toThrow(/not found/i);
+      await expect(openFileTool.execute({ path: "/tmp/nonexistent.html" })).rejects.toThrow(
+        /not found/i,
+      );
     });
 
     it("should return duration", async () => {
@@ -209,21 +211,25 @@ describe("openFileTool", () => {
       });
 
       const { openFileTool } = await import("./open.js");
-      await expect(
-        openFileTool.execute({ path: "/tmp/data.xyz", mode: "exec" }),
-      ).rejects.toThrow(/no known interpreter/i);
+      await expect(openFileTool.execute({ path: "/tmp/data.xyz", mode: "exec" })).rejects.toThrow(
+        /no known interpreter/i,
+      );
     });
   });
 
   describe("security", () => {
     it("should block system paths", async () => {
       const { openFileTool } = await import("./open.js");
-      await expect(openFileTool.execute({ path: "/etc/passwd" })).rejects.toThrow(/system path.*not allowed/i);
+      await expect(openFileTool.execute({ path: "/etc/passwd" })).rejects.toThrow(
+        /system path.*not allowed/i,
+      );
     });
 
     it("should block /proc path", async () => {
       const { openFileTool } = await import("./open.js");
-      await expect(openFileTool.execute({ path: "/proc/self/environ" })).rejects.toThrow(/not allowed/i);
+      await expect(openFileTool.execute({ path: "/proc/self/environ" })).rejects.toThrow(
+        /not allowed/i,
+      );
     });
 
     it("should block null bytes in path", async () => {
@@ -240,16 +246,16 @@ describe("openFileTool", () => {
 
     it("should block execution of .env.local files", async () => {
       const { openFileTool } = await import("./open.js");
-      await expect(
-        openFileTool.execute({ path: "/tmp/.env.local", mode: "exec" }),
-      ).rejects.toThrow(/sensitive file.*blocked/i);
+      await expect(openFileTool.execute({ path: "/tmp/.env.local", mode: "exec" })).rejects.toThrow(
+        /sensitive file.*blocked/i,
+      );
     });
 
     it("should block execution of .pem files", async () => {
       const { openFileTool } = await import("./open.js");
-      await expect(
-        openFileTool.execute({ path: "/tmp/cert.pem", mode: "exec" }),
-      ).rejects.toThrow(/sensitive file.*blocked/i);
+      await expect(openFileTool.execute({ path: "/tmp/cert.pem", mode: "exec" })).rejects.toThrow(
+        /sensitive file.*blocked/i,
+      );
     });
 
     it("should block dangerous argument patterns", async () => {

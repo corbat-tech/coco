@@ -277,11 +277,7 @@ export {
 } from "./github.js";
 
 // Open / Execute tools
-export {
-  openFileTool,
-  openTools,
-  type OpenFileOutput,
-} from "./open.js";
+export { openFileTool, openTools, type OpenFileOutput } from "./open.js";
 
 /**
  * Register all tools with a registry

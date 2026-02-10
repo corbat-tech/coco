@@ -235,7 +235,11 @@ export function calculateConfidenceBoost(input: string): number {
   }
 
   // Input with explicit phase names
-  if (/(converge|orchestrate|complete|output|plan|build|init|ship|release|publish|open|exec)/i.test(input)) {
+  if (
+    /(converge|orchestrate|complete|output|plan|build|init|ship|release|publish|open|exec)/i.test(
+      input,
+    )
+  ) {
     boost += 0.1;
   }
 
