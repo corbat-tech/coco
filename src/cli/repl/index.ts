@@ -516,17 +516,12 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
   const subtitleContent = " " + chalk.dim(subtitleText) + " ";
 
   // Always show the styled header box.
-  // The 🥥 emoji sits BEFORE the top-left corner — outside the box —
-  // so terminal emoji-width variance cannot break the right border.
-  // The 🥥 emoji sits before the top-left corner, outside the box.
-  // Most terminals render 🥥 as 2 cols → "🥥 ╭" starts ╭ at col 4.
-  // Content/bottom lines use 3 spaces so │/╰ also land at col 4.
-  const indent = "   "; // 3 spaces to align │/╰ with ╭
+  // Only ASCII inside the box — emoji widths are unpredictable across terminals.
   console.log();
-  console.log(" \u{1F965} " + chalk.magenta("\u256D" + "\u2500".repeat(boxWidth - 2) + "\u256E"));
-  console.log(indent + boxLine(titleContent));
-  console.log(indent + boxLine(subtitleContent));
-  console.log(indent + chalk.magenta("\u2570" + "\u2500".repeat(boxWidth - 2) + "\u256F"));
+  console.log(chalk.magenta("  \u256D" + "\u2500".repeat(boxWidth - 2) + "\u256E"));
+  console.log("  " + boxLine(titleContent));
+  console.log("  " + boxLine(subtitleContent));
+  console.log(chalk.magenta("  \u2570" + "\u2500".repeat(boxWidth - 2) + "\u256F"));
 
   // Check for updates (non-blocking, with 3s timeout)
   const updateInfo = await checkForUpdates();
