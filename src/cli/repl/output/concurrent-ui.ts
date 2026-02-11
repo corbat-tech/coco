@@ -293,9 +293,12 @@ export function setWorking(working: boolean): void {
 
 /**
  * Show immediate feedback that user message was captured
- * Clears current frame, shows message, then re-renders
+ * Stops render loop, shows message, restarts render loop
  */
 export function showMessageCaptured(message: string): void {
+  // Stop render loop temporarily
+  stopRenderLoop();
+
   // Clear current frame
   logUpdate.clear();
 
@@ -303,7 +306,8 @@ export function showMessageCaptured(message: string): void {
   console.log(chalk.dim("💬 You: ") + chalk.cyan(`"${message}"`));
   console.log(); // Blank line for spacing
 
-  // Re-render current state (spinner continues)
+  // Restart render loop and re-render current state
+  startRenderLoop();
   render();
 }
 
