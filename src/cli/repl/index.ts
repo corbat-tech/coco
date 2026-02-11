@@ -191,6 +191,9 @@ export async function startRepl(
     process.exit(0);
   });
 
+  // Spinner state - MUST be outside loop to persist across iterations
+  let spinnerActive = false;
+
   // Main loop
   while (true) {
     const input = await inputHandler.prompt();
@@ -279,7 +282,7 @@ export async function startRepl(
 
     // Execute agent turn
     // Use concurrent UI for spinner (works alongside input prompt)
-    let spinnerActive = false;
+    // Note: spinnerActive is declared outside loop to persist across iterations
 
     // Helper to safely clear spinner
     const clearSpinner = () => {
