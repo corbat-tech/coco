@@ -16,7 +16,7 @@ import { createInputHandler } from "./input/handler.js";
 import {
   startConcurrentInput,
   stopConcurrentInput,
-  getInputPromptText,
+  setWorking,
 } from "./input/concurrent-input.js";
 import {
   renderStreamChunk,
@@ -295,28 +295,11 @@ export async function startRepl(
         activeSpinner = createSpinner(message);
         activeSpinner.start();
       }
-      // Update suffix with concurrent input prompt
-      updateSpinnerSuffix();
-    };
-
-    // Update spinner suffix with concurrent input prompt
-    const updateSpinnerSuffix = () => {
-      if (activeSpinner) {
-        const inputPrompt = getInputPromptText();
-        if (inputPrompt) {
-          activeSpinner.setSuffixText(inputPrompt);
-        } else {
-          activeSpinner.clearSuffixText();
-        }
-      }
     };
 
     // Thinking progress feedback - evolving messages while LLM processes
     let thinkingInterval: NodeJS.Timeout | null = null;
     let thinkingStartTime: number | null = null;
-
-    // Concurrent input suffix update interval
-    let suffixUpdateInterval: NodeJS.Timeout | null = null;
 
     const clearThinkingInterval = () => {
       if (thinkingInterval) {
@@ -359,14 +342,8 @@ export async function startRepl(
         session.config.agent.systemPrompt = originalSystemPrompt + "\n" + getCocoModeSystemPrompt();
       }
 
-      // Start concurrent input capture (appears below spinner)
-      startConcurrentInput((line) => {
-        handleBackgroundLine(line);
-        updateSpinnerSuffix(); // Update prompt after capturing line
-      });
-
-      // Update spinner suffix interval (to show cursor blinking effect)
-      suffixUpdateInterval = setInterval(updateSpinnerSuffix, 500);
+      // Start concurrent input (renders persistent bottom prompt with LED)
+      startConcurrentInput(handleBackgroundLine);
 
       process.once("SIGINT", sigintHandler);
 
@@ -395,6 +372,7 @@ export async function startRepl(
         },
         onThinkingStart: () => {
           setSpinner("Thinking...");
+          setWorking(true); // LED pulsing red/orange/yellow
           thinkingStartTime = Date.now();
           thinkingInterval = setInterval(() => {
             if (!thinkingStartTime) return;
@@ -409,6 +387,7 @@ export async function startRepl(
         onThinkingEnd: () => {
           clearThinkingInterval();
           clearSpinner();
+          setWorking(false); // LED green (idle)
         },
         onToolPreparing: (toolName) => {
           setSpinner(`Preparing: ${toolName}\u2026`);
@@ -424,12 +403,11 @@ export async function startRepl(
       clearThinkingInterval();
       process.off("SIGINT", sigintHandler);
 
-      // Stop concurrent input and clear interval
-      if (suffixUpdateInterval) {
-        clearInterval(suffixUpdateInterval);
-      }
+      // Set LED to idle (green)
+      setWorking(false);
+
+      // Stop concurrent input (clears bottom prompt)
       stopConcurrentInput();
-      updateSpinnerSuffix(); // Clear suffix from spinner
 
       if (hasInterruptions()) {
         const interruptions = consumeInterruptions();
