@@ -58,16 +58,21 @@ function renderBottomPrompt(): void {
   const bottomSeparator = chalk.dim("─".repeat(termCols));
 
   // Render at fixed position (last 3 lines), outside scroll region
-  // CRITICAL: Erase from cursor to end to clear previous renders
+  // CRITICAL: Save cursor position first (so spinner doesn't interfere)
   const promptStart = termRows - 3;
+  const scrollEnd = termRows - 4;
+
   const output =
-    ansiEscapes.cursorTo(0, promptStart) +
+    ansiEscapes.cursorSavePosition + // Save current cursor position
+    ansiEscapes.cursorTo(0, promptStart) + // Move to prompt area
     ansiEscapes.eraseDown + // Clear everything from here down
     topSeparator +
     "\n" +
     promptLine +
     "\n" +
-    bottomSeparator;
+    bottomSeparator +
+    ansiEscapes.cursorTo(0, scrollEnd) + // Move cursor back to scroll region (last line)
+    ansiEscapes.cursorRestorePosition; // Restore original cursor position
 
   process.stdout.write(output);
 }
