@@ -38,6 +38,7 @@ const LED_IDLE = "🟢"; // Green - ready
 
 /**
  * Render the bottom input prompt (identical to normal REPL prompt)
+ * This renders OUTSIDE the scrolling region, so it's always visible
  */
 function renderBottomPrompt(): void {
   if (!state.active) return;
@@ -56,17 +57,16 @@ function renderBottomPrompt(): void {
   const promptLine = `${led} ${chalk.magenta("[coco]")} › ${state.currentLine}${chalk.dim("_")}`;
   const bottomSeparator = chalk.dim("─".repeat(termCols));
 
-  // Save cursor position, move to bottom, render, restore cursor
+  // Render at fixed position (last 3 lines), outside scroll region
+  // Don't save/restore cursor - just position at bottom and write
+  const promptStart = termRows - 3;
   const output =
-    ansiEscapes.cursorSavePosition +
-    ansiEscapes.cursorTo(0, termRows - 3) +
-    ansiEscapes.eraseDown +
+    ansiEscapes.cursorTo(0, promptStart) +
     topSeparator +
     "\n" +
     promptLine +
     "\n" +
-    bottomSeparator +
-    ansiEscapes.cursorRestorePosition;
+    bottomSeparator;
 
   process.stdout.write(output);
 }
@@ -82,6 +82,13 @@ export function startConcurrentInput(onLine: (line: string) => void): void {
   state.onLine = onLine;
   state.currentLine = "";
   state.ledFrame = 0;
+
+  // Set scrolling region to exclude bottom 3 lines (for persistent prompt)
+  if (process.stdout.isTTY && process.stdout.rows) {
+    const scrollEnd = process.stdout.rows - 4; // Leave 4 lines (3 for prompt + 1 margin)
+    process.stdout.write(`\x1b[1;${scrollEnd}r`); // Set scroll region from line 1 to scrollEnd
+    process.stdout.write(ansiEscapes.cursorTo(0, 0)); // Move cursor to top
+  }
 
   // Create readline interface in raw mode
   state.rl = readline.createInterface({
@@ -189,11 +196,16 @@ export function stopConcurrentInput(): void {
     process.stdin.setRawMode(false);
   }
 
-  // Clear bottom prompt (erase last 3 lines) - only if TTY
+  // Clear bottom prompt and reset scrolling region
   if (process.stdout.isTTY && process.stdout.rows) {
+    // Clear bottom prompt (erase last 3 lines)
     process.stdout.write(
       ansiEscapes.cursorTo(0, process.stdout.rows - 3) + ansiEscapes.eraseDown,
     );
+
+    // Reset scrolling region to full screen
+    process.stdout.write("\x1b[r"); // Reset scroll region
+    process.stdout.write(ansiEscapes.cursorTo(0, 0)); // Move cursor to top
   }
 }
 
