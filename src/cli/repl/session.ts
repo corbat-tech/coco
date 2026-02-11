@@ -244,7 +244,63 @@ export function getConversationContext(
     systemPrompt = `${systemPrompt}\n\n# Project Instructions (from COCO.md/CLAUDE.md)\n\n${session.memoryContext.combinedContent}`;
   }
 
+  // Append project stack context if available
+  if (session.projectContext) {
+    const stackInfo = formatStackContext(session.projectContext);
+    systemPrompt = `${systemPrompt}\n\n${stackInfo}`;
+  }
+
   return [{ role: "system", content: systemPrompt }, ...session.messages];
+}
+
+/**
+ * Format project stack context for LLM system prompt
+ */
+function formatStackContext(
+  ctx: import("./context/stack-detector.js").ProjectStackContext,
+): string {
+  const parts: string[] = [];
+
+  parts.push("# Project Technology Stack");
+  parts.push("");
+  parts.push(`**Language/Runtime:** ${ctx.stack}`);
+
+  if (ctx.packageManager) {
+    parts.push(`**Package Manager:** ${ctx.packageManager}`);
+  }
+
+  if (ctx.frameworks.length > 0) {
+    parts.push(`**Frameworks:** ${ctx.frameworks.join(", ")}`);
+  }
+
+  if (ctx.languages.length > 0) {
+    parts.push(`**Languages:** ${ctx.languages.join(", ")}`);
+  }
+
+  if (ctx.testingFrameworks.length > 0) {
+    parts.push(`**Testing Frameworks:** ${ctx.testingFrameworks.join(", ")}`);
+  }
+
+  if (ctx.buildTools.length > 0) {
+    parts.push(`**Build Tools:** ${ctx.buildTools.join(", ")}`);
+  }
+
+  // Show top 10 dependencies
+  const keyDeps = Object.entries(ctx.dependencies)
+    .slice(0, 10)
+    .map(([name, version]) => `${name}@${version}`)
+    .join(", ");
+
+  if (keyDeps) {
+    parts.push(`**Key Dependencies:** ${keyDeps}`);
+  }
+
+  parts.push("");
+  parts.push(
+    "**IMPORTANT:** When suggesting libraries, frameworks, or dependencies, ONLY recommend technologies compatible with the stack above. Do not suggest installing Node.js packages in a Java project, or Java libraries in a Python project.",
+  );
+
+  return parts.join("\n");
 }
 
 /**

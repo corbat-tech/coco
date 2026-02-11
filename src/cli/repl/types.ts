@@ -6,6 +6,7 @@ import type { Message, ToolCall, StreamChunk } from "../../providers/types.js";
 import type { ContextManager } from "./context/manager.js";
 import type { ProgressTracker } from "./progress/tracker.js";
 import type { MemoryContext } from "./memory/types.js";
+import type { ProjectStackContext } from "./context/stack-detector.js";
 
 /**
  * REPL session state
@@ -24,6 +25,8 @@ export interface ReplSession {
   progressTracker?: ProgressTracker;
   /** Memory context from COCO.md/CLAUDE.md files */
   memoryContext?: MemoryContext;
+  /** Project stack context (detected at startup) */
+  projectContext?: ProjectStackContext;
 }
 
 /**

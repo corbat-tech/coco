@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] - 2026-02-11
+
+### Added
+- **Context-aware stack detection:** COCO now auto-detects project technology stack at startup
+  - Detects language/runtime: Node.js, Java, Python, Go, Rust
+  - Extracts dependencies from package.json, pom.xml, build.gradle, pyproject.toml, Cargo.toml, go.mod
+  - Infers frameworks (Spring Boot, React, FastAPI, etc.) from dependencies
+  - Detects package manager (npm, pnpm, yarn, maven, gradle, cargo, pip, go)
+  - Detects build tools and testing frameworks
+  - Enriches LLM system prompt with stack context to prevent mismatched technology suggestions
+  - **Prevents COCO from suggesting Node.js packages in Java projects (and vice versa)**
+- **CommandHeartbeat utility:** Infrastructure for monitoring long-running commands (foundation for future streaming feature)
+  - Tracks elapsed time and silence duration
+  - Configurable callbacks for progress updates and warnings
+
+### Changed
+- REPL startup now includes stack detection phase
+- System prompt enriched with project technology context including frameworks, dependencies, and build tools
+- `ReplSession` type extended with `projectContext` field
+- Stack information displayed during REPL session to help user understand detected environment
+
+### Fixed
+- Prevents COCO from suggesting incompatible technologies for project stack (major UX improvement)
+- Type-safe dependency parsing with proper null checks
+
+---
+
 ## [1.4.0] - 2026-02-10
 
 ### Added

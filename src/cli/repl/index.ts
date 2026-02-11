@@ -127,6 +127,10 @@ export async function startRepl(
   // Initialize context manager
   initializeContextManager(session, provider);
 
+  // Detect and enrich project stack context
+  const { detectProjectStack } = await import("./context/stack-detector.js");
+  session.projectContext = await detectProjectStack(projectPath);
+
   // Load persisted allowed paths for this project
   await loadAllowedPaths(projectPath);
 
