@@ -6,7 +6,6 @@
  */
 
 import readline from "node:readline";
-import chalk from "chalk";
 
 /**
  * Queued user interruption
@@ -54,14 +53,8 @@ export function handleBackgroundLine(line: string): void {
       timestamp: Date.now(),
     });
 
-    // Show feedback that input was received
-    console.log(
-      chalk.dim("  ↳ ") +
-        chalk.cyan("Context queued") +
-        chalk.dim(": ") +
-        chalk.white(trimmed.slice(0, 60)) +
-        (trimmed.length > 60 ? chalk.dim("...") : ""),
-    );
+    // No immediate feedback - the LLM will explain what it's doing with the message
+    // after classification is complete. This avoids breaking the spinner rendering.
   }
 }
 
