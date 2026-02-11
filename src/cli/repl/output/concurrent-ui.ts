@@ -30,11 +30,6 @@ interface UIState {
   working: boolean; // LED color
   ledFrame: number;
 
-  // Feedback state (shows queued message)
-  lastQueuedMessage: string | null;
-  queuedMessageTime: number | null;
-  queuedMessageAction: "modify" | "queue" | "clarification" | null;
-
   // Callbacks
   onInputLine: ((line: string) => void) | null;
 }
@@ -49,10 +44,6 @@ const state: UIState = {
   inputLine: "",
   working: false,
   ledFrame: 0,
-
-  lastQueuedMessage: null,
-  queuedMessageTime: null,
-  queuedMessageAction: null,
 
   onInputLine: null,
 };
@@ -95,31 +86,6 @@ function render(): void {
     lines.push(chalk.dim("─".repeat(termCols)));
     lines.push(`${led} ${chalk.magenta("[coco]")} › ${state.inputLine}${chalk.dim("_")}`);
     lines.push(chalk.dim("─".repeat(termCols)));
-
-    // Show queued message feedback (disappears after 3 seconds)
-    if (state.lastQueuedMessage && state.queuedMessageTime && state.queuedMessageAction) {
-      const elapsed = Date.now() - state.queuedMessageTime;
-      if (elapsed < 3000) {
-        const actionIcons = {
-          modify: "⚡",
-          queue: "📋",
-          clarification: "💬",
-        };
-        const actionLabels = {
-          modify: "Adding to current task",
-          queue: "Queued for later",
-          clarification: "Noted",
-        };
-        const icon = actionIcons[state.queuedMessageAction];
-        const label = actionLabels[state.queuedMessageAction];
-        lines.push(chalk.dim(`  ${icon} ${label}: "${state.lastQueuedMessage}"`));
-      } else {
-        // Clear after 3 seconds
-        state.lastQueuedMessage = null;
-        state.queuedMessageTime = null;
-        state.queuedMessageAction = null;
-      }
-    }
   }
 
   // Atomic update (replaces previous frame)
@@ -233,11 +199,6 @@ export function startConcurrentInput(onLine: (line: string) => void): void {
     if (char === "\r" || char === "\n") {
       const line = state.inputLine.trim();
       if (line && state.onInputLine) {
-        // Save message temporarily for immediate feedback (will be updated with action after classification)
-        state.lastQueuedMessage = line;
-        state.queuedMessageTime = Date.now();
-        state.queuedMessageAction = "queue"; // Default, will be updated after classification
-
         state.onInputLine(line);
       }
       state.inputLine = "";
@@ -327,19 +288,6 @@ export function setWorking(working: boolean): void {
   if (!working) {
     state.ledFrame = 0;
   }
-  render();
-}
-
-/**
- * Update feedback message with classified action
- */
-export function setQueuedMessageFeedback(
-  message: string,
-  action: "modify" | "queue" | "clarification",
-): void {
-  state.lastQueuedMessage = message;
-  state.queuedMessageTime = Date.now();
-  state.queuedMessageAction = action;
   render();
 }
 

@@ -20,7 +20,6 @@ import {
   startSpinner as startConcurrentSpinner,
   updateSpinner as updateConcurrentSpinner,
   clearSpinner as clearConcurrentSpinner,
-  setQueuedMessageFeedback,
 } from "./output/concurrent-ui.js";
 import {
   renderStreamChunk,
@@ -415,58 +414,59 @@ export async function startRepl(
       if (hasInterruptions()) {
         const interruptions = consumeInterruptions();
 
-        console.log(chalk.dim(`\n[Received ${interruptions.length} interruption(s) during work]\n`));
-
         // Get current task from last message
         const currentTaskMsg = session.messages[session.messages.length - 1];
         const currentTask =
           typeof currentTaskMsg?.content === "string" ? currentTaskMsg.content : "Unknown task";
 
+        // Keep spinner running while classifying
+        setSpinner("Processing your message...");
+
         // Classify interruptions using LLM
         const routing = await classifyInterruptions(interruptions, currentTask, provider);
 
-        console.log(chalk.dim(`Action: ${routing.action} - ${routing.reasoning}\n`));
+        clearSpinner();
 
-        // Update visual feedback with classified action
+        // Show natural explanation as if the assistant is speaking
         const combinedInput = interruptions.map((i) => i.message).join("; ");
-        if (routing.action === "modify" || routing.action === "queue" || routing.action === "clarification") {
-          setQueuedMessageFeedback(combinedInput, routing.action);
-        }
 
         let shouldContinue = false;
+        let assistantExplanation = "";
 
         if (routing.action === "modify" && routing.synthesizedMessage) {
+          assistantExplanation = `I see you want me to: "${combinedInput}"\n\nI'll incorporate this into the current task and continue working with these updated requirements.`;
+
           // Add synthesized message to session for next turn
           session.messages.push({
             role: "user",
             content: routing.synthesizedMessage,
           });
-          console.log(chalk.green(`✓ Context added to current task - continuing with updated requirements\n`));
-          shouldContinue = true; // Continue immediately with the new context
+
+          shouldContinue = true;
         } else if (routing.action === "interrupt") {
-          // Abort was already handled if user pressed Ctrl+C
-          console.log(chalk.yellow(`⚠️  Task cancelled by user request`));
+          assistantExplanation = `Understood - cancelling the current work as requested.`;
         } else if (routing.action === "queue" && routing.queuedTasks) {
+          const taskTitles = routing.queuedTasks.map((t) => `"${t.title}"`).join(", ");
+          assistantExplanation = `I see you want me to: "${combinedInput}"\n\nThis looks like a separate task, so I'll add it to my queue (${taskTitles}) and handle it after finishing the current work.`;
+
           // Add tasks to background queue
           const bgManager = getBackgroundTaskManager();
           for (const task of routing.queuedTasks) {
             bgManager.createTask(task.title, task.description, async () => {
-              // Placeholder: would execute task via COCO
               return `Task "${task.title}" would be executed here`;
             });
           }
-          console.log(
-            chalk.green(`✓ Queued ${routing.queuedTasks.length} task(s) for later execution`),
-          );
         } else if (routing.action === "clarification" && routing.response) {
-          console.log(chalk.cyan(`\n${routing.response}\n`));
+          assistantExplanation = routing.response;
         }
 
-        console.log(); // Blank line
+        // Display the explanation naturally as part of the conversation flow
+        if (assistantExplanation) {
+          console.log(chalk.cyan(`\n${assistantExplanation}\n`));
+        }
 
         // If modify action, continue agent turn immediately with new context
         if (shouldContinue && !wasAborted && !result.aborted) {
-          console.log(chalk.dim("Continuing with updated context...\n"));
           continue; // Jump back to beginning of REPL loop
         }
       }
