@@ -97,7 +97,7 @@ Respond in JSON format:
     }
 
     return parsed;
-  } catch (error) {
+  } catch {
     // Fallback: treat as clarification if classification fails
     return {
       action: "clarification",

@@ -56,17 +56,15 @@ function mockStreamingSubprocess(
     }),
   };
 
-  const subprocess = {
-    stdout: mockStdout,
-    stderr: mockStderr,
-    then: (resolve: any) => {
-      setTimeout(() => resolve({ exitCode }), 10);
-      return subprocess;
-    },
-    catch: () => subprocess,
-  };
+  // Create promise-like object without `then` method
+  const promise = new Promise((resolve) => {
+    setTimeout(() => resolve({ exitCode }), 10);
+  });
 
-  return subprocess;
+  // Attach stdout/stderr to the promise
+  Object.assign(promise, { stdout: mockStdout, stderr: mockStderr });
+
+  return promise as any;
 }
 
 describe("Build Tools", () => {
@@ -218,17 +216,13 @@ describe("Build Tools", () => {
         on: vi.fn(),
       };
 
-      const mockSubprocess = {
-        stdout: mockStdout,
-        stderr: mockStderr,
-        then: (resolve: any) => {
-          setTimeout(() => resolve({ exitCode: 0 }), 10);
-          return mockSubprocess;
-        },
-        catch: () => mockSubprocess,
-      };
+      // Create promise-like object without `then` method
+      const promise = new Promise((resolve) => {
+        setTimeout(() => resolve({ exitCode: 0 }), 10);
+      });
+      Object.assign(promise, { stdout: mockStdout, stderr: mockStderr });
 
-      vi.mocked(execa).mockReturnValue(mockSubprocess as any);
+      vi.mocked(execa).mockReturnValue(promise as any);
 
       const result = (await runScriptTool.execute({
         script: "build",

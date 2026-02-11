@@ -51,17 +51,15 @@ function mockStreamingSubprocess(
     }),
   };
 
-  const subprocess = {
-    stdout: mockStdout,
-    stderr: mockStderr,
-    then: (resolve: any) => {
-      setTimeout(() => resolve({ exitCode }), 10);
-      return subprocess;
-    },
-    catch: () => subprocess,
-  };
+  // Create promise-like object without `then` method
+  const promise = new Promise((resolve) => {
+    setTimeout(() => resolve({ exitCode }), 10);
+  });
 
-  return subprocess;
+  // Attach stdout/stderr to the promise
+  Object.assign(promise, { stdout: mockStdout, stderr: mockStderr });
+
+  return promise as any;
 }
 
 describe("bashExecTool", () => {
