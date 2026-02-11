@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] - 2026-02-11
+
+### Added
+- **Real-time command streaming with heartbeat:** Long-running shell/build commands now show live progress instead of black box spinner
+  - Stream stdout/stderr output in real-time instead of buffering until completion
+  - CommandHeartbeat monitor shows elapsed time every 10 seconds for commands running >10s
+  - Warning alerts when command silent for >30 seconds to detect hung processes
+  - Applied to bash tool (bash_exec) for all shell commands
+  - Applied to all build tools: runScriptTool (npm/pnpm/yarn scripts), installDepsTool (package installation), makeTool (Makefile targets), tscTool (TypeScript compilation)
+  - Eliminates "black box" experience during npm install, webpack builds, and other long operations (360+ second operations now have visible progress)
+
+### Changed
+- Bash tool (`bashExecTool`) now uses streaming mode with `buffer: false` for immediate output visibility
+- All build tools now use streaming mode for real-time feedback
+- Command execution provides live feedback with heartbeat statistics showing elapsed time
+- Test mocks updated to simulate streaming subprocess behavior with event emitters
+
+### Fixed
+- Long-running commands no longer appear frozen or hung - users see real-time progress
+- Users can now tell if command is progressing or actually stalled
+
+---
+
 ## [1.5.0] - 2026-02-11
 
 ### Added
