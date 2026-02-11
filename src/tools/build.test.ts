@@ -32,6 +32,43 @@ function mockExecaResult(
   };
 }
 
+/**
+ * Mock streaming subprocess for execa with buffer: false
+ */
+function mockStreamingSubprocess(
+  stdout: string = "",
+  stderr: string = "",
+  exitCode: number = 0,
+) {
+  const mockStdout = {
+    on: vi.fn((event: string, handler: (chunk: Buffer) => void) => {
+      if (event === "data" && stdout) {
+        setTimeout(() => handler(Buffer.from(stdout)), 0);
+      }
+    }),
+  };
+
+  const mockStderr = {
+    on: vi.fn((event: string, handler: (chunk: Buffer) => void) => {
+      if (event === "data" && stderr) {
+        setTimeout(() => handler(Buffer.from(stderr)), 0);
+      }
+    }),
+  };
+
+  const subprocess = {
+    stdout: mockStdout,
+    stderr: mockStderr,
+    then: (resolve: any) => {
+      setTimeout(() => resolve({ exitCode }), 10);
+      return subprocess;
+    },
+    catch: () => subprocess,
+  };
+
+  return subprocess;
+}
+
 describe("Build Tools", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -52,9 +89,7 @@ describe("Build Tools", () => {
     });
 
     it("should run a script successfully", async () => {
-      vi.mocked(execa).mockResolvedValue(
-        mockExecaResult({ stdout: "Build complete", exitCode: 0 }) as any,
-      );
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess("Build complete") as any);
 
       const result = (await runScriptTool.execute({ script: "build" })) as BuildResult;
 
@@ -70,7 +105,7 @@ describe("Build Tools", () => {
         if (String(p).includes("pnpm-lock.yaml")) return;
         throw new Error("ENOENT");
       });
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await runScriptTool.execute({ script: "build" });
 
@@ -78,7 +113,7 @@ describe("Build Tools", () => {
     });
 
     it("should use provided package manager", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await runScriptTool.execute({ script: "test", packageManager: "yarn" });
 
@@ -86,7 +121,7 @@ describe("Build Tools", () => {
     });
 
     it("should pass additional args", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await runScriptTool.execute({ script: "test", packageManager: "npm", args: ["--coverage"] });
 
@@ -98,7 +133,7 @@ describe("Build Tools", () => {
     });
 
     it("should handle failed scripts", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult({ exitCode: 1, stderr: "Error" }) as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess("", "Error", 1) as any);
 
       const result = (await runScriptTool.execute({
         script: "build",
@@ -135,7 +170,7 @@ describe("Build Tools", () => {
 
     it("should default to npm when no lockfile found", async () => {
       vi.mocked(fs.access).mockRejectedValue(new Error("ENOENT"));
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await runScriptTool.execute({ script: "build" });
 
@@ -147,7 +182,7 @@ describe("Build Tools", () => {
         if (String(p).includes("yarn.lock")) return;
         throw new Error("ENOENT");
       });
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await runScriptTool.execute({ script: "build" });
 
@@ -159,7 +194,7 @@ describe("Build Tools", () => {
         if (String(p).includes("bun.lockb")) return;
         throw new Error("ENOENT");
       });
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await runScriptTool.execute({ script: "build" });
 
@@ -168,7 +203,32 @@ describe("Build Tools", () => {
 
     it("should truncate long output", async () => {
       const longOutput = "x".repeat(100000);
-      vi.mocked(execa).mockResolvedValue(mockExecaResult({ stdout: longOutput }) as any);
+
+      // Mock streaming subprocess
+      const mockStdout = {
+        on: vi.fn((event: string, handler: (chunk: Buffer) => void) => {
+          if (event === "data") {
+            // Emit the long output as a chunk
+            setTimeout(() => handler(Buffer.from(longOutput)), 0);
+          }
+        }),
+      };
+
+      const mockStderr = {
+        on: vi.fn(),
+      };
+
+      const mockSubprocess = {
+        stdout: mockStdout,
+        stderr: mockStderr,
+        then: (resolve: any) => {
+          setTimeout(() => resolve({ exitCode: 0 }), 10);
+          return mockSubprocess;
+        },
+        catch: () => mockSubprocess,
+      };
+
+      vi.mocked(execa).mockReturnValue(mockSubprocess as any);
 
       const result = (await runScriptTool.execute({
         script: "build",
@@ -187,7 +247,7 @@ describe("Build Tools", () => {
     });
 
     it("should install all dependencies", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult({ stdout: "Installed" }) as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess("Installed") as any);
 
       const result = (await installDepsTool.execute({ packageManager: "npm" })) as BuildResult;
 
@@ -196,7 +256,7 @@ describe("Build Tools", () => {
     });
 
     it("should install specific packages with pnpm", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await installDepsTool.execute({ packageManager: "pnpm", packages: ["lodash", "zod"] });
 
@@ -208,7 +268,7 @@ describe("Build Tools", () => {
     });
 
     it("should install dev dependencies with pnpm", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await installDepsTool.execute({ packageManager: "pnpm", packages: ["vitest"], dev: true });
 
@@ -220,7 +280,7 @@ describe("Build Tools", () => {
     });
 
     it("should install with yarn", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await installDepsTool.execute({ packageManager: "yarn", packages: ["lodash"], dev: true });
 
@@ -232,7 +292,7 @@ describe("Build Tools", () => {
     });
 
     it("should install with bun", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await installDepsTool.execute({ packageManager: "bun", packages: ["lodash"], dev: true });
 
@@ -244,7 +304,7 @@ describe("Build Tools", () => {
     });
 
     it("should install with npm and --save-dev", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await installDepsTool.execute({ packageManager: "npm", packages: ["vitest"], dev: true });
 
@@ -256,7 +316,7 @@ describe("Build Tools", () => {
     });
 
     it("should use frozen lockfile with pnpm", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await installDepsTool.execute({ packageManager: "pnpm", frozen: true });
 
@@ -268,7 +328,7 @@ describe("Build Tools", () => {
     });
 
     it("should use frozen lockfile with yarn", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await installDepsTool.execute({ packageManager: "yarn", frozen: true });
 
@@ -280,7 +340,7 @@ describe("Build Tools", () => {
     });
 
     it("should use frozen lockfile with bun", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await installDepsTool.execute({ packageManager: "bun", frozen: true });
 
@@ -292,7 +352,7 @@ describe("Build Tools", () => {
     });
 
     it("should use ci for npm frozen", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await installDepsTool.execute({ packageManager: "npm", frozen: true });
 
@@ -322,7 +382,7 @@ describe("Build Tools", () => {
 
     it("should run default target", async () => {
       vi.mocked(fs.access).mockResolvedValue(undefined);
-      vi.mocked(execa).mockResolvedValue(mockExecaResult({ stdout: "Built" }) as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess("Built") as any);
 
       const result = (await makeTool.execute({})) as BuildResult;
 
@@ -332,7 +392,7 @@ describe("Build Tools", () => {
 
     it("should run specific target", async () => {
       vi.mocked(fs.access).mockResolvedValue(undefined);
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await makeTool.execute({ target: "build" });
 
@@ -341,7 +401,7 @@ describe("Build Tools", () => {
 
     it("should split multiple targets", async () => {
       vi.mocked(fs.access).mockResolvedValue(undefined);
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await makeTool.execute({ target: "clean build" });
 
@@ -350,7 +410,7 @@ describe("Build Tools", () => {
 
     it("should pass additional args", async () => {
       vi.mocked(fs.access).mockResolvedValue(undefined);
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await makeTool.execute({ target: "test", args: ["VERBOSE=1"] });
 
@@ -398,7 +458,7 @@ describe("Build Tools", () => {
     });
 
     it("should run with --noEmit", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await tscTool.execute({ noEmit: true });
 
@@ -406,7 +466,7 @@ describe("Build Tools", () => {
     });
 
     it("should run with custom project", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await tscTool.execute({ project: "tsconfig.build.json" });
 
@@ -418,7 +478,7 @@ describe("Build Tools", () => {
     });
 
     it("should run in watch mode", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await tscTool.execute({ watch: true });
 
@@ -426,7 +486,7 @@ describe("Build Tools", () => {
     });
 
     it("should pass additional args", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockReturnValue(mockStreamingSubprocess() as any);
 
       await tscTool.execute({ args: ["--declaration", "--emitDeclarationOnly"] });
 

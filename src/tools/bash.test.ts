@@ -27,6 +27,43 @@ vi.mock("execa", () => ({
   }),
 }));
 
+/**
+ * Mock streaming subprocess for execa with buffer: false
+ */
+function mockStreamingSubprocess(
+  stdout: string = "",
+  stderr: string = "",
+  exitCode: number = 0,
+) {
+  const mockStdout = {
+    on: vi.fn((event: string, handler: (chunk: Buffer) => void) => {
+      if (event === "data" && stdout) {
+        setTimeout(() => handler(Buffer.from(stdout)), 0);
+      }
+    }),
+  };
+
+  const mockStderr = {
+    on: vi.fn((event: string, handler: (chunk: Buffer) => void) => {
+      if (event === "data" && stderr) {
+        setTimeout(() => handler(Buffer.from(stderr)), 0);
+      }
+    }),
+  };
+
+  const subprocess = {
+    stdout: mockStdout,
+    stderr: mockStderr,
+    then: (resolve: any) => {
+      setTimeout(() => resolve({ exitCode }), 10);
+      return subprocess;
+    },
+    catch: () => subprocess,
+  };
+
+  return subprocess;
+}
+
 describe("bashExecTool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -315,11 +352,7 @@ describe("bashExecTool output truncation", () => {
     const { execa } = await import("execa");
     // Create output longer than 50000 characters
     const longOutput = "x".repeat(60000);
-    vi.mocked(execa).mockResolvedValueOnce({
-      exitCode: 0,
-      stdout: longOutput,
-      stderr: "",
-    } as any);
+    vi.mocked(execa).mockReturnValueOnce(mockStreamingSubprocess(longOutput) as any);
 
     const { bashExecTool } = await import("./bash.js");
 
@@ -334,11 +367,7 @@ describe("bashExecTool output truncation", () => {
   it("should not truncate output within limit", async () => {
     const { execa } = await import("execa");
     const normalOutput = "normal output";
-    vi.mocked(execa).mockResolvedValueOnce({
-      exitCode: 0,
-      stdout: normalOutput,
-      stderr: "",
-    } as any);
+    vi.mocked(execa).mockReturnValueOnce(mockStreamingSubprocess(normalOutput) as any);
 
     const { bashExecTool } = await import("./bash.js");
 
