@@ -11,7 +11,7 @@ import chalk from "chalk";
 /**
  * Queued user interruption
  */
-interface QueuedInterruption {
+export interface QueuedInterruption {
   message: string;
   timestamp: number;
 }
@@ -36,10 +36,10 @@ export function hasInterruptions(): boolean {
 /**
  * Get and clear all pending interruptions
  */
-export function consumeInterruptions(): string[] {
-  const messages = interruptions.map((i) => i.message);
+export function consumeInterruptions(): QueuedInterruption[] {
+  const pending = [...interruptions];
   interruptions = [];
-  return messages;
+  return pending;
 }
 
 /**
