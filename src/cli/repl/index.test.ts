@@ -213,6 +213,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
 
@@ -260,6 +262,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
       const mockRegistry = { getAll: vi.fn(() => []), get: vi.fn() };
@@ -310,6 +314,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
 
@@ -352,6 +358,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
       vi.mocked(isSlashCommand).mockReturnValue(true);
@@ -399,6 +407,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
       vi.mocked(isSlashCommand).mockReturnValue(true);
@@ -448,6 +458,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
       vi.mocked(isSlashCommand).mockReturnValue(false);
@@ -499,6 +511,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
       vi.mocked(isSlashCommand).mockReturnValue(false);
@@ -550,6 +564,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
       vi.mocked(isSlashCommand).mockReturnValue(false);
@@ -594,6 +610,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
       vi.mocked(isSlashCommand).mockReturnValue(false);
@@ -642,6 +660,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
       vi.mocked(isSlashCommand).mockReturnValue(false);
@@ -683,6 +703,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
 
@@ -728,6 +750,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
       vi.mocked(isSlashCommand).mockReturnValue(false);
@@ -799,6 +823,8 @@ describe("REPL index", () => {
         close: vi.fn(),
         resume: vi.fn(),
         pause: vi.fn(),
+        enableBackgroundCapture: vi.fn(),
+        disableBackgroundCapture: vi.fn(),
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
       vi.mocked(isSlashCommand).mockReturnValue(false);

@@ -36,6 +36,10 @@ export interface InputHandler {
   pause(): void;
   /** Resume input after agent processing */
   resume(): void;
+  /** Enable background line capture during agent work (for interruptions) */
+  enableBackgroundCapture(onLine: (line: string) => void): void;
+  /** Disable background line capture */
+  disableBackgroundCapture(): void;
 }
 
 /** History file location */
@@ -149,6 +153,11 @@ export function createInputHandler(_session: ReplSession): InputHandler {
 
   // Clipboard image read state (Ctrl+V)
   let isReadingClipboard = false;
+
+  // Background capture state (for interruptions during agent work)
+  let backgroundCaptureEnabled = false;
+  let backgroundLineCallback: ((line: string) => void) | null = null;
+  let backgroundBuffer = "";
 
   // Prompt changes dynamically based on COCO mode
   // Visual length must be tracked separately from ANSI-colored string
@@ -841,6 +850,73 @@ export function createInputHandler(_session: ReplSession): InputHandler {
     resume(): void {
       // Resume stdin for next prompt
       // Note: raw mode will be re-enabled by prompt()
+    },
+
+    enableBackgroundCapture(onLine: (line: string) => void): void {
+      if (backgroundCaptureEnabled) return;
+
+      backgroundCaptureEnabled = true;
+      backgroundLineCallback = onLine;
+      backgroundBuffer = "";
+
+      // Show subtle indicator that interruption mode is active
+      process.stdout.write(
+        chalk.dim("\n  ↓ Type to add context (press Enter to queue) ↓\n\n"),
+      );
+
+      // Re-enable stdin in cooked mode (line buffered, not raw)
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdin.resume();
+
+      // Listen for complete lines
+      const backgroundDataHandler = (chunk: Buffer) => {
+        if (!backgroundCaptureEnabled) return;
+
+        const text = chunk.toString();
+        backgroundBuffer += text;
+
+        // Check for complete lines (ended with \n or \r\n)
+        const lines = backgroundBuffer.split(/\r?\n/);
+
+        // Last item might be incomplete, keep it in buffer
+        backgroundBuffer = lines.pop() || "";
+
+        // Process complete lines
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed && backgroundLineCallback) {
+            backgroundLineCallback(trimmed);
+          }
+        }
+      };
+
+      process.stdin.on("data", backgroundDataHandler);
+
+      // Store handler reference for cleanup
+      (process.stdin as any)._backgroundDataHandler = backgroundDataHandler;
+    },
+
+    disableBackgroundCapture(): void {
+      if (!backgroundCaptureEnabled) return;
+
+      backgroundCaptureEnabled = false;
+      backgroundLineCallback = null;
+      backgroundBuffer = "";
+
+      // Remove background data handler
+      const handler = (process.stdin as any)._backgroundDataHandler;
+      if (handler) {
+        process.stdin.removeListener("data", handler);
+        delete (process.stdin as any)._backgroundDataHandler;
+      }
+
+      // Pause stdin again
+      process.stdin.pause();
+
+      // Clear the indicator line
+      process.stdout.write(chalk.dim("  ✓ Capture ended\n\n"));
     },
   };
 }

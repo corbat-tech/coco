@@ -43,7 +43,31 @@ export function consumeInterruptions(): QueuedInterruption[] {
 }
 
 /**
+ * Callback for background capture - adds interruptions to queue
+ * Use with inputHandler.enableBackgroundCapture()
+ */
+export function handleBackgroundLine(line: string): void {
+  const trimmed = line.trim();
+  if (trimmed) {
+    interruptions.push({
+      message: trimmed,
+      timestamp: Date.now(),
+    });
+
+    // Show feedback that input was received
+    console.log(
+      chalk.dim("  ↳ ") +
+        chalk.cyan("Context queued") +
+        chalk.dim(": ") +
+        chalk.white(trimmed.slice(0, 60)) +
+        (trimmed.length > 60 ? chalk.dim("...") : ""),
+    );
+  }
+}
+
+/**
  * Start listening for user interruptions during agent processing
+ * @deprecated Use inputHandler.enableBackgroundCapture(handleBackgroundLine) instead
  */
 export function startInterruptionListener(): void {
   if (rl) {
@@ -57,23 +81,7 @@ export function startInterruptionListener(): void {
   });
 
   rl.on("line", (line) => {
-    const trimmed = line.trim();
-    if (trimmed) {
-      interruptions.push({
-        message: trimmed,
-        timestamp: Date.now(),
-      });
-
-      // Show feedback that input was received
-      console.log(
-        chalk.dim("\n  ↳ ") +
-          chalk.cyan("Additional context queued") +
-          chalk.dim(": ") +
-          chalk.white(trimmed.slice(0, 60)) +
-          (trimmed.length > 60 ? chalk.dim("...") : "") +
-          "\n",
-      );
-    }
+    handleBackgroundLine(line);
   });
 }
 

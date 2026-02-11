@@ -62,15 +62,13 @@ import {
   type CocoQualityResult,
 } from "./coco-mode.js";
 import { loadFullAccessPreference } from "./full-access-mode.js";
-// TODO: Concurrent input imports disabled until input handler supports non-blocking capture
-// import {
-//   startInterruptionListener,
-//   stopInterruptionListener,
-//   hasInterruptions,
-//   consumeInterruptions,
-// } from "./interruption-handler.js";
-// import { classifyInterruptions } from "./interruption-classifier.js";
-// import { getBackgroundTaskManager } from "./background/index.js";
+import {
+  hasInterruptions,
+  consumeInterruptions,
+  handleBackgroundLine,
+} from "./interruption-handler.js";
+import { classifyInterruptions } from "./interruption-classifier.js";
+import { getBackgroundTaskManager } from "./background/index.js";
 
 // stringWidth (from 'string-width') is the industry-standard way to measure
 // visual terminal width of strings.  It correctly handles ANSI codes, emoji
@@ -339,12 +337,8 @@ export async function startRepl(
         session.config.agent.systemPrompt = originalSystemPrompt + "\n" + getCocoModeSystemPrompt();
       }
 
-      // Pause input to prevent typing interference during agent response
-      inputHandler.pause();
-
-      // TODO: Interruption handling disabled - inputHandler.pause() blocks all stdin
-      // Need to implement non-blocking input capture or refactor inputHandler
-      // startInterruptionListener();
+      // Enable background capture for interruptions (instead of full pause)
+      inputHandler.enableBackgroundCapture(handleBackgroundLine);
 
       process.once("SIGINT", sigintHandler);
 
@@ -402,9 +396,52 @@ export async function startRepl(
       clearThinkingInterval();
       process.off("SIGINT", sigintHandler);
 
-      // TODO: Interruption processing disabled - needs non-blocking input implementation
-      // stopInterruptionListener();
-      // if (hasInterruptions()) { ... }
+      // Disable background capture and process any interruptions
+      inputHandler.disableBackgroundCapture();
+
+      if (hasInterruptions()) {
+        const interruptions = consumeInterruptions();
+
+        console.log(chalk.dim(`\n[Received ${interruptions.length} interruption(s) during work]\n`));
+
+        // Get current task from last message
+        const currentTaskMsg = session.messages[session.messages.length - 1];
+        const currentTask =
+          typeof currentTaskMsg?.content === "string" ? currentTaskMsg.content : "Unknown task";
+
+        // Classify interruptions using LLM
+        const routing = await classifyInterruptions(interruptions, currentTask, provider);
+
+        console.log(chalk.dim(`Action: ${routing.action} - ${routing.reasoning}\n`));
+
+        if (routing.action === "modify" && routing.synthesizedMessage) {
+          // Add synthesized message to session for next turn
+          session.messages.push({
+            role: "user",
+            content: routing.synthesizedMessage,
+          });
+          console.log(chalk.green(`✓ Context added to current task`));
+        } else if (routing.action === "interrupt") {
+          // Abort was already handled if user pressed Ctrl+C
+          console.log(chalk.yellow(`⚠️  Task cancelled by user request`));
+        } else if (routing.action === "queue" && routing.queuedTasks) {
+          // Add tasks to background queue
+          const bgManager = getBackgroundTaskManager();
+          for (const task of routing.queuedTasks) {
+            bgManager.createTask(task.title, task.description, async () => {
+              // Placeholder: would execute task via COCO
+              return `Task "${task.title}" would be executed here`;
+            });
+          }
+          console.log(
+            chalk.green(`✓ Queued ${routing.queuedTasks.length} task(s) for later execution`),
+          );
+        } else if (routing.action === "clarification" && routing.response) {
+          console.log(chalk.cyan(`\n${routing.response}\n`));
+        }
+
+        console.log(); // Blank line
+      }
 
       // Show abort summary if cancelled, preserving partial content
       if (wasAborted || result.aborted) {
