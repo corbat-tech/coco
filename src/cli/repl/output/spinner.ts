@@ -17,6 +17,10 @@ export type Spinner = {
   fail(message?: string): void;
   /** Update tool counter for multi-tool operations */
   setToolCount(current: number, total?: number): void;
+  /** Set suffix text that appears below the spinner (for interruption prompt) */
+  setSuffixText(text: string): void;
+  /** Clear suffix text */
+  clearSuffixText(): void;
 };
 
 /**
@@ -53,6 +57,7 @@ export function createSpinner(message: string): Spinner {
   let toolCurrent = 0;
   let toolTotal: number | undefined;
   let elapsedInterval: NodeJS.Timeout | null = null;
+  let suffixText = "";
 
   const formatToolCount = (): string => {
     if (toolCurrent <= 0) return "";
@@ -70,7 +75,8 @@ export function createSpinner(message: string): Spinner {
     const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
     const elapsedStr = elapsed > 0 ? chalk.dim(` (${elapsed}s)`) : "";
     const toolCountStr = formatToolCount();
-    spinner.text = chalk.magenta(`${currentMessage}${toolCountStr}`) + elapsedStr;
+    const mainText = chalk.magenta(`${currentMessage}${toolCountStr}`) + elapsedStr;
+    spinner.text = suffixText ? `${mainText}\n${suffixText}` : mainText;
   };
 
   return {
@@ -140,6 +146,16 @@ export function createSpinner(message: string): Spinner {
     setToolCount(current: number, total?: number) {
       toolCurrent = current;
       toolTotal = total;
+      updateText();
+    },
+
+    setSuffixText(text: string) {
+      suffixText = text;
+      updateText();
+    },
+
+    clearSuffixText() {
+      suffixText = "";
       updateText();
     },
   };

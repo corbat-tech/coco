@@ -763,6 +763,8 @@ describe("REPL index", () => {
         update: vi.fn(),
         fail: vi.fn(),
         setToolCount: vi.fn(),
+        setSuffixText: vi.fn(),
+        clearSuffixText: vi.fn(),
       };
       vi.mocked(createSpinner).mockReturnValue(mockSpinner);
 
@@ -836,6 +838,8 @@ describe("REPL index", () => {
         update: vi.fn(),
         fail: vi.fn(),
         setToolCount: vi.fn(),
+        setSuffixText: vi.fn(),
+        clearSuffixText: vi.fn(),
       };
       vi.mocked(createSpinner).mockReturnValue(mockSpinner);
 

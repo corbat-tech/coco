@@ -14,6 +14,11 @@ import {
 } from "./session.js";
 import { createInputHandler } from "./input/handler.js";
 import {
+  startConcurrentInput,
+  stopConcurrentInput,
+  getInputPromptText,
+} from "./input/concurrent-input.js";
+import {
   renderStreamChunk,
   renderToolStart,
   renderToolEnd,
@@ -290,11 +295,28 @@ export async function startRepl(
         activeSpinner = createSpinner(message);
         activeSpinner.start();
       }
+      // Update suffix with concurrent input prompt
+      updateSpinnerSuffix();
+    };
+
+    // Update spinner suffix with concurrent input prompt
+    const updateSpinnerSuffix = () => {
+      if (activeSpinner) {
+        const inputPrompt = getInputPromptText();
+        if (inputPrompt) {
+          activeSpinner.setSuffixText(inputPrompt);
+        } else {
+          activeSpinner.clearSuffixText();
+        }
+      }
     };
 
     // Thinking progress feedback - evolving messages while LLM processes
     let thinkingInterval: NodeJS.Timeout | null = null;
     let thinkingStartTime: number | null = null;
+
+    // Concurrent input suffix update interval
+    let suffixUpdateInterval: NodeJS.Timeout | null = null;
 
     const clearThinkingInterval = () => {
       if (thinkingInterval) {
@@ -337,8 +359,14 @@ export async function startRepl(
         session.config.agent.systemPrompt = originalSystemPrompt + "\n" + getCocoModeSystemPrompt();
       }
 
-      // Enable background capture for interruptions (instead of full pause)
-      inputHandler.enableBackgroundCapture(handleBackgroundLine);
+      // Start concurrent input capture (appears below spinner)
+      startConcurrentInput((line) => {
+        handleBackgroundLine(line);
+        updateSpinnerSuffix(); // Update prompt after capturing line
+      });
+
+      // Update spinner suffix interval (to show cursor blinking effect)
+      suffixUpdateInterval = setInterval(updateSpinnerSuffix, 500);
 
       process.once("SIGINT", sigintHandler);
 
@@ -396,8 +424,12 @@ export async function startRepl(
       clearThinkingInterval();
       process.off("SIGINT", sigintHandler);
 
-      // Disable background capture and process any interruptions
-      inputHandler.disableBackgroundCapture();
+      // Stop concurrent input and clear interval
+      if (suffixUpdateInterval) {
+        clearInterval(suffixUpdateInterval);
+      }
+      stopConcurrentInput();
+      updateSpinnerSuffix(); // Clear suffix from spinner
 
       if (hasInterruptions()) {
         const interruptions = consumeInterruptions();
