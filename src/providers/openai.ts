@@ -387,8 +387,12 @@ export class OpenAIProvider implements LLMProvider {
 
       try {
         for await (const chunk of stream) {
-          lastActivityTime = Date.now(); // Reset timeout on activity
           const delta = chunk.choices[0]?.delta;
+
+          // Only reset timeout if we got meaningful content (not empty chunks)
+          if (delta?.content || delta?.tool_calls) {
+            lastActivityTime = Date.now();
+          }
 
           // Handle text content
           if (delta?.content) {
@@ -445,6 +449,12 @@ export class OpenAIProvider implements LLMProvider {
         }
 
         // Finalize all tool calls
+        if (toolCallBuilders.size > 0) {
+          // Debug: log that we're finalizing tool calls
+          const toolNames = Array.from(toolCallBuilders.values()).map((b) => b.name).join(", ");
+          console.log(`[DEBUG] Finalizing ${toolCallBuilders.size} tool call(s): ${toolNames}`);
+        }
+
         for (const [, builder] of toolCallBuilders) {
           let input: Record<string, unknown> = {};
           try {

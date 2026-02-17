@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>El Tiempo en Barcelona - 12 de Febrero 2025</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 40px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .date-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.1);
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            color: #a0aec0;
+            backdrop-filter: blur(10px);
+        }
+
+        .alert-banner {
+            background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(255,65,108,0.3);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.01); }
+        }
+
+        .alert-banner h2 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .alert-icon {
+            font-size: 1.8rem;
+        }
+
+        .alert-banner p {
+            opacity: 0.95;
+            font-size: 1rem;
+        }
+
+        .weather-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .weather-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .weather-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+
+        .weather-card h3 {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .weather-icon {
+            font-size: 1.5rem;
+        }
+
+        .temp-display {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 15px 0;
+        }
+
+        .temp-range {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .temp-item {
+            text-align: center;
+        }
+
+        .temp-item .label {
+            font-size: 0.8rem;
+            color: #a0aec0;
+            text-transform: uppercase;
+        }
+
+        .temp-item .value {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .hourly-forecast {
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            padding: 10px 0;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.2) transparent;
+        }
+
+        .hourly-forecast::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .hourly-forecast::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+        }
+
+        .hour-item {
+            background: rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 15px;
+            min-width: 80px;
+            text-align: center;
+            transition: background 0.3s ease;
+        }
+
+        .hour-item:hover {
+            background: rgba(255,255,255,0.15);
+        }
+
+        .hour-item .time {
+            font-size: 0.85rem;
+            color: #a0aec0;
+            margin-bottom: 8px;
+        }
+
+        .hour-item .temp {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .news-section {
+            margin-top: 40px;
+        }
+
+        .news-section h2 {
+            font-size: 1.8rem;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .news-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+        }
+
+        .news-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .news-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .news-card.featured {
+            grid-column: 1 / -1;
+            background: linear-gradient(135deg, rgba(255,65,108,0.2) 0%, rgba(255,75,43,0.2) 100%);
+        }
+
+        .news-content {
+            padding: 25px;
+        }
+
+        .news-tag {
+            display: inline-block;
+            background: rgba(255,65,108,0.8);
+            color: #fff;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+
+        .news-card.featured .news-tag {
+            background: #ff416c;
+        }
+
+        .news-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+
+        .news-card.featured h3 {
+            font-size: 1.6rem;
+        }
+
+        .news-card p {
+            color: #a0aec0;
+            font-size: 0.95rem;
+            line-height: 1.7;
+        }
+
+        .news-meta {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+            font-size: 0.85rem;
+            color: #718096;
+        }
+
+        .details-list {
+            list-style: none;
+            margin-top: 15px;
+        }
+
+        .details-list li {
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .details-list li:last-child {
+            border-bottom: none;
+        }
+
+        .details-list .label {
+            color: #a0aec0;
+        }
+
+        .details-list .value {
+            font-weight: 600;
+        }
+
+        .warning-box {
+            background: rgba(255,193,7,0.15);
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            border-radius: 0 12px 12px 0;
+            margin-top: 20px;
+        }
+
+        .warning-box h4 {
+            color: #ffc107;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 40px 0;
+            margin-top: 40px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: #718096;
+            font-size: 0.9rem;
+        }
+
+        .source-link {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .source-link:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .weather-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .news-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .temp-display {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌤️ El Tiempo en Barcelona</h1>
+            <span class="date-badge">Miércoles 12 de Febrero de 2025</span>
+        </header>
+
+        <div class="alert-banner">
+            <h2><span class="alert-icon">⚠️</span> Alerta Roja por Viento</h2>
+            <p>La borrasca Nils pone en riesgo extremo Cataluña con rachas huracanadas de hasta <strong>100 km/h</strong> en Barcelona y el área metropolitana. Se han cancelado escuelas y actividades al aire libre. Precaución ante la caída de árboles.</p>
+        </div>
+
+        <div class="weather-grid">
+            <div class="weather-card">
+                <h3><span class="weather-icon">🌡️</span> Temperatura Actual</h3>
+                <div class="temp-display">13°C</div>
+                <p style="color: #a0aec0;">Cielo nublado con lluvias</p>
+                <div class="temp-range">
+                    <div class="temp-item">
+                        <div class="label">Mínima</div>
+                        <div class="value" style="color: #667eea;">11°</div>
+                    </div>
+                    <div class="temp-item">
+                        <div class="label">Máxima</div>
+                        <div class="value" style="color: #f5576c;">14°</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="weather-card">
+                <h3><span class="weather-icon">💨</span> Viento</h3>
+                <div class="temp-display" style="font-size: 2.5rem;">90-100</div>
+                <p style="color: #ff416c; font-weight: 600;">km/h - Rachas huracanadas</p>
+                <ul class="details-list">
+                    <li>
+                        <span class="label">Dirección</span>
+                        <span class="value">Oeste / Noroeste</span>
+                    </li>
+                    <li>
+                        <span class="label">Periodo crítico</span>
+                        <span class="value">Madrugada a mediodía</span>
+                    </li>
+                    <li>
+                        <span class="label">Estado</span>
+                        <span class="value" style="color: #ff416c;">ALERTA ROJA</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="weather-card">
+                <h3><span class="weather-icon">📊</span> Detalles</h3>
+                <ul class="details-list">
+                    <li>
+                        <span class="label">Prob. de lluvia</span>
+                        <span class="value">100% (noche)</span>
+                    </li>
+                    <li>
+                        <span class="label">Humedad</span>
+                        <span class="value">Moderada</span>
+                    </li>
+                    <li>
+                        <span class="label">Visibilidad</span>
+                        <span class="value">Reducida</span>
+                    </li>
+                    <li>
+                        <span class="label">Calidad del aire</span>
+                        <span class="value" style="color: #ffc107;">Aceptable</span>
+                    </li>
+                    <li>
+                        <span class="label">Índice UV</span>
+                        <span class="value">Bajo</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="weather-card" style="grid-column: 1 / -1;">
+                <h3><span class="weather-icon">⏰</span> Pronóstico por Horas</h3>
+                <div class="hourly-forecast">
+                    <div class="hour-item">
+                        <div class="time">11:00</div>
+                        <div style="font-size: 1.5rem; margin: 8px 0;">☁️</div>
+                        <div class="temp">13°</div>
+                        <div style="font-size: 0.75rem; color: #a0aec0; margin-top: 5px;">0% lluvia</div>
+                    </div>
+                    <div class="hour-item">
+                        <div class="time">13:00</div>
+                        <div style="font-size: 1.5rem; margin: 8px 0;">🌤️</div>
+                        <div class="temp">12°</div>
+                        <div style="font-size: 0.75rem; color: #a0aec0; margin-top: 5px;">0% lluvia</div>
+                    </div>
+                    <div class="hour-item">
+                        <div class="time">16:00</div>
+                        <div style="font-size: 1.5rem; margin: 8px 0;">☁️</div>
+                        <div class="temp">13°</div>
+                        <div style="font-size: 0.75rem; color: #a0aec0; margin-top: 5px;">0% lluvia</div>
+                    </div>
+                    <div class="hour-item">
+                        <div class="time">19:00</div>
+                        <div style="font-size: 1.5rem; margin: 8px 0;">🌧️</div>
+                        <div class="temp">13°</div>
+                        <div style="font-size: 0.75rem; color: #ffc107; margin-top: 5px;">55% lluvia</div>
+                    </div>
+                    <div class="hour-item" style="background: rgba(255,65,108,0.2);">
+                        <div class="time">22:00</div>
+                        <div style="font-size: 1.5rem; margin: 8px 0;">🌧️</div>
+                        <div class="temp">12°</div>
+                        <div style="font-size: 0.75rem; color: #ff416c; margin-top: 5px;">100% lluvia</div>
+                    </div>
+                    <div class="hour-item" style="background: rgba(255,65,108,0.2);">
+                        <div class="time">01:00</div>
+                        <div style="font-size: 1.5rem; margin: 8px 0;">🌧️</div>
+                        <div class="temp">11°</div>
+                        <div style="font-size: 0.75rem; color: #ff416c; margin-top: 5px;">100% lluvia</div>
+                    </div>
+                    <div class="hour-item">
+                        <div class="time">04:00</div>
+                        <div style="font-size: 1.5rem; margin: 8px 0;">☁️</div>
+                        <div class="temp">12°</div>
+                        <div style="font-size: 0.75rem; color: #ffc107; margin-top: 5px;">49% lluvia</div>
+                    </div>
+                    <div class="hour-item">
+                        <div class="time">07:00</div>
+                        <div style="font-size: 1.5rem; margin: 8px 0;">☁️</div>
+                        <div class="temp">12°</div>
+                        <div style="font-size: 0.75rem; color: #a0aec0; margin-top: 5px;">0% lluvia</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="weather-card" style="margin-bottom: 30px;">
+            <h3><span class="weather-icon">📅</span> Pronóstico de los Próximos Días</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 20px;">
+                <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 12px; text-align: center;">
+                    <div style="font-weight: 600; margin-bottom: 8px;">Jueves 13</div>
+                    <div style="font-size: 2rem; margin: 10px 0;">🌤️</div>
+                    <div style="color: #a0aec0; font-size: 0.9rem;">11° - 15°</div>
+                    <div style="color: #ff416c; font-size: 0.8rem; margin-top: 5px;">Viento fuerte</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 12px; text-align: center;">
+                    <div style="font-weight: 600; margin-bottom: 8px;">Viernes 14</div>
+                    <div style="font-size: 2rem; margin: 10px 0;">☁️</div>
+                    <div style="color: #a0aec0; font-size: 0.9rem;">11° - 14°</div>
+                    <div style="color: #a0aec0; font-size: 0.8rem; margin-top: 5px;">Nublado</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 12px; text-align: center;">
+                    <div style="font-weight: 600; margin-bottom: 8px;">Sábado 15</div>
+                    <div style="font-size: 2rem; margin: 10px 0;">☁️</div>
+                    <div style="color: #a0aec0; font-size: 0.9rem;">10° - 12°</div>
+                    <div style="color: #667eea; font-size: 0.8rem; margin-top: 5px;">Viento este</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 12px; text-align: center;">
+                    <div style="font-weight: 600; margin-bottom: 8px;">Domingo 16</div>
+                    <div style="font-size: 2rem; margin: 10px 0;">☁️</div>
+                    <div style="color: #a0aec0; font-size: 0.9rem;">10° - 15°</div>
+                    <div style="color: #a0aec0; font-size: 0.8rem; margin-top: 5px;">Muy nublado</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="warning-box">
+            <h4>⚠️ Recomendaciones Importantes</h4>
+            <p>Se aconseja manejar a velocidad reducida y mantener distancia prudente con otros vehículos para prevenir accidentes durante las lluvias nocturnas. Evite desplazamientos innecesarios y actividades al aire libre debido a las fuertes ráfagas de viento. Tenga precaución en espacios abiertos, grandes avenidas y zonas elevadas.</p>
+        </div>
+
+        <section class="news-section">
+            <h2>📰 Noticias Meteorológicas</h2>
+            
+            <div class="news-grid">
+                <article class="news-card featured">
+                    <div class="news-content">
+                        <span class="news-tag">Alerta Roja</span>
+                        <h3>La borrasca Nils pone en peligro máximo Cataluña con vendavales huracanados</h3>
+                        <p>La borrasca Nils llega a Cataluña con muy mala leche y pondrá en riesgo extremo el territorio este jueves. El episodio de viento ya ha comenzado con rachas de 100 km/h en muchas zonas. Se trata de una situación de oeste o mistral de primera categoría, quizás la más potente de la última década, que recuerda a las rachas huracanadas de la borrasca Klaus de enero de 2009, que dejó nueve víctimas mortales.</p>
+                        <p style="margin-top: 15px;">La población de más de una docena de comarcas, sobre todo de Barcelona, ya han recibido la ES-Alert avisando de alerta roja por viento fuerte y el gobierno ha cancelado escuelas, actividades al exterior y desplazamientos innecesarios.</p>
+                        <div class="news-meta">
+                            <span>🕐 Hoy</span>
+                            <span>📍 Cataluña / Barcelona</span>
+                            <span>⚠️ Riesgo extremo</span>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="news-card">
+                    <div class="news-content">
+                        <span class="news-tag">Previsión</span>
+                        <h3>Cielo nublado y lluvias para hoy en Barcelona</h3>
+                        <p>Para este miércoles 12 de febrero en Barcelona se espera sobre todo cielo nublado y un poco de lluvias. Al empezar el día la temperatura se mantendrá en 13°C, requiriendo una chaqueta ligera para sentirse cómodo al aire libre.</p>
+                        <p style="margin-top: 10px;">Durante la tarde, el cielo estará con nubes dispersas y la temperatura llegará a 13°C con vientos tranquilos del este de hasta 8 km/h.</p>
+                        <div class="news-meta">
+                            <span>🌡️ 12° - 14°C</span>
+                            <span>🌧️ Lluvias por la noche</span>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="news-card">
+                    <div class="news-content">
+                        <span class="news-tag">Próximos días</span>
+                        <h3>Se avecina la borrasca Oriana para el fin de semana</h3>
+                        <p>Saldremos de una situación adversa para entrar en otra el fin de semana a causa de una nueva perturbación profunda que se colocará entre Córcega y Cerdeña: la borrasca Oriana. El segundo temporal de la semana será del norte con nevadas descomunales en el Pirineo, tramontana extrema en el Empordà y enfríamiento de temperaturas en toda Cataluña.</p>
+                        <div class="news-meta">
+                            <span>📅 Fin de semana</span>
+                            <span>❄️ Nevadas en Pirineo</span>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="news-card">
+                    <div class="news-content">
+                        <span class="news-tag">Curiosidades</span>
+                        <h3>Nubes lenticulares decoran el cielo catalán</h3>
+                        <p>La previsión del tiempo anuncia dominio del sol con el permiso de algunas nubes decorativas lenticulares, que tendrán formas extrañas y curiosas por la modulación del viento. Estas nubes, también conocidas como "nubes de ovni" por su forma de lenteja, se forman por la turbulencia del aire al chocar con obstáculos como montañas.</p>
+                        <div class="news-meta">
+                            <span>☁️ Fenómeno meteorológico</span>
+                            <span>📸 Comparte tus fotos</span>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="news-card">
+                    <div class="news-content">
+                        <span class="news-tag">Carnaval</span>
+                        <h3>Carnaval frío y ventoso en Barcelona</h3>
+                        <p>La celebración del Carnaval vendrá marcada por temperaturas frías y condiciones ventosas. Se prevé un ambiente de crudo invierno con la noche más fría entre el sábado y el domingo, con heladas en el interior y la mitad norte después de muchas semanas sin tenerlas.</p>
+                        <p style="margin-top: 10px;">Se recomienda ir bien abrigado y con bastante viento el sábado por la tarde en muchos pueblos y ciudades para las comparsas.</p>
+                        <div class="news-meta">
+                            <span>🎭 Carnaval</span>
+                            <span>🧥 Abrígate bien</span>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="news-card">
+                    <div class="news-content">
+                        <span class="news-tag">Datos</span>
+                        <h3>Información del día</h3>
+                        <ul style="list-style: none; color: #a0aec0;">
+                            <li style="padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">🌅 Amanecer: <strong>7:50 AM</strong></li>
+                            <li style="padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">🌇 Anochecer: <strong>6:20 PM</strong></li>
+                            <li style="padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">☀️ Horas de luz: <strong>10h 30min</strong></li>
+                            <li style="padding: 8px 0;">🌕 Fase lunar: <strong>Luna Llena</strong></li>
+                        </ul>
+                        <div class="news-meta">
+                            <span>📊 Datos meteorológicos</span>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <footer>
+            <p>Datos meteorológicos actualizados el 12 de febrero de 2025</p>
+            <p style="margin-top: 10px;">Fuentes: <a href="https://clima.terra.com" class="source-link" target="_blank">Terra Clima</a> | <a href="https://www.elnacional.cat" class="source-link" target="_blank">El Nacional</a> | AEMET</p>
+            <p style="margin-top: 15px; font-size: 0.8rem; opacity: 0.7;">⚠️ Esta información es orientativa. Consulte fuentes oficiales para alertas meteorológicas.</p>
+        </footer>
+    </div>
+</body>
+</html>
