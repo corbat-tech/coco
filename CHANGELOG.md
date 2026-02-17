@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] - 2026-02-17
+
+### Added
+- **Real-time streaming for bash commands and build scripts**
+  - `bash_exec` tool now streams output in real-time instead of showing it all at the end
+  - `run_script` tool streams npm/pnpm/yarn command output as it happens
+  - Heartbeat monitoring shows elapsed time for commands running >10 seconds
+  - Better visibility into test runs, builds, and long-running operations
+- **Enhanced system prompt for better tool calling**
+  - Added explicit WRONG vs CORRECT examples to prevent LLMs from describing instead of executing
+  - Emphasized "TOOLS FIRST, then brief confirmation" approach
+  - Significantly improved reliability with Kimi, Codex, and other OpenAI-compatible providers
+- **COCO mode visual feedback during quality iterations**
+  - "Running quality checks..." (after 8s)
+  - "Iterating for quality..." (after 15s)
+  - "Verifying implementation..." (after 25s)
+  - "Quality iteration in progress... (Xs)" (after 40s+)
+  - Users now know the agent is actively working, not frozen
+- **JSON repair for streaming responses**
+  - Added `jsonrepair` dependency to auto-fix malformed JSON from unstable providers
+  - Reduces parse errors with Kimi/Moonshot and other streaming APIs
+
+### Improved
+- **COCO mode timeout optimization**
+  - Unified 120s timeout for all providers (previously had aggressive 10s timeouts)
+  - Quality iteration loops can now complete without premature interruption
+  - Better quality results as verification steps aren't cut off
+- **Better user feedback during long operations**
+  - Spinner messages now context-aware (different for COCO mode vs normal mode)
+  - Shows processing + quality checking status in COCO mode
+
+### Documentation
+- **ANALISIS_COCO_MODE.md**: Deep analysis of COCO mode behavior and why quality iterations matter
+- **docs/guides/PROVIDERS.md**: Comprehensive provider compatibility guide
+  - Detailed comparison of Claude, OpenAI, Kimi, local models
+  - COCO mode compatibility matrix
+  - Recommendations and troubleshooting
+
+### Fixed
+- Removed DEBUG console logs that were contaminating user output
+- Cleaned up unused TypeScript variables
+
+---
+
 ## [1.5.0] - 2026-02-11
 
 ### Added
