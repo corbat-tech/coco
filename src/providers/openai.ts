@@ -4,6 +4,7 @@
  */
 
 import OpenAI from "openai";
+import { jsonrepair } from "jsonrepair";
 import type {
   LLMProvider,
   ProviderConfig,
@@ -373,8 +374,11 @@ export class OpenAIProvider implements LLMProvider {
         new Map();
 
       // Add timeout protection for local LLMs that may hang
-      const streamTimeout = this.config.timeout ?? 120000;
+      // QUICK WIN: Kimi models timeout faster (known issue with streaming)
+      const isKimiModel = model.includes('kimi') || model.includes('moonshot');
+      const streamTimeout = isKimiModel ? 10000 : (this.config.timeout ?? 120000);
       let lastActivityTime = Date.now();
+      let emptyChunksCount = 0; // Track empty chunks to detect stuck streams
 
       const checkTimeout = () => {
         if (Date.now() - lastActivityTime > streamTimeout) {
@@ -388,6 +392,18 @@ export class OpenAIProvider implements LLMProvider {
       try {
         for await (const chunk of stream) {
           const delta = chunk.choices[0]?.delta;
+          const finishReason = chunk.choices[0]?.finish_reason;
+
+          // QUICK WIN: Detect stuck stream (too many empty chunks)
+          if (!delta?.content && !delta?.tool_calls && !finishReason) {
+            emptyChunksCount++;
+            if (emptyChunksCount > 10 && isKimiModel) {
+              console.warn('[Kimi] Stream appears stuck (too many empty chunks), finalizing early');
+              break;
+            }
+          } else {
+            emptyChunksCount = 0;
+          }
 
           // Only reset timeout if we got meaningful content (not empty chunks)
           if (delta?.content || delta?.tool_calls) {
@@ -435,6 +451,10 @@ export class OpenAIProvider implements LLMProvider {
               // Accumulate arguments
               if (toolCallDelta.function?.arguments) {
                 builder.arguments += toolCallDelta.function.arguments;
+                // Debug: log argument accumulation
+                if (builder.arguments.length < 50 || builder.arguments.length % 100 === 0) {
+                  console.log(`[DEBUG] ${builder.name} args length: ${builder.arguments.length}`);
+                }
                 yield {
                   type: "tool_use_delta",
                   toolCall: {
@@ -459,11 +479,26 @@ export class OpenAIProvider implements LLMProvider {
           let input: Record<string, unknown> = {};
           try {
             input = builder.arguments ? JSON.parse(builder.arguments) : {};
-          } catch {
+            // Debug: log successful parsing
+            console.log(`[DEBUG] Parsed ${builder.name} arguments:`, JSON.stringify(input).slice(0, 200));
+          } catch (error) {
+            // QUICK WIN: Try to repair malformed JSON automatically
             console.warn(
-              `[OpenAI] Failed to parse tool call arguments: ${builder.arguments?.slice(0, 100)}`,
+              `[OpenAI] Failed to parse tool call arguments for ${builder.name}: ${builder.arguments?.slice(0, 100)}`,
             );
+            try {
+              if (builder.arguments) {
+                const repaired = jsonrepair(builder.arguments);
+                input = JSON.parse(repaired);
+                console.log(`[OpenAI] ✓ Successfully repaired JSON for ${builder.name}`);
+              }
+            } catch (repairError) {
+              console.error(`[OpenAI] Cannot repair JSON for ${builder.name}, using empty object`);
+              console.error(`[OpenAI] Original error:`, error);
+            }
           }
+
+          console.log(`[DEBUG] Yielding tool_use_end for ${builder.name} with input:`, typeof input, Object.keys(input).length);
 
           yield {
             type: "tool_use_end",

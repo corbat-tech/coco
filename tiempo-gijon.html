@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>El Tiempo en Gijón - Previsión por Horas</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            color: #333;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            padding: 30px 0;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .date-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 8px 20px;
+            border-radius: 25px;
+            margin-top: 15px;
+            font-weight: 500;
+        }
+
+        .weather-summary {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+            text-align: center;
+        }
+
+        .summary-item {
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            color: white;
+        }
+
+        .summary-item .label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+
+        .summary-item .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .forecast-section {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .forecast-section h2 {
+            color: #2a5298;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .hourly-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .hour-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            padding: 20px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border-left: 5px solid #667eea;
+        }
+
+        .hour-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+        }
+
+        .hour-card.rain {
+            border-left-color: #4a90e2;
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        }
+
+        .hour-card.clear {
+            border-left-color: #f39c12;
+            background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+        }
+
+        .hour-card.cloudy {
+            border-left-color: #7f8c8d;
+            background: linear-gradient(135deg, #eceff1 0%, #cfd8dc 100%);
+        }
+
+        .hour-time {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .hour-condition {
+            font-size: 0.95rem;
+            color: #555;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+
+        .hour-temp {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #e74c3c;
+            margin-bottom: 5px;
+        }
+
+        .hour-feels {
+            font-size: 0.85rem;
+            color: #7f8c8d;
+            margin-bottom: 10px;
+        }
+
+        .hour-details {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .hour-details span {
+            background: rgba(255,255,255,0.7);
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+
+        .rain-warning {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 0 10px 10px 0;
+        }
+
+        .rain-warning strong {
+            color: #1976d2;
+        }
+
+        footer {
+            text-align: center;
+            color: white;
+            padding: 20px;
+            opacity: 0.8;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8rem;
+            }
+
+            .hourly-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌤️ El Tiempo en Gijón</h1>
+            <p>Previsión meteorológica por horas</p>
+            <div class="date-badge">Martes, 18 de febrero de 2025</div>
+        </header>
+
+        <div class="weather-summary">
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="label">Temperatura Máx</div>
+                    <div class="value">17°C</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Temperatura Mín</div>
+                    <div class="value">9°C</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Salida del Sol</div>
+                    <div class="value">08:18</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Puesta del Sol</div>
+                    <div class="value">18:55</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Fase Lunar</div>
+                    <div class="value">🌑 Nueva</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="rain-warning">
+            <strong>⚠️ Aviso:</strong> Se esperan lluvias débiles durante la madrugada (01:00 - 08:00). A partir de las 09:00 se espera mejoría con nubes y claros.
+        </div>
+
+        <div class="forecast-section">
+            <h2>🌙 Madrugada (01:00 - 06:00)</h2>
+            <div class="hourly-grid">
+                <div class="hour-card rain">
+                    <div class="hour-time">01:00</div>
+                    <div class="hour-condition">🌧️ Lluvia débil</div>
+                    <div class="hour-temp">12°C</div>
+                    <div class="hour-feels">Sensación: 12°C</div>
+                    <div class="hour-details">
+                        <span>💧 90% lluvia</span>
+                        <span>💨 Oeste 11-26 km/h</span>
+                        <span>💦 93% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card rain">
+                    <div class="hour-time">02:00</div>
+                    <div class="hour-condition">🌧️ Lluvia débil</div>
+                    <div class="hour-temp">12°C</div>
+                    <div class="hour-feels">Sensación: 12°C</div>
+                    <div class="hour-details">
+                        <span>💧 90% lluvia</span>
+                        <span>💨 Oeste 10-22 km/h</span>
+                        <span>💦 94% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card rain">
+                    <div class="hour-time">03:00</div>
+                    <div class="hour-condition">🌧️ Lluvia débil</div>
+                    <div class="hour-temp">12°C</div>
+                    <div class="hour-feels">Sensación: 12°C</div>
+                    <div class="hour-details">
+                        <span>💧 90% lluvia</span>
+                        <span>💨 Oeste 6-18 km/h</span>
+                        <span>💦 94% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card rain">
+                    <div class="hour-time">04:00</div>
+                    <div class="hour-condition">🌧️ Lluvia débil</div>
+                    <div class="hour-temp">12°C</div>
+                    <div class="hour-feels">Sensación: 12°C</div>
+                    <div class="hour-details">
+                        <span>💧 90% lluvia</span>
+                        <span>💨 Suroeste 4-12 km/h</span>
+                        <span>💦 94% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card rain">
+                    <div class="hour-time">05:00</div>
+                    <div class="hour-condition">🌧️ Lluvia débil</div>
+                    <div class="hour-temp">12°C</div>
+                    <div class="hour-feels">Sensación: 12°C</div>
+                    <div class="hour-details">
+                        <span>💧 90% lluvia</span>
+                        <span>💨 Suroeste 8-14 km/h</span>
+                        <span>💦 95% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card rain">
+                    <div class="hour-time">06:00</div>
+                    <div class="hour-condition">🌧️ Lluvia débil</div>
+                    <div class="hour-temp">12°C</div>
+                    <div class="hour-feels">Sensación: 12°C</div>
+                    <div class="hour-details">
+                        <span>💧 80% lluvia</span>
+                        <span>💨 Sur 6-15 km/h</span>
+                        <span>💦 94% humedad</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="forecast-section">
+            <h2>🌅 Mañana (07:00 - 12:00)</h2>
+            <div class="hourly-grid">
+                <div class="hour-card rain">
+                    <div class="hour-time">07:00</div>
+                    <div class="hour-condition">🌧️ Lluvia débil</div>
+                    <div class="hour-temp">11°C</div>
+                    <div class="hour-feels">Sensación: 11°C</div>
+                    <div class="hour-details">
+                        <span>💧 80% lluvia</span>
+                        <span>💨 Suroeste 7-15 km/h</span>
+                        <span>💦 94% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card rain">
+                    <div class="hour-time">08:00</div>
+                    <div class="hour-condition">🌧️ Lluvia débil</div>
+                    <div class="hour-temp">12°C</div>
+                    <div class="hour-feels">Sensación: 12°C</div>
+                    <div class="hour-details">
+                        <span>💧 60% lluvia</span>
+                        <span>💨 Oeste 10-19 km/h</span>
+                        <span>💦 93% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">09:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">13°C</div>
+                    <div class="hour-feels">Sensación: 13°C</div>
+                    <div class="hour-details">
+                        <span>💧 10% lluvia</span>
+                        <span>💨 Oeste 13-22 km/h</span>
+                        <span>💦 93% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">10:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">14°C</div>
+                    <div class="hour-feels">Sensación: 14°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Oeste 15-25 km/h</span>
+                        <span>💦 88% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">11:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">14°C</div>
+                    <div class="hour-feels">Sensación: 14°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Oeste 16-32 km/h</span>
+                        <span>💦 79% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">12:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">16°C</div>
+                    <div class="hour-feels">Sensación: 16°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Oeste 16-30 km/h</span>
+                        <span>💦 70% humedad</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="forecast-section">
+            <h2>☀️ Tarde (13:00 - 18:00)</h2>
+            <div class="hourly-grid">
+                <div class="hour-card cloudy">
+                    <div class="hour-time">13:00</div>
+                    <div class="hour-condition">☁️ Parcialmente nuboso</div>
+                    <div class="hour-temp">17°C</div>
+                    <div class="hour-feels">Sensación: 17°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Oeste 19-35 km/h</span>
+                        <span>💦 60% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card cloudy">
+                    <div class="hour-time">14:00</div>
+                    <div class="hour-condition">☁️ Parcialmente nuboso</div>
+                    <div class="hour-temp">17°C</div>
+                    <div class="hour-feels">Sensación: 17°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Oeste 17-36 km/h</span>
+                        <span>💦 57% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">15:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">17°C</div>
+                    <div class="hour-feels">Sensación: 17°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Noroeste 15-32 km/h</span>
+                        <span>💦 58% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card cloudy">
+                    <div class="hour-time">16:00</div>
+                    <div class="hour-condition">☁️ Parcialmente nuboso</div>
+                    <div class="hour-temp">17°C</div>
+                    <div class="hour-feels">Sensación: 17°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Noroeste 15-30 km/h</span>
+                        <span>💦 66% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">17:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">14°C</div>
+                    <div class="hour-feels">Sensación: 14°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Noroeste 15-30 km/h</span>
+                        <span>💦 83% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">18:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">13°C</div>
+                    <div class="hour-feels">Sensación: 13°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Noroeste 4-27 km/h</span>
+                        <span>💦 88% humedad</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="forecast-section">
+            <h2>🌙 Noche (19:00 - 24:00)</h2>
+            <div class="hourly-grid">
+                <div class="hour-card clear">
+                    <div class="hour-time">19:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">12°C</div>
+                    <div class="hour-feels">Sensación: 12°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Sureste 7-17 km/h</span>
+                        <span>💦 90% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">20:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">12°C</div>
+                    <div class="hour-feels">Sensación: 12°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Sureste 9-18 km/h</span>
+                        <span>💦 91% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">21:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">11°C</div>
+                    <div class="hour-feels">Sensación: 11°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Sur 7-15 km/h</span>
+                        <span>💦 93% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">22:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">10°C</div>
+                    <div class="hour-feels">Sensación: 10°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Sur 5-11 km/h</span>
+                        <span>💦 96% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">23:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">9°C</div>
+                    <div class="hour-feels">Sensación: 10°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Sur 4-9 km/h</span>
+                        <span>💦 98% humedad</span>
+                    </div>
+                </div>
+                <div class="hour-card clear">
+                    <div class="hour-time">24:00</div>
+                    <div class="hour-condition">⛅ Nubes y claros</div>
+                    <div class="hour-temp">9°C</div>
+                    <div class="hour-feels">Sensación: 9°C</div>
+                    <div class="hour-details">
+                        <span>💧 0% lluvia</span>
+                        <span>💨 Sur 4-9 km/h</span>
+                        <span>💦 96% humedad</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Datos obtenidos de Meteored España (tiempo.com)</p>
+            <p>Actualizado: 18 de febrero de 2025</p>
+        </footer>
+    </div>
+</body>
+</html>

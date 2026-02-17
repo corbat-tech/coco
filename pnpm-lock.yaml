@@ -50,6 +50,9 @@ importers:
       json5:
         specifier: ^2.2.3
         version: 2.2.3
+      jsonrepair:
+        specifier: ^3.13.2
+        version: 3.13.2
       marked:
         specifier: ^15.0.0
         version: 15.0.12
@@ -1191,6 +1194,10 @@ packages:
   json5@2.2.3:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
+    hasBin: true
+
+  jsonrepair@3.13.2:
+    resolution: {integrity: sha512-Leuly0nbM4R+S5SVJk3VHfw1oxnlEK9KygdZvfUtEtTawNDyzB4qa1xWTmFt1aeoA7sXZkVTRuIixJ8bAvqVUg==}
     hasBin: true
 
   keyv@4.5.4:
@@ -2789,6 +2796,8 @@ snapshots:
   json-stable-stringify-without-jsonify@1.0.1: {}
 
   json5@2.2.3: {}
+
+  jsonrepair@3.13.2: {}
 
   keyv@4.5.4:
     dependencies:
