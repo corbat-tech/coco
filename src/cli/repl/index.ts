@@ -14,15 +14,6 @@ import {
 } from "./session.js";
 import { createInputHandler } from "./input/handler.js";
 import {
-  startConcurrentCapture,
-  stopConcurrentCapture,
-} from "./input/concurrent-capture.js";
-import {
-  addInterruption,
-  hasInterruptions,
-  consumeInterruptions,
-} from "./input/interruptions.js";
-import {
   renderStreamChunk,
   renderToolStart,
   renderToolEnd,
@@ -342,11 +333,6 @@ export async function startRepl(
       // Pause input to prevent typing interference during agent response
       inputHandler.pause();
 
-      // Start capturing interruptions (user can type modifications during execution)
-      startConcurrentCapture((message) => {
-        addInterruption(message);
-      });
-
       process.once("SIGINT", sigintHandler);
 
       const result = await executeAgentTurn(session, agentMessage, provider, toolRegistry, {
@@ -417,28 +403,6 @@ export async function startRepl(
       // Remove SIGINT handler and clean up thinking interval after agent turn
       clearThinkingInterval();
       process.off("SIGINT", sigintHandler);
-
-      // Stop capturing interruptions
-      stopConcurrentCapture();
-
-      // Process any interruptions (user messages sent during execution)
-      if (hasInterruptions()) {
-        const interruptions = consumeInterruptions();
-        console.log(
-          chalk.dim(
-            `\n💬 You sent ${interruptions.length} message(s) during execution. Processing them now...\n`,
-          ),
-        );
-        // Add interruptions as user messages to continue the conversation
-        for (const interruption of interruptions) {
-          session.messages.push({
-            role: "user",
-            content: interruption.message,
-          });
-          console.log(chalk.cyan(`> ${interruption.message}`));
-        }
-        // The next iteration of the REPL loop will process these messages
-      }
 
       // Show abort summary if cancelled, preserving partial content
       if (wasAborted || result.aborted) {

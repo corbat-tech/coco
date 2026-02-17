@@ -142,25 +142,60 @@ Examples:
     const startTime = performance.now();
     const timeoutMs = timeout ?? DEFAULT_TIMEOUT_MS;
 
+    // Import heartbeat dynamically to avoid circular dependencies
+    const { CommandHeartbeat } = await import("./utils/heartbeat.js");
+
+    const heartbeat = new CommandHeartbeat({
+      onUpdate: (stats) => {
+        if (stats.elapsedSeconds > 10) {
+          // Only show heartbeat for commands running >10s
+          process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
+        }
+      },
+      onWarn: (message) => {
+        process.stderr.write(`\n${message}\n`);
+      },
+    });
+
     try {
+      heartbeat.start();
+
       const options: ExecaOptions = {
         cwd: cwd ?? process.cwd(),
         timeout: timeoutMs,
         env: { ...process.env, ...env },
         shell: true,
         reject: false,
+        buffer: false, // Enable streaming
         maxBuffer: MAX_OUTPUT_SIZE,
       };
 
-      const result = await execa(command, options);
+      const subprocess = execa(command, options);
+
+      let stdoutBuffer = "";
+      let stderrBuffer = "";
+
+      // Stream stdout in real-time
+      subprocess.stdout?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stdoutBuffer += text;
+        process.stdout.write(text);
+        heartbeat.activity();
+      });
+
+      // Stream stderr in real-time
+      subprocess.stderr?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderrBuffer += text;
+        process.stderr.write(text);
+        heartbeat.activity();
+      });
+
+      const result = await subprocess;
 
       return {
-        stdout: truncateOutput(
-          typeof result.stdout === "string" ? result.stdout : String(result.stdout ?? ""),
-        ),
-        stderr: truncateOutput(
-          typeof result.stderr === "string" ? result.stderr : String(result.stderr ?? ""),
-        ),
+        stdout: truncateOutput(stdoutBuffer),
+        stderr: truncateOutput(stderrBuffer),
         exitCode: result.exitCode ?? 0,
         duration: performance.now() - startTime,
       };
@@ -176,6 +211,10 @@ Examples:
         `Command execution failed: ${error instanceof Error ? error.message : String(error)}`,
         { tool: "bash_exec", cause: error instanceof Error ? error : undefined },
       );
+    } finally {
+      heartbeat.stop();
+      // Clear the heartbeat line if it was shown
+      process.stderr.write("\r                                        \r");
     }
   },
 });

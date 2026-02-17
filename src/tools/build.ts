@@ -111,7 +111,24 @@ Examples:
     const startTime = performance.now();
     const timeoutMs = timeout ?? DEFAULT_TIMEOUT_MS;
 
+    // Import heartbeat dynamically to avoid circular dependencies
+    const { CommandHeartbeat } = await import("./utils/heartbeat.js");
+
+    const heartbeat = new CommandHeartbeat({
+      onUpdate: (stats) => {
+        if (stats.elapsedSeconds > 10) {
+          // Only show heartbeat for commands running >10s
+          process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
+        }
+      },
+      onWarn: (message) => {
+        process.stderr.write(`\n${message}\n`);
+      },
+    });
+
     try {
+      heartbeat.start();
+
       // Detect or use provided package manager
       const pm = packageManager ?? (await detectPackageManager(projectDir));
 
@@ -126,15 +143,37 @@ Examples:
         timeout: timeoutMs,
         env: { ...process.env, ...env },
         reject: false,
+        buffer: false, // Enable streaming
         maxBuffer: MAX_OUTPUT_SIZE,
       };
 
-      const result = await execa(pm, cmdArgs, options);
+      const subprocess = execa(pm, cmdArgs, options);
+
+      let stdoutBuffer = "";
+      let stderrBuffer = "";
+
+      // Stream stdout in real-time
+      subprocess.stdout?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stdoutBuffer += text;
+        process.stdout.write(text);
+        heartbeat.activity();
+      });
+
+      // Stream stderr in real-time
+      subprocess.stderr?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderrBuffer += text;
+        process.stderr.write(text);
+        heartbeat.activity();
+      });
+
+      const result = await subprocess;
 
       return {
         success: result.exitCode === 0,
-        stdout: truncateOutput(String(result.stdout ?? "")),
-        stderr: truncateOutput(String(result.stderr ?? "")),
+        stdout: truncateOutput(stdoutBuffer),
+        stderr: truncateOutput(stderrBuffer),
         exitCode: result.exitCode ?? 0,
         duration: performance.now() - startTime,
         packageManager: pm,
@@ -151,6 +190,10 @@ Examples:
         `Failed to run script '${script}': ${error instanceof Error ? error.message : String(error)}`,
         { tool: "run_script", cause: error instanceof Error ? error : undefined },
       );
+    } finally {
+      heartbeat.stop();
+      // Clear the heartbeat line if it was shown
+      process.stderr.write("\r                                        \r");
     }
   },
 });
@@ -191,7 +234,24 @@ Examples:
     const startTime = performance.now();
     const timeoutMs = timeout ?? DEFAULT_TIMEOUT_MS;
 
+    // Import heartbeat dynamically to avoid circular dependencies
+    const { CommandHeartbeat } = await import("./utils/heartbeat.js");
+
+    const heartbeat = new CommandHeartbeat({
+      onUpdate: (stats) => {
+        if (stats.elapsedSeconds > 10) {
+          // Only show heartbeat for commands running >10s
+          process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
+        }
+      },
+      onWarn: (message) => {
+        process.stderr.write(`\n${message}\n`);
+      },
+    });
+
     try {
+      heartbeat.start();
+
       const pm = packageManager ?? (await detectPackageManager(projectDir));
 
       // Build command based on package manager
@@ -237,15 +297,37 @@ Examples:
         cwd: projectDir,
         timeout: timeoutMs,
         reject: false,
+        buffer: false, // Enable streaming
         maxBuffer: MAX_OUTPUT_SIZE,
       };
 
-      const result = await execa(pm, cmdArgs, options);
+      const subprocess = execa(pm, cmdArgs, options);
+
+      let stdoutBuffer = "";
+      let stderrBuffer = "";
+
+      // Stream stdout in real-time
+      subprocess.stdout?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stdoutBuffer += text;
+        process.stdout.write(text);
+        heartbeat.activity();
+      });
+
+      // Stream stderr in real-time
+      subprocess.stderr?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderrBuffer += text;
+        process.stderr.write(text);
+        heartbeat.activity();
+      });
+
+      const result = await subprocess;
 
       return {
         success: result.exitCode === 0,
-        stdout: truncateOutput(String(result.stdout ?? "")),
-        stderr: truncateOutput(String(result.stderr ?? "")),
+        stdout: truncateOutput(stdoutBuffer),
+        stderr: truncateOutput(stderrBuffer),
         exitCode: result.exitCode ?? 0,
         duration: performance.now() - startTime,
         packageManager: pm,
@@ -262,6 +344,10 @@ Examples:
         `Failed to install dependencies: ${error instanceof Error ? error.message : String(error)}`,
         { tool: "install_deps", cause: error instanceof Error ? error : undefined },
       );
+    } finally {
+      heartbeat.stop();
+      // Clear the heartbeat line if it was shown
+      process.stderr.write("\r                                        \r");
     }
   },
 });
@@ -300,6 +386,21 @@ Examples:
     const startTime = performance.now();
     const timeoutMs = timeout ?? DEFAULT_TIMEOUT_MS;
 
+    // Import heartbeat dynamically to avoid circular dependencies
+    const { CommandHeartbeat } = await import("./utils/heartbeat.js");
+
+    const heartbeat = new CommandHeartbeat({
+      onUpdate: (stats) => {
+        if (stats.elapsedSeconds > 10) {
+          // Only show heartbeat for commands running >10s
+          process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
+        }
+      },
+      onWarn: (message) => {
+        process.stderr.write(`\n${message}\n`);
+      },
+    });
+
     try {
       // Check if Makefile exists
       try {
@@ -307,6 +408,8 @@ Examples:
       } catch {
         throw new ToolError("No Makefile found in directory", { tool: "make" });
       }
+
+      heartbeat.start();
 
       const cmdArgs: string[] = [];
       if (target) {
@@ -322,15 +425,37 @@ Examples:
         timeout: timeoutMs,
         env: { ...process.env, ...env },
         reject: false,
+        buffer: false, // Enable streaming
         maxBuffer: MAX_OUTPUT_SIZE,
       };
 
-      const result = await execa("make", cmdArgs, options);
+      const subprocess = execa("make", cmdArgs, options);
+
+      let stdoutBuffer = "";
+      let stderrBuffer = "";
+
+      // Stream stdout in real-time
+      subprocess.stdout?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stdoutBuffer += text;
+        process.stdout.write(text);
+        heartbeat.activity();
+      });
+
+      // Stream stderr in real-time
+      subprocess.stderr?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderrBuffer += text;
+        process.stderr.write(text);
+        heartbeat.activity();
+      });
+
+      const result = await subprocess;
 
       return {
         success: result.exitCode === 0,
-        stdout: truncateOutput(String(result.stdout ?? "")),
-        stderr: truncateOutput(String(result.stderr ?? "")),
+        stdout: truncateOutput(stdoutBuffer),
+        stderr: truncateOutput(stderrBuffer),
         exitCode: result.exitCode ?? 0,
         duration: performance.now() - startTime,
       };
@@ -348,6 +473,10 @@ Examples:
         `Make failed: ${error instanceof Error ? error.message : String(error)}`,
         { tool: "make", cause: error instanceof Error ? error : undefined },
       );
+    } finally {
+      heartbeat.stop();
+      // Clear the heartbeat line if it was shown
+      process.stderr.write("\r                                        \r");
     }
   },
 });
@@ -388,7 +517,24 @@ Examples:
     const startTime = performance.now();
     const timeoutMs = timeout ?? DEFAULT_TIMEOUT_MS;
 
+    // Import heartbeat dynamically to avoid circular dependencies
+    const { CommandHeartbeat } = await import("./utils/heartbeat.js");
+
+    const heartbeat = new CommandHeartbeat({
+      onUpdate: (stats) => {
+        if (stats.elapsedSeconds > 10) {
+          // Only show heartbeat for commands running >10s
+          process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
+        }
+      },
+      onWarn: (message) => {
+        process.stderr.write(`\n${message}\n`);
+      },
+    });
+
     try {
+      heartbeat.start();
+
       const cmdArgs: string[] = [];
 
       if (project) {
@@ -408,15 +554,37 @@ Examples:
         cwd: projectDir,
         timeout: timeoutMs,
         reject: false,
+        buffer: false, // Enable streaming
         maxBuffer: MAX_OUTPUT_SIZE,
       };
 
-      const result = await execa("npx", ["tsc", ...cmdArgs], options);
+      const subprocess = execa("npx", ["tsc", ...cmdArgs], options);
+
+      let stdoutBuffer = "";
+      let stderrBuffer = "";
+
+      // Stream stdout in real-time
+      subprocess.stdout?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stdoutBuffer += text;
+        process.stdout.write(text);
+        heartbeat.activity();
+      });
+
+      // Stream stderr in real-time
+      subprocess.stderr?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderrBuffer += text;
+        process.stderr.write(text);
+        heartbeat.activity();
+      });
+
+      const result = await subprocess;
 
       return {
         success: result.exitCode === 0,
-        stdout: truncateOutput(String(result.stdout ?? "")),
-        stderr: truncateOutput(String(result.stderr ?? "")),
+        stdout: truncateOutput(stdoutBuffer),
+        stderr: truncateOutput(stderrBuffer),
         exitCode: result.exitCode ?? 0,
         duration: performance.now() - startTime,
       };
@@ -432,6 +600,10 @@ Examples:
         `TypeScript compile failed: ${error instanceof Error ? error.message : String(error)}`,
         { tool: "tsc", cause: error instanceof Error ? error : undefined },
       );
+    } finally {
+      heartbeat.stop();
+      // Clear the heartbeat line if it was shown
+      process.stderr.write("\r                                        \r");
     }
   },
 });
