@@ -13,6 +13,11 @@ import {
   loadTrustedTools,
 } from "./session.js";
 import { createInputHandler } from "./input/handler.js";
+import { createConcurrentCapture } from "./input/concurrent-capture-v2.js";
+import { createFeedbackSystem } from "./feedback/feedback-system.js";
+import { classifyAll, classifyInterruption } from "./interruptions/classifier.js";
+import { InterruptionType } from "./interruptions/types.js";
+import { processInterruptions, formatInterruptionContext } from "./interruptions/processor.js";
 import {
   renderStreamChunk,
   renderToolStart,
@@ -158,6 +163,16 @@ export async function startRepl(
   // Create input handler
   const inputHandler = createInputHandler(session);
 
+  // Initialize concurrent input capture and feedback system
+  const concurrentCapture = createConcurrentCapture();
+  let currentSpinnerMessage = "";
+  // activeSpinner is declared per-turn; feedbackSystem needs a getter
+  let turnActiveSpinner: Spinner | null = null;
+  const feedbackSystem = createFeedbackSystem(() => turnActiveSpinner);
+
+  // Pending interruption context from previous turn (injected into next message)
+  let pendingInterruptionContext = "";
+
   // Initialize intent recognizer
   const intentRecognizer = createIntentRecognizer();
 
@@ -263,26 +278,37 @@ export async function startRepl(
       agentMessage = input ?? "";
     }
 
+    // Inject any pending interruption context from the previous turn
+    if (pendingInterruptionContext && typeof agentMessage === "string") {
+      agentMessage = agentMessage + pendingInterruptionContext;
+      pendingInterruptionContext = "";
+    }
+
     // Execute agent turn
     // Single spinner for all states - avoids concurrent spinner issues
     let activeSpinner: Spinner | null = null;
+    turnActiveSpinner = null;
 
     // Helper to safely clear spinner - defined outside try for access in catch
     const clearSpinner = () => {
       if (activeSpinner) {
         activeSpinner.clear();
         activeSpinner = null;
+        turnActiveSpinner = null;
       }
     };
 
     // Helper to set spinner message (creates if needed)
     const setSpinner = (message: string) => {
+      currentSpinnerMessage = message;
       if (activeSpinner) {
         activeSpinner.update(message);
       } else {
         activeSpinner = createSpinner(message);
         activeSpinner.start();
       }
+      turnActiveSpinner = activeSpinner;
+      feedbackSystem.updateSpinnerMessage(message);
     };
 
     // Thinking progress feedback - evolving messages while LLM processes
@@ -304,6 +330,8 @@ export async function startRepl(
     const sigintHandler = () => {
       wasAborted = true;
       abortController.abort();
+      concurrentCapture.stop();
+      feedbackSystem.reset();
       clearThinkingInterval();
       clearSpinner();
       renderInfo("\nOperation cancelled");
@@ -330,8 +358,20 @@ export async function startRepl(
         session.config.agent.systemPrompt = originalSystemPrompt + "\n" + getCocoModeSystemPrompt();
       }
 
-      // Pause input to prevent typing interference during agent response
+      // Pause normal input handler and start concurrent capture
+      // This allows the user to type messages during agent execution
       inputHandler.pause();
+      concurrentCapture.reset();
+      concurrentCapture.start((msg) => {
+        feedbackSystem.notifyCapture(msg, currentSpinnerMessage);
+
+        // Check for abort in real-time: classify and abort immediately if needed
+        const classified = classifyInterruption(msg);
+        if (classified.type === InterruptionType.Abort) {
+          wasAborted = true;
+          abortController.abort();
+        }
+      });
 
       process.once("SIGINT", sigintHandler);
 
@@ -404,6 +444,25 @@ export async function startRepl(
       clearThinkingInterval();
       process.off("SIGINT", sigintHandler);
 
+      // Stop concurrent capture and process any queued interruptions
+      const capturedMessages = concurrentCapture.stop();
+      feedbackSystem.reset();
+
+      if (capturedMessages.length > 0) {
+        const classified = classifyAll(capturedMessages);
+        const interruptionResult = processInterruptions(classified);
+
+        // Store context for the next agent turn
+        const ctx = formatInterruptionContext(interruptionResult);
+        if (ctx) {
+          pendingInterruptionContext = ctx;
+          console.log(
+            chalk.cyan(`  \u21B3 ${capturedMessages.length} message(s) captured`) +
+              chalk.dim(` — ${interruptionResult.summary}`),
+          );
+        }
+      }
+
       // Show abort summary if cancelled, preserving partial content
       if (wasAborted || result.aborted) {
         // Show partial content if any was captured before abort
@@ -474,9 +533,11 @@ export async function startRepl(
 
       console.log(); // Extra spacing
     } catch (error) {
-      // Always clear spinner and thinking interval on error, remove SIGINT handler
+      // Always clear spinner, thinking interval, capture on error
       clearThinkingInterval();
       clearSpinner();
+      concurrentCapture.stop();
+      feedbackSystem.reset();
       process.off("SIGINT", sigintHandler);
       // Don't show error for abort
       if (error instanceof Error && error.name === "AbortError") {
@@ -521,6 +582,7 @@ export async function startRepl(
   }
 
   inputHandler.close();
+  feedbackSystem.dispose();
 }
 
 /**

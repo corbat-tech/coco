@@ -1,8 +1,15 @@
 /**
- * Interruption Handler - Allow user to provide additional context during agent thinking
+ * @deprecated Use the new concurrent input system instead:
+ * - `src/cli/repl/input/concurrent-capture-v2.ts` — Raw mode capture
+ * - `src/cli/repl/input/message-queue.ts` — Message queue
+ * - `src/cli/repl/interruptions/classifier.ts` — Interruption classification
+ * - `src/cli/repl/interruptions/processor.ts` — Interruption processing
+ * - `src/cli/repl/feedback/feedback-system.ts` — Visual feedback
  *
- * This module allows users to type additional instructions while the agent is processing,
- * which will be queued and incorporated into the next agent turn.
+ * This legacy handler used readline which conflicted with Ora spinner.
+ * Kept for reference only. See ADR-007 for migration rationale.
+ *
+ * @module cli/repl/interruption-handler
  */
 
 import readline from "node:readline";
