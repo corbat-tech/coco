@@ -17,11 +17,7 @@ import {
   startConcurrentCapture,
   stopConcurrentCapture,
 } from "./input/concurrent-capture.js";
-import {
-  addInterruption,
-  hasInterruptions,
-  consumeInterruptions,
-} from "./input/interruptions.js";
+import { addInterruption } from "./input/interruptions.js";
 import {
   renderStreamChunk,
   renderToolStart,

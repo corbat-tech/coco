@@ -374,9 +374,8 @@ export class OpenAIProvider implements LLMProvider {
         new Map();
 
       // Add timeout protection for local LLMs that may hang
-      // Note: Kimi models are slow but COCO mode needs time for quality iterations
+      // Note: COCO mode needs time for quality iterations (30-60s)
       // Don't use aggressive timeouts that interrupt quality loops
-      const isKimiModel = model.includes('kimi') || model.includes('moonshot');
       const streamTimeout = this.config.timeout ?? 120000; // Same timeout for all providers
       let lastActivityTime = Date.now();
 
@@ -392,9 +391,8 @@ export class OpenAIProvider implements LLMProvider {
       try {
         for await (const chunk of stream) {
           const delta = chunk.choices[0]?.delta;
-          const finishReason = chunk.choices[0]?.finish_reason;
 
-          // Reset timeout on any activity (content, tool calls, or finish)
+          // Reset timeout on any activity (content, tool calls)
           if (delta?.content || delta?.tool_calls) {
             lastActivityTime = Date.now();
           }
