@@ -374,11 +374,11 @@ export class OpenAIProvider implements LLMProvider {
         new Map();
 
       // Add timeout protection for local LLMs that may hang
-      // QUICK WIN: Kimi models timeout faster (known issue with streaming)
+      // Note: Kimi models are slow but COCO mode needs time for quality iterations
+      // Don't use aggressive timeouts that interrupt quality loops
       const isKimiModel = model.includes('kimi') || model.includes('moonshot');
-      const streamTimeout = isKimiModel ? 10000 : (this.config.timeout ?? 120000);
+      const streamTimeout = this.config.timeout ?? 120000; // Same timeout for all providers
       let lastActivityTime = Date.now();
-      let emptyChunksCount = 0; // Track empty chunks to detect stuck streams
 
       const checkTimeout = () => {
         if (Date.now() - lastActivityTime > streamTimeout) {
@@ -394,18 +394,7 @@ export class OpenAIProvider implements LLMProvider {
           const delta = chunk.choices[0]?.delta;
           const finishReason = chunk.choices[0]?.finish_reason;
 
-          // QUICK WIN: Detect stuck stream (too many empty chunks)
-          if (!delta?.content && !delta?.tool_calls && !finishReason) {
-            emptyChunksCount++;
-            if (emptyChunksCount > 10 && isKimiModel) {
-              console.warn('[Kimi] Stream appears stuck (too many empty chunks), finalizing early');
-              break;
-            }
-          } else {
-            emptyChunksCount = 0;
-          }
-
-          // Only reset timeout if we got meaningful content (not empty chunks)
+          // Reset timeout on any activity (content, tool calls, or finish)
           if (delta?.content || delta?.tool_calls) {
             lastActivityTime = Date.now();
           }

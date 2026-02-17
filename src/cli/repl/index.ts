@@ -366,7 +366,12 @@ export async function startRepl(
           renderToolStart(result.name, result.input);
           renderToolEnd(result);
           // Show waiting spinner while LLM processes the result
-          setSpinner("Processing...");
+          // In COCO mode, add hint that quality checks may follow
+          if (isCocoMode()) {
+            setSpinner("Processing results & checking quality...");
+          } else {
+            setSpinner("Processing...");
+          }
         },
         onToolSkipped: (tc, reason) => {
           clearSpinner();
@@ -379,10 +384,20 @@ export async function startRepl(
             if (!thinkingStartTime) return;
             const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
             if (elapsed < 4) return;
-            if (elapsed < 8) setSpinner("Analyzing request...");
-            else if (elapsed < 12) setSpinner("Planning approach...");
-            else if (elapsed < 16) setSpinner("Preparing tools...");
-            else setSpinner(`Still working... (${elapsed}s)`);
+
+            // Show COCO mode feedback if active
+            if (isCocoMode()) {
+              if (elapsed < 8) setSpinner("Analyzing request...");
+              else if (elapsed < 15) setSpinner("Running quality checks...");
+              else if (elapsed < 25) setSpinner("Iterating for quality...");
+              else if (elapsed < 40) setSpinner("Verifying implementation...");
+              else setSpinner(`Quality iteration in progress... (${elapsed}s)`);
+            } else {
+              if (elapsed < 8) setSpinner("Analyzing request...");
+              else if (elapsed < 12) setSpinner("Planning approach...");
+              else if (elapsed < 16) setSpinner("Preparing tools...");
+              else setSpinner(`Still working... (${elapsed}s)`);
+            }
           }, 2000);
         },
         onThinkingEnd: () => {
