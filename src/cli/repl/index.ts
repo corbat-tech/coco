@@ -17,7 +17,11 @@ import {
   startConcurrentCapture,
   stopConcurrentCapture,
 } from "./input/concurrent-capture.js";
-import { addInterruption } from "./input/interruptions.js";
+import {
+  addInterruption,
+  hasInterruptions,
+  consumeInterruptions,
+} from "./input/interruptions.js";
 import {
   renderStreamChunk,
   renderToolStart,
@@ -416,6 +420,25 @@ export async function startRepl(
 
       // Stop capturing interruptions
       stopConcurrentCapture();
+
+      // Process any interruptions (user messages sent during execution)
+      if (hasInterruptions()) {
+        const interruptions = consumeInterruptions();
+        console.log(
+          chalk.dim(
+            `\n💬 You sent ${interruptions.length} message(s) during execution. Processing them now...\n`,
+          ),
+        );
+        // Add interruptions as user messages to continue the conversation
+        for (const interruption of interruptions) {
+          session.messages.push({
+            role: "user",
+            content: interruption.message,
+          });
+          console.log(chalk.cyan(`> ${interruption.message}`));
+        }
+        // The next iteration of the REPL loop will process these messages
+      }
 
       // Show abort summary if cancelled, preserving partial content
       if (wasAborted || result.aborted) {
