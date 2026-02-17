@@ -451,10 +451,6 @@ export class OpenAIProvider implements LLMProvider {
               // Accumulate arguments
               if (toolCallDelta.function?.arguments) {
                 builder.arguments += toolCallDelta.function.arguments;
-                // Debug: log argument accumulation
-                if (builder.arguments.length < 50 || builder.arguments.length % 100 === 0) {
-                  console.log(`[DEBUG] ${builder.name} args length: ${builder.arguments.length}`);
-                }
                 yield {
                   type: "tool_use_delta",
                   toolCall: {
@@ -469,18 +465,10 @@ export class OpenAIProvider implements LLMProvider {
         }
 
         // Finalize all tool calls
-        if (toolCallBuilders.size > 0) {
-          // Debug: log that we're finalizing tool calls
-          const toolNames = Array.from(toolCallBuilders.values()).map((b) => b.name).join(", ");
-          console.log(`[DEBUG] Finalizing ${toolCallBuilders.size} tool call(s): ${toolNames}`);
-        }
-
         for (const [, builder] of toolCallBuilders) {
           let input: Record<string, unknown> = {};
           try {
             input = builder.arguments ? JSON.parse(builder.arguments) : {};
-            // Debug: log successful parsing
-            console.log(`[DEBUG] Parsed ${builder.name} arguments:`, JSON.stringify(input).slice(0, 200));
           } catch (error) {
             // QUICK WIN: Try to repair malformed JSON automatically
             console.warn(
@@ -497,8 +485,6 @@ export class OpenAIProvider implements LLMProvider {
               console.error(`[OpenAI] Original error:`, error);
             }
           }
-
-          console.log(`[DEBUG] Yielding tool_use_end for ${builder.name} with input:`, typeof input, Object.keys(input).length);
 
           yield {
             type: "tool_use_end",
