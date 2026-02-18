@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supporting templates for PR body and changelog formatting
   - All skills use `disable-model-invocation: true` for safety (only user-triggered)
 
+### Changed
+- **Dependency updates** (from pending dependabot PRs)
+  - `@typescript-eslint/parser` 8.54.0 → 8.55.0
+  - `@typescript-eslint/typescript-estree` 8.54.0 → 8.55.0
+  - `minimatch` 10.1.2 → 10.2.0
+  - `simple-git` 3.30.0 → 3.31.1
+  - `openai` 6.18.0 → 6.22.0
+  - `oxfmt` 0.28.0 → 0.33.0
+  - `typedoc` 0.28.16 → 0.28.17
+
 ### Fixed
 - **`/open` command not working in REPL**
   - The SkillRegistry (containing `/open`, `/review`, `/ship`) was implemented but never connected to the REPL command execution flow
