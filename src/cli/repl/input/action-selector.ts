@@ -65,8 +65,7 @@ const MENU_LINE_COUNT = 2;
  */
 function renderMenu(message: string, selectedIndex: number): string {
   // Truncate message to 60 chars
-  const preview =
-    message.length > 60 ? message.slice(0, 57) + "\u2026" : message;
+  const preview = message.length > 60 ? message.slice(0, 57) + "\u2026" : message;
 
   const messageLine = chalk.dim("  \u201C") + chalk.white(preview) + chalk.dim("\u201D");
 
@@ -234,9 +233,7 @@ export function showActionSelector(
 /**
  * Map an InterruptionType classification to a default InterruptionAction
  */
-export function mapClassificationToAction(
-  type: InterruptionType,
-): InterruptionAction {
+export function mapClassificationToAction(type: InterruptionType): InterruptionAction {
   switch (type) {
     case InterruptionType.Abort:
       return InterruptionAction.Abort;

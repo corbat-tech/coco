@@ -118,8 +118,7 @@ export function createFeedbackSystem(
         previousSpinnerMessage = currentSpinnerMessage;
       }
 
-      const preview =
-        message.length > 40 ? message.slice(0, 37) + "\u2026" : message;
+      const preview = message.length > 40 ? message.slice(0, 37) + "\u2026" : message;
 
       let feedbackText: string;
       switch (action) {

@@ -17,7 +17,13 @@
  * @module cli/repl/input/concurrent-capture-v2
  */
 
-import type { CaptureConfig, CaptureState, MessageCapturedCallback, BufferChangeCallback, QueuedMessage } from "./types.js";
+import type {
+  CaptureConfig,
+  CaptureState,
+  MessageCapturedCallback,
+  BufferChangeCallback,
+  QueuedMessage,
+} from "./types.js";
 import { createMessageQueue, type MessageQueue } from "./message-queue.js";
 
 /** Debug logging — set COCO_DEBUG_CAPTURE=1 to enable */
@@ -52,7 +58,9 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
    * Process a raw stdin data chunk
    */
   function handleData(data: Buffer): void {
-    debugLog(`handleData called, state=${state}, bytes=${data.length}, hex=${data.toString("hex").slice(0, 40)}`);
+    debugLog(
+      `handleData called, state=${state}, bytes=${data.length}, hex=${data.toString("hex").slice(0, 40)}`,
+    );
     if (state !== "capturing") return;
 
     const str = data.toString("utf-8");
@@ -144,7 +152,9 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
      * @param bufferCallback - Optional callback invoked on each buffer change (keystroke echo)
      */
     start(callback?: MessageCapturedCallback, bufferCallback?: BufferChangeCallback): void {
-      debugLog(`start() called, currentState=${state}, isTTY=${process.stdin.isTTY}, isPaused=${process.stdin.isPaused()}, isRaw=${process.stdin.isTTY ? process.stdin.isRaw : "N/A"}, listenerCount=${process.stdin.listenerCount("data")}`);
+      debugLog(
+        `start() called, currentState=${state}, isTTY=${process.stdin.isTTY}, isPaused=${process.stdin.isPaused()}, isRaw=${process.stdin.isTTY ? process.stdin.isRaw : "N/A"}, listenerCount=${process.stdin.listenerCount("data")}`,
+      );
       if (state === "capturing") return;
 
       onMessage = callback ?? null;
@@ -161,7 +171,9 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
       // is ready to emit events when resume() activates reading.
       process.stdin.on("data", dataHandler);
       process.stdin.resume();
-      debugLog(`start() done, isRaw=${process.stdin.isTTY ? process.stdin.isRaw : "N/A"}, isPaused=${process.stdin.isPaused()}, listenerCount=${process.stdin.listenerCount("data")}, readableFlowing=${(process.stdin as NodeJS.ReadStream & { readableFlowing: boolean | null }).readableFlowing}`);
+      debugLog(
+        `start() done, isRaw=${process.stdin.isTTY ? process.stdin.isRaw : "N/A"}, isPaused=${process.stdin.isPaused()}, listenerCount=${process.stdin.listenerCount("data")}, readableFlowing=${(process.stdin as NodeJS.ReadStream & { readableFlowing: boolean | null }).readableFlowing}`,
+      );
     },
 
     /**

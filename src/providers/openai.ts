@@ -468,7 +468,9 @@ export class OpenAIProvider implements LLMProvider {
                 console.log(`[${this.name}] ✓ Successfully repaired JSON for ${builder.name}`);
               }
             } catch (repairError) {
-              console.error(`[${this.name}] Cannot repair JSON for ${builder.name}, using empty object`);
+              console.error(
+                `[${this.name}] Cannot repair JSON for ${builder.name}, using empty object`,
+              );
               console.error(`[${this.name}] Original error:`, error);
             }
           }

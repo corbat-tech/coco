@@ -34,7 +34,9 @@ describe("Action Selector", () => {
 
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     if (!process.stdin.setRawMode) {
-      (process.stdin as unknown as Record<string, unknown>).setRawMode = vi.fn().mockReturnValue(process.stdin);
+      (process.stdin as unknown as Record<string, unknown>).setRawMode = vi
+        .fn()
+        .mockReturnValue(process.stdin);
     } else {
       vi.spyOn(process.stdin, "setRawMode").mockReturnValue(process.stdin);
     }
@@ -50,7 +52,9 @@ describe("Action Selector", () => {
   describe("Number key selection", () => {
     it("should return Modify when pressing 1", async () => {
       simulateKey("1");
-      const result = await showActionSelector("test message", InterruptionAction.Queue, null, { timeoutMs: 5000 });
+      const result = await showActionSelector("test message", InterruptionAction.Queue, null, {
+        timeoutMs: 5000,
+      });
       expect(result).not.toBeNull();
       expect(result!.action).toBe(InterruptionAction.Modify);
       expect(result!.message).toBe("test message");
@@ -58,14 +62,18 @@ describe("Action Selector", () => {
 
     it("should return Queue when pressing 2", async () => {
       simulateKey("2");
-      const result = await showActionSelector("test message", InterruptionAction.Queue, null, { timeoutMs: 5000 });
+      const result = await showActionSelector("test message", InterruptionAction.Queue, null, {
+        timeoutMs: 5000,
+      });
       expect(result).not.toBeNull();
       expect(result!.action).toBe(InterruptionAction.Queue);
     });
 
     it("should return Abort when pressing 3", async () => {
       simulateKey("3");
-      const result = await showActionSelector("test message", InterruptionAction.Queue, null, { timeoutMs: 5000 });
+      const result = await showActionSelector("test message", InterruptionAction.Queue, null, {
+        timeoutMs: 5000,
+      });
       expect(result).not.toBeNull();
       expect(result!.action).toBe(InterruptionAction.Abort);
     });
@@ -74,14 +82,18 @@ describe("Action Selector", () => {
   describe("Enter key confirmation", () => {
     it("should confirm the pre-selected option on Enter", async () => {
       simulateKey("\r");
-      const result = await showActionSelector("test", InterruptionAction.Abort, null, { timeoutMs: 5000 });
+      const result = await showActionSelector("test", InterruptionAction.Abort, null, {
+        timeoutMs: 5000,
+      });
       expect(result).not.toBeNull();
       expect(result!.action).toBe(InterruptionAction.Abort);
     });
 
     it("should confirm Queue pre-selection on Enter", async () => {
       simulateKey("\r");
-      const result = await showActionSelector("test", InterruptionAction.Queue, null, { timeoutMs: 5000 });
+      const result = await showActionSelector("test", InterruptionAction.Queue, null, {
+        timeoutMs: 5000,
+      });
       expect(result).not.toBeNull();
       expect(result!.action).toBe(InterruptionAction.Queue);
     });
@@ -90,7 +102,9 @@ describe("Action Selector", () => {
   describe("Escape key dismissal", () => {
     it("should return null on Escape", async () => {
       simulateKey("\x1b");
-      const result = await showActionSelector("test", InterruptionAction.Queue, null, { timeoutMs: 5000 });
+      const result = await showActionSelector("test", InterruptionAction.Queue, null, {
+        timeoutMs: 5000,
+      });
       expect(result).toBeNull();
     });
   });
@@ -98,7 +112,9 @@ describe("Action Selector", () => {
   describe("Ctrl+C mapping", () => {
     it("should return Abort on Ctrl+C", async () => {
       simulateKey("\x03");
-      const result = await showActionSelector("test", InterruptionAction.Queue, null, { timeoutMs: 5000 });
+      const result = await showActionSelector("test", InterruptionAction.Queue, null, {
+        timeoutMs: 5000,
+      });
       expect(result).not.toBeNull();
       expect(result!.action).toBe(InterruptionAction.Abort);
     });
@@ -106,7 +122,9 @@ describe("Action Selector", () => {
 
   describe("Timeout auto-selection", () => {
     it("should auto-select the pre-selected option after timeout", async () => {
-      const result = await showActionSelector("test", InterruptionAction.Modify, null, { timeoutMs: 50 });
+      const result = await showActionSelector("test", InterruptionAction.Modify, null, {
+        timeoutMs: 50,
+      });
       expect(result).not.toBeNull();
       expect(result!.action).toBe(InterruptionAction.Modify);
     });
@@ -133,7 +151,9 @@ describe("Action Selector", () => {
         }, 10);
       }, 10);
 
-      const result = await showActionSelector("test", InterruptionAction.Queue, null, { timeoutMs: 5000 });
+      const result = await showActionSelector("test", InterruptionAction.Queue, null, {
+        timeoutMs: 5000,
+      });
       expect(result).not.toBeNull();
       expect(result!.action).toBe(InterruptionAction.Abort);
     });
@@ -157,7 +177,9 @@ describe("Action Selector", () => {
         }, 10);
       }, 10);
 
-      const result = await showActionSelector("test", InterruptionAction.Modify, null, { timeoutMs: 5000 });
+      const result = await showActionSelector("test", InterruptionAction.Modify, null, {
+        timeoutMs: 5000,
+      });
       expect(result).not.toBeNull();
       expect(result!.action).toBe(InterruptionAction.Abort);
     });
@@ -182,9 +204,12 @@ describe("Action Selector", () => {
 
   describe("Message handling", () => {
     it("should preserve the original message in the result", async () => {
-      const longMessage = "this is a very long message that should be preserved in the result even though it might be truncated in the display";
+      const longMessage =
+        "this is a very long message that should be preserved in the result even though it might be truncated in the display";
       simulateKey("1");
-      const result = await showActionSelector(longMessage, InterruptionAction.Queue, null, { timeoutMs: 5000 });
+      const result = await showActionSelector(longMessage, InterruptionAction.Queue, null, {
+        timeoutMs: 5000,
+      });
       expect(result!.message).toBe(longMessage);
     });
 
@@ -205,7 +230,9 @@ describe("Action Selector", () => {
         }, 10);
       }, 10);
 
-      const result = await showActionSelector("test", InterruptionAction.Queue, null, { timeoutMs: 5000 });
+      const result = await showActionSelector("test", InterruptionAction.Queue, null, {
+        timeoutMs: 5000,
+      });
       expect(result!.action).toBe(InterruptionAction.Queue);
     });
   });

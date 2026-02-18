@@ -762,9 +762,7 @@ describe("REPL index", () => {
       await startRepl();
 
       // First thinking call includes the input hint; subsequent calls use plain "Thinking..."
-      expect(createSpinner).toHaveBeenCalledWith(
-        expect.stringContaining("Thinking..."),
-      );
+      expect(createSpinner).toHaveBeenCalledWith(expect.stringContaining("Thinking..."));
       expect(mockSpinner.start).toHaveBeenCalled();
     });
 

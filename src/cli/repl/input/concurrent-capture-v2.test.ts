@@ -37,7 +37,9 @@ describe("createConcurrentCapture", () => {
     // so setRawMode doesn't exist. We need to add it as a mock function.
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     if (!process.stdin.setRawMode) {
-      (process.stdin as unknown as Record<string, unknown>).setRawMode = vi.fn().mockReturnValue(process.stdin);
+      (process.stdin as unknown as Record<string, unknown>).setRawMode = vi
+        .fn()
+        .mockReturnValue(process.stdin);
     } else {
       vi.spyOn(process.stdin, "setRawMode").mockReturnValue(process.stdin);
     }

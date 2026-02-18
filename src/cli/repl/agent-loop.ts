@@ -513,9 +513,8 @@ export function summarizeToolResults(toolCalls: ExecutedToolCall[]): string {
       .join(", ");
 
     const status = tc.result.success ? "✓" : "✗";
-    const outputPreview = tc.result.output.length > 200
-      ? tc.result.output.slice(0, 197) + "…"
-      : tc.result.output;
+    const outputPreview =
+      tc.result.output.length > 200 ? tc.result.output.slice(0, 197) + "…" : tc.result.output;
 
     return `- ${status} ${tc.name}(${inputSummary}): ${outputPreview}`;
   });

@@ -160,10 +160,7 @@ describe("classifyAll", () => {
   });
 
   it("preserves timestamp order for same-type messages", () => {
-    const messages = [
-      makeMsg("add emojis", 200),
-      makeMsg("add colors", 100),
-    ];
+    const messages = [makeMsg("add emojis", 200), makeMsg("add colors", 100)];
 
     const classified = classifyAll(messages);
     expect(classified[0]?.timestamp).toBe(100);

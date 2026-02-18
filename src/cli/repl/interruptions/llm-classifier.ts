@@ -59,10 +59,7 @@ Reply with exactly one word: MODIFY, QUEUE, or ABORT`;
  * Includes the original task for context so the LLM can distinguish
  * "modify current task" from "new different task".
  */
-function buildClassificationPrompt(
-  userMessage: string,
-  currentTask: string | null,
-): string {
+function buildClassificationPrompt(userMessage: string, currentTask: string | null): string {
   if (currentTask) {
     return `Current task: "${currentTask}"\nUser's new message: "${userMessage}"`;
   }
@@ -98,10 +95,7 @@ function classifyWithKeywords(message: QueuedMessage): InterruptionAction {
  * @param config - Optional configuration overrides
  * @returns Classifier with a `classify()` method
  */
-export function createLLMClassifier(
-  provider: LLMProvider,
-  config?: Partial<LLMClassifierConfig>,
-) {
+export function createLLMClassifier(provider: LLMProvider, config?: Partial<LLMClassifierConfig>) {
   const cfg: LLMClassifierConfig = { ...DEFAULT_CONFIG, ...config };
 
   return {
@@ -160,10 +154,7 @@ async function classifyWithLLM(
       timeout: cfg.timeoutMs,
     };
 
-    const response = await provider.chat(
-      [{ role: "user", content: userPrompt }],
-      options,
-    );
+    const response = await provider.chat([{ role: "user", content: userPrompt }], options);
 
     return parseResponse(response.content);
   } catch {

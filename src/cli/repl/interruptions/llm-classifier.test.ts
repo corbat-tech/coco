@@ -10,20 +10,21 @@ function createMockProvider(response: string, delay = 0): LLMProvider {
     id: "test",
     name: "Test Provider",
     initialize: vi.fn(),
-    chat: vi.fn().mockImplementation(() =>
-      new Promise<ChatResponse>((resolve) =>
-        setTimeout(
-          () =>
-            resolve({
-              id: "test-id",
-              content: response,
-              stopReason: "end_turn" as const,
-              usage: { inputTokens: 50, outputTokens: 1 },
-              model: "test-model",
-            }),
-          delay,
+    chat: vi.fn().mockImplementation(
+      () =>
+        new Promise<ChatResponse>((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                id: "test-id",
+                content: response,
+                stopReason: "end_turn" as const,
+                usage: { inputTokens: 50, outputTokens: 1 },
+                model: "test-model",
+              }),
+            delay,
+          ),
         ),
-      ),
     ),
     chatWithTools: vi.fn(),
     stream: vi.fn(),
@@ -113,10 +114,7 @@ describe("LLM Classifier", () => {
       const provider = createMockProvider("MODIFY", 5000);
       const classifier = createLLMClassifier(provider, { timeoutMs: 100 });
 
-      const result = await classifier.classify(
-        createMessage("para"),
-        "escribe un poema",
-      );
+      const result = await classifier.classify(createMessage("para"), "escribe un poema");
 
       // "para" matches abort keywords → should fall back to Abort
       expect(result.action).toBe(InterruptionAction.Abort);
@@ -127,10 +125,7 @@ describe("LLM Classifier", () => {
       const provider = createMockProvider("I don't know what to do");
       const classifier = createLLMClassifier(provider);
 
-      const result = await classifier.classify(
-        createMessage("cambia el color"),
-        "crea una web",
-      );
+      const result = await classifier.classify(createMessage("cambia el color"), "crea una web");
 
       // LLM response doesn't contain MODIFY/QUEUE/ABORT → null → keywords fallback
       // "cambia" matches modify keywords
@@ -164,10 +159,7 @@ describe("LLM Classifier", () => {
       const provider = createMockProvider("MODIFY");
       const classifier = createLLMClassifier(provider);
 
-      await classifier.classify(
-        createMessage("hazlo más grande"),
-        "crea un botón rojo",
-      );
+      await classifier.classify(createMessage("hazlo más grande"), "crea un botón rojo");
 
       expect(provider.chat).toHaveBeenCalledTimes(1);
       const callArgs = vi.mocked(provider.chat).mock.calls[0]!;

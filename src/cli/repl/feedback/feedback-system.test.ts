@@ -143,7 +143,8 @@ describe("createFeedbackSystem", () => {
 
       feedback.notifyAction(InterruptionAction.Modify, "add validation", "Thinking...");
 
-      const updateArg = (mockSpinner.update as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      const updateArg = (mockSpinner.update as ReturnType<typeof vi.fn>).mock
+        .calls[0]?.[0] as string;
       expect(updateArg).toBeDefined();
       // Should contain the lightning emoji or "Modificando" text
     });
@@ -190,7 +191,8 @@ describe("createFeedbackSystem", () => {
 
       feedback.notifyAction(InterruptionAction.Modify, "a".repeat(100), "...");
 
-      const updateArg = (mockSpinner.update as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      const updateArg = (mockSpinner.update as ReturnType<typeof vi.fn>).mock
+        .calls[0]?.[0] as string;
       expect(updateArg.length).toBeLessThan(200);
     });
   });

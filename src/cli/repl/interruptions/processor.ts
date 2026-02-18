@@ -61,7 +61,8 @@ export function processInterruptions(interruptions: ClassifiedInterruption[]): P
 
   if (info.length > 0) {
     contextMessages.push(
-      "**Additional context from user:**\n" + info.map((inf, i) => `${i + 1}. ${inf.text}`).join("\n"),
+      "**Additional context from user:**\n" +
+        info.map((inf, i) => `${i + 1}. ${inf.text}`).join("\n"),
     );
     summaryParts.push(`${info.length} info message(s)`);
   }

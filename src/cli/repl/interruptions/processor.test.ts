@@ -95,9 +95,7 @@ describe("formatInterruptionContext", () => {
   });
 
   it("formats context messages with header", () => {
-    const result = processInterruptions([
-      makeClassified("add tests", InterruptionType.Modify),
-    ]);
+    const result = processInterruptions([makeClassified("add tests", InterruptionType.Modify)]);
     const formatted = formatInterruptionContext(result);
     expect(formatted).toContain("User provided additional instructions");
     expect(formatted).toContain("add tests");

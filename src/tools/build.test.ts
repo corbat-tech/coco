@@ -3,7 +3,45 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { EventEmitter } from "node:events";
 import type { BuildResult } from "./build.js";
+
+/**
+ * Creates a mock subprocess that simulates execa's streaming behavior.
+ * The subprocess has .stdout/.stderr EventEmitters and is thenable.
+ * Stream data events fire before the promise resolves, matching real execa.
+ */
+function createMockSubprocess(result: { exitCode?: number; stdout?: string; stderr?: string }) {
+  const stdoutEmitter = new EventEmitter();
+  const stderrEmitter = new EventEmitter();
+
+  const promise = new Promise<{
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+  }>((resolve) => {
+    queueMicrotask(() => {
+      if (result.stdout) {
+        stdoutEmitter.emit("data", Buffer.from(result.stdout));
+      }
+      if (result.stderr) {
+        stderrEmitter.emit("data", Buffer.from(result.stderr));
+      }
+      resolve({
+        exitCode: result.exitCode ?? 0,
+        stdout: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+      });
+    });
+  });
+
+  return Object.assign(promise, {
+    stdout: stdoutEmitter,
+    stderr: stderrEmitter,
+    pid: 99999,
+    kill: vi.fn(),
+  });
+}
 
 // Mock execa
 vi.mock("execa", () => ({
@@ -21,15 +59,18 @@ import { runScriptTool, installDepsTool, makeTool, tscTool, buildTools } from ".
 import { execa } from "execa";
 import fs from "node:fs/promises";
 
+/**
+ * Creates a mock subprocess with streaming support.
+ * Returns a thenable object with .stdout/.stderr EventEmitters.
+ */
 function mockExecaResult(
   overrides: Partial<{ stdout: string; stderr: string; exitCode: number }> = {},
 ) {
-  return {
+  return createMockSubprocess({
     stdout: overrides.stdout ?? "",
     stderr: overrides.stderr ?? "",
     exitCode: overrides.exitCode ?? 0,
-    ...overrides,
-  };
+  });
 }
 
 describe("Build Tools", () => {
@@ -52,8 +93,8 @@ describe("Build Tools", () => {
     });
 
     it("should run a script successfully", async () => {
-      vi.mocked(execa).mockResolvedValue(
-        mockExecaResult({ stdout: "Build complete", exitCode: 0 }) as any,
+      vi.mocked(execa).mockImplementation(
+        () => mockExecaResult({ stdout: "Build complete", exitCode: 0 }) as any,
       );
 
       const result = (await runScriptTool.execute({ script: "build" })) as BuildResult;
@@ -70,7 +111,7 @@ describe("Build Tools", () => {
         if (String(p).includes("pnpm-lock.yaml")) return;
         throw new Error("ENOENT");
       });
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await runScriptTool.execute({ script: "build" });
 
@@ -78,7 +119,7 @@ describe("Build Tools", () => {
     });
 
     it("should use provided package manager", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await runScriptTool.execute({ script: "test", packageManager: "yarn" });
 
@@ -86,7 +127,7 @@ describe("Build Tools", () => {
     });
 
     it("should pass additional args", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await runScriptTool.execute({ script: "test", packageManager: "npm", args: ["--coverage"] });
 
@@ -98,7 +139,9 @@ describe("Build Tools", () => {
     });
 
     it("should handle failed scripts", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult({ exitCode: 1, stderr: "Error" }) as any);
+      vi.mocked(execa).mockImplementation(
+        () => mockExecaResult({ exitCode: 1, stderr: "Error" }) as any,
+      );
 
       const result = (await runScriptTool.execute({
         script: "build",
@@ -135,7 +178,7 @@ describe("Build Tools", () => {
 
     it("should default to npm when no lockfile found", async () => {
       vi.mocked(fs.access).mockRejectedValue(new Error("ENOENT"));
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await runScriptTool.execute({ script: "build" });
 
@@ -147,7 +190,7 @@ describe("Build Tools", () => {
         if (String(p).includes("yarn.lock")) return;
         throw new Error("ENOENT");
       });
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await runScriptTool.execute({ script: "build" });
 
@@ -159,7 +202,7 @@ describe("Build Tools", () => {
         if (String(p).includes("bun.lockb")) return;
         throw new Error("ENOENT");
       });
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await runScriptTool.execute({ script: "build" });
 
@@ -168,7 +211,7 @@ describe("Build Tools", () => {
 
     it("should truncate long output", async () => {
       const longOutput = "x".repeat(100000);
-      vi.mocked(execa).mockResolvedValue(mockExecaResult({ stdout: longOutput }) as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult({ stdout: longOutput }) as any);
 
       const result = (await runScriptTool.execute({
         script: "build",
@@ -187,7 +230,7 @@ describe("Build Tools", () => {
     });
 
     it("should install all dependencies", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult({ stdout: "Installed" }) as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult({ stdout: "Installed" }) as any);
 
       const result = (await installDepsTool.execute({ packageManager: "npm" })) as BuildResult;
 
@@ -196,7 +239,7 @@ describe("Build Tools", () => {
     });
 
     it("should install specific packages with pnpm", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await installDepsTool.execute({ packageManager: "pnpm", packages: ["lodash", "zod"] });
 
@@ -208,7 +251,7 @@ describe("Build Tools", () => {
     });
 
     it("should install dev dependencies with pnpm", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await installDepsTool.execute({ packageManager: "pnpm", packages: ["vitest"], dev: true });
 
@@ -220,7 +263,7 @@ describe("Build Tools", () => {
     });
 
     it("should install with yarn", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await installDepsTool.execute({ packageManager: "yarn", packages: ["lodash"], dev: true });
 
@@ -232,7 +275,7 @@ describe("Build Tools", () => {
     });
 
     it("should install with bun", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await installDepsTool.execute({ packageManager: "bun", packages: ["lodash"], dev: true });
 
@@ -244,7 +287,7 @@ describe("Build Tools", () => {
     });
 
     it("should install with npm and --save-dev", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await installDepsTool.execute({ packageManager: "npm", packages: ["vitest"], dev: true });
 
@@ -256,7 +299,7 @@ describe("Build Tools", () => {
     });
 
     it("should use frozen lockfile with pnpm", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await installDepsTool.execute({ packageManager: "pnpm", frozen: true });
 
@@ -268,7 +311,7 @@ describe("Build Tools", () => {
     });
 
     it("should use frozen lockfile with yarn", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await installDepsTool.execute({ packageManager: "yarn", frozen: true });
 
@@ -280,7 +323,7 @@ describe("Build Tools", () => {
     });
 
     it("should use frozen lockfile with bun", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await installDepsTool.execute({ packageManager: "bun", frozen: true });
 
@@ -292,7 +335,7 @@ describe("Build Tools", () => {
     });
 
     it("should use ci for npm frozen", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await installDepsTool.execute({ packageManager: "npm", frozen: true });
 
@@ -322,7 +365,7 @@ describe("Build Tools", () => {
 
     it("should run default target", async () => {
       vi.mocked(fs.access).mockResolvedValue(undefined);
-      vi.mocked(execa).mockResolvedValue(mockExecaResult({ stdout: "Built" }) as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult({ stdout: "Built" }) as any);
 
       const result = (await makeTool.execute({})) as BuildResult;
 
@@ -332,7 +375,7 @@ describe("Build Tools", () => {
 
     it("should run specific target", async () => {
       vi.mocked(fs.access).mockResolvedValue(undefined);
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await makeTool.execute({ target: "build" });
 
@@ -341,7 +384,7 @@ describe("Build Tools", () => {
 
     it("should split multiple targets", async () => {
       vi.mocked(fs.access).mockResolvedValue(undefined);
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await makeTool.execute({ target: "clean build" });
 
@@ -350,7 +393,7 @@ describe("Build Tools", () => {
 
     it("should pass additional args", async () => {
       vi.mocked(fs.access).mockResolvedValue(undefined);
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await makeTool.execute({ target: "test", args: ["VERBOSE=1"] });
 
@@ -389,7 +432,7 @@ describe("Build Tools", () => {
     });
 
     it("should run tsc with no options", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult({ stdout: "No errors" }) as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult({ stdout: "No errors" }) as any);
 
       const result = (await tscTool.execute({})) as BuildResult;
 
@@ -398,7 +441,7 @@ describe("Build Tools", () => {
     });
 
     it("should run with --noEmit", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await tscTool.execute({ noEmit: true });
 
@@ -406,7 +449,7 @@ describe("Build Tools", () => {
     });
 
     it("should run with custom project", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await tscTool.execute({ project: "tsconfig.build.json" });
 
@@ -418,7 +461,7 @@ describe("Build Tools", () => {
     });
 
     it("should run in watch mode", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await tscTool.execute({ watch: true });
 
@@ -426,7 +469,7 @@ describe("Build Tools", () => {
     });
 
     it("should pass additional args", async () => {
-      vi.mocked(execa).mockResolvedValue(mockExecaResult() as any);
+      vi.mocked(execa).mockImplementation(() => mockExecaResult() as any);
 
       await tscTool.execute({ args: ["--declaration", "--emitDeclarationOnly"] });
 

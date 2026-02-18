@@ -214,10 +214,13 @@ export async function startRepl(
       // NOTE: trailing console.log() is intentional — it acts as a buffer line
       // so the Ora spinner (which clears the line above it) doesn't erase the preview.
       if (pendingInterruptionContext) {
-        const modPreview = pendingModificationPreview.length > 70
-          ? pendingModificationPreview.slice(0, 67) + "\u2026"
-          : pendingModificationPreview;
-        console.log(chalk.yellow(`\n\u26A1 Re-enviando con modificación: `) + chalk.dim(modPreview));
+        const modPreview =
+          pendingModificationPreview.length > 70
+            ? pendingModificationPreview.slice(0, 67) + "\u2026"
+            : pendingModificationPreview;
+        console.log(
+          chalk.yellow(`\n\u26A1 Re-enviando con modificación: `) + chalk.dim(modPreview),
+        );
         console.log();
       } else {
         const preview = autoInput.length > 70 ? autoInput.slice(0, 67) + "\u2026" : autoInput;
@@ -416,53 +419,57 @@ export async function startRepl(
 
       concurrentCapture.reset();
       inputEcho.reset();
-      concurrentCapture.start((msg) => {
-        // Step 1: Clear echo line (user pressed Enter, buffer is now empty)
-        inputEcho.clear();
+      concurrentCapture.start(
+        (msg) => {
+          // Step 1: Clear echo line (user pressed Enter, buffer is now empty)
+          inputEcho.clear();
 
-        const preview = msg.text.length > 60 ? msg.text.slice(0, 57) + "\u2026" : msg.text;
-        console.log(chalk.dim(`  \u2026 Clasificando: ${preview}`));
+          const preview = msg.text.length > 60 ? msg.text.slice(0, 57) + "\u2026" : msg.text;
+          console.log(chalk.dim(`  \u2026 Clasificando: ${preview}`));
 
-        // Step 2: Launch LLM classification (async, tracked for later await)
-        const classificationPromise = (async () => {
-          const classification = await llmClassifier.classify(
-            msg,
-            originalUserMessage,
-          );
-          const action = classification.action;
-          const sourceHint = classification.source === "keywords" ? chalk.dim(" (fast)") : "";
+          // Step 2: Launch LLM classification (async, tracked for later await)
+          const classificationPromise = (async () => {
+            const classification = await llmClassifier.classify(msg, originalUserMessage);
+            const action = classification.action;
+            const sourceHint = classification.source === "keywords" ? chalk.dim(" (fast)") : "";
 
-          // Step 3: Execute the classified action
-          switch (action) {
-            case InterruptionAction.Abort:
-              wasAborted = true;
-              abortController.abort();
-              console.log(chalk.red(`  \u23F9 Abortando\u2026`) + sourceHint);
-              break;
+            // Step 3: Execute the classified action
+            switch (action) {
+              case InterruptionAction.Abort:
+                wasAborted = true;
+                abortController.abort();
+                console.log(chalk.red(`  \u23F9 Abortando\u2026`) + sourceHint);
+                break;
 
-            case InterruptionAction.Modify:
-              turnActionedInterruptions.push({
-                text: msg.text,
-                type: InterruptionType.Modify,
-                confidence: classification.source === "llm" ? 0.95 : 0.7,
-                timestamp: msg.timestamp,
-                action: InterruptionAction.Modify,
-              });
-              // Abort current execution so the task restarts with modification
-              wasAborted = true;
-              abortController.abort();
-              console.log(chalk.yellow(`  \u26A1 Modificando: `) + chalk.dim(preview) + sourceHint);
-              break;
+              case InterruptionAction.Modify:
+                turnActionedInterruptions.push({
+                  text: msg.text,
+                  type: InterruptionType.Modify,
+                  confidence: classification.source === "llm" ? 0.95 : 0.7,
+                  timestamp: msg.timestamp,
+                  action: InterruptionAction.Modify,
+                });
+                // Abort current execution so the task restarts with modification
+                wasAborted = true;
+                abortController.abort();
+                console.log(
+                  chalk.yellow(`  \u26A1 Modificando: `) + chalk.dim(preview) + sourceHint,
+                );
+                break;
 
-            case InterruptionAction.Queue:
-              turnQueuedMessages.push(msg.text);
-              console.log(chalk.cyan(`  \uD83D\uDCCB Encolado: `) + chalk.dim(preview) + sourceHint);
-              break;
-          }
-        })();
+              case InterruptionAction.Queue:
+                turnQueuedMessages.push(msg.text);
+                console.log(
+                  chalk.cyan(`  \uD83D\uDCCB Encolado: `) + chalk.dim(preview) + sourceHint,
+                );
+                break;
+            }
+          })();
 
-        pendingClassifications.push(classificationPromise);
-      }, (buffer) => inputEcho.render(buffer));
+          pendingClassifications.push(classificationPromise);
+        },
+        (buffer) => inputEcho.render(buffer),
+      );
 
       process.once("SIGINT", sigintHandler);
 
@@ -565,9 +572,7 @@ export async function startRepl(
       // We inject completed tool results directly into the context string so the
       // agent can reuse prior work without relying on session message history.
       if (turnActionedInterruptions.length > 0) {
-        const modParts = turnActionedInterruptions
-          .map((i) => i.text)
-          .join("\n- ");
+        const modParts = turnActionedInterruptions.map((i) => i.text).join("\n- ");
         const toolSummary = summarizeToolResults(result.toolCalls);
         const ctx = [
           "\n\n## The user interrupted and modified the task:",
@@ -584,7 +589,6 @@ export async function startRepl(
         } else {
           pendingQueuedMessages = turnQueuedMessages;
         }
-
       } else if (turnQueuedMessages.length > 0) {
         // No modifications, just queued messages for next turn
         pendingQueuedMessages = turnQueuedMessages;
