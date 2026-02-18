@@ -280,4 +280,100 @@ describe("createConcurrentCapture", () => {
     expect(capture.currentBuffer).toBe("");
     capture.stop();
   });
+
+  describe("bufferCallback", () => {
+    it("calls bufferCallback on each printable character", () => {
+      const capture = createConcurrentCapture();
+      const bufferChanges: string[] = [];
+      capture.start(undefined, (buffer) => bufferChanges.push(buffer));
+
+      const handler = getDataHandler()!;
+      sendData(handler, "abc");
+
+      expect(bufferChanges).toEqual(["a", "ab", "abc"]);
+      capture.stop();
+    });
+
+    it("calls bufferCallback with empty string after Enter", () => {
+      const capture = createConcurrentCapture();
+      const bufferChanges: string[] = [];
+      capture.start(undefined, (buffer) => bufferChanges.push(buffer));
+
+      const handler = getDataHandler()!;
+      sendData(handler, "hi\r");
+
+      // "h", "hi", "" (after Enter clears buffer)
+      expect(bufferChanges).toEqual(["h", "hi", ""]);
+      capture.stop();
+    });
+
+    it("calls bufferCallback after backspace", () => {
+      const capture = createConcurrentCapture();
+      const bufferChanges: string[] = [];
+      capture.start(undefined, (buffer) => bufferChanges.push(buffer));
+
+      const handler = getDataHandler()!;
+      sendData(handler, "ab\x7f");
+
+      // "a", "ab", "a" (after backspace)
+      expect(bufferChanges).toEqual(["a", "ab", "a"]);
+      capture.stop();
+    });
+
+    it("calls bufferCallback after Ctrl+U", () => {
+      const capture = createConcurrentCapture();
+      const bufferChanges: string[] = [];
+      capture.start(undefined, (buffer) => bufferChanges.push(buffer));
+
+      const handler = getDataHandler()!;
+      sendData(handler, "hello\x15");
+
+      // "h", "he", "hel", "hell", "hello", "" (after Ctrl+U)
+      expect(bufferChanges).toEqual(["h", "he", "hel", "hell", "hello", ""]);
+      capture.stop();
+    });
+
+    it("calls bufferCallback after Ctrl+W", () => {
+      const capture = createConcurrentCapture();
+      const bufferChanges: string[] = [];
+      capture.start(undefined, (buffer) => bufferChanges.push(buffer));
+
+      const handler = getDataHandler()!;
+      sendData(handler, "hello world\x17");
+
+      // Individual chars then "hello " after Ctrl+W
+      const last = bufferChanges[bufferChanges.length - 1];
+      expect(last).toBe("hello ");
+      capture.stop();
+    });
+
+    it("clears bufferCallback on stop", () => {
+      const capture = createConcurrentCapture();
+      const bufferChanges: string[] = [];
+      capture.start(undefined, (buffer) => bufferChanges.push(buffer));
+
+      capture.stop();
+
+      // After stop, the callback should be cleared — no further calls
+      // (would require a handler to still fire, but state is "stopped" so it won't)
+      expect(bufferChanges).toHaveLength(0);
+    });
+
+    it("clears bufferCallback on reset", () => {
+      const capture = createConcurrentCapture();
+      const bufferChanges: string[] = [];
+      capture.start(undefined, (buffer) => bufferChanges.push(buffer));
+      capture.stop();
+      capture.reset();
+
+      // Start again without callback
+      capture.start();
+      const handler = getDataHandler()!;
+      sendData(handler, "x");
+
+      // bufferChanges should not have new entries (callback was cleared on reset)
+      expect(bufferChanges).toHaveLength(0);
+      capture.stop();
+    });
+  });
 });

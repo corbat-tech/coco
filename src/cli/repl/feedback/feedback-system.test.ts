@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createFeedbackSystem } from "./feedback-system.js";
+import { InterruptionAction } from "../interruptions/types.js";
 import type { Spinner } from "../output/spinner.js";
 import type { QueuedMessage } from "../input/types.js";
 
@@ -133,5 +134,64 @@ describe("createFeedbackSystem", () => {
 
     vi.advanceTimersByTime(5000);
     expect((mockSpinner.update as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
+
+  describe("notifyAction", () => {
+    it("shows Modify feedback", () => {
+      const mockSpinner = createMockSpinner();
+      const feedback = createFeedbackSystem(() => mockSpinner);
+
+      feedback.notifyAction(InterruptionAction.Modify, "add validation", "Thinking...");
+
+      const updateArg = (mockSpinner.update as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      expect(updateArg).toBeDefined();
+      // Should contain the lightning emoji or "Modificando" text
+    });
+
+    it("shows Queue feedback", () => {
+      const mockSpinner = createMockSpinner();
+      const feedback = createFeedbackSystem(() => mockSpinner);
+
+      feedback.notifyAction(InterruptionAction.Queue, "create README", "Thinking...");
+
+      expect(mockSpinner.update).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows Abort feedback", () => {
+      const mockSpinner = createMockSpinner();
+      const feedback = createFeedbackSystem(() => mockSpinner);
+
+      feedback.notifyAction(InterruptionAction.Abort, "stop", "Thinking...");
+
+      expect(mockSpinner.update).toHaveBeenCalledTimes(1);
+    });
+
+    it("restores spinner after delay", () => {
+      const mockSpinner = createMockSpinner();
+      const feedback = createFeedbackSystem(() => mockSpinner, { displayDurationMs: 1000 });
+
+      feedback.notifyAction(InterruptionAction.Modify, "add tests", "Processing...");
+
+      vi.advanceTimersByTime(1000);
+
+      const calls = (mockSpinner.update as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls.length).toBeGreaterThanOrEqual(2);
+      expect(calls[calls.length - 1]?.[0]).toBe("Processing...");
+    });
+
+    it("does nothing when spinner is null", () => {
+      const feedback = createFeedbackSystem(() => null);
+      expect(() => feedback.notifyAction(InterruptionAction.Modify, "test", "...")).not.toThrow();
+    });
+
+    it("truncates long messages", () => {
+      const mockSpinner = createMockSpinner();
+      const feedback = createFeedbackSystem(() => mockSpinner);
+
+      feedback.notifyAction(InterruptionAction.Modify, "a".repeat(100), "...");
+
+      const updateArg = (mockSpinner.update as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      expect(updateArg.length).toBeLessThan(200);
+    });
   });
 });

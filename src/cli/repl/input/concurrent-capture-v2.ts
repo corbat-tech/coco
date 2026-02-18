@@ -17,8 +17,14 @@
  * @module cli/repl/input/concurrent-capture-v2
  */
 
-import type { CaptureConfig, CaptureState, MessageCapturedCallback, QueuedMessage } from "./types.js";
+import type { CaptureConfig, CaptureState, MessageCapturedCallback, BufferChangeCallback, QueuedMessage } from "./types.js";
 import { createMessageQueue, type MessageQueue } from "./message-queue.js";
+
+/** Debug logging — set COCO_DEBUG_CAPTURE=1 to enable */
+const DEBUG = process.env.COCO_DEBUG_CAPTURE === "1";
+function debugLog(msg: string): void {
+  if (DEBUG) process.stderr.write(`[capture] ${msg}\n`);
+}
 
 /** Default configuration */
 const DEFAULT_CONFIG: CaptureConfig = {
@@ -39,12 +45,14 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
   let state: CaptureState = "idle";
   let buffer = "";
   let onMessage: MessageCapturedCallback | null = null;
+  let onBufferChange: BufferChangeCallback | null = null;
   let dataHandler: ((data: Buffer) => void) | null = null;
 
   /**
    * Process a raw stdin data chunk
    */
   function handleData(data: Buffer): void {
+    debugLog(`handleData called, state=${state}, bytes=${data.length}, hex=${data.toString("hex").slice(0, 40)}`);
     if (state !== "capturing") return;
 
     const str = data.toString("utf-8");
@@ -70,6 +78,7 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
           }
         }
         buffer = "";
+        onBufferChange?.(buffer);
         continue;
       }
 
@@ -77,6 +86,7 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
       if (code === 0x7f || code === 0x08) {
         if (buffer.length > 0) {
           buffer = buffer.slice(0, -1);
+          onBufferChange?.(buffer);
         }
         continue;
       }
@@ -84,6 +94,7 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
       // Ctrl+U — clear the buffer
       if (code === 0x15) {
         buffer = "";
+        onBufferChange?.(buffer);
         continue;
       }
 
@@ -92,6 +103,7 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
         const trimmedBuf = buffer.trimEnd();
         const lastSpace = trimmedBuf.lastIndexOf(" ");
         buffer = lastSpace >= 0 ? trimmedBuf.slice(0, lastSpace + 1) : "";
+        onBufferChange?.(buffer);
         continue;
       }
 
@@ -120,6 +132,7 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
 
       // Printable character — append to buffer
       buffer += char;
+      onBufferChange?.(buffer);
     }
   }
 
@@ -128,11 +141,14 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
      * Start capturing stdin input
      *
      * @param callback - Optional callback when a message is captured
+     * @param bufferCallback - Optional callback invoked on each buffer change (keystroke echo)
      */
-    start(callback?: MessageCapturedCallback): void {
+    start(callback?: MessageCapturedCallback, bufferCallback?: BufferChangeCallback): void {
+      debugLog(`start() called, currentState=${state}, isTTY=${process.stdin.isTTY}, isPaused=${process.stdin.isPaused()}, isRaw=${process.stdin.isTTY ? process.stdin.isRaw : "N/A"}, listenerCount=${process.stdin.listenerCount("data")}`);
       if (state === "capturing") return;
 
       onMessage = callback ?? null;
+      onBufferChange = bufferCallback ?? null;
       buffer = "";
       state = "capturing";
 
@@ -140,8 +156,12 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(true);
       }
-      process.stdin.resume();
+      // Add listener BEFORE resume — per Node.js Readable spec, adding a
+      // "data" listener triggers flowing mode. We add it first so the stream
+      // is ready to emit events when resume() activates reading.
       process.stdin.on("data", dataHandler);
+      process.stdin.resume();
+      debugLog(`start() done, isRaw=${process.stdin.isTTY ? process.stdin.isRaw : "N/A"}, isPaused=${process.stdin.isPaused()}, listenerCount=${process.stdin.listenerCount("data")}, readableFlowing=${(process.stdin as NodeJS.ReadStream & { readableFlowing: boolean | null }).readableFlowing}`);
     },
 
     /**
@@ -149,6 +169,7 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
      * Returns all queued messages and resets state.
      */
     stop(): QueuedMessage[] {
+      debugLog(`stop() called, currentState=${state}, queueSize=${queue.size}`);
       if (state !== "capturing") return queue.drain();
 
       state = "stopped";
@@ -164,9 +185,43 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
       process.stdin.pause();
 
       onMessage = null;
+      onBufferChange = null;
       buffer = "";
 
       return queue.drain();
+    },
+
+    /**
+     * Temporarily suspend capture (e.g. during confirmation dialogs)
+     * Removes the data listener and disables raw mode, but preserves state
+     * so resume() can reactivate it.
+     */
+    suspend(): void {
+      if (state !== "capturing") return;
+
+      if (dataHandler) {
+        process.stdin.removeListener("data", dataHandler);
+      }
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdin.pause();
+    },
+
+    /**
+     * Resume capture after a suspend()
+     * Re-enables raw mode and the data listener.
+     */
+    resumeCapture(): void {
+      if (state !== "capturing") return;
+
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(true);
+      }
+      process.stdin.resume();
+      if (dataHandler) {
+        process.stdin.on("data", dataHandler);
+      }
     },
 
     /**
@@ -205,6 +260,7 @@ export function createConcurrentCapture(config?: Partial<CaptureConfig>) {
       buffer = "";
       queue.clear();
       onMessage = null;
+      onBufferChange = null;
     },
   };
 }

@@ -32,4 +32,10 @@ export type CaptureState = "idle" | "capturing" | "stopped";
 /**
  * Callback invoked when a complete message (line) is captured
  */
-export type MessageCapturedCallback = (message: QueuedMessage) => void;
+export type MessageCapturedCallback = (message: QueuedMessage) => void | Promise<void>;
+
+/**
+ * Callback invoked when the input buffer changes (each keystroke)
+ * Used to render live echo of what the user is typing.
+ */
+export type BufferChangeCallback = (buffer: string) => void;

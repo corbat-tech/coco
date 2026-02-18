@@ -43,3 +43,23 @@ export interface ProcessingResult {
   /** Summary of what was processed */
   summary: string;
 }
+
+/**
+ * User-selected action for an interruption (from the action selector menu)
+ */
+export enum InterruptionAction {
+  /** Modify the current task — inject as priority context in the current turn */
+  Modify = "modify",
+  /** Queue the message for the next agent turn */
+  Queue = "queue",
+  /** Abort the current execution immediately */
+  Abort = "abort",
+}
+
+/**
+ * An interruption with both classification and user-selected action
+ */
+export interface ActionedInterruption extends ClassifiedInterruption {
+  /** The action the user selected (or auto-selected) */
+  action: InterruptionAction;
+}

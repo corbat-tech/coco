@@ -459,17 +459,17 @@ export class OpenAIProvider implements LLMProvider {
           } catch (error) {
             // QUICK WIN: Try to repair malformed JSON automatically
             console.warn(
-              `[OpenAI] Failed to parse tool call arguments for ${builder.name}: ${builder.arguments?.slice(0, 100)}`,
+              `[${this.name}] Failed to parse tool call arguments for ${builder.name}: ${builder.arguments?.slice(0, 100)}`,
             );
             try {
               if (builder.arguments) {
                 const repaired = jsonrepair(builder.arguments);
                 input = JSON.parse(repaired);
-                console.log(`[OpenAI] ✓ Successfully repaired JSON for ${builder.name}`);
+                console.log(`[${this.name}] ✓ Successfully repaired JSON for ${builder.name}`);
               }
             } catch (repairError) {
-              console.error(`[OpenAI] Cannot repair JSON for ${builder.name}, using empty object`);
-              console.error(`[OpenAI] Original error:`, error);
+              console.error(`[${this.name}] Cannot repair JSON for ${builder.name}, using empty object`);
+              console.error(`[${this.name}] Original error:`, error);
             }
           }
 
@@ -846,7 +846,7 @@ export class OpenAIProvider implements LLMProvider {
             return JSON.parse(tc.function.arguments || "{}");
           } catch {
             console.warn(
-              `[OpenAI] Failed to parse tool call arguments: ${tc.function.arguments?.slice(0, 100)}`,
+              `[${this.name}] Failed to parse tool call arguments: ${tc.function.arguments?.slice(0, 100)}`,
             );
             return {};
           }

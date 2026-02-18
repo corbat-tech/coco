@@ -831,11 +831,13 @@ export function createInputHandler(_session: ReplSession): InputHandler {
     },
 
     pause(): void {
-      // Pause stdin to prevent input during agent processing
+      // Disable raw mode but do NOT pause stdin — concurrent capture
+      // will take over stdin management. Pausing stdin here causes
+      // Node.js to set readableFlowing=false, which can prevent
+      // subsequent resume() from properly reactivating the stream.
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
       }
-      process.stdin.pause();
     },
 
     resume(): void {

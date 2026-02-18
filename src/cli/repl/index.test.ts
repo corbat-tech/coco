@@ -761,7 +761,10 @@ describe("REPL index", () => {
       const { startRepl } = await import("./index.js");
       await startRepl();
 
-      expect(createSpinner).toHaveBeenCalledWith("Thinking...");
+      // First thinking call includes the input hint; subsequent calls use plain "Thinking..."
+      expect(createSpinner).toHaveBeenCalledWith(
+        expect.stringContaining("Thinking..."),
+      );
       expect(mockSpinner.start).toHaveBeenCalled();
     });
 

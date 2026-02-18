@@ -26,10 +26,12 @@ const ABORT_PATTERNS: RegExp[] = [
 const MODIFY_PATTERNS: RegExp[] = [
   /^(a[ñn]ade|add|incluye|include|pon|put|agrega)\b/i,
   /^(cambia|change|modifica|modify|usa|use|haz|make)\b/i,
+  /^no[,.]?\s+/i, // "no, mejor de la griega" — negation signals redirection
+  /^(prefiero|prefer|quiero|i\s+want)\b/i, // "prefiero en gijon" — preference signals redirection
   /\b(a[ñn]ade|add|incluye|include)\s+/i,
   /\b(cambia|change|modifica|modify)\s+/i,
   /\b(en\s+vez\s+de|instead\s+of|rather\s+than)\b/i,
-  /\b(más|more|less|menos|bigger|smaller|larger)\b/i,
+  /\b(prefiero|prefer|mejor|better|más|more|less|menos|bigger|smaller|larger)\b/i,
   /\b(también|also|además|additionally)\b/i,
 ];
 
