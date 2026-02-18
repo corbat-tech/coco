@@ -20,6 +20,9 @@ benchmark-results.json
 .DS_Store
 Thumbs.db
 
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json
+
 # Environment
 .env
 .env.local
