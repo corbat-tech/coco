@@ -1,6 +1,14 @@
 /**
  * Agentic loop for REPL
  * Handles tool calling iterations until task completion
+ *
+ * ABORT STRATEGY (Snapshot + Rollback):
+ * Session mutations are transactional. A snapshot of session.messages.length
+ * is taken at the start of executeAgentTurn. If the turn is aborted for any
+ * reason, session.messages is rolled back to the snapshot — guaranteeing
+ * valid message alternation regardless of where the abort occurred.
+ * Completed tool results are returned in AgentTurnResult.toolCalls so the
+ * caller can incorporate them into context if needed (e.g., Modify flow).
  */
 
 import chalk from "chalk";
@@ -48,6 +56,8 @@ export interface AgentTurnOptions {
   onToolPreparing?: (toolName: string) => void;
   /** Called before showing confirmation dialog (to clear spinners, etc.) */
   onBeforeConfirmation?: () => void;
+  /** Called after confirmation dialog completes (to resume capture, etc.) */
+  onAfterConfirmation?: () => void;
   signal?: AbortSignal;
   /** Skip confirmation prompts for destructive tools */
   skipConfirmation?: boolean;
@@ -72,6 +82,11 @@ export async function executeAgentTurn(
   // Reset line buffer at start of each turn
   resetLineBuffer();
 
+  // --- Snapshot for transactional rollback on abort ---
+  // If the turn is aborted, we roll back session.messages to this length.
+  // This guarantees valid message alternation regardless of where abort occurs.
+  const messageSnapshot = session.messages.length;
+
   // Add user message to context
   addMessage(session, { role: "user", content: userMessage });
 
@@ -79,6 +94,20 @@ export async function executeAgentTurn(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let finalContent = "";
+
+  // Helper: abort return with rollback
+  const abortReturn = (): AgentTurnResult => {
+    // Rollback all session mutations from this turn
+    session.messages.length = messageSnapshot;
+    return {
+      content: finalContent,
+      toolCalls: executedTools,
+      usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+      aborted: true,
+      partialContent: finalContent || undefined,
+      abortReason: "user_cancel",
+    };
+  };
 
   // Get tool definitions for LLM (cast to provider's ToolDefinition type)
   const tools = toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
@@ -90,16 +119,9 @@ export async function executeAgentTurn(
   while (iteration < maxIterations) {
     iteration++;
 
-    // Check for abort - preserve partial content
+    // Check for abort at start of each iteration
     if (options.signal?.aborted) {
-      return {
-        content: finalContent,
-        toolCalls: executedTools,
-        usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
-        aborted: true,
-        partialContent: finalContent || undefined,
-        abortReason: "user_cancel",
-      };
+      return abortReturn();
     }
 
     // Call LLM with tools using streaming (pass toolRegistry for dynamic prompt)
@@ -210,6 +232,10 @@ export async function executeAgentTurn(
 
     // Check if we have tool calls
     if (collectedToolCalls.length === 0) {
+      // If aborted, rollback — don't save empty or partial assistant messages
+      if (options.signal?.aborted) {
+        return abortReturn();
+      }
       // No more tool calls, we're done
       addMessage(session, { role: "assistant", content: responseContent });
       break;
@@ -250,6 +276,7 @@ export async function executeAgentTurn(
         // Notify UI to clear any spinners before showing confirmation
         options.onBeforeConfirmation?.();
         const confirmResult = await confirmToolExecution(toolCall);
+        options.onAfterConfirmation?.();
 
         // Handle edit result for bash_exec
         if (typeof confirmResult === "object" && confirmResult.type === "edit") {
@@ -317,7 +344,9 @@ export async function executeAgentTurn(
         onPathAccessDenied: async (dirPath: string) => {
           // Clear spinner before showing interactive prompt
           options.onBeforeConfirmation?.();
-          return promptAllowPath(dirPath);
+          const result = await promptAllowPath(dirPath);
+          options.onAfterConfirmation?.();
+          return result;
         },
       });
 
@@ -369,6 +398,12 @@ export async function executeAgentTurn(
       }
     }
 
+    // If turn was aborted (signal or user confirmation), rollback and return.
+    // executedTools still contains completed work for the caller to use.
+    if (turnAborted || options.signal?.aborted) {
+      return abortReturn();
+    }
+
     // Phase 3: Build tool uses and results in original order
     for (const toolCall of response.toolCalls) {
       // Build tool use content for assistant message (always include)
@@ -401,18 +436,6 @@ export async function executeAgentTurn(
           is_error: !executedCall.result.success,
         });
       }
-    }
-
-    // If turn was aborted, return early with partial content preserved
-    if (turnAborted) {
-      return {
-        content: finalContent,
-        toolCalls: executedTools,
-        usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
-        aborted: true,
-        partialContent: finalContent || undefined,
-        abortReason: "user_cancel",
-      };
     }
 
     // Add assistant message with tool uses
@@ -472,4 +495,34 @@ export function formatAbortSummary(executedTools: ExecutedToolCall[]): string | 
   }
 
   return summary;
+}
+
+/**
+ * Summarize executed tool results for context injection.
+ * Used when re-sending a modified task so the LLM knows what work was already done.
+ */
+export function summarizeToolResults(toolCalls: ExecutedToolCall[]): string {
+  if (toolCalls.length === 0) return "";
+
+  const lines = toolCalls.map((tc) => {
+    const inputSummary = Object.entries(tc.input)
+      .map(([k, v]) => {
+        const val = typeof v === "string" ? v : JSON.stringify(v);
+        return `${k}=${val.length > 60 ? val.slice(0, 57) + "…" : val}`;
+      })
+      .join(", ");
+
+    const status = tc.result.success ? "✓" : "✗";
+    const outputPreview =
+      tc.result.output.length > 200 ? tc.result.output.slice(0, 197) + "…" : tc.result.output;
+
+    return `- ${status} ${tc.name}(${inputSummary}): ${outputPreview}`;
+  });
+
+  return [
+    "\n## Work completed before interruption:",
+    ...lines,
+    "",
+    "Reuse the above results where relevant — do NOT repeat searches or work already done.",
+  ].join("\n");
 }

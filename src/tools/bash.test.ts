@@ -3,6 +3,48 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { EventEmitter } from "node:events";
+
+/**
+ * Creates a mock subprocess that simulates execa's streaming behavior.
+ * The subprocess has .stdout/.stderr EventEmitters and is thenable.
+ * Stream data events fire before the promise resolves, matching real execa behavior.
+ */
+function createMockSubprocess(result: { exitCode?: number; stdout?: string; stderr?: string }) {
+  const stdoutEmitter = new EventEmitter();
+  const stderrEmitter = new EventEmitter();
+
+  const promise = new Promise<{
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+  }>((resolve) => {
+    // Use queueMicrotask so stream listeners are registered before data fires
+    queueMicrotask(() => {
+      if (result.stdout) {
+        stdoutEmitter.emit("data", Buffer.from(result.stdout));
+      }
+      if (result.stderr) {
+        stderrEmitter.emit("data", Buffer.from(result.stderr));
+      }
+      resolve({
+        exitCode: result.exitCode ?? 0,
+        stdout: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+      });
+    });
+  });
+
+  // Execa subprocess is both a Promise and has stream properties
+  const subprocess = Object.assign(promise, {
+    stdout: stdoutEmitter,
+    stderr: stderrEmitter,
+    pid: 99999,
+    kill: vi.fn(),
+  });
+
+  return subprocess;
+}
 
 vi.mock("execa", () => ({
   execa: vi.fn().mockImplementation((cmd: string, options?: Record<string, unknown>) => {
@@ -17,13 +59,13 @@ vi.mock("execa", () => ({
 
     // For async calls (returns promise)
     if (cmd === "which" || cmd === "where") {
-      return Promise.resolve({ exitCode: 0, stdout: "/usr/bin/node", stderr: "" });
+      return createMockSubprocess({ exitCode: 0, stdout: "/usr/bin/node" });
     }
     if (typeof options === "object" && options?.shell) {
       // Shell command via bash_exec
-      return Promise.resolve({ exitCode: 0, stdout: "command output", stderr: "" });
+      return createMockSubprocess({ exitCode: 0, stdout: "command output" });
     }
-    return Promise.resolve({ exitCode: 0, stdout: "", stderr: "" });
+    return createMockSubprocess({ exitCode: 0 });
   }),
 }));
 
@@ -315,11 +357,9 @@ describe("bashExecTool output truncation", () => {
     const { execa } = await import("execa");
     // Create output longer than 50000 characters
     const longOutput = "x".repeat(60000);
-    vi.mocked(execa).mockResolvedValueOnce({
-      exitCode: 0,
-      stdout: longOutput,
-      stderr: "",
-    } as any);
+    vi.mocked(execa).mockImplementationOnce(
+      () => createMockSubprocess({ exitCode: 0, stdout: longOutput }) as any,
+    );
 
     const { bashExecTool } = await import("./bash.js");
 
@@ -334,11 +374,9 @@ describe("bashExecTool output truncation", () => {
   it("should not truncate output within limit", async () => {
     const { execa } = await import("execa");
     const normalOutput = "normal output";
-    vi.mocked(execa).mockResolvedValueOnce({
-      exitCode: 0,
-      stdout: normalOutput,
-      stderr: "",
-    } as any);
+    vi.mocked(execa).mockImplementationOnce(
+      () => createMockSubprocess({ exitCode: 0, stdout: normalOutput }) as any,
+    );
 
     const { bashExecTool } = await import("./bash.js");
 

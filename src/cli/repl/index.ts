@@ -13,6 +13,12 @@ import {
   loadTrustedTools,
 } from "./session.js";
 import { createInputHandler } from "./input/handler.js";
+import { createConcurrentCapture } from "./input/concurrent-capture-v2.js";
+import { createInputEcho } from "./input/input-echo.js";
+import { createFeedbackSystem } from "./feedback/feedback-system.js";
+import { createLLMClassifier } from "./interruptions/llm-classifier.js";
+import { InterruptionAction, InterruptionType } from "./interruptions/types.js";
+import type { ActionedInterruption } from "./interruptions/types.js";
 import {
   renderStreamChunk,
   renderToolStart,
@@ -22,7 +28,7 @@ import {
   renderInfo,
 } from "./output/renderer.js";
 import { createSpinner, type Spinner } from "./output/spinner.js";
-import { executeAgentTurn, formatAbortSummary } from "./agent-loop.js";
+import { executeAgentTurn, formatAbortSummary, summarizeToolResults } from "./agent-loop.js";
 import { createProvider } from "../../providers/index.js";
 import { createFullToolRegistry } from "../../tools/index.js";
 import { setAgentProvider, setAgentToolRegistry } from "../../agents/provider-bridge.js";
@@ -124,8 +130,9 @@ export async function startRepl(
     process.exit(1);
   }
 
-  // Initialize context manager
+  // Initialize context manager and LLM classifier for concurrent input
   initializeContextManager(session, provider);
+  const llmClassifier = createLLMClassifier(provider);
 
   // Detect and enrich project stack context
   const { detectProjectStack } = await import("./context/stack-detector.js");
@@ -158,6 +165,24 @@ export async function startRepl(
   // Create input handler
   const inputHandler = createInputHandler(session);
 
+  // Initialize concurrent input capture, feedback system, and input echo
+  const concurrentCapture = createConcurrentCapture();
+  let currentSpinnerMessage = "";
+  // activeSpinner is declared per-turn; feedbackSystem needs a getter
+  let turnActiveSpinner: Spinner | null = null;
+  const feedbackSystem = createFeedbackSystem(() => turnActiveSpinner);
+  const inputEcho = createInputEcho(
+    () => turnActiveSpinner,
+    () => currentSpinnerMessage,
+  );
+
+  // Pending interruption context from previous turn (injected into next message)
+  let pendingInterruptionContext = "";
+  // Human-readable summary of the modification (for display only, not sent to LLM)
+  let pendingModificationPreview = "";
+  // Messages queued during concurrent capture for auto-submission as next turn
+  let pendingQueuedMessages: string[] = [];
+
   // Initialize intent recognizer
   const intentRecognizer = createIntentRecognizer();
 
@@ -179,7 +204,33 @@ export async function startRepl(
 
   // Main loop
   while (true) {
-    const input = await inputHandler.prompt();
+    // Auto-submit queued messages from concurrent capture (skip prompt)
+    let autoInput: string | null = null;
+    if (pendingQueuedMessages.length > 0) {
+      autoInput = pendingQueuedMessages.join("\n");
+      pendingQueuedMessages = [];
+
+      // Show contextual feedback: Modify re-send vs Queue auto-submit
+      // NOTE: trailing console.log() is intentional — it acts as a buffer line
+      // so the Ora spinner (which clears the line above it) doesn't erase the preview.
+      if (pendingInterruptionContext) {
+        const modPreview =
+          pendingModificationPreview.length > 70
+            ? pendingModificationPreview.slice(0, 67) + "\u2026"
+            : pendingModificationPreview;
+        console.log(
+          chalk.yellow(`\n\u26A1 Re-enviando con modificación: `) + chalk.dim(modPreview),
+        );
+        console.log();
+      } else {
+        const preview = autoInput.length > 70 ? autoInput.slice(0, 67) + "\u2026" : autoInput;
+        console.log(chalk.cyan(`\n\uD83D\uDCCB Auto-enviando mensaje encolado:`));
+        console.log(chalk.dim(`  ${preview}`));
+        console.log();
+      }
+    }
+
+    const input = autoInput ?? (await inputHandler.prompt());
 
     // Handle EOF (Ctrl+D) -- but not if Ctrl+V set a pending image
     if (input === null && !hasPendingImage()) {
@@ -263,25 +314,48 @@ export async function startRepl(
       agentMessage = input ?? "";
     }
 
+    // Save the original user message before any context injection.
+    // Used to re-send the task when user modifies during execution.
+    const originalUserMessage = typeof agentMessage === "string" ? agentMessage : null;
+
+    // Inject any pending interruption context from the previous turn
+    if (pendingInterruptionContext && typeof agentMessage === "string") {
+      agentMessage = agentMessage + pendingInterruptionContext;
+      pendingInterruptionContext = "";
+      pendingModificationPreview = "";
+    }
+
     // Execute agent turn
     // Single spinner for all states - avoids concurrent spinner issues
     let activeSpinner: Spinner | null = null;
+    turnActiveSpinner = null;
 
     // Helper to safely clear spinner - defined outside try for access in catch
+    // NOTE: Does NOT clear the echo buffer — the echo will re-attach to the
+    // next spinner via refresh(). Only explicit inputEcho.clear() resets the buffer
+    // (used on Enter, SIGINT, errors).
     const clearSpinner = () => {
       if (activeSpinner) {
         activeSpinner.clear();
         activeSpinner = null;
+        turnActiveSpinner = null;
       }
     };
 
     // Helper to set spinner message (creates if needed)
+    // Merges base message + echo into a single spinner.update() to avoid
+    // double-render flickering (one update instead of two).
     const setSpinner = (message: string) => {
+      currentSpinnerMessage = message;
+      feedbackSystem.updateSpinnerMessage(message);
       if (activeSpinner) {
-        activeSpinner.update(message);
+        // Let inputEcho handle the single merged update (base + echo in one call)
+        inputEcho.refreshWith(message);
       } else {
         activeSpinner = createSpinner(message);
         activeSpinner.start();
+        turnActiveSpinner = activeSpinner;
+        inputEcho.refreshWith(message);
       }
     };
 
@@ -304,6 +378,9 @@ export async function startRepl(
     const sigintHandler = () => {
       wasAborted = true;
       abortController.abort();
+      inputEcho.clear();
+      concurrentCapture.stop();
+      feedbackSystem.reset();
       clearThinkingInterval();
       clearSpinner();
       renderInfo("\nOperation cancelled");
@@ -330,8 +407,69 @@ export async function startRepl(
         session.config.agent.systemPrompt = originalSystemPrompt + "\n" + getCocoModeSystemPrompt();
       }
 
-      // Pause input to prevent typing interference during agent response
+      // Pause normal input handler and start concurrent capture
+      // This allows the user to type messages during agent execution
       inputHandler.pause();
+
+      // Track actioned interruptions and queued messages for this turn
+      const turnActionedInterruptions: ActionedInterruption[] = [];
+      const turnQueuedMessages: string[] = [];
+      // Track pending LLM classification promises so we can await them after agent completes
+      const pendingClassifications: Promise<void>[] = [];
+
+      concurrentCapture.reset();
+      inputEcho.reset();
+      concurrentCapture.start(
+        (msg) => {
+          // Step 1: Clear echo line (user pressed Enter, buffer is now empty)
+          inputEcho.clear();
+
+          const preview = msg.text.length > 60 ? msg.text.slice(0, 57) + "\u2026" : msg.text;
+          console.log(chalk.dim(`  \u2026 Clasificando: ${preview}`));
+
+          // Step 2: Launch LLM classification (async, tracked for later await)
+          const classificationPromise = (async () => {
+            const classification = await llmClassifier.classify(msg, originalUserMessage);
+            const action = classification.action;
+            const sourceHint = classification.source === "keywords" ? chalk.dim(" (fast)") : "";
+
+            // Step 3: Execute the classified action
+            switch (action) {
+              case InterruptionAction.Abort:
+                wasAborted = true;
+                abortController.abort();
+                console.log(chalk.red(`  \u23F9 Abortando\u2026`) + sourceHint);
+                break;
+
+              case InterruptionAction.Modify:
+                turnActionedInterruptions.push({
+                  text: msg.text,
+                  type: InterruptionType.Modify,
+                  confidence: classification.source === "llm" ? 0.95 : 0.7,
+                  timestamp: msg.timestamp,
+                  action: InterruptionAction.Modify,
+                });
+                // Abort current execution so the task restarts with modification
+                wasAborted = true;
+                abortController.abort();
+                console.log(
+                  chalk.yellow(`  \u26A1 Modificando: `) + chalk.dim(preview) + sourceHint,
+                );
+                break;
+
+              case InterruptionAction.Queue:
+                turnQueuedMessages.push(msg.text);
+                console.log(
+                  chalk.cyan(`  \uD83D\uDCCB Encolado: `) + chalk.dim(preview) + sourceHint,
+                );
+                break;
+            }
+          })();
+
+          pendingClassifications.push(classificationPromise);
+        },
+        (buffer) => inputEcho.render(buffer),
+      );
 
       process.once("SIGINT", sigintHandler);
 
@@ -394,15 +532,70 @@ export async function startRepl(
           setSpinner(`Preparing: ${toolName}\u2026`);
         },
         onBeforeConfirmation: () => {
-          // Clear spinner before showing confirmation dialog
+          // Clear spinner/echo and suspend concurrent capture before confirmation dialog
+          inputEcho.suspend();
           clearSpinner();
+          concurrentCapture.suspend();
+        },
+        onAfterConfirmation: () => {
+          // Resume concurrent capture and echo after confirmation dialog
+          concurrentCapture.resumeCapture();
+          inputEcho.resume();
         },
         signal: abortController.signal,
       });
 
       // Remove SIGINT handler and clean up thinking interval after agent turn
       clearThinkingInterval();
+      clearSpinner();
+      inputEcho.clear();
       process.off("SIGINT", sigintHandler);
+
+      // Stop concurrent capture and wait for any pending LLM classifications
+      const remainingMessages = concurrentCapture.stop();
+      feedbackSystem.reset();
+
+      // Wait for all pending classification promises to settle before processing results.
+      // This ensures LLM responses that arrive after the agent finishes are still processed.
+      if (pendingClassifications.length > 0) {
+        await Promise.allSettled(pendingClassifications);
+      }
+
+      // Any messages still in the queue (captured after last selector or never processed)
+      // are added to the next turn queue
+      for (const msg of remainingMessages) {
+        turnQueuedMessages.push(msg.text);
+      }
+
+      // Process actioned interruptions (Modify → abort + re-send task with modification context)
+      // Session was rolled back by agent-loop on abort — it's clean.
+      // We inject completed tool results directly into the context string so the
+      // agent can reuse prior work without relying on session message history.
+      if (turnActionedInterruptions.length > 0) {
+        const modParts = turnActionedInterruptions.map((i) => i.text).join("\n- ");
+        const toolSummary = summarizeToolResults(result.toolCalls);
+        const ctx = [
+          "\n\n## The user interrupted and modified the task:",
+          `- ${modParts}`,
+          toolSummary,
+          `Apply the user's modification to the original task: "${originalUserMessage || ""}"`,
+        ].join("\n");
+        pendingInterruptionContext = ctx;
+        pendingModificationPreview = modParts;
+
+        // Re-send the original task so the agent retries with the modification applied.
+        if (originalUserMessage) {
+          pendingQueuedMessages = [originalUserMessage, ...turnQueuedMessages];
+        } else {
+          pendingQueuedMessages = turnQueuedMessages;
+        }
+      } else if (turnQueuedMessages.length > 0) {
+        // No modifications, just queued messages for next turn
+        pendingQueuedMessages = turnQueuedMessages;
+        console.log(
+          chalk.cyan(`  \uD83D\uDCCB ${turnQueuedMessages.length} message(s) queued for next turn`),
+        );
+      }
 
       // Show abort summary if cancelled, preserving partial content
       if (wasAborted || result.aborted) {
@@ -474,9 +667,12 @@ export async function startRepl(
 
       console.log(); // Extra spacing
     } catch (error) {
-      // Always clear spinner and thinking interval on error, remove SIGINT handler
+      // Always clear spinner, thinking interval, capture, echo on error
       clearThinkingInterval();
+      inputEcho.clear();
       clearSpinner();
+      concurrentCapture.stop();
+      feedbackSystem.reset();
       process.off("SIGINT", sigintHandler);
       // Don't show error for abort
       if (error instanceof Error && error.name === "AbortError") {
@@ -515,12 +711,14 @@ export async function startRepl(
 
       renderError(errorMsg);
     } finally {
-      // Always resume input handler after agent turn
+      // Always clean up spinner and resume input handler after agent turn
+      clearSpinner();
       inputHandler.resume();
     }
   }
 
   inputHandler.close();
+  feedbackSystem.dispose();
 }
 
 /**

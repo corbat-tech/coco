@@ -109,9 +109,15 @@ export function createSpinner(message: string): Spinner {
         elapsedInterval = null;
       }
       if (spinner) {
+        // Count lines in current text (echo appends \n + line)
+        const textLines = (spinner.text || "").split("\n").length;
         spinner.stop();
-        // Clear the line completely
+        // Clear all lines the spinner occupied (Ora may leave artifacts on multi-line)
         process.stdout.write("\r\x1b[K");
+        for (let i = 1; i < textLines; i++) {
+          process.stdout.write("\x1b[1A\x1b[2K");
+        }
+        process.stdout.write("\r");
         spinner = null;
       }
       startTime = null;

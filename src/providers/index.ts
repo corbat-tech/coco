@@ -139,14 +139,14 @@ export async function createProvider(
 
     case "lmstudio":
       // LM Studio uses OpenAI-compatible API
-      provider = new OpenAIProvider();
+      provider = new OpenAIProvider("lmstudio", "LM Studio");
       mergedConfig.baseUrl = mergedConfig.baseUrl ?? "http://localhost:1234/v1";
       mergedConfig.apiKey = mergedConfig.apiKey ?? "lm-studio"; // LM Studio doesn't need real key
       break;
 
     case "ollama":
       // Ollama uses OpenAI-compatible API
-      provider = new OpenAIProvider();
+      provider = new OpenAIProvider("ollama", "Ollama");
       mergedConfig.baseUrl = mergedConfig.baseUrl ?? "http://localhost:11434/v1";
       mergedConfig.apiKey = mergedConfig.apiKey ?? "ollama"; // Ollama doesn't need real key
       break;
