@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.0] - 2026-02-18
+
+### Added
+- **Release workflow skills for Claude Code**
+  - `/release [patch|minor|major]`: Full 12-step release cycle with auto-retry on CI failures
+  - `/preflight`: Validation-only checks with detailed status report table
+  - `/hotfix`: Streamlined patch release for urgent fixes
+  - Supporting templates for PR body and changelog formatting
+  - All skills use `disable-model-invocation: true` for safety (only user-triggered)
+
+### Changed
+- **Dependency updates** (from pending dependabot PRs)
+  - `@typescript-eslint/parser` 8.54.0 → 8.55.0
+  - `@typescript-eslint/typescript-estree` 8.54.0 → 8.55.0
+  - `minimatch` 10.1.2 → 10.2.0
+  - `simple-git` 3.30.0 → 3.31.1
+  - `openai` 6.18.0 → 6.22.0
+  - `oxfmt` 0.28.0 → 0.33.0
+  - `typedoc` 0.28.16 → 0.28.17
+
+### Fixed
+- **`/open` command not working in REPL**
+  - The SkillRegistry (containing `/open`, `/review`, `/ship`) was implemented but never connected to the REPL command execution flow
+  - `executeSlashCommand` now falls back to the SkillRegistry when a command is not found in the legacy SlashCommand array
+  - Also fixes `/review` and `/ship` which had the same disconnection issue
+
+---
+
+## [1.7.0] - 2026-02-17
+
+### Added
+- **Concurrent input system with auto-classification and abort/rollback**
+
+---
+
 ## [1.6.0] - 2026-02-17
 
 ### Added
@@ -345,6 +380,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 1.8.0 | 2026-02-18 | Release workflow skills, /open fix, SkillRegistry integration |
+| 1.7.0 | 2026-02-17 | Concurrent input with auto-classification and abort/rollback |
+| 1.6.0 | 2026-02-17 | Streaming, JSON repair, COCO mode feedback, provider guide |
+| 1.5.0 | 2026-02-11 | Stack detection, command heartbeat |
 | 1.4.0 | 2026-02-10 | COCO mode default ON, /full-access, /update-coco, redesigned README |
 | 1.3.0 | 2026-02-10 | /open tool, /ship release pipeline, GitHub CLI tools, repo cleanup |
 | 1.2.3 | 2026-02-10 | Thinking feedback, git tools fix, authorize_path, review markdown output |
@@ -374,7 +413,11 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.6.0...v1.7.0
+[1.6.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.2...v1.2.3
