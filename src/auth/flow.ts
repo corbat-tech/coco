@@ -39,6 +39,7 @@ import {
 } from "./oauth.js";
 import { generatePKCECredentials } from "./pkce.js";
 import { createCallbackServer } from "./callback-server.js";
+import { isWSL } from "../utils/platform.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -141,6 +142,9 @@ async function openBrowser(url: string): Promise<boolean> {
       await execFileAsync("open", [sanitizedUrl]);
     } else if (platform === "win32") {
       await execFileAsync("rundll32", ["url.dll,FileProtocolHandler", sanitizedUrl]);
+    } else if (isWSL) {
+      // WSL has no display server — delegate to Windows browser via cmd.exe
+      await execFileAsync("cmd.exe", ["/c", "start", "", sanitizedUrl]);
     } else {
       await execFileAsync("xdg-open", [sanitizedUrl]);
     }
@@ -182,6 +186,13 @@ async function openBrowserFallback(url: string): Promise<boolean> {
       cmd: "rundll32",
       args: ["url.dll,FileProtocolHandler", sanitizedUrl],
     });
+  } else if (isWSL) {
+    // WSL: delegate to Windows browser; wslview as optional third-party fallback
+    commands.push(
+      { cmd: "cmd.exe", args: ["/c", "start", "", sanitizedUrl] },
+      { cmd: "powershell.exe", args: ["-Command", `Start-Process '${sanitizedUrl}'`] },
+      { cmd: "wslview", args: [sanitizedUrl] },
+    );
   } else {
     // Linux - try multiple browsers
     commands.push(

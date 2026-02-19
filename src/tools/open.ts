@@ -14,6 +14,7 @@ import path from "node:path";
 import { execa } from "execa";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
+import { isWSL } from "../utils/platform.js";
 
 // ============================================================================
 // Constants
@@ -61,8 +62,10 @@ const DANGEROUS_ARG_PATTERNS = [
 // Helpers
 // ============================================================================
 
-function getSystemOpenCommand(): string {
-  return process.platform === "darwin" ? "open" : "xdg-open";
+function getSystemOpen(target: string): { cmd: string; args: string[] } {
+  if (process.platform === "darwin") return { cmd: "open", args: [target] };
+  if (isWSL) return { cmd: "cmd.exe", args: ["/c", "start", "", target] };
+  return { cmd: "xdg-open", args: [target] };
 }
 
 function hasNullByte(str: string): boolean {
@@ -190,8 +193,8 @@ Examples:
 
     // --- Open mode ---
     if (mode === "open") {
-      const cmd = getSystemOpenCommand();
-      await execa(cmd, [absolute], { timeout: 10_000 });
+      const { cmd, args } = getSystemOpen(absolute);
+      await execa(cmd, args, { timeout: 10_000 });
 
       return {
         action: "opened" as const,

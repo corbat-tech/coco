@@ -5,10 +5,11 @@
 
 import { randomBytes, createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { isWSL } from "../../utils/platform.js";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * OAuth configuration for a provider
@@ -184,12 +185,12 @@ export async function openBrowser(url: string): Promise<void> {
 
   try {
     if (platform === "darwin") {
-      await execAsync(`open "${url}"`);
-    } else if (platform === "win32") {
-      await execAsync(`start "" "${url}"`);
+      await execFileAsync("open", [url]);
+    } else if (platform === "win32" || isWSL) {
+      // Native Windows or WSL: delegate to Windows browser via cmd.exe
+      await execFileAsync("cmd.exe", ["/c", "start", "", url]);
     } else {
-      // Linux and others
-      await execAsync(`xdg-open "${url}"`);
+      await execFileAsync("xdg-open", [url]);
     }
   } catch {
     // Silently fail if browser can't be opened

@@ -61,6 +61,21 @@ echo ""
 echo "[1/4] Cloning project (fully isolated .git)..."
 git clone --no-hardlinks "$PROJECT_DIR" "$COPY_DIR"
 
+# Copy all local .claude/ files not tracked by git (settings.local.json, custom prompts, etc.)
+# git clone already placed tracked files; this adds whatever exists locally but not in git.
+# Process substitution avoids running the loop in a subshell (required with set -euo pipefail).
+if [ -d "$PROJECT_DIR/.claude" ]; then
+  while IFS= read -r src_file; do
+    rel="${src_file#"$PROJECT_DIR"/}"
+    dest="$COPY_DIR/$rel"
+    if [ ! -f "$dest" ]; then
+      mkdir -p "$(dirname "$dest")"
+      cp "$src_file" "$dest"
+      echo "  Copied local: $rel"
+    fi
+  done < <(find "$PROJECT_DIR/.claude" -type f)
+fi
+
 # --- Phase 2: Setup branch ---
 
 cd "$COPY_DIR"
