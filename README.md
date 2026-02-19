@@ -14,7 +14,7 @@
 [![License](https://img.shields.io/badge/license-MIT-f5c542?style=flat-square)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/Node.js-22+-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/tests-5100%2B-22c55e?style=flat-square)](https://github.com/corbat/corbat-coco/actions)
+[![Tests](https://img.shields.io/badge/tests-5283%2B-22c55e?style=flat-square)](https://github.com/corbat/corbat-coco/actions)
 
 </div>
 
@@ -44,6 +44,19 @@ After writing code, Coco automatically:
                                              Score < 85? │ ──► Loop
                                              Score ≥ 85? │ ──► Done ✅
 ```
+
+---
+
+## What's New in v2.0.0
+
+| Feature | Description |
+|---------|-------------|
+| **Unified Skills System** | Auto-discovery from global + project (`.coco/skills/`) + built-in scopes; YAML/JSON support |
+| **WSL Support** | Native WSL2 path translation and detection |
+| **3 new providers** | xAI/Grok, Cohere, Codex/OpenAI OAuth browser flow |
+| **Multi-modal input** | Paste screenshots with `Ctrl+V` — sent to vision-capable providers |
+| **Parallel agents** | Independent tasks dispatched concurrently across specialized agents |
+| **`/check` command** | Run typecheck + lint + test pipeline inline in the REPL |
 
 ---
 
@@ -121,13 +134,26 @@ Bring your own API key:
 | **LM Studio** | Local | Any GGUF model |
 | **Moonshot** | API key | Kimi models |
 
+### 🧩 **Unified Skills System**
+
+Extend coco with reusable workflows at three scopes:
+
+| Scope | Location | Who sees it |
+|-------|----------|-------------|
+| **Built-in** | Shipped with coco | Everyone |
+| **Global** | `~/.claude/skills/` | Your machine |
+| **Project** | `.coco/skills/` | The repo |
+
+Skills are Markdown, YAML, or JSON files — committed alongside source code and auto-discovered at runtime.
+
 ### ⚡ **Modern Terminal UX**
 
 - **Ghost-text completion** — Tab to accept suggestions
-- **Image paste** — `Ctrl+V` to paste screenshots
+- **Image paste** — `Ctrl+V` to paste screenshots (vision-capable providers)
 - **Intent recognition** — Natural language → commands
 - **Full-access mode** — `/full-access` for auto-approvals (with safety guards)
 - **Self-update** — Type "update coco" anytime
+- **WSL2 native** — Runs inside Windows Subsystem for Linux with correct path translation
 
 ---
 
@@ -160,6 +186,7 @@ That's it. Coco walks you through provider setup on first launch.
 | `/diff` | Visual diff with syntax highlighting |
 | `/ship` | Full release pipeline (review → test → PR → merge) |
 | `/coco [on\|off]` | Toggle quality mode (default: ON) |
+| `/check` | Run typecheck + lint + tests inline |
 | `/full-access [on\|off]` | Auto-approve safe commands |
 | `/compact` | Reduce context when conversation grows |
 | `/clear` | Clear conversation history |

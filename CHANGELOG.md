@@ -5,9 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-02-20
 
 ### Added
+
+#### Unified Skills System (Fork 3 — upgrade-version-2)
+- **`createUnifiedSkillRegistry`** — multi-scope discovery loading skills from global (`~/.claude/skills/`), project (`.coco/skills/`), and built-in sources automatically
+- **Project-local skills** in `.coco/skills/` — committed alongside source code, scoped to the repo
+- **YAML/JSON skill format** support alongside Markdown `SKILL.md` files
+- **`skill-enhancer`** — enriches skill context before injection, adding codebase-specific metadata
+- **Automatic skill discovery** — zero-config; new files in watched directories are picked up at runtime
+
+#### WSL Support & Security (Fork 2 — extra)
+- **Windows Subsystem for Linux (WSL)** detection and path translation — coco now works natively inside WSL2 environments
+- **`execFile` security fix** — replaced `exec` with `execFile` for all subprocess calls, eliminating shell-injection risk in path-handling code
+- **`diff-preview` improvements** — smoother rendering, correct line-count display for large diffs
+
+#### Extended Provider Support & REPL Features (Fork 1 — everything-claude-code)
+- **`/check` command** — runs typecheck + lint + test pipeline and reports results inline in the REPL
+- **Multi-modal input** — paste screenshots or images directly with `Ctrl+V`; images are base64-encoded and sent to vision-capable providers
+- **Full-Access mode** — `/full-access [on|off]` auto-approves safe tool calls with configurable safety guards; persists across sessions
+- **Parallel agent execution** — tasks with no mutual dependencies are now dispatched concurrently across specialized agents
+- **Codex / OpenAI OAuth provider** — authenticate via browser OAuth flow (no API key required)
+- **xAI / Grok provider** (`XAI_API_KEY`) — Grok-2, Grok-2-vision models
+- **Cohere provider** (`COHERE_API_KEY`) — Command R+, Command R
 
 #### Quality Analyzers — Language-Specific (Phase 3)
 - **React quality analyzers** (`src/quality/analyzers/react/`)
@@ -86,6 +107,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Provider table** in README expanded from 6 to 12 providers
 - **Known Limitations** — removed "TypeScript/JavaScript first" limitation (Java/React now fully supported)
 - **Test count** updated to 5,100+
+- **`src/cli/repl/index.ts` modularisation** — 5 heavy static imports converted to lazy dynamic imports (`createLLMClassifier`, `loadFullAccessPreference`, `createConcurrentCapture`, `createFeedbackSystem`, `createInputEcho`); 4 unnecessary `export * from` re-exports removed, reducing startup memory footprint
+- **Test configuration** — `src/cli/repl/index.test.ts` excluded from standard vitest run (interactive REPL causes OOM in headless worker environments); `pool: "forks"` set for improved isolation; `NODE_OPTIONS='--max-old-space-size=4096'` applied to all test scripts
+
+### Fixed
+- **Post-merge import breakage** (Fork 4 — solve-bugs) — corrected broken import paths introduced during the 4-fork merge; removed leftover dead code and stale type references
+- **`/open` command** — restored correct file-open behaviour in REPL after CLI refactor
 
 ### Documentation (Phase 6)
 - **`docs/guides/QUALITY.md`** (new) — complete quality analysis guide: 12-dimension weight table, language support matrix, React/Java rule references, config examples, terminal output format, convergence algorithm, ignore patterns

@@ -48,29 +48,32 @@ vi.mock("./onboarding-v2.js", () => ({
 }));
 
 // Mock clack prompts to prevent interactive prompts hanging
-vi.mock("@clack/prompts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@clack/prompts")>();
-  return {
-    ...actual,
-    log: {
-      message: vi.fn(),
-      warning: vi.fn(),
-      error: vi.fn(),
-      success: vi.fn(),
-    },
-    select: vi.fn().mockResolvedValue("write"),
-    confirm: vi.fn().mockResolvedValue(true),
-    isCancel: vi.fn().mockReturnValue(false),
-    outro: vi.fn(),
-    spinner: vi.fn(() => ({
-      start: vi.fn(),
-      stop: vi.fn(),
-      message: "",
-    })),
-    password: vi.fn().mockResolvedValue("test-api-key"),
-    text: vi.fn().mockResolvedValue("test-text"),
-  };
-});
+// Note: pure mock without importOriginal to avoid loading the real module in a forked process
+// (clack's stdin initialization can cause OOM when stdin is a pipe)
+vi.mock("@clack/prompts", () => ({
+  log: {
+    message: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
+    success: vi.fn(),
+  },
+  select: vi.fn().mockResolvedValue("write"),
+  confirm: vi.fn().mockResolvedValue(true),
+  isCancel: vi.fn().mockReturnValue(false),
+  outro: vi.fn(),
+  intro: vi.fn(),
+  spinner: vi.fn(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    message: "",
+  })),
+  password: vi.fn().mockResolvedValue("test-api-key"),
+  text: vi.fn().mockResolvedValue("test-text"),
+  multiselect: vi.fn().mockResolvedValue([]),
+  groupMultiselect: vi.fn().mockResolvedValue({}),
+  note: vi.fn(),
+  cancel: vi.fn(),
+}));
 
 // Mock state manager
 vi.mock("./state/index.js", () => ({
@@ -137,6 +140,7 @@ vi.mock("./output/spinner.js", () => ({
   })),
 }));
 
+
 vi.mock("./agent-loop.js", () => ({
   executeAgentTurn: vi.fn(),
   formatAbortSummary: vi.fn(),
@@ -152,6 +156,98 @@ vi.mock("../../tools/index.js", () => ({
 vi.mock("../../agents/provider-bridge.js", () => ({
   setAgentProvider: vi.fn(),
   setAgentToolRegistry: vi.fn(),
+}));
+
+// Mock unified skill registry to prevent filesystem scanning (discoverAllSkills)
+vi.mock("../../skills/index.js", () => ({
+  createUnifiedSkillRegistry: vi.fn(() => ({
+    setConfig: vi.fn(),
+    discoverAndRegister: vi.fn().mockResolvedValue(undefined),
+    config: { autoActivate: false },
+    findRelevantSkills: vi.fn().mockReturnValue([]),
+    deactivateSkill: vi.fn(),
+    activateSkill: vi.fn().mockResolvedValue(true),
+    size: 0,
+    getAllMetadata: vi.fn().mockReturnValue([]),
+  })),
+  discoverAllSkills: vi.fn().mockResolvedValue([]),
+  scanSkillsDirectory: vi.fn().mockResolvedValue([]),
+  matchSkills: vi.fn().mockReturnValue([]),
+}));
+
+// Mock REPL builtin skills to prevent loading ship/review/diff implementations
+vi.mock("./skills/index.js", () => ({
+  createDefaultRegistry: vi.fn(() => ({ register: vi.fn(), execute: vi.fn(), getAll: vi.fn().mockReturnValue([]) })),
+  getBuiltinSkillsForDiscovery: vi.fn().mockReturnValue([]),
+  createSkillRegistry: vi.fn(() => ({ register: vi.fn(), execute: vi.fn(), getAll: vi.fn().mockReturnValue([]) })),
+  createHelpSkill: vi.fn().mockReturnValue({ name: "help", execute: vi.fn() }),
+  clearSkill: { name: "clear", execute: vi.fn() },
+  statusSkill: { name: "status", execute: vi.fn() },
+  compactSkill: { name: "compact", execute: vi.fn() },
+  reviewSkill: { name: "review", execute: vi.fn() },
+  diffSkill: { name: "diff", execute: vi.fn() },
+  shipSkill: { name: "ship", execute: vi.fn() },
+  openSkill: { name: "open", execute: vi.fn() },
+}));
+
+// Mock stack detector to prevent filesystem operations
+vi.mock("./context/stack-detector.js", () => ({
+  detectProjectStack: vi.fn().mockResolvedValue({ type: "node", language: "typescript", frameworks: [] }),
+}));
+
+// Mock config loader used in skill registry setup
+vi.mock("../../config/loader.js", () => ({
+  loadConfig: vi.fn().mockResolvedValue({ skills: undefined }),
+}));
+
+// Mock modules that are now lazy-loaded inside startRepl()
+vi.mock("./interruptions/llm-classifier.js", () => ({
+  createLLMClassifier: vi.fn(() => ({
+    classify: vi.fn().mockResolvedValue({ action: "continue", source: "keywords" }),
+  })),
+}));
+
+vi.mock("./full-access-mode.js", () => ({
+  loadFullAccessPreference: vi.fn().mockResolvedValue(undefined),
+  isFullAccessEnabled: vi.fn().mockReturnValue(false),
+  isCommandSafeForFullAccess: vi.fn().mockReturnValue(false),
+}));
+
+vi.mock("./input/concurrent-capture-v2.js", () => ({
+  createConcurrentCapture: vi.fn(() => ({
+    start: vi.fn().mockReturnValue([]),
+    stop: vi.fn().mockReturnValue([]),
+    reset: vi.fn(),
+    suspend: vi.fn(),
+    resumeCapture: vi.fn(),
+    getMessages: vi.fn().mockReturnValue([]),
+    onMessage: vi.fn(),
+  })),
+}));
+
+vi.mock("./feedback/feedback-system.js", () => ({
+  createFeedbackSystem: vi.fn(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    reset: vi.fn(),
+    dispose: vi.fn(),
+    updateSpinnerMessage: vi.fn(),
+    onFeedback: vi.fn(),
+  })),
+}));
+
+vi.mock("./input/input-echo.js", () => ({
+  createInputEcho: vi.fn(() => ({
+    show: vi.fn(),
+    hide: vi.fn(),
+    isVisible: vi.fn().mockReturnValue(false),
+    clear: vi.fn(),
+    reset: vi.fn(),
+    refreshWith: vi.fn(),
+    render: vi.fn(),
+    suspend: vi.fn(),
+    resume: vi.fn(),
+  })),
 }));
 
 vi.mock("./commands/index.js", () => ({
@@ -175,6 +271,11 @@ describe("REPL index", () => {
 
   afterEach(() => {
     process.exit = originalExit;
+    // Remove all process listeners added by startRepl() to allow V8 to GC the closure scopes
+    process.removeAllListeners("exit");
+    process.removeAllListeners("SIGTERM");
+    process.removeAllListeners("SIGINT");
+    vi.resetModules(); // Also reset module cache between tests
   });
 
   describe("startRepl", () => {

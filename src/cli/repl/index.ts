@@ -13,10 +13,6 @@ import {
   loadTrustedTools,
 } from "./session.js";
 import { createInputHandler } from "./input/handler.js";
-import { createConcurrentCapture } from "./input/concurrent-capture-v2.js";
-import { createInputEcho } from "./input/input-echo.js";
-import { createFeedbackSystem } from "./feedback/feedback-system.js";
-import { createLLMClassifier } from "./interruptions/llm-classifier.js";
 import { InterruptionAction, InterruptionType } from "./interruptions/types.js";
 import type { ActionedInterruption } from "./interruptions/types.js";
 import {
@@ -67,7 +63,6 @@ import {
   getCocoModeSystemPrompt,
   type CocoQualityResult,
 } from "./coco-mode.js";
-import { loadFullAccessPreference } from "./full-access-mode.js";
 
 // stringWidth (from 'string-width') is the industry-standard way to measure
 // visual terminal width of strings.  It correctly handles ANSI codes, emoji
@@ -132,6 +127,7 @@ export async function startRepl(
 
   // Initialize context manager and LLM classifier for concurrent input
   initializeContextManager(session, provider);
+  const { createLLMClassifier } = await import("./interruptions/llm-classifier.js");
   const llmClassifier = createLLMClassifier(provider);
 
   // Detect and enrich project stack context
@@ -155,6 +151,7 @@ export async function startRepl(
   await loadCocoModePreference();
 
   // Load full-access mode preference
+  const { loadFullAccessPreference } = await import("./full-access-mode.js");
   await loadFullAccessPreference();
 
   // Initialize tool registry
@@ -193,6 +190,9 @@ export async function startRepl(
   const inputHandler = createInputHandler(session);
 
   // Initialize concurrent input capture, feedback system, and input echo
+  const { createConcurrentCapture } = await import("./input/concurrent-capture-v2.js");
+  const { createFeedbackSystem } = await import("./feedback/feedback-system.js");
+  const { createInputEcho } = await import("./input/input-echo.js");
   const concurrentCapture = createConcurrentCapture();
   let currentSpinnerMessage = "";
   // activeSpinner is declared per-turn; feedbackSystem needs a getter
@@ -941,12 +941,6 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig; 
 }
 
 export type { ReplConfig, ReplSession, AgentTurnResult } from "./types.js";
-
-// Re-export submodules
-export * from "./agents/index.js";
-export * from "./background/index.js";
-export * from "./skills/index.js";
-export * from "./progress/index.js";
 
 /**
  * Check and request project trust - compact version
