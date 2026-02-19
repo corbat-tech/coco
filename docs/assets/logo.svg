@@ -1,32 +1,49 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 175" width="640" height="175">
   <defs>
-    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#22c55e;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#10b981;stop-opacity:1" />
+    <linearGradient id="coco-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#f0f6fc"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
     </linearGradient>
   </defs>
 
-  <!-- Background circle -->
-  <circle cx="100" cy="100" r="90" fill="url(#grad1)" />
+  <!-- Terminal window background -->
+  <rect width="640" height="175" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
 
-  <!-- Inner circle -->
-  <circle cx="100" cy="100" r="70" fill="#1e1b4b" />
+  <!-- Traffic lights -->
+  <circle cx="24" cy="22" r="6" fill="#ff5f57"/>
+  <circle cx="46" cy="22" r="6" fill="#febc2e"/>
+  <circle cx="68" cy="22" r="6" fill="#28c840"/>
 
-  <!-- C letter stylized -->
-  <path d="M 130 70
-           A 45 45 0 1 0 130 130
-           L 115 115
-           A 30 30 0 1 1 115 85
-           Z"
-        fill="url(#grad2)" />
+  <!-- Window title -->
+  <text
+    x="320" y="27"
+    font-family="system-ui,-apple-system,BlinkMacSystemFont,sans-serif"
+    font-size="12" font-weight="500" fill="#8b949e" text-anchor="middle"
+  >corbat-coco — bash</text>
 
-  <!-- Quality indicator dots -->
-  <circle cx="145" cy="75" r="8" fill="#fbbf24" />
-  <circle cx="155" cy="100" r="8" fill="#22c55e" />
-  <circle cx="145" cy="125" r="8" fill="#22c55e" />
+  <!-- Title bar separator -->
+  <line x1="0" y1="38" x2="640" y2="38" stroke="#30363d" stroke-width="1"/>
 
+  <!-- Shell prompt -->
+  <text x="20" y="65"
+    font-family="'Courier New',Courier,monospace"
+    font-size="15" fill="#22c55e">$</text>
+  <text x="37" y="65"
+    font-family="'Courier New',Courier,monospace"
+    font-size="15" fill="#e6edf3">coco</text>
+
+  <!-- Blinking cursor -->
+  <rect x="73" y="51" width="9" height="15" rx="1" fill="#22c55e" opacity="0.9"/>
+
+  <!-- COCO logotype — gradient white to purple -->
+  <text x="18" y="145"
+    font-family="'Courier New',Courier,monospace"
+    font-size="68" font-weight="700" letter-spacing="10"
+    fill="url(#coco-grad)">COCO</text>
+
+  <!-- Tagline -->
+  <text x="22" y="167"
+    font-family="'Courier New',Courier,monospace"
+    font-size="13" fill="#7d8590"
+  >autonomous AI coding agent  ·  v2.0.0</text>
 </svg>
