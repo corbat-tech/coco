@@ -9,6 +9,7 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import chalk from "chalk";
 import { discoverAllSkills } from "../../skills/index.js";
+import { getBuiltinSkillsForDiscovery } from "../repl/skills/index.js";
 import { CONFIG_PATHS } from "../../config/paths.js";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -70,7 +71,15 @@ async function runList(options: { scope?: string; kind?: string }): Promise<void
   p.intro(chalk.magenta("Skills"));
 
   const projectPath = process.cwd();
-  const allSkills = await discoverAllSkills(projectPath);
+  let allSkills;
+  try {
+    const builtins = getBuiltinSkillsForDiscovery();
+    allSkills = await discoverAllSkills(projectPath, builtins);
+  } catch (error) {
+    p.log.error(`Failed to discover skills: ${error instanceof Error ? error.message : String(error)}`);
+    p.outro("");
+    return;
+  }
 
   let filtered = allSkills;
   if (options.scope) {
@@ -223,7 +232,15 @@ async function runInfo(name: string): Promise<void> {
   p.intro(chalk.magenta("Skill Info"));
 
   const projectPath = process.cwd();
-  const allSkills = await discoverAllSkills(projectPath);
+  let allSkills;
+  try {
+    const builtins = getBuiltinSkillsForDiscovery();
+    allSkills = await discoverAllSkills(projectPath, builtins);
+  } catch (error) {
+    p.log.error(`Failed to discover skills: ${error instanceof Error ? error.message : String(error)}`);
+    p.outro("");
+    return;
+  }
   const skill = allSkills.find((s) => s.id === name || s.name === name);
 
   if (!skill) {
@@ -328,8 +345,8 @@ async function runCreate(name: string, options: { global?: boolean }): Promise<v
   await fs.mkdir(skillDir, { recursive: true });
 
   const skillMd = `---
-name: ${name}
-description: ${description}
+name: "${name}"
+description: "${description}"
 version: "1.0.0"
 metadata:
   author: ""

@@ -158,6 +158,9 @@ export async function executeSlashCommand(
       config: session.config,
     });
 
+    if (result.output) {
+      console.log(result.output);
+    }
     if (result.error) {
       renderError(result.error);
     }

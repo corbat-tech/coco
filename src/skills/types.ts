@@ -47,6 +47,20 @@ export type SkillCategory =
   | "documentation"
   | "workflow";
 
+/** All valid skill categories as a runtime set */
+export const VALID_CATEGORIES = new Set<string>([
+  "general", "git", "model", "coco", "debug", "custom",
+  "coding", "testing", "deployment", "documentation", "workflow",
+]);
+
+/** Resolve a string to a valid SkillCategory, defaulting to "general" */
+export function resolveCategory(category?: string): SkillCategory {
+  if (category && VALID_CATEGORIES.has(category)) {
+    return category as SkillCategory;
+  }
+  return "general";
+}
+
 // ============================================================================
 // SKILL.md Frontmatter Schema (industry standard from skills.sh)
 // ============================================================================

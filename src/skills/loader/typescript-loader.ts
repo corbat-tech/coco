@@ -11,8 +11,8 @@ import type {
   NativeSkillContent,
   LoadedSkill,
   SkillScope,
-  SkillCategory,
 } from "../types.js";
+import { resolveCategory } from "../types.js";
 import { toKebabCase } from "./markdown-loader.js";
 
 /** The existing REPL Skill interface (duplicated here to avoid circular deps) */
@@ -28,28 +28,11 @@ export interface LegacySkill {
   ) => Promise<{ success: boolean; output?: string; error?: string; shouldExit?: boolean }>;
 }
 
-/** Valid native skill categories */
-const VALID_CATEGORIES = new Set<string>([
-  "general",
-  "git",
-  "model",
-  "coco",
-  "debug",
-  "custom",
-  "coding",
-  "testing",
-  "deployment",
-  "documentation",
-  "workflow",
-]);
-
 /**
  * Convert a legacy REPL Skill to SkillMetadata
  */
 export function nativeSkillToMetadata(skill: LegacySkill, scope: SkillScope): SkillMetadata {
-  const category = VALID_CATEGORIES.has(skill.category ?? "")
-    ? (skill.category as SkillCategory)
-    : "general";
+  const category = resolveCategory(skill.category);
 
   return {
     id: toKebabCase(skill.name),

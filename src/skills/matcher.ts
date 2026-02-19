@@ -7,6 +7,7 @@
  */
 
 import type { SkillMetadata, SkillMatch } from "./types.js";
+import { minimatch } from "minimatch";
 
 /** Default minimum score to consider a match */
 const DEFAULT_MIN_SCORE = 0.3;
@@ -53,11 +54,11 @@ export interface MatchOptions {
 export function matchSkills(
   query: string,
   skills: SkillMetadata[],
-  options?: MatchOptions | { maxResults?: number; minScore?: number },
+  options?: MatchOptions,
 ): SkillMatch[] {
   const maxResults = options?.maxResults ?? DEFAULT_MAX_RESULTS;
   const minScore = options?.minScore ?? DEFAULT_MIN_SCORE;
-  const activeFiles = (options as MatchOptions)?.activeFiles;
+  const activeFiles = options?.activeFiles;
 
   const queryTokens = tokenize(query);
   if (queryTokens.length === 0) return [];
@@ -67,14 +68,18 @@ export function matchSkills(
   for (const skill of skills) {
     const { score, reason } = scoreSkill(queryTokens, skill, activeFiles);
     if (score >= minScore) {
-      matches.push({ skill, score: Math.min(score, 1.0), reason });
+      matches.push({ skill, score, reason });
     }
   }
 
-  // Sort by score descending
+  // Sort by score descending (use raw scores for accurate ordering)
   matches.sort((a, b) => b.score - a.score);
 
-  return matches.slice(0, maxResults);
+  // Clamp scores to [0, 1] for the public API
+  return matches.slice(0, maxResults).map(m => ({
+    ...m,
+    score: Math.min(m.score, 1.0),
+  }));
 }
 
 /**
@@ -114,8 +119,8 @@ function scoreSkill(
     }
   }
 
-  // Normalize: max possible is NAME_WEIGHT + DESC_WEIGHT + TAG_WEIGHT
-  const maxPossible = NAME_WEIGHT + DESC_WEIGHT + TAG_WEIGHT;
+  // Normalize: compute maxPossible dynamically so tag-less skills aren't penalized
+  const maxPossible = NAME_WEIGHT + DESC_WEIGHT + (skill.tags && skill.tags.length > 0 ? TAG_WEIGHT : 0);
   let normalized = totalScore / maxPossible;
 
   // Glob-aware boosting: if skill has globs and any active file matches, boost score
@@ -240,6 +245,11 @@ export function stem(word: string): string {
     w = w.slice(0, -1);
   }
 
+  // Strip trailing -e for consistency (create->creat, like creates->creat)
+  if (w.endsWith("e") && w.length > 4) {
+    w = w.slice(0, -1);
+  }
+
   return w;
 }
 
@@ -278,19 +288,13 @@ export function levenshtein(a: string, b: string): number {
 }
 
 // ============================================================================
-// Glob matching (lightweight, no dependencies)
+// Glob matching (uses minimatch for full glob support)
 // ============================================================================
 
 /**
- * Simple glob matching for file extensions.
- * Supports patterns like "*.ts", "*.tsx", "*.py".
- * For more complex globs, a full minimatch library would be needed.
+ * Match a file path against a glob pattern using minimatch.
+ * Supports patterns like "*.ts", "**\/*.ts", "src/**\/*.tsx".
  */
 function matchesGlob(filePath: string, glob: string): boolean {
-  if (glob.startsWith("*.")) {
-    const ext = glob.slice(1); // e.g., ".ts"
-    return filePath.endsWith(ext);
-  }
-  // Simple contains check for non-extension globs
-  return filePath.includes(glob);
+  return minimatch(filePath, glob, { matchBase: true });
 }

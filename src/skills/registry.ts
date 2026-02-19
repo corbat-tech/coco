@@ -112,6 +112,14 @@ export class UnifiedSkillRegistry {
    * Register skill metadata (and its aliases)
    */
   registerMetadata(meta: SkillMetadata): void {
+    // Clean up old aliases if re-registering
+    const existing = this.metadata.get(meta.id);
+    if (existing?.aliases) {
+      for (const alias of existing.aliases) {
+        this.aliases.delete(alias);
+      }
+    }
+
     this.metadata.set(meta.id, meta);
 
     if (meta.aliases) {
@@ -200,13 +208,16 @@ export class UnifiedSkillRegistry {
     const loaded = await this.loadSkill(id);
     if (!loaded) return false;
 
-    // Enforce maxActiveSkills limit (FIFO eviction)
+    // Enforce maxActiveSkills limit with FIFO eviction.
+    // Set iteration order is guaranteed to be insertion order (ES2015 spec),
+    // so the first element is always the oldest activated skill.
     const maxActive = this._config.maxActiveSkills ?? DEFAULT_MAX_ACTIVE_SKILLS;
-    if (this.activeSkillIds.size >= maxActive && !this.activeSkillIds.has(id)) {
-      // Evict the oldest (first in the Set iteration order)
+    while (this.activeSkillIds.size >= maxActive && !this.activeSkillIds.has(id)) {
       const oldest = this.activeSkillIds.values().next().value;
       if (oldest) {
         this.activeSkillIds.delete(oldest);
+      } else {
+        break;
       }
     }
 

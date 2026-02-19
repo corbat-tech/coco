@@ -50,7 +50,7 @@ describe("loadMarkdownMetadata", () => {
     expect(meta!.version).toBe("1.0.0");
     expect(meta!.kind).toBe("markdown");
     expect(meta!.scope).toBe("global");
-    expect(meta!.category).toBe("custom");
+    expect(meta!.category).toBe("general");
   });
 
   it("should return null for non-existent skill", async () => {

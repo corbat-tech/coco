@@ -55,7 +55,7 @@ describe("tokenize", () => {
   });
 
   it("should filter stop words", () => {
-    expect(tokenize("create a new REST API")).toEqual(["create", "new", "rest", "api"]);
+    expect(tokenize("create a new REST API")).toEqual(["creat", "new", "rest", "api"]);
   });
 
   it("should split kebab-case and stem tokens", () => {

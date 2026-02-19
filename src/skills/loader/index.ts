@@ -51,8 +51,11 @@ export async function loadFullSkill(metadata: SkillMetadata): Promise<LoadedSkil
     return { metadata, content };
   }
 
-  // Native skills are already loaded (content lives in memory)
-  // This path shouldn't normally be hit for native skills
+  // Native skills are pre-cached in UnifiedSkillRegistry.discoverAndRegister().
+  // loadSkill() checks cache first, so this code path should not be reached for
+  // native skills. If it is, log a warning and return null gracefully.
+  const { getLogger } = await import("../../utils/logger.js");
+  getLogger().warn(`[Skills] loadFullSkill called for non-markdown skill: ${metadata.id} (kind: ${metadata.kind})`);
   return null;
 }
 

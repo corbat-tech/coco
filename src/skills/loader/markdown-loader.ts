@@ -8,8 +8,8 @@
  */
 
 import matter from "gray-matter";
-import type { SkillMetadata, MarkdownSkillContent, SkillScope, SkillCategory } from "../types.js";
-import { SkillFrontmatterSchema } from "../types.js";
+import type { SkillMetadata, MarkdownSkillContent, SkillScope } from "../types.js";
+import { SkillFrontmatterSchema, resolveCategory } from "../types.js";
 import { getLogger } from "../../utils/logger.js";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -131,23 +131,3 @@ export function toKebabCase(str: string): string {
     .replace(/[^a-z0-9-]/g, "");
 }
 
-/** Map a string category to a valid SkillCategory, defaulting to "custom" */
-function resolveCategory(category?: string): SkillCategory {
-  const valid: Set<string> = new Set([
-    "general",
-    "git",
-    "model",
-    "coco",
-    "debug",
-    "custom",
-    "coding",
-    "testing",
-    "deployment",
-    "documentation",
-    "workflow",
-  ]);
-  if (category && valid.has(category)) {
-    return category as SkillCategory;
-  }
-  return "custom";
-}

@@ -21,7 +21,7 @@ export type {
   SkillFrontmatter,
 } from "./types.js";
 
-export { SkillFrontmatterSchema, SCOPE_PRIORITY, isMarkdownContent, isNativeContent } from "./types.js";
+export { SkillFrontmatterSchema, SCOPE_PRIORITY, VALID_CATEGORIES, resolveCategory, isMarkdownContent, isNativeContent } from "./types.js";
 
 // Registry
 export { UnifiedSkillRegistry, createUnifiedSkillRegistry } from "./registry.js";
@@ -45,3 +45,4 @@ export {
   loadSkillFromDirectory,
   loadFullSkill,
 } from "./loader/index.js";
+export type { LegacySkill } from "./loader/typescript-loader.js";

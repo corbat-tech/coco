@@ -163,23 +163,31 @@ export async function startRepl(
   setAgentToolRegistry(toolRegistry);
 
   // Initialize unified skill registry (discover skills across all scopes)
-  const { createUnifiedSkillRegistry } = await import("../../skills/index.js");
-  const { getBuiltinSkillsForDiscovery } = await import("./skills/index.js");
-  const { loadConfig: loadCocoConfig } = await import("../../config/loader.js");
-  session.skillRegistry = createUnifiedSkillRegistry();
-  // Wire skills config from CocoConfig if available
   try {
-    const cocoConfig = await loadCocoConfig();
-    if (cocoConfig.skills) {
-      session.skillRegistry.setConfig(cocoConfig.skills);
+    const { createUnifiedSkillRegistry } = await import("../../skills/index.js");
+    const { getBuiltinSkillsForDiscovery } = await import("./skills/index.js");
+    const { loadConfig: loadCocoConfig } = await import("../../config/loader.js");
+    session.skillRegistry = createUnifiedSkillRegistry();
+    // Wire skills config from CocoConfig if available
+    try {
+      const cocoConfig = await loadCocoConfig();
+      if (cocoConfig.skills) {
+        session.skillRegistry.setConfig(cocoConfig.skills);
+      }
+    } catch {
+      // Config not available — use defaults (all enabled, no overrides)
     }
-  } catch {
-    // Config not available — use defaults (all enabled, no overrides)
+    await session.skillRegistry.discoverAndRegister(
+      projectPath,
+      getBuiltinSkillsForDiscovery(),
+    );
+  } catch (skillError) {
+    // Skills initialization failed (e.g. corrupt SKILL.md) — continue without skills
+    const logger = (await import("../../utils/logger.js")).getLogger();
+    logger.warn(
+      `[Skills] Failed to initialize skills: ${skillError instanceof Error ? skillError.message : String(skillError)}`,
+    );
   }
-  await session.skillRegistry.discoverAndRegister(
-    projectPath,
-    getBuiltinSkillsForDiscovery(),
-  );
 
   // Create input handler
   const inputHandler = createInputHandler(session);
@@ -201,6 +209,9 @@ export async function startRepl(
   let pendingModificationPreview = "";
   // Messages queued during concurrent capture for auto-submission as next turn
   let pendingQueuedMessages: string[] = [];
+
+  // Track auto-activated skill IDs so we only deactivate those (not manual ones)
+  const autoActivatedIds = new Set<string>();
 
   // Initialize intent recognizer
   const intentRecognizer = createIntentRecognizer();
@@ -348,12 +359,18 @@ export async function startRepl(
       const mdMatches = matches.filter((m) => m.skill.kind === "markdown");
 
       if (mdMatches.length > 0) {
-        // Deactivate previous auto-activated skills, then activate new ones
-        session.skillRegistry.deactivateAll();
+        // Only deactivate previously auto-activated skills, preserve manual ones
+        for (const id of autoActivatedIds) {
+          session.skillRegistry.deactivateSkill(id);
+        }
+        autoActivatedIds.clear();
         const activated: string[] = [];
         for (const match of mdMatches) {
           const ok = await session.skillRegistry.activateSkill(match.skill.id);
-          if (ok) activated.push(match.skill.name);
+          if (ok) {
+            activated.push(match.skill.name);
+            autoActivatedIds.add(match.skill.id);
+          }
         }
         if (activated.length > 0) {
           renderInfo(`Skills: ${activated.join(", ")}`);
