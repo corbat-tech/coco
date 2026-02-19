@@ -317,8 +317,8 @@ export function getConversationContext(
 
           // Include tool restrictions if specified
           if (s.metadata.allowedTools && s.metadata.allowedTools.length > 0) {
-            header += `\n\n**Allowed tools for this skill**: ${s.metadata.allowedTools.join(", ")}`;
-            header += `\nYou MUST only use the listed tools when executing this skill's instructions.`;
+            header += `\n\n> ⚠️ TOOL RESTRICTION: When following the instructions of skill "${s.metadata.name}", you are restricted to ONLY these tools: ${s.metadata.allowedTools.join(", ")}.`;
+            header += `\n> Do NOT use any other tools. If you need a tool not in this list, ask the user for permission first.`;
           }
 
           // Include model override if specified
@@ -331,10 +331,14 @@ export function getConversationContext(
         .join("\n\n");
       if (instructions) {
         // Budget guard: truncate skill instructions if they exceed the budget
-        const truncated = instructions.length > MAX_SKILL_INSTRUCTIONS_CHARS
-          ? instructions.slice(0, MAX_SKILL_INSTRUCTIONS_CHARS) + "\n\n[... skill instructions truncated for context budget]"
-          : instructions;
-        systemPrompt = `${systemPrompt}\n\n# Active Skill Instructions\n\n${truncated}`;
+        let finalInstructions = instructions;
+        if (finalInstructions.length > MAX_SKILL_INSTRUCTIONS_CHARS) {
+          // Find last paragraph break before the budget limit to avoid cutting mid-markdown
+          const cutPoint = finalInstructions.lastIndexOf("\n\n", MAX_SKILL_INSTRUCTIONS_CHARS);
+          const safeCut = cutPoint > MAX_SKILL_INSTRUCTIONS_CHARS * 0.5 ? cutPoint : MAX_SKILL_INSTRUCTIONS_CHARS;
+          finalInstructions = finalInstructions.slice(0, safeCut) + "\n\n[... skill instructions truncated for context budget]";
+        }
+        systemPrompt = `${systemPrompt}\n\n# Active Skill Instructions\n\n${finalInstructions}`;
       }
     }
   }

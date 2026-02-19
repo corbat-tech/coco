@@ -178,7 +178,8 @@ async function runAdd(source: string, options: { global?: boolean }): Promise<vo
       spinner.stop("Skill installed successfully");
     } catch (error) {
       spinner.stop("Installation failed");
-      const msg = error instanceof Error ? error.message : String(error);
+      const stderr = (error as any)?.stderr?.toString()?.trim();
+      const msg = stderr || (error instanceof Error ? error.message : String(error));
       p.log.error(`Failed to install skill: ${msg}`);
       p.log.info("Try installing manually: git clone the repo into .coco/skills/");
     }
@@ -203,7 +204,8 @@ async function runAdd(source: string, options: { global?: boolean }): Promise<vo
       spinner.stop(`Skill cloned to ${skillDir}`);
     } catch (error) {
       spinner.stop("Clone failed");
-      const msg = error instanceof Error ? error.message : String(error);
+      const stderr = (error as any)?.stderr?.toString()?.trim();
+      const msg = stderr || (error instanceof Error ? error.message : String(error));
       p.log.error(`Failed to clone skill: ${msg}`);
     }
   } else {

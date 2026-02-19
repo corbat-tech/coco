@@ -276,11 +276,15 @@ export async function startRepl(
 
     if (input && isSlashCommand(input)) {
       const { command, args } = parseSlashCommand(input);
-      const shouldExit = await executeSlashCommand(command, args, session);
-      if (shouldExit) break;
+      const commandResult = await executeSlashCommand(command, args, session);
+      if (commandResult.shouldExit) break;
 
-      // Check if slash command queued a multimodal message (e.g., /image)
-      if (hasPendingImage()) {
+      // If the skill returned a forkPrompt, inject it as the next agent message
+      if (commandResult.forkPrompt) {
+        agentMessage = commandResult.forkPrompt;
+        // Don't skip the agent turn — let it process the forked skill instructions
+      } else if (hasPendingImage()) {
+        // Check if slash command queued a multimodal message (e.g., /image)
         const pending = consumePendingImage()!;
         agentMessage = [
           {
@@ -331,9 +335,14 @@ export async function startRepl(
         const shouldExecute = await handleIntentConfirmation(intent, intentRecognizer);
         if (shouldExecute) {
           const { command, args } = intentRecognizer.intentToCommand(intent)!;
-          const shouldExit = await executeSlashCommand(command, args, session);
-          if (shouldExit) break;
-          continue;
+          const intentResult = await executeSlashCommand(command, args, session);
+          if (intentResult.shouldExit) break;
+          if (intentResult.forkPrompt) {
+            agentMessage = intentResult.forkPrompt;
+            // Fall through to agent turn to process forked skill instructions
+          } else {
+            continue;
+          }
         }
         // If user chose not to execute, fall through to normal chat
       }
