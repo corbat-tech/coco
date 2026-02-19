@@ -472,7 +472,7 @@ describe("confirmToolExecution", () => {
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("[delete_file]"));
     });
 
-    it("should display bash_exec with truncated command", async () => {
+    it("should display bash_exec with full wrapped command", async () => {
       const { confirmToolExecution } = await import("./confirmation.js");
 
       const longCommand = "echo " + "a".repeat(100);
@@ -487,8 +487,8 @@ describe("confirmToolExecution", () => {
 
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Confirm Action"));
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("EXECUTE"));
-      // Should be truncated with ...
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("..."));
+      // Should NOT truncate - full command content shown (word-wrapped)
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("echo"));
       // Should show bash pattern in brackets
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("[bash:echo]"));
     });

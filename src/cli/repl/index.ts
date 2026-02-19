@@ -473,8 +473,18 @@ export async function startRepl(
 
       process.once("SIGINT", sigintHandler);
 
+      // Track if we've cleared the spinner for this turn's streaming phase
+      let streamStarted = false;
+
       const result = await executeAgentTurn(session, agentMessage, provider, toolRegistry, {
-        onStream: renderStreamChunk,
+        onStream: (chunk) => {
+          // Clear any lingering spinner on first text chunk to avoid overlap
+          if (!streamStarted) {
+            streamStarted = true;
+            clearSpinner();
+          }
+          renderStreamChunk(chunk);
+        },
         onToolStart: (tc, index, total) => {
           // Update spinner with descriptive message about what tool is doing
           const desc = getToolRunningDescription(
@@ -485,8 +495,21 @@ export async function startRepl(
           setSpinner(msg);
         },
         onToolEnd: (result) => {
-          // Clear spinner and show result
-          clearSpinner();
+          // For long-running tools (>30s), show a "Done" checkmark so the user
+          // gets clear feedback that the operation completed successfully.
+          // For short tools, just clear the spinner silently.
+          const elapsed =
+            activeSpinner && typeof activeSpinner.getElapsed === "function"
+              ? activeSpinner.getElapsed()
+              : 0;
+          if (elapsed >= 30) {
+            // Show completion with elapsed time — critical for long builds/tests
+            activeSpinner?.stop();
+            activeSpinner = null;
+            turnActiveSpinner = null;
+          } else {
+            clearSpinner();
+          }
           renderToolStart(result.name, result.input);
           renderToolEnd(result);
           // Show waiting spinner while LLM processes the result

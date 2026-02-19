@@ -133,6 +133,7 @@ vi.mock("./output/spinner.js", () => ({
     update: vi.fn(),
     fail: vi.fn(),
     setToolCount: vi.fn(),
+    getElapsed: vi.fn().mockReturnValue(0),
   })),
 }));
 
@@ -811,6 +812,7 @@ describe("REPL index", () => {
         update: vi.fn(),
         fail: vi.fn(),
         setToolCount: vi.fn(),
+        getElapsed: vi.fn().mockReturnValue(0),
       };
       vi.mocked(createSpinner).mockReturnValue(mockSpinner);
 

@@ -21,6 +21,7 @@ import {
   getConfiguredProviders,
   formatModelInfo,
   type ProviderDefinition,
+  type ProviderPaymentType,
 } from "./providers-config.js";
 import {
   runOAuthFlow,
@@ -83,7 +84,7 @@ export async function runOnboardingV2(): Promise<OnboardingResult | null> {
         ...providers.map((prov) => ({
           value: prov.id,
           label: `${prov.emoji} ${prov.name}`,
-          hint: prov.requiresApiKey === false ? "Free, runs locally" : prov.description,
+          hint: `${formatPaymentBadge(prov.paymentType)} ${prov.requiresApiKey === false ? "Free, runs locally" : prov.description}`,
         })),
         {
           value: "help",
@@ -755,19 +756,8 @@ async function setupLocalProvider(
                   ),
               );
               if (notDownloaded.length > 0) {
-                const suggestions = notDownloaded
-                  .map((m) => {
-                    const star = m.recommended ? "⭐ " : "   ";
-                    const cmd =
-                      providerType === "ollama"
-                        ? `ollama pull ${m.id}`
-                        : `search '${m.id}' in LM Studio`;
-                    return `   ${star}${m.id} — ${m.description ?? ""} → ${cmd}`;
-                  })
-                  .join("\n");
-                p.log.message(
-                  chalk.dim(`\n   Other recommended models you can install:\n${suggestions}\n`),
-                );
+                const suggestions = formatLocalModelSuggestions(notDownloaded, providerType);
+                p.log.message(chalk.dim(suggestions));
               }
               const modelChoice = await p.select({
                 message: "Choose a loaded model:",
@@ -936,6 +926,68 @@ async function setupLocalProvider(
     apiKey: cfg.apiKeyPlaceholder,
     baseUrl: effectivePort === cfg.defaultPort ? undefined : `http://localhost:${effectivePort}/v1`,
   };
+}
+
+/**
+ * Format payment type badge for display in provider selection
+ * - [API]      → pay per token
+ * - [SUB]      → subscription required
+ * - [FREE]     → completely free
+ * - [FREE/API] → free tier + paid tiers
+ */
+function formatPaymentBadge(paymentType: ProviderPaymentType): string {
+  switch (paymentType) {
+    case "api":
+      return "[API]";
+    case "sub":
+      return "[SUB]";
+    case "free":
+      return "[FREE]";
+    case "freemium":
+      return "[FREE/API]";
+  }
+}
+
+/**
+ * Format local model suggestions in a readable multi-line block format.
+ * Each model gets its own block with name, description, RAM, and install command.
+ * No emojis inside the blocks to avoid terminal width issues.
+ */
+function formatLocalModelSuggestions(
+  models: import("./providers-config.js").ModelDefinition[],
+  providerType: LocalProviderType,
+): string {
+  const lines: string[] = ["", "  Recommended models you can install:", ""];
+
+  models.forEach((m, i) => {
+    const num = i + 1;
+    const label = m.recommended ? `${m.id} (RECOMMENDED)` : m.id;
+    const cmd =
+      providerType === "ollama" ? `ollama pull ${m.id}` : `search '${m.id}' in LM Studio`;
+
+    // Extract RAM from description if present (e.g., "... (16GB RAM)")
+    const ramMatch = m.description?.match(/\((\d+GB)\s*RAM\)/i);
+    const ramInfo = ramMatch ? ramMatch[1] : null;
+    const ctxInfo = m.contextWindow ? `${Math.round(m.contextWindow / 1000)}K ctx` : null;
+
+    // Clean description: remove RAM part since we show it separately
+    const cleanDesc = m.description
+      ? m.description.replace(/\s*\(\d+GB\s*RAM\)/i, "").trim()
+      : "";
+
+    lines.push(`  ${num}. ${label}`);
+    if (cleanDesc) lines.push(`     ${cleanDesc}`);
+    if (ramInfo || ctxInfo) {
+      const meta = [ramInfo ? `RAM: ${ramInfo}` : null, ctxInfo ? `Context: ${ctxInfo}` : null]
+        .filter(Boolean)
+        .join(" | ");
+      lines.push(`     ${meta}`);
+    }
+    lines.push(`     ${cmd}`);
+    lines.push("");
+  });
+
+  return lines.join("\n");
 }
 
 /**
@@ -1351,6 +1403,74 @@ async function saveEnvVars(
 }
 
 /**
+ * Handle the case where a saved local provider (Ollama/LM Studio) is unreachable.
+ * Shows a Retry / Choose another provider / Exit dialog.
+ * Returns: updated ReplConfig on success, null if user chose exit or switch provider.
+ *
+ * CRITICAL: We NEVER auto-switch to a paid provider without explicit user consent.
+ */
+async function handleLocalProviderUnavailable(
+  providerType: LocalProviderType,
+  config: ReplConfig,
+): Promise<ReplConfig | null> {
+  const cfg = LOCAL_PROVIDER_CONFIG[providerType];
+  const displayName = cfg.displayName;
+
+  p.log.message("");
+  p.log.warn(
+    chalk.yellow(`  ${displayName} is not running or not reachable.`),
+  );
+  p.log.message(chalk.dim(`  URL: ${providerType === "ollama" ? "http://localhost:11434" : "http://localhost:1234"}`));
+  p.log.message("");
+
+  const choice = await p.select({
+    message: `What would you like to do?`,
+    options: [
+      {
+        value: "retry",
+        label: `Retry connecting to ${displayName}`,
+        hint: `Make sure ${displayName} is running`,
+      },
+      {
+        value: "choose",
+        label: "Choose a different provider",
+        hint: "Opens provider selection",
+      },
+      {
+        value: "exit",
+        label: "Exit for now",
+      },
+    ],
+  });
+
+  if (p.isCancel(choice) || choice === "exit") {
+    return null;
+  }
+
+  if (choice === "retry") {
+    // Try to connect again
+    try {
+      const { createProvider } = await import("../../providers/index.js");
+      const provider = await createProvider(providerType, {
+        model: config.provider.model,
+      });
+      if (await provider.isAvailable()) {
+        p.log.success(`  Connected to ${displayName}!`);
+        return config;
+      }
+    } catch {
+      // Still failed
+    }
+    p.log.error(`  Still can't reach ${displayName}.`);
+    p.log.message(chalk.dim(`  Make sure ${displayName} is running, then try again.`));
+    return null; // Fall through to onboarding
+  }
+
+  // "choose" - fall through to onboarding (returns null to trigger it)
+  return null;
+}
+
+/**
  * Asegurar configuración antes de iniciar REPL
  *
  * Smart flow:
@@ -1403,26 +1523,42 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
     }
   }
 
-  // 1b. Check if preferred provider (from config) is available via API key
-  const preferredProvider = providers.find(
-    (p) => p.id === config.provider.type && process.env[p.envVar],
-  );
+  // 1b. Check if preferred provider (from config) is available
+  // For local providers (requiresApiKey: false), don't require an env var —
+  // they use a local server that may or may not be running.
+  const preferredProviderDef = providers.find((p) => p.id === config.provider.type);
+  const preferredIsLocal = preferredProviderDef?.requiresApiKey === false;
+  const preferredHasApiKey = preferredProviderDef ? !!process.env[preferredProviderDef.envVar] : false;
+  const preferredIsConfigured = preferredIsLocal || preferredHasApiKey;
 
-  if (preferredProvider) {
+  if (preferredProviderDef && preferredIsConfigured) {
     try {
-      const provider = await createProvider(preferredProvider.id, {
+      const provider = await createProvider(preferredProviderDef.id, {
         model: config.provider.model,
       });
       if (await provider.isAvailable()) {
         return config;
       }
     } catch {
-      // Preferred provider failed, try others
+      // Preferred provider failed
+    }
+
+    // Preferred local provider failed to connect — show retry dialog
+    if (preferredIsLocal) {
+      const retryResult = await handleLocalProviderUnavailable(
+        preferredProviderDef.id as LocalProviderType,
+        config,
+      );
+      if (retryResult !== null) return retryResult;
+      // User chose to exit or switch provider — fall through to onboarding
     }
   }
 
   // 2. Find any configured provider (silently use the first available)
-  const configuredProviders = providers.filter((p) => process.env[p.envVar]);
+  // Include local providers (requiresApiKey: false) even without env vars
+  const configuredProviders = providers.filter(
+    (p) => p.requiresApiKey === false || !!process.env[p.envVar],
+  );
 
   for (const prov of configuredProviders) {
     try {

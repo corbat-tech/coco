@@ -87,6 +87,31 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "mistral-7b": 32768,
   "mistral-nemo": 128000,
   "mixtral-8x7b": 32768,
+  // Mistral AI API models
+  "codestral-latest": 32768,
+  "mistral-large-latest": 131072,
+  "mistral-small-latest": 131072,
+  "open-mixtral-8x22b": 65536,
+  // Groq-hosted models (same models, fast inference)
+  "llama-3.3-70b-versatile": 128000,
+  "llama-3.1-8b-instant": 128000,
+  "mixtral-8x7b-32768": 32768,
+  "gemma2-9b-it": 8192,
+  // DeepSeek API models
+  "deepseek-chat": 65536,
+  "deepseek-reasoner": 65536,
+  // Together AI model IDs
+  "Qwen/Qwen2.5-Coder-32B-Instruct": 32768,
+  "meta-llama/Meta-Llama-3.1-70B-Instruct": 128000,
+  "mistralai/Mixtral-8x7B-Instruct-v0.1": 32768,
+  // HuggingFace model IDs
+  "meta-llama/Llama-3.3-70B-Instruct": 128000,
+  "microsoft/Phi-4": 16384,
+  // OpenRouter model IDs
+  "anthropic/claude-opus-4-6": 200000,
+  "openai/gpt-5.3-codex": 400000,
+  "google/gemini-3-flash-preview": 1000000,
+  "meta-llama/llama-3.3-70b-instruct": 128000,
 };
 
 /**
