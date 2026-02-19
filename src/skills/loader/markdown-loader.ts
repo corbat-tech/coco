@@ -52,17 +52,25 @@ export async function loadMarkdownMetadata(
     const dirName = path.basename(skillDir);
 
     // Detect namespace from directory structure.
-    // If the skill is inside a source directory (e.g., ".coco/skills/anthropics/release/"),
-    // the parent directory name ("anthropics") becomes the namespace.
+    // If the skill is nested inside an owner/namespace directory
+    // (e.g., ".coco/skills/anthropics/release/"), the parent directory
+    // name ("anthropics") becomes the namespace.
+    // A parent is considered a "namespace" when it is NOT one of the
+    // well-known skills root directories.
     const parentDir = path.basename(path.dirname(skillDir));
-    const isNested = !["skills", ".coco", ".claude", ".agents"].includes(parentDir);
-    const namespace = isNested ? parentDir : undefined;
-    const fullId = namespace ? `${namespace}/${toKebabCase(fm.name || dirName)}` : toKebabCase(fm.name || dirName);
+    const namespace = isNamespaceDirectory(parentDir) ? parentDir : undefined;
+    const baseId = toKebabCase(fm.name || dirName);
+    const fullId = namespace ? `${namespace}/${baseId}` : baseId;
+
+    // Derive a source identifier from the skill's filesystem location.
+    // For namespaced skills: "namespace/skill-name", else just the dir name.
+    const source = namespace ? `${namespace}/${dirName}` : dirName;
 
     return {
       id: fullId,
       name: fm.name || dirName,
       namespace,
+      source,
       description: fm.description,
       version: fm.version,
       category: resolveCategory(fm.metadata?.category),
@@ -159,6 +167,26 @@ function parseAllowedTools(tools?: string | string[]): string[] | undefined {
   if (Array.isArray(tools)) return tools;
   // Parse space/comma-separated: "Bash, Read, Write" or "Bash Read Write"
   return tools.split(/[,\s]+/).filter(Boolean);
+}
+
+/**
+ * Well-known directory names that are NOT namespaces.
+ * These are the standard skills root directories where skills are stored.
+ * Any parent directory name NOT in this set is treated as a namespace/owner.
+ */
+const SKILLS_ROOT_DIRS = new Set([
+  "skills",
+  ".coco",
+  ".claude",
+  ".agents",
+  ".cursor",
+  ".windsurf",
+  ".github",
+]);
+
+/** Check whether a parent directory name represents a namespace (not a root) */
+export function isNamespaceDirectory(dirName: string): boolean {
+  return dirName.length > 0 && !SKILLS_ROOT_DIRS.has(dirName);
 }
 
 /** Convert a string to kebab-case for use as skill ID */

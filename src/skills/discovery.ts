@@ -92,12 +92,18 @@ export async function discoverAllSkills(
   return Array.from(allSkills.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Maximum nesting depth for namespace directories (1 level of namespacing) */
+const MAX_NESTING_DEPTH = 1;
+
 /**
  * Scan a directory for skills
  *
  * Each immediate subdirectory is a potential skill.
  * Also supports one level of nesting for namespace/monorepo structures
  * (e.g., skills/owner/skill-name/SKILL.md).
+ *
+ * Security: Symlinks are skipped to prevent directory traversal attacks and
+ * infinite loops. Only real directories are scanned.
  */
 export async function scanSkillsDirectory(
   dir: string,
@@ -105,12 +111,22 @@ export async function scanSkillsDirectory(
 ): Promise<SkillMetadata[]> {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    const skillDirs = entries.filter((e) => e.isDirectory());
+    // Only scan real directories — skip symlinks to prevent traversal/loops
+    const skillDirs = entries.filter((e) => e.isDirectory() && !e.isSymbolicLink());
 
     const results: (SkillMetadata | null)[] = [];
 
     for (const entry of skillDirs) {
       const entryPath = path.join(dir, entry.name);
+
+      // Double-check: skip symlinked directories (some Node versions don't
+      // report isSymbolicLink() correctly on dirent)
+      try {
+        const stat = await fs.lstat(entryPath);
+        if (stat.isSymbolicLink()) continue;
+      } catch {
+        continue;
+      }
 
       // Try loading directly (flat structure: skills/my-skill/SKILL.md)
       const directResult = await loadSkillFromDirectory(entryPath, scope);
@@ -120,16 +136,9 @@ export async function scanSkillsDirectory(
       }
 
       // Try nested scan (namespace structure: skills/owner/skill-name/SKILL.md)
-      try {
-        const subEntries = await fs.readdir(entryPath, { withFileTypes: true });
-        const subDirs = subEntries.filter((e) => e.isDirectory());
-        const nestedResults = await Promise.all(
-          subDirs.map((sub) => loadSkillFromDirectory(path.join(entryPath, sub.name), scope)),
-        );
-        results.push(...nestedResults);
-      } catch {
-        // Not a directory or can't read -- skip
-      }
+      // Limited to MAX_NESTING_DEPTH level(s) to prevent deep traversal
+      const nestedResults = await scanNestedSkills(entryPath, scope, 0);
+      results.push(...nestedResults);
     }
 
     return results.filter((meta): meta is SkillMetadata => meta !== null);
@@ -142,6 +151,41 @@ export async function scanSkillsDirectory(
         error instanceof Error ? error.message : error,
       );
     }
+    return [];
+  }
+}
+
+/**
+ * Scan nested namespace directories for skills with depth limiting.
+ * Only scans real directories (symlinks skipped).
+ */
+async function scanNestedSkills(
+  dir: string,
+  scope: SkillScope,
+  depth: number,
+): Promise<(SkillMetadata | null)[]> {
+  if (depth >= MAX_NESTING_DEPTH) return [];
+
+  try {
+    const subEntries = await fs.readdir(dir, { withFileTypes: true });
+    const subDirs = subEntries.filter((e) => e.isDirectory() && !e.isSymbolicLink());
+
+    const results = await Promise.all(
+      subDirs.map(async (sub) => {
+        const subPath = path.join(dir, sub.name);
+        // Skip symlinks (double check via lstat)
+        try {
+          const stat = await fs.lstat(subPath);
+          if (stat.isSymbolicLink()) return null;
+        } catch {
+          return null;
+        }
+        return loadSkillFromDirectory(subPath, scope);
+      }),
+    );
+    return results;
+  } catch {
+    // Not a directory or can't read — skip
     return [];
   }
 }

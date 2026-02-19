@@ -3,7 +3,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Message, LLMProvider } from "../../providers/types.js";
@@ -260,24 +260,88 @@ export function addMessage(session: ReplSession, message: Message): void {
 
 /**
  * Substitute $(!command) patterns in skill instructions with dynamic output.
- * Only supports safe read-only commands. Limited to 500 chars per substitution.
+ * Only supports a strict allowlist of safe, read-only commands.
+ * Limited to 500 chars per substitution.
+ *
+ * Security: Uses execFileSync (no shell) and validates the ENTIRE command
+ * against a strict allowlist. Shell metacharacters are rejected outright.
  */
 function substituteDynamicContext(body: string, cwd: string): string {
-  const SAFE_COMMANDS = /^\$\(!(git\s+(status|log|branch|diff|rev-parse)|cat|head|tail|ls|pwd|echo|date|node\s+-[ep])\b/;
-
-  return body.replace(/\$\(!([^)]+)\)/g, (match, cmd: string) => {
-    // Only allow safe read-only commands
-    if (!SAFE_COMMANDS.test(match)) {
-      return match; // Leave unsafe commands as-is
-    }
-    try {
-      const output = execSync(cmd.trim(), { cwd, timeout: 5000, encoding: "utf-8" });
-      const trimmed = output.trim();
-      return trimmed.length > 500 ? trimmed.slice(0, 500) + "..." : trimmed;
-    } catch {
-      return `[error: command failed: ${cmd.trim()}]`;
-    }
+  return body.replace(/\$\(!([^)]+)\)/g, (match, raw: string) => {
+    const result = executeSafeCommand(raw.trim(), cwd);
+    if (result === null) return match; // Leave unsafe commands as-is
+    return result;
   });
+}
+
+/** Shell metacharacters that indicate command chaining / injection */
+const SHELL_METACHARACTERS = /[;|&`$(){}<>!\n\\'"]/;
+
+/**
+ * Allowlist of safe commands with their permitted subcommands and flags.
+ * Each entry maps a binary name to a validation function that receives the args array.
+ * The validator returns true if the args are safe.
+ */
+const SAFE_COMMAND_VALIDATORS: Record<string, (args: string[]) => boolean> = {
+  git: (args) => {
+    const safeSubcommands = new Set(["status", "log", "branch", "diff", "rev-parse", "remote", "tag", "show"]);
+    return args.length > 0 && safeSubcommands.has(args[0]!);
+  },
+  cat: () => true,
+  head: () => true,
+  tail: () => true,
+  ls: () => true,
+  pwd: () => true,
+  echo: () => true,
+  date: () => true,
+  // NOTE: `node` is intentionally NOT in this allowlist because `node -e`
+  // allows arbitrary code execution (e.g., require('child_process').execSync(...)),
+  // which would undermine the security sandbox.
+  wc: () => true,
+  whoami: () => true,
+  basename: () => true,
+  dirname: () => true,
+};
+
+/**
+ * Execute a safe command and return its output, or null if rejected.
+ * Validates the entire command (not just a prefix) and rejects all
+ * shell metacharacters to prevent command chaining attacks.
+ *
+ * @internal Exported for testing only
+ */
+export function executeSafeCommand(command: string, cwd: string): string | null {
+  // Reject any command containing shell metacharacters
+  if (SHELL_METACHARACTERS.test(command)) {
+    return null;
+  }
+
+  // Split into binary + args (simple whitespace split — no shell expansion)
+  const parts = command.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+
+  const binary = parts[0]!; // safe: length > 0 checked above
+  const args = parts.slice(1);
+
+  // Validate against allowlist
+  const validator = SAFE_COMMAND_VALIDATORS[binary];
+  if (!validator || !validator(args)) {
+    return null;
+  }
+
+  try {
+    // execFileSync bypasses the shell entirely — no metacharacter expansion
+    const output = execFileSync(binary, args, {
+      cwd,
+      timeout: 5000,
+      encoding: "utf-8",
+      maxBuffer: 1024 * 64, // 64KB max
+    });
+    const trimmed = output.trim();
+    return trimmed.length > 500 ? trimmed.slice(0, 500) + "..." : trimmed;
+  } catch {
+    return `[error: command failed: ${command}]`;
+  }
 }
 
 /**

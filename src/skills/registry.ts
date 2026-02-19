@@ -14,7 +14,7 @@ import type {
   SkillExecutionContext,
   SkillExecutionResult,
 } from "./types.js";
-import { isNativeContent } from "./types.js";
+import { isNativeContent, isMarkdownContent } from "./types.js";
 import { discoverAllSkills } from "./discovery.js";
 import { loadFullSkill, nativeSkillToLoaded } from "./loader/index.js";
 import { matchSkills } from "./matcher.js";
@@ -251,7 +251,8 @@ export class UnifiedSkillRegistry {
     while (this.activeSkillIds.size >= maxActive && !this.activeSkillIds.has(id)) {
       const oldest = this.activeSkillIds.values().next().value;
       if (oldest) {
-        this.activeSkillIds.delete(oldest);
+        // Use deactivateSkill() to properly emit "deactivated" event
+        this.deactivateSkill(oldest);
       } else {
         break;
       }
@@ -330,9 +331,11 @@ export class UnifiedSkillRegistry {
 
     // Check if skill should run in a forked/agent context (subagent)
     if (meta.context === "fork" || meta.context === "agent") {
+      if (!isMarkdownContent(loaded.content)) {
+        return { success: false, error: `Skill "${meta.name}" has context: ${meta.context} but no markdown content.` };
+      }
       // Load full content for the subagent prompt
-      const content = loaded.content as import("./types.js").MarkdownSkillContent;
-      let body = content.instructions;
+      let body = loaded.content.instructions;
       body = body.replace(/\$ARGUMENTS/g, args);
 
       this.emit({ type: "executed", skillId: meta.id, success: true });

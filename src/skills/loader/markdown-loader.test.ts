@@ -5,6 +5,7 @@ import {
   loadMarkdownMetadata,
   loadMarkdownContent,
   toKebabCase,
+  isNamespaceDirectory,
 } from "./markdown-loader.js";
 
 const FIXTURES_DIR = join(process.cwd(), "test/fixtures/skills");
@@ -119,6 +120,44 @@ describe("loadMarkdownContent", () => {
     const content = await loadMarkdownContent(join(FIXTURES_DIR, "test-skill"));
     expect(content).not.toBeNull();
     expect(content!.instructions).toContain("$ARGUMENTS");
+  });
+});
+
+describe("loadMarkdownMetadata — namespace & source", () => {
+  it("should populate source field from directory name", async () => {
+    const meta = await loadMarkdownMetadata(join(FIXTURES_DIR, "test-skill"), "project");
+    expect(meta).not.toBeNull();
+    expect(meta!.source).toBe("test-skill");
+  });
+
+  it("should not detect namespace for skills in root skills directory", async () => {
+    // FIXTURES_DIR = test/fixtures/skills → parent of test-skill is "skills"
+    const meta = await loadMarkdownMetadata(join(FIXTURES_DIR, "test-skill"), "project");
+    expect(meta).not.toBeNull();
+    expect(meta!.namespace).toBeUndefined();
+    expect(meta!.id).toBe("test-skill"); // no namespace prefix
+  });
+});
+
+describe("isNamespaceDirectory", () => {
+  it("should return false for well-known root dirs", () => {
+    expect(isNamespaceDirectory("skills")).toBe(false);
+    expect(isNamespaceDirectory(".coco")).toBe(false);
+    expect(isNamespaceDirectory(".claude")).toBe(false);
+    expect(isNamespaceDirectory(".agents")).toBe(false);
+    expect(isNamespaceDirectory(".cursor")).toBe(false);
+    expect(isNamespaceDirectory(".windsurf")).toBe(false);
+    expect(isNamespaceDirectory(".github")).toBe(false);
+  });
+
+  it("should return true for namespace directories", () => {
+    expect(isNamespaceDirectory("anthropics")).toBe(true);
+    expect(isNamespaceDirectory("my-org")).toBe(true);
+    expect(isNamespaceDirectory("corbat")).toBe(true);
+  });
+
+  it("should return false for empty string", () => {
+    expect(isNamespaceDirectory("")).toBe(false);
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { join } from "node:path";
 import { UnifiedSkillRegistry, createUnifiedSkillRegistry } from "./registry.js";
+import type { SkillEvent } from "./registry.js";
 import type { LegacySkill } from "./loader/typescript-loader.js";
 
 const FIXTURES_DIR = join(process.cwd(), "test/fixtures/skills");
@@ -229,6 +230,32 @@ describe("UnifiedSkillRegistry — config", () => {
     expect(registry.getActiveSkillIds().length).toBe(1);
   });
 
+  it("should emit 'deactivated' event for FIFO-evicted skill", async () => {
+    const registry = createUnifiedSkillRegistry();
+    registry.setConfig({ maxActiveSkills: 1 });
+    await registry.discoverAndRegister("/non-existent-project", mockBuiltins, FIXTURES_DIR);
+
+    await registry.activateSkill("test-skill");
+
+    const events: SkillEvent[] = [];
+    registry.on((e) => events.push(e));
+
+    await registry.activateSkill("minimal-skill");
+
+    // Should emit deactivated for test-skill (FIFO evicted) + activated for minimal-skill
+    const deactivatedEvent = events.find((e) => e.type === "deactivated");
+    expect(deactivatedEvent).toBeDefined();
+    if (deactivatedEvent?.type === "deactivated") {
+      expect(deactivatedEvent.skillId).toBe("test-skill");
+    }
+
+    const activatedEvent = events.find((e) => e.type === "activated");
+    expect(activatedEvent).toBeDefined();
+    if (activatedEvent?.type === "activated") {
+      expect(activatedEvent.skillId).toBe("minimal-skill");
+    }
+  });
+
   it("should not evict if same skill is re-activated", async () => {
     const registry = createUnifiedSkillRegistry();
     registry.setConfig({ maxActiveSkills: 1 });
@@ -249,5 +276,102 @@ describe("UnifiedSkillRegistry — config", () => {
     expect(ok1).toBe(true);
     expect(ok2).toBe(true);
     expect(registry.getActiveSkillIds().length).toBe(2);
+  });
+});
+
+// ============================================================================
+// Lifecycle Events
+// ============================================================================
+
+describe("UnifiedSkillRegistry — lifecycle events", () => {
+  let registry: UnifiedSkillRegistry;
+
+  beforeEach(async () => {
+    registry = createUnifiedSkillRegistry();
+    await registry.discoverAndRegister("/non-existent-project", mockBuiltins, FIXTURES_DIR);
+  });
+
+  it("should emit 'discovered' event during discoverAndRegister", async () => {
+    const newRegistry = createUnifiedSkillRegistry();
+    const events: SkillEvent[] = [];
+    newRegistry.on((e) => events.push(e));
+
+    await newRegistry.discoverAndRegister("/non-existent-project", mockBuiltins, FIXTURES_DIR);
+
+    const discoveredEvent = events.find((e) => e.type === "discovered");
+    expect(discoveredEvent).toBeDefined();
+    expect(discoveredEvent!.type).toBe("discovered");
+    if (discoveredEvent!.type === "discovered") {
+      expect(discoveredEvent!.count).toBeGreaterThan(0);
+    }
+  });
+
+  it("should emit 'activated' event on activateSkill", async () => {
+    const events: SkillEvent[] = [];
+    registry.on((e) => events.push(e));
+
+    await registry.activateSkill("test-skill");
+
+    const activatedEvent = events.find((e) => e.type === "activated");
+    expect(activatedEvent).toBeDefined();
+    if (activatedEvent!.type === "activated") {
+      expect(activatedEvent!.skillId).toBe("test-skill");
+    }
+  });
+
+  it("should emit 'deactivated' event on deactivateSkill", async () => {
+    await registry.activateSkill("test-skill");
+
+    const events: SkillEvent[] = [];
+    registry.on((e) => events.push(e));
+
+    registry.deactivateSkill("test-skill");
+
+    const deactivatedEvent = events.find((e) => e.type === "deactivated");
+    expect(deactivatedEvent).toBeDefined();
+    if (deactivatedEvent!.type === "deactivated") {
+      expect(deactivatedEvent!.skillId).toBe("test-skill");
+    }
+  });
+
+  it("should emit 'executed' event on execute", async () => {
+    const events: SkillEvent[] = [];
+    registry.on((e) => events.push(e));
+
+    await registry.execute("ship", "", { cwd: "/test" });
+
+    const executedEvent = events.find((e) => e.type === "executed");
+    expect(executedEvent).toBeDefined();
+    if (executedEvent!.type === "executed") {
+      expect(executedEvent!.skillId).toBe("ship");
+      expect(executedEvent!.success).toBe(true);
+    }
+  });
+
+  it("should return unsubscribe function from on()", async () => {
+    const events: SkillEvent[] = [];
+    const unsubscribe = registry.on((e) => events.push(e));
+
+    await registry.activateSkill("test-skill");
+    expect(events.length).toBe(1);
+
+    unsubscribe();
+
+    await registry.activateSkill("minimal-skill");
+    // Should still be 1 because we unsubscribed
+    expect(events.length).toBe(1);
+  });
+
+  it("should not break when listener throws", async () => {
+    registry.on(() => {
+      throw new Error("Listener error");
+    });
+
+    const goodEvents: SkillEvent[] = [];
+    registry.on((e) => goodEvents.push(e));
+
+    // Should not throw, even though one listener errors
+    await registry.activateSkill("test-skill");
+    expect(goodEvents.length).toBe(1);
   });
 });
