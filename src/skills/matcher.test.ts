@@ -179,6 +179,36 @@ describe("matchSkills", () => {
     const ids = matches.map((m) => m.skill.id);
     expect(ids).toContain("testing-guide");
   });
+
+  it("should exclude skills with disableModelInvocation from auto-matching", () => {
+    const skills: SkillMetadata[] = [
+      {
+        id: "auto-skill",
+        name: "auto skill",
+        description: "An auto-activated skill for testing",
+        version: "1.0.0",
+        category: "testing",
+        kind: "markdown",
+        scope: "project",
+        path: "/test",
+      },
+      {
+        id: "manual-skill",
+        name: "manual skill",
+        description: "A manually-invoked skill for testing",
+        version: "1.0.0",
+        category: "testing",
+        kind: "markdown",
+        scope: "project",
+        path: "/test",
+        disableModelInvocation: true,
+      },
+    ];
+    const matches = matchSkills("testing skill", skills, { minScore: 0.1 });
+    const matchedIds = matches.map(m => m.skill.id);
+    expect(matchedIds).toContain("auto-skill");
+    expect(matchedIds).not.toContain("manual-skill");
+  });
 });
 
 describe("stem", () => {

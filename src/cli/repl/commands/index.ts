@@ -152,6 +152,9 @@ export async function executeSlashCommand(
 
   if (skill) {
     const argsString = args.join(" ");
+    // Set lastSkillArguments BEFORE execute so that getConversationContext()
+    // can substitute $ARGUMENTS in the next agent turn's system prompt.
+    session.lastSkillArguments = argsString;
     const result = await registry.execute(commandName, argsString, {
       cwd: session.projectPath,
       session,
@@ -169,6 +172,8 @@ export async function executeSlashCommand(
   }
 
   // 3. Fall back to unified skill registry (markdown + native from all scopes)
+  // Flow: set lastSkillArguments -> execute skill -> return to REPL loop ->
+  // next agent turn calls getConversationContext() which substitutes $ARGUMENTS
   if (session.skillRegistry && session.skillRegistry.has(commandName)) {
     const argsString = args.join(" ");
     session.lastSkillArguments = argsString;

@@ -64,7 +64,7 @@ export function matchSkills(
   if (queryTokens.length === 0) return [];
 
   // Filter out skills that opt-out of auto-activation
-  const matchableSkills = skills.filter(s => !s.disableModelInvocation);
+  const matchableSkills = skills.filter(s => s.disableModelInvocation !== true);
 
   const matches: SkillMatch[] = [];
 

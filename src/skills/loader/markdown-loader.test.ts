@@ -32,13 +32,16 @@ describe("loadMarkdownMetadata", () => {
     expect(meta).not.toBeNull();
     expect(meta!.id).toBe("test-skill");
     expect(meta!.name).toBe("test-skill");
-    expect(meta!.description).toBe("A test skill for unit testing the skills system");
-    expect(meta!.version).toBe("1.0.0");
+    expect(meta!.description).toBe("A test skill for validating the unified skills system");
+    expect(meta!.version).toBe("2.0.0");
     expect(meta!.kind).toBe("markdown");
     expect(meta!.scope).toBe("project");
     expect(meta!.category).toBe("testing");
-    expect(meta!.tags).toEqual(["testing", "example"]);
-    expect(meta!.author).toBe("corbat-team");
+    expect(meta!.tags).toContain("testing");
+    expect(meta!.tags).toContain("fixtures");
+    expect(meta!.tags).toContain("validation");
+    expect(meta!.tags).toContain("quality");
+    expect(meta!.author).toBe("test-author");
   });
 
   it("should load metadata from a minimal SKILL.md", async () => {
@@ -57,14 +60,43 @@ describe("loadMarkdownMetadata", () => {
     const meta = await loadMarkdownMetadata(join(FIXTURES_DIR, "non-existent"), "project");
     expect(meta).toBeNull();
   });
+
+  it("should parse skills.sh standard fields", async () => {
+    const meta = await loadMarkdownMetadata(join(FIXTURES_DIR, "test-skill"), "project");
+    expect(meta).not.toBeNull();
+    expect(meta!.disableModelInvocation).toBe(true);
+    expect(meta!.allowedTools).toEqual(["Bash", "Read", "Edit"]);
+    expect(meta!.argumentHint).toBe('[--verbose] <target>');
+    expect(meta!.compatibility).toBe("Requires Node.js 22+");
+    expect(meta!.model).toBe("claude-sonnet-4-20250514");
+    expect(meta!.context).toBe("fork");
+  });
+
+  it("should merge tags from top-level and metadata", async () => {
+    const meta = await loadMarkdownMetadata(join(FIXTURES_DIR, "test-skill"), "project");
+    expect(meta).not.toBeNull();
+    // Should contain tags from both top-level and metadata.tags, deduplicated
+    expect(meta!.tags).toContain("testing");
+    expect(meta!.tags).toContain("fixtures");
+    expect(meta!.tags).toContain("validation");
+    expect(meta!.tags).toContain("quality");  // from metadata.tags
+    expect(meta!.tags!.length).toBe(4);
+  });
+
+  it("should prefer top-level author over metadata.author", async () => {
+    // test-skill has no top-level author, only metadata.author
+    const meta = await loadMarkdownMetadata(join(FIXTURES_DIR, "test-skill"), "project");
+    expect(meta).not.toBeNull();
+    expect(meta!.author).toBe("test-author");
+  });
 });
 
 describe("loadMarkdownContent", () => {
   it("should load full content from test-skill", async () => {
     const content = await loadMarkdownContent(join(FIXTURES_DIR, "test-skill"));
     expect(content).not.toBeNull();
-    expect(content!.instructions).toContain("# Test Skill Instructions");
-    expect(content!.instructions).toContain("Always write tests before implementation");
+    expect(content!.instructions).toContain("# Test Skill");
+    expect(content!.instructions).toContain("unified skills system");
     expect(content!.references.length).toBe(1);
     expect(content!.references[0]).toContain("api-guide.md");
     expect(content!.scripts).toEqual([]);
@@ -81,6 +113,12 @@ describe("loadMarkdownContent", () => {
   it("should return null for non-existent skill", async () => {
     const content = await loadMarkdownContent(join(FIXTURES_DIR, "non-existent"));
     expect(content).toBeNull();
+  });
+
+  it("should load content with $ARGUMENTS placeholder", async () => {
+    const content = await loadMarkdownContent(join(FIXTURES_DIR, "test-skill"));
+    expect(content).not.toBeNull();
+    expect(content!.instructions).toContain("$ARGUMENTS");
   });
 });
 

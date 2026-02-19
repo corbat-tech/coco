@@ -4,11 +4,12 @@
  * Discovers skills across three scopes:
  * - builtin: Native skills compiled into Coco
  * - global: ~/.coco/skills/
- * - project: <project>/.claude/skills/ and <project>/.coco/skills/
+ * - project: <project>/.coco/skills/, .agents/skills/, .claude/skills/
  *
  * Higher-priority scopes override lower-priority ones for the same skill ID.
- * For project skills, .claude/skills/ (industry standard) takes priority over
- * .coco/skills/ (coco-specific) when both directories contain the same skill ID.
+ * For project skills, directories are scanned in ascending priority order:
+ *   .claude/skills/ (Claude compat) < .agents/skills/ (shared standard) < .coco/skills/ (native)
+ * This means .coco/skills/ always wins when the same skill exists in multiple directories.
  */
 
 import type { SkillMetadata, SkillScope } from "./types.js";
@@ -23,10 +24,11 @@ import path from "node:path";
 /** Default global skills directory */
 const GLOBAL_SKILLS_DIR = path.join(COCO_HOME, "skills");
 
-/** Project skills directory names (scanned in order; later entries override earlier) */
+/** Project skills directory names (scanned in ascending priority; later entries override earlier) */
 const PROJECT_SKILLS_DIRNAMES = [
-  ".coco/skills",    // Coco convention (lower priority)
-  ".claude/skills",  // Industry standard (higher priority)
+  ".claude/skills",  // Claude compat — read for migration/interop (lowest project priority)
+  ".agents/skills",  // Shared cross-agent standard (medium priority)
+  ".coco/skills",    // Coco native — authoritative (highest project priority)
 ];
 
 /** Options for skill discovery */
@@ -73,8 +75,8 @@ export async function discoverAllSkills(
   }
 
   // 3. Scan project skills directories (highest priority)
-  // Support both .claude/skills/ (industry standard) and .coco/skills/ (coco-specific)
-  // .claude/skills/ takes priority over .coco/skills/ for the same skill ID
+  // Scans in ascending priority: .claude/skills/ < .agents/skills/ < .coco/skills/
+  // .coco/skills/ is Coco's native dir and always wins for the same skill ID
   const projectDirs = opts.projectDir
     ? [opts.projectDir]
     : PROJECT_SKILLS_DIRNAMES.map((d) => path.join(projectPath, d));

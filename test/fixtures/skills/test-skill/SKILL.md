@@ -1,28 +1,37 @@
 ---
 name: test-skill
-description: A test skill for unit testing the skills system
-version: "1.0.0"
+description: A test skill for validating the unified skills system
+version: "2.0.0"
 license: MIT
+disable-model-invocation: true
+allowed-tools: Bash, Read, Edit
+argument-hint: "[--verbose] <target>"
+compatibility: Requires Node.js 22+
+model: claude-sonnet-4-20250514
+context: fork
+tags:
+  - testing
+  - fixtures
+  - validation
 metadata:
-  author: corbat-team
+  author: test-author
   tags:
-    - testing
-    - example
+    - quality
   category: testing
 ---
 
-# Test Skill Instructions
+# Test Skill
 
-Always write tests before implementation (TDD).
+This is a test skill for the unified skills system.
 
-## Example
+## Usage
 
-```typescript
-import { describe, it, expect } from "vitest";
+Use $ARGUMENTS to pass arguments to this skill.
 
-describe("feature", () => {
-  it("should work", () => {
-    expect(true).toBe(true);
-  });
-});
+```bash
+echo "Running test skill with args: $ARGUMENTS"
 ```
+
+## Details
+
+This skill validates that all frontmatter fields are correctly parsed.
