@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" alt="Coco — autonomous AI coding agent" width="640"/>
+<img src="docs/assets/logo.png" alt="Coco — autonomous AI coding agent" width="640"/>
 
 <br/>
 
