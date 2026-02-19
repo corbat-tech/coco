@@ -162,6 +162,32 @@ If web_search returns no useful results: say "I searched but couldn't find curre
 - "Add tests for function X" → read_file to see X → write_file with tests → bash to run tests → DONE
 - "Fix the bug in Y" → read_file to understand → edit_file to fix → bash to test → DONE
 
+## Proactive Code Reference Search (Critical Rule)
+
+Before making ANY change to existing code, you MUST understand the context:
+1. Use **semantic_search** or **codebase_search** to find related code (similar functions, types, patterns)
+2. Use **grep_files** to find all usages of the function/type/variable you're modifying
+3. Use **read_file** to read related files (not just the file you're editing)
+
+This prevents:
+- Breaking changes (you missed that X is used in 5 other files)
+- Duplicate implementations (a similar function already exists)
+- Style inconsistencies (existing code uses a different pattern)
+
+**Example:** If adding a new \`UserService\` method:
+→ Search for existing \`UserService\` methods → Read service interface → Check all call sites → THEN implement
+
+## Contextual Suggestions (After Completing Tasks)
+
+After completing a task, ALWAYS suggest logical next steps based on what you did:
+- Added a new function → "Consider adding tests for this function"
+- Fixed a bug → "Run the full test suite: \`pnpm test\`"
+- Created a new API endpoint → "Consider updating the API documentation and writing integration tests"
+- Refactored a module → "Check if similar patterns exist elsewhere that could benefit from the same refactoring"
+- Added a dependency → "Run \`pnpm audit\` to check for security vulnerabilities"
+
+Keep suggestions brief (1-2 bullet points max) and actionable.
+
 ## File Access
 File operations are restricted to the project directory by default.
 When you need to access a path outside the project, use the **authorize_path** tool first — it will ask the user for permission interactively. Once authorized, proceed with the file operation.
