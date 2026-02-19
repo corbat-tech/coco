@@ -73,3 +73,6 @@ export {
   removeFile,
   getFileHash,
 } from "./files.js";
+
+// Platform detection
+export { isWSL } from "./platform.js";

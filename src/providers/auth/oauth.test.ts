@@ -65,7 +65,7 @@ vi.mock("node:fs/promises", () => ({
 
 // Mock node:child_process for openBrowser
 vi.mock("node:child_process", () => ({
-  exec: vi.fn(),
+  execFile: vi.fn(),
 }));
 
 // Mock node:http to avoid binding real sockets during tests
@@ -106,14 +106,14 @@ import {
 import { OAUTH_CONFIGS, getAuthMethods } from "./index.js";
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 const mockReadFile = vi.mocked(readFile);
 const mockWriteFile = vi.mocked(writeFile);
 const mockMkdir = vi.mocked(mkdir);
-const mockExec = vi.mocked(exec);
+const mockExecFile = vi.mocked(execFile);
 
 function createMockConfig(overrides?: Partial<OAuthConfig>): OAuthConfig {
   return {
@@ -340,35 +340,35 @@ describe("oauth", () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, "platform", { value: "darwin", writable: true });
 
-      // exec with callback pattern: exec(cmd, callback)
-      mockExec.mockImplementation((_cmd: unknown, callback: unknown) => {
+      // execFile callback pattern: execFile(cmd, args, callback)
+      mockExecFile.mockImplementation((_cmd: unknown, _args: unknown, callback: unknown) => {
         if (typeof callback === "function") {
-          (callback as (err: null) => void)(null);
+          (callback as (err: null, stdout: string, stderr: string) => void)(null, "", "");
         }
-        return {} as ReturnType<typeof exec>;
+        return {} as ReturnType<typeof execFile>;
       });
 
       await openBrowser("https://example.com");
 
-      expect(mockExec).toHaveBeenCalledWith('open "https://example.com"', expect.any(Function));
+      expect(mockExecFile).toHaveBeenCalledWith("open", ["https://example.com"], expect.any(Function));
 
       Object.defineProperty(process, "platform", { value: originalPlatform, writable: true });
     });
 
-    it("should use 'start' on Windows (win32)", async () => {
+    it("should use 'cmd.exe start' on Windows (win32)", async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, "platform", { value: "win32", writable: true });
 
-      mockExec.mockImplementation((_cmd: unknown, callback: unknown) => {
+      mockExecFile.mockImplementation((_cmd: unknown, _args: unknown, callback: unknown) => {
         if (typeof callback === "function") {
-          (callback as (err: null) => void)(null);
+          (callback as (err: null, stdout: string, stderr: string) => void)(null, "", "");
         }
-        return {} as ReturnType<typeof exec>;
+        return {} as ReturnType<typeof execFile>;
       });
 
       await openBrowser("https://example.com");
 
-      expect(mockExec).toHaveBeenCalledWith('start "" "https://example.com"', expect.any(Function));
+      expect(mockExecFile).toHaveBeenCalledWith("cmd.exe", ["/c", "start", "", "https://example.com"], expect.any(Function));
 
       Object.defineProperty(process, "platform", { value: originalPlatform, writable: true });
     });
@@ -377,29 +377,29 @@ describe("oauth", () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, "platform", { value: "linux", writable: true });
 
-      mockExec.mockImplementation((_cmd: unknown, callback: unknown) => {
+      mockExecFile.mockImplementation((_cmd: unknown, _args: unknown, callback: unknown) => {
         if (typeof callback === "function") {
-          (callback as (err: null) => void)(null);
+          (callback as (err: null, stdout: string, stderr: string) => void)(null, "", "");
         }
-        return {} as ReturnType<typeof exec>;
+        return {} as ReturnType<typeof execFile>;
       });
 
       await openBrowser("https://example.com");
 
-      expect(mockExec).toHaveBeenCalledWith('xdg-open "https://example.com"', expect.any(Function));
+      expect(mockExecFile).toHaveBeenCalledWith("xdg-open", ["https://example.com"], expect.any(Function));
 
       Object.defineProperty(process, "platform", { value: originalPlatform, writable: true });
     });
 
-    it("should silently fail if exec errors", async () => {
+    it("should silently fail if execFile errors", async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, "platform", { value: "darwin", writable: true });
 
-      mockExec.mockImplementation((_cmd: unknown, callback: unknown) => {
+      mockExecFile.mockImplementation((_cmd: unknown, _args: unknown, callback: unknown) => {
         if (typeof callback === "function") {
           (callback as (err: Error) => void)(new Error("command not found"));
         }
-        return {} as ReturnType<typeof exec>;
+        return {} as ReturnType<typeof execFile>;
       });
 
       // Should not throw
@@ -718,14 +718,14 @@ describe("oauth", () => {
         redirectUri: "http://localhost:18906/callback",
       });
 
-      // Mock exec for openBrowser (darwin)
+      // Mock execFile for openBrowser (darwin)
       const originalPlatform = process.platform;
       Object.defineProperty(process, "platform", { value: "darwin", writable: true });
-      mockExec.mockImplementation((_cmd: unknown, callback: unknown) => {
+      mockExecFile.mockImplementation((_cmd: unknown, _args: unknown, callback: unknown) => {
         if (typeof callback === "function") {
-          (callback as (err: null) => void)(null);
+          (callback as (err: null, stdout: string, stderr: string) => void)(null, "", "");
         }
-        return {} as ReturnType<typeof exec>;
+        return {} as ReturnType<typeof execFile>;
       });
 
       // Mock fetch for exchangeCodeForTokens
