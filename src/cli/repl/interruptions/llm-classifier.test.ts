@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createLLMClassifier } from "./llm-classifier.js";
 import { InterruptionAction } from "./types.js";
 import type { LLMProvider, ChatResponse } from "../../../providers/types.js";
