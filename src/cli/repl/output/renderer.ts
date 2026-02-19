@@ -909,7 +909,7 @@ export function renderUsageStats(
 ): void {
   const totalTokens = inputTokens + outputTokens;
   const toolsStr = toolCallCount > 0 ? ` · ${toolCallCount} tools` : "";
-  console.log(chalk.dim(`─ ${totalTokens.toLocaleString()} tokens${toolsStr}`));
+  console.log(chalk.dim(`─ ${totalTokens.toLocaleString("en-US")} tokens${toolsStr}`));
 }
 
 export function renderError(message: string): void {
