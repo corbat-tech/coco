@@ -294,6 +294,164 @@ describe("getConversationContext with toolRegistry", () => {
   });
 });
 
+// ============================================================================
+// executeSafeCommand — security tests for $(!command) substitution
+// ============================================================================
+
+describe("executeSafeCommand — security", () => {
+  const cwd = process.cwd();
+
+  // Safe commands that SHOULD execute
+  it("should execute pwd", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    const result = executeSafeCommand("pwd", cwd);
+    expect(result).not.toBeNull();
+    expect(typeof result).toBe("string");
+  });
+
+  it("should execute git status", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    const result = executeSafeCommand("git status", cwd);
+    expect(result).not.toBeNull();
+  });
+
+  it("should execute git branch", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    const result = executeSafeCommand("git branch", cwd);
+    expect(result).not.toBeNull();
+  });
+
+  it("should execute echo", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    const result = executeSafeCommand("echo hello", cwd);
+    expect(result).toBe("hello");
+  });
+
+  it("should execute date", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    const result = executeSafeCommand("date", cwd);
+    expect(result).not.toBeNull();
+  });
+
+  it("should execute ls", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    const result = executeSafeCommand("ls", cwd);
+    expect(result).not.toBeNull();
+  });
+
+  // Command injection attempts — MUST be rejected (return null)
+  it("should reject semicolons (command chaining)", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("git status; rm -rf /", cwd)).toBeNull();
+  });
+
+  it("should reject && (command chaining)", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("git status && rm -rf /", cwd)).toBeNull();
+  });
+
+  it("should reject || (command chaining)", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("git status || rm -rf /", cwd)).toBeNull();
+  });
+
+  it("should reject pipe (|)", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("git log | head", cwd)).toBeNull();
+  });
+
+  it("should reject backticks", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("echo `whoami`", cwd)).toBeNull();
+  });
+
+  it("should reject $() subshell", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("echo $(whoami)", cwd)).toBeNull();
+  });
+
+  it("should reject redirect >", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("echo malicious > /etc/passwd", cwd)).toBeNull();
+  });
+
+  it("should reject redirect <", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("cat < /etc/passwd", cwd)).toBeNull();
+  });
+
+  it("should reject curly braces", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("{ echo a; echo b; }", cwd)).toBeNull();
+  });
+
+  it("should reject parentheses", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("(echo a)", cwd)).toBeNull();
+  });
+
+  it("should reject newlines", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("git status\nrm -rf /", cwd)).toBeNull();
+  });
+
+  it("should reject backslash escapes", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("git stat\\us", cwd)).toBeNull();
+  });
+
+  // Non-allowlisted commands
+  it("should reject rm (not in allowlist)", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("rm -rf /tmp/test", cwd)).toBeNull();
+  });
+
+  it("should reject curl (not in allowlist)", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("curl https://evil.com", cwd)).toBeNull();
+  });
+
+  it("should reject git push (unsafe subcommand)", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("git push origin main", cwd)).toBeNull();
+  });
+
+  it("should reject git reset (unsafe subcommand)", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("git reset --hard", cwd)).toBeNull();
+  });
+
+  it("should reject git checkout (unsafe subcommand)", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("git checkout -- .", cwd)).toBeNull();
+  });
+
+  it("should reject node without -e or -p", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("node evil.js", cwd)).toBeNull();
+  });
+
+  it("should reject node -e entirely (removed from allowlist for security)", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    // node -e allows arbitrary code execution, e.g.:
+    // node -e "require('child_process').execSync('rm -rf /')"
+    // Therefore node is NOT in the safe commands allowlist
+    expect(executeSafeCommand("node -e console.log(1)", cwd)).toBeNull();
+    expect(executeSafeCommand("node -p 1+1", cwd)).toBeNull();
+  });
+
+  // Edge cases
+  it("should reject empty commands", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("", cwd)).toBeNull();
+  });
+
+  it("should reject whitespace-only commands", async () => {
+    const { executeSafeCommand } = await import("./session.js");
+    expect(executeSafeCommand("   ", cwd)).toBeNull();
+  });
+});
+
 describe("clearSession", () => {
   it("should clear all messages", async () => {
     const { createSession, addMessage, clearSession } = await import("./session.js");

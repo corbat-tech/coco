@@ -126,6 +126,14 @@ function getSkillRegistry(): SkillRegistry {
   return skillRegistry;
 }
 
+/** Result of executing a slash command */
+export interface SlashCommandResult {
+  /** Whether the REPL should exit */
+  shouldExit: boolean;
+  /** If set, this prompt should be injected as the next agent message (for fork/agent skills) */
+  forkPrompt?: string;
+}
+
 /**
  * Execute a slash command.
  *
@@ -133,41 +141,74 @@ function getSkillRegistry(): SkillRegistry {
  * 1. Look up in the legacy SlashCommand array (exact name or alias match)
  * 2. Fall back to the SkillRegistry (supports skills like /open, /review, /ship)
  *
- * Returns true if REPL should exit.
+ * Returns a result object with shouldExit flag and optional forkPrompt.
  */
 export async function executeSlashCommand(
   commandName: string,
   args: string[],
   session: ReplSession,
-): Promise<boolean> {
+): Promise<SlashCommandResult> {
   // 1. Try legacy commands first
   const command = findCommand(commandName);
   if (command) {
-    return command.execute(args, session);
+    const shouldExit = await command.execute(args, session);
+    return { shouldExit };
   }
 
-  // 2. Fall back to skill registry
+  // 2. Fall back to skill registry (native builtin skills)
   const registry = getSkillRegistry();
   const skill = registry.get(commandName);
 
   if (skill) {
     const argsString = args.join(" ");
+    // Set lastSkillArguments BEFORE execute so that getConversationContext()
+    // can substitute $ARGUMENTS in the next agent turn's system prompt.
+    session.lastSkillArguments = argsString;
     const result = await registry.execute(commandName, argsString, {
       cwd: session.projectPath,
       session,
       config: session.config,
     });
 
+    if (result.output) {
+      console.log(result.output);
+    }
     if (result.error) {
       renderError(result.error);
     }
 
-    return result.shouldExit ?? false;
+    return { shouldExit: result.shouldExit ?? false };
   }
 
-  // 3. Nothing found
+  // 3. Fall back to unified skill registry (markdown + native from all scopes)
+  // Flow: set lastSkillArguments -> execute skill -> return to REPL loop ->
+  // next agent turn calls getConversationContext() which substitutes $ARGUMENTS
+  if (session.skillRegistry && session.skillRegistry.has(commandName)) {
+    const argsString = args.join(" ");
+    session.lastSkillArguments = argsString;
+    const result = await session.skillRegistry.execute(commandName, argsString, {
+      cwd: session.projectPath,
+      session,
+      config: session.config,
+    });
+
+    if (result.shouldFork && result.output) {
+      // For fork/agent context: inject skill instructions as next agent prompt
+      console.log(`Skill "${commandName}" running in forked context...`);
+      return { shouldExit: false, forkPrompt: result.output };
+    } else if (result.output) {
+      console.log(result.output);
+    }
+    if (result.error) {
+      renderError(result.error);
+    }
+
+    return { shouldExit: result.shouldExit ?? false };
+  }
+
+  // 4. Nothing found
   renderError(`Unknown command: /${commandName}. Type /help for available commands.`);
-  return false;
+  return { shouldExit: false };
 }
 
 /**

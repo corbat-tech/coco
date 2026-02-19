@@ -162,6 +162,33 @@ export async function startRepl(
   setAgentProvider(provider);
   setAgentToolRegistry(toolRegistry);
 
+  // Initialize unified skill registry (discover skills across all scopes)
+  try {
+    const { createUnifiedSkillRegistry } = await import("../../skills/index.js");
+    const { getBuiltinSkillsForDiscovery } = await import("./skills/index.js");
+    const { loadConfig: loadCocoConfig } = await import("../../config/loader.js");
+    session.skillRegistry = createUnifiedSkillRegistry();
+    // Wire skills config from CocoConfig if available
+    try {
+      const cocoConfig = await loadCocoConfig();
+      if (cocoConfig.skills) {
+        session.skillRegistry.setConfig(cocoConfig.skills);
+      }
+    } catch {
+      // Config not available — use defaults (all enabled, no overrides)
+    }
+    await session.skillRegistry.discoverAndRegister(
+      projectPath,
+      getBuiltinSkillsForDiscovery(),
+    );
+  } catch (skillError) {
+    // Skills initialization failed (e.g. corrupt SKILL.md) — continue without skills
+    const logger = (await import("../../utils/logger.js")).getLogger();
+    logger.warn(
+      `[Skills] Failed to initialize skills: ${skillError instanceof Error ? skillError.message : String(skillError)}`,
+    );
+  }
+
   // Create input handler
   const inputHandler = createInputHandler(session);
 
@@ -182,6 +209,9 @@ export async function startRepl(
   let pendingModificationPreview = "";
   // Messages queued during concurrent capture for auto-submission as next turn
   let pendingQueuedMessages: string[] = [];
+
+  // Track auto-activated skill IDs so we only deactivate those (not manual ones)
+  const autoActivatedIds = new Set<string>();
 
   // Initialize intent recognizer
   const intentRecognizer = createIntentRecognizer();
@@ -246,11 +276,15 @@ export async function startRepl(
 
     if (input && isSlashCommand(input)) {
       const { command, args } = parseSlashCommand(input);
-      const shouldExit = await executeSlashCommand(command, args, session);
-      if (shouldExit) break;
+      const commandResult = await executeSlashCommand(command, args, session);
+      if (commandResult.shouldExit) break;
 
-      // Check if slash command queued a multimodal message (e.g., /image)
-      if (hasPendingImage()) {
+      // If the skill returned a forkPrompt, inject it as the next agent message
+      if (commandResult.forkPrompt) {
+        agentMessage = commandResult.forkPrompt;
+        // Don't skip the agent turn — let it process the forked skill instructions
+      } else if (hasPendingImage()) {
+        // Check if slash command queued a multimodal message (e.g., /image)
         const pending = consumePendingImage()!;
         agentMessage = [
           {
@@ -301,9 +335,14 @@ export async function startRepl(
         const shouldExecute = await handleIntentConfirmation(intent, intentRecognizer);
         if (shouldExecute) {
           const { command, args } = intentRecognizer.intentToCommand(intent)!;
-          const shouldExit = await executeSlashCommand(command, args, session);
-          if (shouldExit) break;
-          continue;
+          const intentResult = await executeSlashCommand(command, args, session);
+          if (intentResult.shouldExit) break;
+          if (intentResult.forkPrompt) {
+            agentMessage = intentResult.forkPrompt;
+            // Fall through to agent turn to process forked skill instructions
+          } else {
+            continue;
+          }
         }
         // If user chose not to execute, fall through to normal chat
       }
@@ -317,6 +356,36 @@ export async function startRepl(
     // Save the original user message before any context injection.
     // Used to re-send the task when user modifies during execution.
     const originalUserMessage = typeof agentMessage === "string" ? agentMessage : null;
+
+    // Auto-activate relevant skills based on user message
+    if (
+      session.skillRegistry &&
+      session.skillRegistry.config.autoActivate !== false &&
+      typeof agentMessage === "string" &&
+      agentMessage.length > 0
+    ) {
+      const matches = session.skillRegistry.findRelevantSkills(agentMessage, 3, 0.4);
+      const mdMatches = matches.filter((m) => m.skill.kind === "markdown");
+
+      if (mdMatches.length > 0) {
+        // Only deactivate previously auto-activated skills, preserve manual ones
+        for (const id of autoActivatedIds) {
+          session.skillRegistry.deactivateSkill(id);
+        }
+        autoActivatedIds.clear();
+        const activated: string[] = [];
+        for (const match of mdMatches) {
+          const ok = await session.skillRegistry.activateSkill(match.skill.id);
+          if (ok) {
+            activated.push(match.skill.name);
+            autoActivatedIds.add(match.skill.id);
+          }
+        }
+        if (activated.length > 0) {
+          renderInfo(`Skills: ${activated.join(", ")}`);
+        }
+      }
+    }
 
     // Inject any pending interruption context from the previous turn
     if (pendingInterruptionContext && typeof agentMessage === "string") {
@@ -748,7 +817,7 @@ export async function startRepl(
  * Print welcome message - retro terminal style, compact
  * Brand color: Magenta/Purple
  */
-async function printWelcome(session: { projectPath: string; config: ReplConfig }): Promise<void> {
+async function printWelcome(session: { projectPath: string; config: ReplConfig; skillRegistry?: import("../../skills/registry.js").UnifiedSkillRegistry }): Promise<void> {
   const trustStore = createTrustStore();
   await trustStore.init();
   const trustLevel = trustStore.getLevel(session.projectPath);
@@ -845,6 +914,19 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
       chalk.dim(" — iterates until quality \u2265 85. /coco to disable")
     : chalk.dim("  \u{1F4A1} /coco on — enable auto-test & quality iteration");
   console.log(cocoStatus);
+
+  // Show discovered skills count
+  if (session.skillRegistry && session.skillRegistry.size > 0) {
+    const allMeta = session.skillRegistry.getAllMetadata();
+    const mdCount = allMeta.filter((s) => s.kind === "markdown").length;
+    const nativeCount = session.skillRegistry.size - mdCount;
+    const parts: string[] = [];
+    if (mdCount > 0) parts.push(`${mdCount} markdown`);
+    if (nativeCount > 0) parts.push(`${nativeCount} native`);
+    console.log(
+      chalk.dim(`  ${session.skillRegistry.size} skills (${parts.join(" + ")})`),
+    );
+  }
 
   console.log();
   console.log(

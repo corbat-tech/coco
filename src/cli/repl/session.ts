@@ -3,6 +3,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Message, LLMProvider } from "../../providers/types.js";
@@ -13,6 +14,10 @@ import { createContextCompactor, type CompactionResult } from "./context/compact
 import { createMemoryLoader, type MemoryContext } from "./memory/index.js";
 import { CONFIG_PATHS } from "../../config/paths.js";
 import type { ToolRegistry } from "../../tools/registry.js";
+import { isMarkdownContent, type MarkdownSkillContent } from "../../skills/types.js";
+
+/** Maximum total characters budget for active skill instructions (~4000 tokens, ~2% of typical 200K context) */
+const MAX_SKILL_INSTRUCTIONS_CHARS = 16000;
 
 /**
  * Trust settings file location
@@ -290,6 +295,92 @@ export function addMessage(session: ReplSession, message: Message): void {
 }
 
 /**
+ * Substitute $(!command) patterns in skill instructions with dynamic output.
+ * Only supports a strict allowlist of safe, read-only commands.
+ * Limited to 500 chars per substitution.
+ *
+ * Security: Uses execFileSync (no shell) and validates the ENTIRE command
+ * against a strict allowlist. Shell metacharacters are rejected outright.
+ */
+function substituteDynamicContext(body: string, cwd: string): string {
+  return body.replace(/\$\(!([^)]+)\)/g, (match, raw: string) => {
+    const result = executeSafeCommand(raw.trim(), cwd);
+    if (result === null) return match; // Leave unsafe commands as-is
+    return result;
+  });
+}
+
+/** Shell metacharacters that indicate command chaining / injection */
+const SHELL_METACHARACTERS = /[;|&`$(){}<>!\n\\'"]/;
+
+/**
+ * Allowlist of safe commands with their permitted subcommands and flags.
+ * Each entry maps a binary name to a validation function that receives the args array.
+ * The validator returns true if the args are safe.
+ */
+const SAFE_COMMAND_VALIDATORS: Record<string, (args: string[]) => boolean> = {
+  git: (args) => {
+    const safeSubcommands = new Set(["status", "log", "branch", "diff", "rev-parse", "remote", "tag", "show"]);
+    return args.length > 0 && safeSubcommands.has(args[0]!);
+  },
+  cat: () => true,
+  head: () => true,
+  tail: () => true,
+  ls: () => true,
+  pwd: () => true,
+  echo: () => true,
+  date: () => true,
+  // NOTE: `node` is intentionally NOT in this allowlist because `node -e`
+  // allows arbitrary code execution (e.g., require('child_process').execSync(...)),
+  // which would undermine the security sandbox.
+  wc: () => true,
+  whoami: () => true,
+  basename: () => true,
+  dirname: () => true,
+};
+
+/**
+ * Execute a safe command and return its output, or null if rejected.
+ * Validates the entire command (not just a prefix) and rejects all
+ * shell metacharacters to prevent command chaining attacks.
+ *
+ * @internal Exported for testing only
+ */
+export function executeSafeCommand(command: string, cwd: string): string | null {
+  // Reject any command containing shell metacharacters
+  if (SHELL_METACHARACTERS.test(command)) {
+    return null;
+  }
+
+  // Split into binary + args (simple whitespace split — no shell expansion)
+  const parts = command.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+
+  const binary = parts[0]!; // safe: length > 0 checked above
+  const args = parts.slice(1);
+
+  // Validate against allowlist
+  const validator = SAFE_COMMAND_VALIDATORS[binary];
+  if (!validator || !validator(args)) {
+    return null;
+  }
+
+  try {
+    // execFileSync bypasses the shell entirely — no metacharacter expansion
+    const output = execFileSync(binary, args, {
+      cwd,
+      timeout: 5000,
+      encoding: "utf-8",
+      maxBuffer: 1024 * 64, // 64KB max
+    });
+    const trimmed = output.trim();
+    return trimmed.length > 500 ? trimmed.slice(0, 500) + "..." : trimmed;
+  } catch {
+    return `[error: command failed: ${command}]`;
+  }
+}
+
+/**
  * Get conversation context for LLM (with system prompt, tool catalog, and memory)
  *
  * When a toolRegistry is provided and the system prompt contains the {TOOL_CATALOG}
@@ -318,6 +409,63 @@ export function getConversationContext(
   if (session.projectContext) {
     const stackInfo = formatStackContext(session.projectContext);
     systemPrompt = `${systemPrompt}\n\n${stackInfo}`;
+  }
+
+  // Inject skill catalog and active skill instructions
+  if (session.skillRegistry) {
+    const allSkills = session.skillRegistry.getAllMetadata();
+    const markdownSkills = allSkills.filter((s) => s.kind === "markdown");
+
+    // Lightweight catalog of available markdown skills (for LLM awareness)
+    if (markdownSkills.length > 0) {
+      const skillList = markdownSkills
+        .map((s) => `- **${s.name}**: ${s.description}`)
+        .join("\n");
+      systemPrompt = `${systemPrompt}\n\n# Available Skills\n\nThe following skills can be activated to guide your work:\n${skillList}`;
+    }
+
+    // Inject full instructions of currently active skills
+    const activeSkills = session.skillRegistry.getActiveSkills();
+    if (activeSkills.length > 0) {
+      const instructions = activeSkills
+        .filter((s) => isMarkdownContent(s.content))
+        .map((s) => {
+          const mc = s.content as MarkdownSkillContent;
+          let body = mc.instructions;
+          // Substitute $ARGUMENTS with empty string for auto-activated skills
+          // (actual arguments are provided when user invokes via /skillname args)
+          body = body.replace(/\$ARGUMENTS/g, session.lastSkillArguments ?? "");
+          // Substitute $(!command) patterns with dynamic output
+          body = substituteDynamicContext(body, session.projectPath);
+
+          let header = `## Skill: ${s.metadata.name}`;
+
+          // Include tool restrictions if specified
+          if (s.metadata.allowedTools && s.metadata.allowedTools.length > 0) {
+            header += `\n\n> ⚠️ TOOL RESTRICTION: When following the instructions of skill "${s.metadata.name}", you are restricted to ONLY these tools: ${s.metadata.allowedTools.join(", ")}.`;
+            header += `\n> Do NOT use any other tools. If you need a tool not in this list, ask the user for permission first.`;
+          }
+
+          // Include model override if specified
+          if (s.metadata.model) {
+            header += `\n**Model**: Use ${s.metadata.model} for this skill.`;
+          }
+
+          return `${header}\n\n${body}`;
+        })
+        .join("\n\n");
+      if (instructions) {
+        // Budget guard: truncate skill instructions if they exceed the budget
+        let finalInstructions = instructions;
+        if (finalInstructions.length > MAX_SKILL_INSTRUCTIONS_CHARS) {
+          // Find last paragraph break before the budget limit to avoid cutting mid-markdown
+          const cutPoint = finalInstructions.lastIndexOf("\n\n", MAX_SKILL_INSTRUCTIONS_CHARS);
+          const safeCut = cutPoint > MAX_SKILL_INSTRUCTIONS_CHARS * 0.5 ? cutPoint : MAX_SKILL_INSTRUCTIONS_CHARS;
+          finalInstructions = finalInstructions.slice(0, safeCut) + "\n\n[... skill instructions truncated for context budget]";
+        }
+        systemPrompt = `${systemPrompt}\n\n# Active Skill Instructions\n\n${finalInstructions}`;
+      }
+    }
   }
 
   return [{ role: "system", content: systemPrompt }, ...session.messages];

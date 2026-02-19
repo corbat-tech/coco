@@ -201,6 +201,26 @@ export const ShipConfigSchema = z.object({
 export type ShipConfig = z.infer<typeof ShipConfigSchema>;
 
 /**
+ * Skills configuration schema
+ */
+export const SkillsConfigSchema = z.object({
+  /** Enable/disable skills system */
+  enabled: z.boolean().default(true),
+  /** Override global skills directory */
+  globalDir: z.string().optional(),
+  /** Override project skills directory */
+  projectDir: z.string().optional(),
+  /** Auto-activate skills based on user messages */
+  autoActivate: z.boolean().default(true),
+  /** Maximum concurrent active markdown skills */
+  maxActiveSkills: z.number().min(1).max(10).default(3),
+  /** List of skill IDs to disable */
+  disabled: z.array(z.string()).default([]),
+});
+
+export type SkillsConfig = z.infer<typeof SkillsConfigSchema>;
+
+/**
  * Complete configuration schema
  */
 export const CocoConfigSchema = z.object({
@@ -231,6 +251,7 @@ export const CocoConfigSchema = z.object({
   mcp: MCPConfigSchema.optional(),
   tools: ToolsConfigSchema.optional(),
   ship: ShipConfigSchema.optional(),
+  skills: SkillsConfigSchema.optional(),
 });
 
 export type CocoConfig = z.infer<typeof CocoConfigSchema>;

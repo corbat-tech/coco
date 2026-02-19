@@ -143,15 +143,15 @@ describe("commands/index", () => {
     it("should call renderError for unknown commands", async () => {
       const session = {} as any;
       const result = await executeSlashCommand("nonexistent", [], session);
-      expect(result).toBe(false);
+      expect(result).toEqual({ shouldExit: false });
       expect(renderError).toHaveBeenCalledWith(expect.stringContaining("Unknown command"));
     });
 
     it("should execute exit command", async () => {
       const session = {} as any;
       const result = await executeSlashCommand("exit", [], session);
-      // exit command returns true to signal REPL exit
-      expect(result).toBe(true);
+      // exit command returns { shouldExit: true } to signal REPL exit
+      expect(result).toEqual({ shouldExit: true });
     });
 
     it("should find commands by alias", async () => {
@@ -159,7 +159,7 @@ describe("commands/index", () => {
       const exitCmd = commands.find((c) => c.name === "exit");
       if (exitCmd?.aliases.includes("quit")) {
         const result = await executeSlashCommand("quit", [], {} as any);
-        expect(result).toBe(true);
+        expect(result).toEqual({ shouldExit: true });
       }
     });
   });

@@ -180,7 +180,7 @@ describe("executeSlashCommand", () => {
     const result = await executeSlashCommand("help", [], mockSession);
 
     expect(helpCommand.execute).toHaveBeenCalledWith([], mockSession);
-    expect(result).toBe(false);
+    expect(result).toEqual({ shouldExit: false });
   });
 
   it("should execute command by alias", async () => {
@@ -191,7 +191,7 @@ describe("executeSlashCommand", () => {
     const result = await executeSlashCommand("q", [], mockSession);
 
     expect(exitCommand.execute).toHaveBeenCalledWith([], mockSession);
-    expect(result).toBe(true);
+    expect(result).toEqual({ shouldExit: true });
   });
 
   it("should show error for unknown command", async () => {
@@ -202,7 +202,7 @@ describe("executeSlashCommand", () => {
     const result = await executeSlashCommand("unknown", [], mockSession);
 
     expect(renderError).toHaveBeenCalledWith(expect.stringContaining("Unknown command"));
-    expect(result).toBe(false);
+    expect(result).toEqual({ shouldExit: false });
   });
 });
 
