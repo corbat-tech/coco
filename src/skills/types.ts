@@ -66,11 +66,22 @@ export function resolveCategory(category?: string): SkillCategory {
 // ============================================================================
 
 export const SkillFrontmatterSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
+  name: z.string().min(1).max(64),
+  description: z.string().min(1).max(1024),
   version: z.string().default("1.0.0"),
   license: z.string().optional(),
   globs: z.union([z.string(), z.array(z.string())]).optional(),
+  // skills.sh standard fields
+  "disable-model-invocation": z.boolean().optional(),
+  "allowed-tools": z.union([z.string(), z.array(z.string())]).optional(),
+  "argument-hint": z.string().optional(),
+  compatibility: z.string().max(500).optional(),
+  model: z.string().optional(),
+  context: z.enum(["fork", "agent", "inline"]).optional(),
+  // Top-level tags/author (skills.sh style) — also accepted inside metadata
+  tags: z.union([z.string(), z.array(z.string())]).optional(),
+  author: z.string().optional(),
+  // Nested metadata (Coco style)
   metadata: z
     .object({
       author: z.string().optional(),
@@ -113,6 +124,18 @@ export interface SkillMetadata {
   tags?: string[];
   /** Author information */
   author?: string;
+  /** If true, this skill should NOT be auto-activated by the matcher */
+  disableModelInvocation?: boolean;
+  /** Tools this skill is allowed to use */
+  allowedTools?: string[];
+  /** Argument hint for CLI autocomplete */
+  argumentHint?: string;
+  /** Environment compatibility notes */
+  compatibility?: string;
+  /** Model override for this skill */
+  model?: string;
+  /** Execution context */
+  context?: "fork" | "agent" | "inline";
 }
 
 // ============================================================================

@@ -61,8 +61,17 @@ export async function loadMarkdownMetadata(
       scope,
       path: skillDir,
       globs: fm.globs ? (Array.isArray(fm.globs) ? fm.globs : [fm.globs]) : undefined,
-      tags: fm.metadata?.tags,
-      author: fm.metadata?.author,
+      // Merge tags: top-level takes priority, then metadata.tags
+      tags: mergeTags(fm.tags, fm.metadata?.tags),
+      // Author: top-level takes priority
+      author: fm.author ?? fm.metadata?.author,
+      // New skills.sh standard fields
+      disableModelInvocation: fm["disable-model-invocation"],
+      allowedTools: parseAllowedTools(fm["allowed-tools"]),
+      argumentHint: fm["argument-hint"],
+      compatibility: fm.compatibility,
+      model: fm.model,
+      context: fm.context,
     };
   } catch (error) {
     const logger = getLogger();
@@ -122,12 +131,36 @@ async function listSubdirectory(skillDir: string, subdir: string): Promise<strin
   }
 }
 
+/** Merge tags from top-level and metadata, deduplicating */
+function mergeTags(topLevel?: string | string[], nested?: string[]): string[] | undefined {
+  const tags = new Set<string>();
+  if (topLevel) {
+    const arr = Array.isArray(topLevel) ? topLevel : topLevel.split(/[,\s]+/).filter(Boolean);
+    for (const t of arr) tags.add(t.trim());
+  }
+  if (nested) {
+    for (const t of nested) tags.add(t.trim());
+  }
+  return tags.size > 0 ? Array.from(tags) : undefined;
+}
+
+/** Parse allowed-tools from string or array format */
+function parseAllowedTools(tools?: string | string[]): string[] | undefined {
+  if (!tools) return undefined;
+  if (Array.isArray(tools)) return tools;
+  // Parse space/comma-separated: "Bash, Read, Write" or "Bash Read Write"
+  return tools.split(/[,\s]+/).filter(Boolean);
+}
+
 /** Convert a string to kebab-case for use as skill ID */
 export function toKebabCase(str: string): string {
   return str
     .replace(/([a-z])([A-Z])/g, "$1-$2")
     .replace(/[\s_]+/g, "-")
     .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "");
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/^-+|-+$/g, "")     // trim leading/trailing hyphens
+    .replace(/-{2,}/g, "-")       // collapse consecutive hyphens
+    .slice(0, 64);                // max 64 chars per standard
 }
 

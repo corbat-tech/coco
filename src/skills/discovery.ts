@@ -4,9 +4,11 @@
  * Discovers skills across three scopes:
  * - builtin: Native skills compiled into Coco
  * - global: ~/.coco/skills/
- * - project: <project>/.coco/skills/
+ * - project: <project>/.claude/skills/ and <project>/.coco/skills/
  *
  * Higher-priority scopes override lower-priority ones for the same skill ID.
+ * For project skills, .claude/skills/ (industry standard) takes priority over
+ * .coco/skills/ (coco-specific) when both directories contain the same skill ID.
  */
 
 import type { SkillMetadata, SkillScope } from "./types.js";
@@ -21,8 +23,11 @@ import path from "node:path";
 /** Default global skills directory */
 const GLOBAL_SKILLS_DIR = path.join(COCO_HOME, "skills");
 
-/** Default project skills directory name */
-const PROJECT_SKILLS_DIRNAME = ".coco/skills";
+/** Project skills directory names (scanned in order; later entries override earlier) */
+const PROJECT_SKILLS_DIRNAMES = [
+  ".coco/skills",    // Coco convention (lower priority)
+  ".claude/skills",  // Industry standard (higher priority)
+];
 
 /** Options for skill discovery */
 export interface DiscoveryOptions {
@@ -67,11 +72,18 @@ export async function discoverAllSkills(
     applyWithPriority(allSkills, meta);
   }
 
-  // 3. Scan project skills directory (highest priority)
-  const resolvedProjectDir = opts.projectDir ?? path.join(projectPath, PROJECT_SKILLS_DIRNAME);
-  const projectSkills = await scanSkillsDirectory(resolvedProjectDir, "project");
-  for (const meta of projectSkills) {
-    applyWithPriority(allSkills, meta);
+  // 3. Scan project skills directories (highest priority)
+  // Support both .claude/skills/ (industry standard) and .coco/skills/ (coco-specific)
+  // .claude/skills/ takes priority over .coco/skills/ for the same skill ID
+  const projectDirs = opts.projectDir
+    ? [opts.projectDir]
+    : PROJECT_SKILLS_DIRNAMES.map((d) => path.join(projectPath, d));
+
+  for (const dir of projectDirs) {
+    const projectSkills = await scanSkillsDirectory(dir, "project");
+    for (const meta of projectSkills) {
+      applyWithPriority(allSkills, meta);
+    }
   }
 
   // Return sorted by name

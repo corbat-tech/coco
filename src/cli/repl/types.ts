@@ -30,6 +30,8 @@ export interface ReplSession {
   projectContext?: ProjectStackContext;
   /** Unified skill registry (markdown + native skills) */
   skillRegistry?: UnifiedSkillRegistry;
+  /** Last arguments passed to a skill (for $ARGUMENTS substitution) */
+  lastSkillArguments?: string;
 }
 
 /**

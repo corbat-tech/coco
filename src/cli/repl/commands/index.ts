@@ -171,6 +171,7 @@ export async function executeSlashCommand(
   // 3. Fall back to unified skill registry (markdown + native from all scopes)
   if (session.skillRegistry && session.skillRegistry.has(commandName)) {
     const argsString = args.join(" ");
+    session.lastSkillArguments = argsString;
     const result = await session.skillRegistry.execute(commandName, argsString, {
       cwd: session.projectPath,
       session,

@@ -305,7 +305,11 @@ export function getConversationContext(
         .filter((s) => isMarkdownContent(s.content))
         .map((s) => {
           const mc = s.content as MarkdownSkillContent;
-          return `## Skill: ${s.metadata.name}\n\n${mc.instructions}`;
+          let body = mc.instructions;
+          // Substitute $ARGUMENTS with empty string for auto-activated skills
+          // (actual arguments are provided when user invokes via /skillname args)
+          body = body.replace(/\$ARGUMENTS/g, session.lastSkillArguments ?? "");
+          return `## Skill: ${s.metadata.name}\n\n${body}`;
         })
         .join("\n\n");
       if (instructions) {

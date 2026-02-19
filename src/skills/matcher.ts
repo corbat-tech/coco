@@ -63,9 +63,12 @@ export function matchSkills(
   const queryTokens = tokenize(query);
   if (queryTokens.length === 0) return [];
 
+  // Filter out skills that opt-out of auto-activation
+  const matchableSkills = skills.filter(s => !s.disableModelInvocation);
+
   const matches: SkillMatch[] = [];
 
-  for (const skill of skills) {
+  for (const skill of matchableSkills) {
     const { score, reason } = scoreSkill(queryTokens, skill, activeFiles);
     if (score >= minScore) {
       matches.push({ skill, score, reason });
