@@ -1,17 +1,6 @@
 <div align="center">
 
-<br/>
-
-```
- ██████╗ ██████╗  ██████╗ ██████╗
-██╔════╝██╔═══██╗██╔════╝██╔═══██╗
-██║     ██║   ██║██║     ██║   ██║
-██║     ██║   ██║██║     ██║   ██║
-╚██████╗╚██████╔╝╚██████╗╚██████╔╝
- ╚═════╝ ╚═════╝  ╚═════╝ ╚═════╝  v2.0.0
-```
-
-### The AI coding agent that iterates until your code is actually good.
+<img src="docs/assets/logo.svg" alt="Coco — autonomous AI coding agent" width="640"/>
 
 <br/>
 
