@@ -113,25 +113,14 @@ describe("detectLanguage", () => {
 
 describe("detectProjectLanguage", () => {
   it("should detect TypeScript project from .ts files", () => {
-    const files = [
-      "src/index.ts",
-      "src/utils.ts",
-      "src/types.ts",
-      "package.json",
-      "tsconfig.json",
-    ];
+    const files = ["src/index.ts", "src/utils.ts", "src/types.ts", "package.json", "tsconfig.json"];
     const result = detectProjectLanguage(files);
     expect(result.language).toBe("typescript");
     expect(result.confidence).toBeGreaterThan(0.5);
   });
 
   it("should detect React project from .tsx files", () => {
-    const files = [
-      "src/App.tsx",
-      "src/index.tsx",
-      "src/components/Button.tsx",
-      "package.json",
-    ];
+    const files = ["src/App.tsx", "src/index.tsx", "src/components/Button.tsx", "package.json"];
     const result = detectProjectLanguage(files);
     expect(result.language).toBe("react-typescript");
     expect(result.confidence).toBeGreaterThan(0.5);
@@ -149,11 +138,7 @@ describe("detectProjectLanguage", () => {
   });
 
   it("should detect JavaScript project from .js files", () => {
-    const files = [
-      "src/index.js",
-      "src/utils.js",
-      "package.json",
-    ];
+    const files = ["src/index.js", "src/utils.js", "package.json"];
     const result = detectProjectLanguage(files);
     expect(result.language).toBe("javascript");
     expect(result.confidence).toBeGreaterThan(0.5);

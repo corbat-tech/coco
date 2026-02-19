@@ -174,10 +174,7 @@ export async function startRepl(
     } catch {
       // Config not available — use defaults (all enabled, no overrides)
     }
-    await session.skillRegistry.discoverAndRegister(
-      projectPath,
-      getBuiltinSkillsForDiscovery(),
-    );
+    await session.skillRegistry.discoverAndRegister(projectPath, getBuiltinSkillsForDiscovery());
   } catch (skillError) {
     // Skills initialization failed (e.g. corrupt SKILL.md) — continue without skills
     const logger = (await import("../../utils/logger.js")).getLogger();
@@ -817,7 +814,11 @@ export async function startRepl(
  * Print welcome message - retro terminal style, compact
  * Brand color: Magenta/Purple
  */
-async function printWelcome(session: { projectPath: string; config: ReplConfig; skillRegistry?: import("../../skills/registry.js").UnifiedSkillRegistry }): Promise<void> {
+async function printWelcome(session: {
+  projectPath: string;
+  config: ReplConfig;
+  skillRegistry?: import("../../skills/registry.js").UnifiedSkillRegistry;
+}): Promise<void> {
   const trustStore = createTrustStore();
   await trustStore.init();
   const trustLevel = trustStore.getLevel(session.projectPath);
@@ -923,9 +924,7 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig; 
     const parts: string[] = [];
     if (mdCount > 0) parts.push(`${mdCount} markdown`);
     if (nativeCount > 0) parts.push(`${nativeCount} native`);
-    console.log(
-      chalk.dim(`  ${session.skillRegistry.size} skills (${parts.join(" + ")})`),
-    );
+    console.log(chalk.dim(`  ${session.skillRegistry.size} skills (${parts.join(" + ")})`));
   }
 
   console.log();

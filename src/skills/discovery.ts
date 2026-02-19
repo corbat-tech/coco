@@ -26,9 +26,9 @@ const GLOBAL_SKILLS_DIR = path.join(COCO_HOME, "skills");
 
 /** Project skills directory names (scanned in ascending priority; later entries override earlier) */
 const PROJECT_SKILLS_DIRNAMES = [
-  ".claude/skills",  // Claude compat — read for migration/interop (lowest project priority)
-  ".agents/skills",  // Shared cross-agent standard (medium priority)
-  ".coco/skills",    // Coco native — authoritative (highest project priority)
+  ".claude/skills", // Claude compat — read for migration/interop (lowest project priority)
+  ".agents/skills", // Shared cross-agent standard (medium priority)
+  ".coco/skills", // Coco native — authoritative (highest project priority)
 ];
 
 /** Options for skill discovery */

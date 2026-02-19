@@ -160,7 +160,6 @@ export interface PRCommentOptions {
   maxIssues?: number;
 }
 
-
 /**
  * Format a `QualityEvaluation` as a Markdown string suitable for posting as a
  * GitHub PR comment.
@@ -207,8 +206,7 @@ export function formatQualityPRComment(
     lines.push(`<summary>🔍 Issues (${evaluation.issues.length})</summary>`);
     lines.push(``);
     for (const issue of shown) {
-      const sev =
-        issue.severity === "critical" ? "🔴" : issue.severity === "major" ? "🟡" : "🔵";
+      const sev = issue.severity === "critical" ? "🔴" : issue.severity === "major" ? "🟡" : "🔵";
       lines.push(`- ${sev} **[${issue.dimension}]** ${issue.message}`);
     }
     if (remaining > 0) {

@@ -332,7 +332,10 @@ export class UnifiedSkillRegistry {
     // Check if skill should run in a forked/agent context (subagent)
     if (meta.context === "fork" || meta.context === "agent") {
       if (!isMarkdownContent(loaded.content)) {
-        return { success: false, error: `Skill "${meta.name}" has context: ${meta.context} but no markdown content.` };
+        return {
+          success: false,
+          error: `Skill "${meta.name}" has context: ${meta.context} but no markdown content.`,
+        };
       }
       // Load full content for the subagent prompt
       let body = loaded.content.instructions;
@@ -363,11 +366,7 @@ export class UnifiedSkillRegistry {
   /**
    * Find skills relevant to a user message
    */
-  findRelevantSkills(
-    userMessage: string,
-    maxResults?: number,
-    minScore?: number,
-  ): SkillMatch[] {
+  findRelevantSkills(userMessage: string, maxResults?: number, minScore?: number): SkillMatch[] {
     return matchSkills(userMessage, this.getAllMetadata(), { maxResults, minScore });
   }
 }

@@ -346,9 +346,9 @@ describe("computeSecurityScore deduplication (Fix #3)", () => {
       {
         path: "test.ts",
         content: [
-          "eval(code);",           // critical → -25
-          "div.innerHTML = x;",    // high     → -10
-          "Math.random();",        // medium   → -5
+          "eval(code);", // critical → -25
+          "div.innerHTML = x;", // high     → -10
+          "Math.random();", // medium   → -5
         ].join("\n"),
       },
     ];

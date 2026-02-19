@@ -350,7 +350,11 @@ describe("oauth", () => {
 
       await openBrowser("https://example.com");
 
-      expect(mockExecFile).toHaveBeenCalledWith("open", ["https://example.com"], expect.any(Function));
+      expect(mockExecFile).toHaveBeenCalledWith(
+        "open",
+        ["https://example.com"],
+        expect.any(Function),
+      );
 
       Object.defineProperty(process, "platform", { value: originalPlatform, writable: true });
     });
@@ -368,7 +372,11 @@ describe("oauth", () => {
 
       await openBrowser("https://example.com");
 
-      expect(mockExecFile).toHaveBeenCalledWith("cmd.exe", ["/c", "start", "", "https://example.com"], expect.any(Function));
+      expect(mockExecFile).toHaveBeenCalledWith(
+        "cmd.exe",
+        ["/c", "start", "", "https://example.com"],
+        expect.any(Function),
+      );
 
       Object.defineProperty(process, "platform", { value: originalPlatform, writable: true });
     });
@@ -386,7 +394,11 @@ describe("oauth", () => {
 
       await openBrowser("https://example.com");
 
-      expect(mockExecFile).toHaveBeenCalledWith("xdg-open", ["https://example.com"], expect.any(Function));
+      expect(mockExecFile).toHaveBeenCalledWith(
+        "xdg-open",
+        ["https://example.com"],
+        expect.any(Function),
+      );
 
       Object.defineProperty(process, "platform", { value: originalPlatform, writable: true });
     });

@@ -20,12 +20,7 @@ import { tmpdir } from "node:os";
 const PROJECT_ROOT = join(import.meta.dirname, "..", "..");
 const SESSION_START_SCRIPT = join(PROJECT_ROOT, "scripts", "hooks", "session-start.mjs");
 const SESSION_END_SCRIPT = join(PROJECT_ROOT, "scripts", "hooks", "session-end.mjs");
-const EVALUATE_SESSION_SCRIPT = join(
-  PROJECT_ROOT,
-  "scripts",
-  "hooks",
-  "evaluate-session.mjs"
-);
+const EVALUATE_SESSION_SCRIPT = join(PROJECT_ROOT, "scripts", "hooks", "evaluate-session.mjs");
 
 /** Temporary directory used as the working directory for each test */
 let tempDir: string;
@@ -48,7 +43,7 @@ afterEach(async () => {
 function runHookScript(
   scriptPath: string,
   stdinData: string,
-  cwd: string
+  cwd: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve, reject) => {
     const child = spawn("node", [scriptPath], {
@@ -146,11 +141,7 @@ describe("session-start.mjs", () => {
   });
 
   it("handles malformed JSON stdin gracefully", async () => {
-    const { stdout, exitCode } = await runHookScript(
-      SESSION_START_SCRIPT,
-      "not-json{{{",
-      tempDir
-    );
+    const { stdout, exitCode } = await runHookScript(SESSION_START_SCRIPT, "not-json{{{", tempDir);
     expect(exitCode).toBe(0);
     // The malformed data should be passed through as-is
     expect(stdout).toContain("not-json");
@@ -232,11 +223,7 @@ describe("session-end.mjs", () => {
       toolCalls: [`Tool${i}`],
       filesModified: [],
     }));
-    await writeFile(
-      stateFile,
-      JSON.stringify({ sessions: existingSessions }),
-      "utf-8"
-    );
+    await writeFile(stateFile, JSON.stringify({ sessions: existingSessions }), "utf-8");
 
     // Stop hook payload: only session-level fields
     const input = JSON.stringify({ stop_reason: "end_turn" });
@@ -270,7 +257,7 @@ describe("session-end.mjs", () => {
     const { stdout, exitCode } = await runHookScript(
       SESSION_END_SCRIPT,
       "not valid json }{",
-      tempDir
+      tempDir,
     );
 
     expect(exitCode).toBe(0);
@@ -292,11 +279,7 @@ describe("evaluate-session.mjs", () => {
   it("passes stdin through to stdout unchanged when no session state exists", async () => {
     const input = JSON.stringify({ stop_reason: "end_turn" });
 
-    const { stdout, exitCode } = await runHookScript(
-      EVALUATE_SESSION_SCRIPT,
-      input,
-      tempDir
-    );
+    const { stdout, exitCode } = await runHookScript(EVALUATE_SESSION_SCRIPT, input, tempDir);
 
     expect(exitCode).toBe(0);
     expect(stdout).toContain("end_turn");
@@ -306,7 +289,7 @@ describe("evaluate-session.mjs", () => {
     const { exitCode } = await runHookScript(
       EVALUATE_SESSION_SCRIPT,
       JSON.stringify({ stop_reason: "end_turn" }),
-      tempDir
+      tempDir,
     );
     expect(exitCode).toBe(0);
   });
@@ -324,11 +307,7 @@ describe("evaluate-session.mjs", () => {
 
     const input = JSON.stringify({ stop_reason: "end_turn" });
 
-    const { stderr, exitCode } = await runHookScript(
-      EVALUATE_SESSION_SCRIPT,
-      input,
-      tempDir
-    );
+    const { stderr, exitCode } = await runHookScript(EVALUATE_SESSION_SCRIPT, input, tempDir);
 
     expect(exitCode).toBe(0);
     // Should print a tip about the Bash pattern
@@ -355,11 +334,7 @@ describe("evaluate-session.mjs", () => {
 
     const input = JSON.stringify({ stop_reason: "end_turn" });
 
-    const { stderr, exitCode } = await runHookScript(
-      EVALUATE_SESSION_SCRIPT,
-      input,
-      tempDir
-    );
+    const { stderr, exitCode } = await runHookScript(EVALUATE_SESSION_SCRIPT, input, tempDir);
 
     expect(exitCode).toBe(0);
     // Should NOT fire a tip for only 2 occurrences
@@ -372,11 +347,7 @@ describe("evaluate-session.mjs", () => {
 
     const input = JSON.stringify({ stop_reason: "end_turn" });
 
-    const { stdout, exitCode } = await runHookScript(
-      EVALUATE_SESSION_SCRIPT,
-      input,
-      tempDir
-    );
+    const { stdout, exitCode } = await runHookScript(EVALUATE_SESSION_SCRIPT, input, tempDir);
 
     expect(exitCode).toBe(0);
     expect(stdout).toContain("end_turn");
@@ -387,17 +358,15 @@ describe("evaluate-session.mjs", () => {
     const stateFile = join(tempDir, ".claude", "session-state.json");
     await writeFile(
       stateFile,
-      JSON.stringify({ sessions: [{ timestamp: new Date().toISOString(), toolCalls: [], filesModified: [] }] }),
-      "utf-8"
+      JSON.stringify({
+        sessions: [{ timestamp: new Date().toISOString(), toolCalls: [], filesModified: [] }],
+      }),
+      "utf-8",
     );
 
     const input = JSON.stringify({ unique_marker: "test-passthrough-abc123" });
 
-    const { stdout, exitCode } = await runHookScript(
-      EVALUATE_SESSION_SCRIPT,
-      input,
-      tempDir
-    );
+    const { stdout, exitCode } = await runHookScript(EVALUATE_SESSION_SCRIPT, input, tempDir);
 
     expect(exitCode).toBe(0);
     expect(stdout).toContain("test-passthrough-abc123");
@@ -422,7 +391,7 @@ describe("evaluate-session.mjs", () => {
     const { stdout, stderr, exitCode } = await runHookScript(
       EVALUATE_SESSION_SCRIPT,
       input,
-      tempDir
+      tempDir,
     );
 
     expect(exitCode).toBe(0);
@@ -446,11 +415,7 @@ describe("evaluate-session.mjs", () => {
 
     const input = JSON.stringify({ stop_reason: "end_turn" });
 
-    const { stderr, exitCode } = await runHookScript(
-      EVALUATE_SESSION_SCRIPT,
-      input,
-      tempDir
-    );
+    const { stderr, exitCode } = await runHookScript(EVALUATE_SESSION_SCRIPT, input, tempDir);
 
     expect(exitCode).toBe(0);
     // Should print a hot-file warning mentioning the frequently-modified file

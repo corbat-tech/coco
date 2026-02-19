@@ -192,9 +192,7 @@ describe("saveProjectConfig", () => {
 
   it("should throw on invalid config", async () => {
     // minScore > 100 is invalid
-    await expect(
-      saveProjectConfig({ quality: { minScore: 200 } }, tmpDir),
-    ).rejects.toThrow();
+    await expect(saveProjectConfig({ quality: { minScore: 200 } }, tmpDir)).rejects.toThrow();
   });
 });
 
@@ -244,7 +242,9 @@ describe("mergeProjectConfigs", () => {
   });
 
   it("should merge analyzers.java (override wins per key)", () => {
-    const base: ProjectConfig = { analyzers: { java: { minCoverage: 70, reportPath: "base.xml" } } };
+    const base: ProjectConfig = {
+      analyzers: { java: { minCoverage: 70, reportPath: "base.xml" } },
+    };
     const override: ProjectConfig = { analyzers: { java: { minCoverage: 80 } } };
     const merged = mergeProjectConfigs(base, override);
     expect(merged.analyzers?.java?.minCoverage).toBe(80);

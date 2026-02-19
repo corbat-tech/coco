@@ -67,7 +67,7 @@ describe("loadMarkdownMetadata", () => {
     expect(meta).not.toBeNull();
     expect(meta!.disableModelInvocation).toBe(true);
     expect(meta!.allowedTools).toEqual(["Bash", "Read", "Edit"]);
-    expect(meta!.argumentHint).toBe('[--verbose] <target>');
+    expect(meta!.argumentHint).toBe("[--verbose] <target>");
     expect(meta!.compatibility).toBe("Requires Node.js 22+");
     expect(meta!.model).toBe("claude-sonnet-4-20250514");
     expect(meta!.context).toBe("fork");
@@ -80,7 +80,7 @@ describe("loadMarkdownMetadata", () => {
     expect(meta!.tags).toContain("testing");
     expect(meta!.tags).toContain("fixtures");
     expect(meta!.tags).toContain("validation");
-    expect(meta!.tags).toContain("quality");  // from metadata.tags
+    expect(meta!.tags).toContain("quality"); // from metadata.tags
     expect(meta!.tags!.length).toBe(4);
   });
 

@@ -96,9 +96,18 @@ describe("QualityFormatter.formatTable", () => {
   it("should contain all 12 dimension names", () => {
     const result = fmt.formatTable(makeEvaluation({}));
     const dimensions = [
-      "Correctness", "Completeness", "Robustness", "Readability",
-      "Maintainability", "Complexity", "Duplication", "Test Coverage",
-      "Test Quality", "Security", "Documentation", "Style",
+      "Correctness",
+      "Completeness",
+      "Robustness",
+      "Readability",
+      "Maintainability",
+      "Complexity",
+      "Duplication",
+      "Test Coverage",
+      "Test Quality",
+      "Security",
+      "Documentation",
+      "Style",
     ];
     for (const dim of dimensions) {
       expect(result).toContain(dim);
@@ -164,7 +173,13 @@ describe("QualityFormatter.formatIssues", () => {
 
   it("should include file and line when provided", () => {
     const issues: QualityEvaluation["issues"] = [
-      { dimension: "style", severity: "minor", message: "Line too long", file: "src/app.ts", line: 42 },
+      {
+        dimension: "style",
+        severity: "minor",
+        message: "Line too long",
+        file: "src/app.ts",
+        line: 42,
+      },
     ];
     const result = fmt.formatIssues(makeEvaluation({ issues }));
     expect(result).toContain("src/app.ts");
@@ -199,7 +214,12 @@ describe("QualityFormatter.formatSuggestions", () => {
 
   it("should list suggestions with estimated impact", () => {
     const suggestions: QualityEvaluation["suggestions"] = [
-      { dimension: "testCoverage", priority: "high", description: "Add unit tests", estimatedImpact: 10 },
+      {
+        dimension: "testCoverage",
+        priority: "high",
+        description: "Add unit tests",
+        estimatedImpact: 10,
+      },
     ];
     const result = fmt.formatSuggestions(makeEvaluation({ suggestions }));
     expect(result).toContain("Add unit tests");
@@ -252,7 +272,12 @@ describe("QualityFormatter.formatFull", () => {
 
   it("should include suggestions section when suggestions exist", () => {
     const suggestions: QualityEvaluation["suggestions"] = [
-      { dimension: "testCoverage", priority: "high", description: "Write tests", estimatedImpact: 10 },
+      {
+        dimension: "testCoverage",
+        priority: "high",
+        description: "Write tests",
+        estimatedImpact: 10,
+      },
     ];
     const result = fmt.formatFull(makeEvaluation({ suggestions }));
     expect(result).toContain("Suggestions");

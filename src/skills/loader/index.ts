@@ -55,7 +55,9 @@ export async function loadFullSkill(metadata: SkillMetadata): Promise<LoadedSkil
   // loadSkill() checks cache first, so this code path should not be reached for
   // native skills. If it is, log a warning and return null gracefully.
   const { getLogger } = await import("../../utils/logger.js");
-  getLogger().warn(`[Skills] loadFullSkill called for non-markdown skill: ${metadata.id} (kind: ${metadata.kind})`);
+  getLogger().warn(
+    `[Skills] loadFullSkill called for non-markdown skill: ${metadata.id} (kind: ${metadata.kind})`,
+  );
   return null;
 }
 

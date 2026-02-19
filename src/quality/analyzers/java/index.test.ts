@@ -203,9 +203,7 @@ describe("JavaSecurityAnalyzer", () => {
       { path: "VulnerableService.java", content: SECURITY_VULNERABLE_JAVA },
     ]);
     expect(result.vulnerabilities.length).toBeGreaterThan(0);
-    const sqlInjection = result.vulnerabilities.find((v) =>
-      v.type.toLowerCase().includes("sql"),
-    );
+    const sqlInjection = result.vulnerabilities.find((v) => v.type.toLowerCase().includes("sql"));
     expect(sqlInjection).toBeDefined();
   });
 
@@ -214,9 +212,9 @@ describe("JavaSecurityAnalyzer", () => {
     const result = await analyzer.analyzeContent([
       { path: "VulnerableService.java", content: SECURITY_VULNERABLE_JAVA },
     ]);
-    const hardcoded = result.vulnerabilities.find((v) =>
-      v.type.toLowerCase().includes("credential") ||
-      v.type.toLowerCase().includes("hardcoded"),
+    const hardcoded = result.vulnerabilities.find(
+      (v) =>
+        v.type.toLowerCase().includes("credential") || v.type.toLowerCase().includes("hardcoded"),
     );
     expect(hardcoded).toBeDefined();
   });
@@ -226,9 +224,8 @@ describe("JavaSecurityAnalyzer", () => {
     const result = await analyzer.analyzeContent([
       { path: "VulnerableService.java", content: SECURITY_VULNERABLE_JAVA },
     ]);
-    const deser = result.vulnerabilities.find((v) =>
-      v.type.toLowerCase().includes("deserializ") ||
-      v.type.toLowerCase().includes("object"),
+    const deser = result.vulnerabilities.find(
+      (v) => v.type.toLowerCase().includes("deserializ") || v.type.toLowerCase().includes("object"),
     );
     expect(deser).toBeDefined();
   });
@@ -284,8 +281,8 @@ describe("JavaStyleAnalyzer", () => {
     const result = await analyzer.analyzeContent([
       { path: "bad_class.java", content: POOR_STYLE_JAVA },
     ]);
-    const lineLengthViolation = result.violations.find((v) =>
-      v.rule.toLowerCase().includes("line") || v.rule.toLowerCase().includes("length"),
+    const lineLengthViolation = result.violations.find(
+      (v) => v.rule.toLowerCase().includes("line") || v.rule.toLowerCase().includes("length"),
     );
     expect(lineLengthViolation).toBeDefined();
   });
@@ -439,7 +436,10 @@ describe("findJavaFiles — shared helper", () => {
     try {
       await mkdir(join(tmpDir, "src"), { recursive: true });
       await writeFile(join(tmpDir, "src", "UserService.java"), "public class UserService {}");
-      await writeFile(join(tmpDir, "src", "UserServiceTest.java"), "public class UserServiceTest {}");
+      await writeFile(
+        join(tmpDir, "src", "UserServiceTest.java"),
+        "public class UserServiceTest {}",
+      );
       await writeFile(join(tmpDir, "src", "UserSpec.java"), "public class UserSpec {}");
 
       const allFiles = await findJavaFiles(tmpDir);

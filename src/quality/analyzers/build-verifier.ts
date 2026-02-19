@@ -68,11 +68,19 @@ export class BuildVerifier {
 
       // Validate build command against safe allowlist before execution
       // Also allows "npx tsc --noEmit" which detectBuildCommand() returns for TS-only projects.
-      const SAFE_BUILD_PATTERN = /^(npm|pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+$|^npx\s+tsc(\s+--[\w-]+)*$/;
+      const SAFE_BUILD_PATTERN =
+        /^(npm|pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+$|^npx\s+tsc(\s+--[\w-]+)*$/;
       if (!SAFE_BUILD_PATTERN.test(buildCommand.trim())) {
         return {
           success: false,
-          errors: [{ file: "", line: 0, column: 0, message: `Unsafe build command rejected: ${buildCommand}` }],
+          errors: [
+            {
+              file: "",
+              line: 0,
+              column: 0,
+              message: `Unsafe build command rejected: ${buildCommand}`,
+            },
+          ],
           warnings: [],
           duration: Date.now() - startTime,
           stdout: "",

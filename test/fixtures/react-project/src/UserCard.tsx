@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback } from "react";
 
 interface UserCardProps {
   /** User name to display */
@@ -25,7 +25,7 @@ export function UserCard({ name, email, onClick }: UserCardProps) {
       aria-label={`User card for ${name}`}
       onClick={onClick}
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onClick?.()}
+      onKeyDown={(e) => e.key === "Enter" && onClick?.()}
     >
       <h2>{name}</h2>
       <p>{email}</p>

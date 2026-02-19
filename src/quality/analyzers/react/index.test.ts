@@ -142,9 +142,7 @@ describe("ReactComponentAnalyzer", () => {
     const result = await analyzer.analyzeContent([
       { path: "BadComponent.tsx", content: BAD_COMPONENT },
     ]);
-    const missingKey = result.issues.find((i) =>
-      i.rule.toLowerCase().includes("key"),
-    );
+    const missingKey = result.issues.find((i) => i.rule.toLowerCase().includes("key"));
     expect(missingKey).toBeDefined();
   });
 
@@ -190,9 +188,7 @@ describe("ReactA11yAnalyzer", () => {
     const result = await analyzer.analyzeContent([
       { path: "BadComponent.tsx", content: BAD_COMPONENT },
     ]);
-    const altViolation = result.violations.find((v) =>
-      v.rule.toLowerCase().includes("alt"),
-    );
+    const altViolation = result.violations.find((v) => v.rule.toLowerCase().includes("alt"));
     expect(altViolation).toBeDefined();
   });
 
@@ -201,9 +197,8 @@ describe("ReactA11yAnalyzer", () => {
     const result = await analyzer.analyzeContent([
       { path: "BadComponent.tsx", content: BAD_COMPONENT },
     ]);
-    const clickViolation = result.violations.find((v) =>
-      v.rule.toLowerCase().includes("click") ||
-      v.rule.toLowerCase().includes("interactive"),
+    const clickViolation = result.violations.find(
+      (v) => v.rule.toLowerCase().includes("click") || v.rule.toLowerCase().includes("interactive"),
     );
     expect(clickViolation).toBeDefined();
   });
@@ -213,9 +208,8 @@ describe("ReactA11yAnalyzer", () => {
     const result = await analyzer.analyzeContent([
       { path: "BadComponent.tsx", content: BAD_COMPONENT },
     ]);
-    const hrefViolation = result.violations.find((v) =>
-      v.rule.toLowerCase().includes("href") ||
-      v.rule.toLowerCase().includes("anchor"),
+    const hrefViolation = result.violations.find(
+      (v) => v.rule.toLowerCase().includes("href") || v.rule.toLowerCase().includes("anchor"),
     );
     expect(hrefViolation).toBeDefined();
   });
@@ -253,9 +247,8 @@ describe("ReactHookAnalyzer", () => {
     const result = await analyzer.analyzeContent([
       { path: "useDataFetcher.ts", content: HOOK_VIOLATIONS },
     ]);
-    const depsViolation = result.violations.find((v) =>
-      v.rule.toLowerCase().includes("dep") ||
-      v.rule.toLowerCase().includes("effect"),
+    const depsViolation = result.violations.find(
+      (v) => v.rule.toLowerCase().includes("dep") || v.rule.toLowerCase().includes("effect"),
     );
     expect(depsViolation).toBeDefined();
   });
@@ -265,9 +258,8 @@ describe("ReactHookAnalyzer", () => {
     const result = await analyzer.analyzeContent([
       { path: "useDataFetcher.ts", content: HOOK_VIOLATIONS },
     ]);
-    const conditionalViolation = result.violations.find((v) =>
-      v.rule.toLowerCase().includes("conditional") ||
-      v.rule.toLowerCase().includes("rule"),
+    const conditionalViolation = result.violations.find(
+      (v) => v.rule.toLowerCase().includes("conditional") || v.rule.toLowerCase().includes("rule"),
     );
     expect(conditionalViolation).toBeDefined();
   });
@@ -313,8 +305,8 @@ describe("registerReactAnalyzers", () => {
 
     // React-specific dimensions
     expect(dimensionIds).toContain("correctness"); // hook rules
-    expect(dimensionIds).toContain("robustness");  // a11y
-    expect(dimensionIds).toContain("style");        // component quality
+    expect(dimensionIds).toContain("robustness"); // a11y
+    expect(dimensionIds).toContain("style"); // component quality
   });
 
   it("should not register analyzers for java or python", () => {

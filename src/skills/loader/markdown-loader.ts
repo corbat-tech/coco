@@ -105,9 +105,7 @@ export async function loadMarkdownMetadata(
  *
  * Reads the complete markdown body and scans for supporting files.
  */
-export async function loadMarkdownContent(
-  skillDir: string,
-): Promise<MarkdownSkillContent | null> {
+export async function loadMarkdownContent(skillDir: string): Promise<MarkdownSkillContent | null> {
   try {
     const skillPath = path.join(skillDir, SKILL_FILENAME);
     const raw = await fs.readFile(skillPath, "utf-8");
@@ -196,8 +194,7 @@ export function toKebabCase(str: string): string {
     .replace(/[\s_]+/g, "-")
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "")
-    .replace(/^-+|-+$/g, "")     // trim leading/trailing hyphens
-    .replace(/-{2,}/g, "-")       // collapse consecutive hyphens
-    .slice(0, 64);                // max 64 chars per standard
+    .replace(/^-+|-+$/g, "") // trim leading/trailing hyphens
+    .replace(/-{2,}/g, "-") // collapse consecutive hyphens
+    .slice(0, 64); // max 64 chars per standard
 }
-

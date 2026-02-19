@@ -205,7 +205,7 @@ describe("matchSkills", () => {
       },
     ];
     const matches = matchSkills("testing skill", skills, { minScore: 0.1 });
-    const matchedIds = matches.map(m => m.skill.id);
+    const matchedIds = matches.map((m) => m.skill.id);
     expect(matchedIds).toContain("auto-skill");
     expect(matchedIds).not.toContain("manual-skill");
   });

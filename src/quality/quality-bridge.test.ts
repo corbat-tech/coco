@@ -13,10 +13,7 @@ import {
   convergenceOptionsFromProjectConfig,
   resolvedConvergenceOptions,
 } from "./quality-bridge.js";
-import {
-  DEFAULT_QUALITY_THRESHOLDS,
-  DEFAULT_QUALITY_WEIGHTS,
-} from "./types.js";
+import { DEFAULT_QUALITY_THRESHOLDS, DEFAULT_QUALITY_WEIGHTS } from "./types.js";
 import type { ProjectConfig } from "../config/project-config.js";
 
 // ──────────────────────────────────────────────────────────────────────────────

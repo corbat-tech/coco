@@ -164,18 +164,14 @@ describe("DimensionRegistry", () => {
       const originalStderrWrite = process.stderr.write.bind(process.stderr);
       const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 
-      const stderrSpy = vi
-        .spyOn(process.stderr, "write")
-        .mockImplementation((chunk: unknown) => {
-          stderrChunks.push(String(chunk));
-          return true;
-        });
-      const stdoutSpy = vi
-        .spyOn(process.stdout, "write")
-        .mockImplementation((chunk: unknown) => {
-          stdoutChunks.push(String(chunk));
-          return true;
-        });
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: unknown) => {
+        stderrChunks.push(String(chunk));
+        return true;
+      });
+      const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+        stdoutChunks.push(String(chunk));
+        return true;
+      });
 
       try {
         const input: AnalyzerInput = {

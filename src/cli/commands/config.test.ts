@@ -621,10 +621,7 @@ describe("config set action handler", () => {
     await promise;
 
     // The path must be absolute and end with .coco/config.json
-    expect(mockFsMkdir).toHaveBeenCalledWith(
-      expect.stringMatching(/\.coco$/),
-      { recursive: true },
-    );
+    expect(mockFsMkdir).toHaveBeenCalledWith(expect.stringMatching(/\.coco$/), { recursive: true });
     expect(mockFsWriteFile).toHaveBeenCalledWith(
       expect.stringMatching(/\.coco[/\\]config\.json$/),
       expect.any(String),
@@ -841,10 +838,7 @@ describe("config init action handler", () => {
     await vi.runAllTimersAsync();
     await promise;
 
-    expect(mockFsMkdir).toHaveBeenCalledWith(
-      expect.stringMatching(/\.coco$/),
-      { recursive: true },
-    );
+    expect(mockFsMkdir).toHaveBeenCalledWith(expect.stringMatching(/\.coco$/), { recursive: true });
     expect(mockFsWriteFile).toHaveBeenCalledWith(
       expect.stringMatching(/\.coco[/\\]config\.json$/),
       expect.stringContaining("provider"),

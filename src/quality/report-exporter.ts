@@ -12,11 +12,7 @@
 
 import { writeFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type {
-  QualityEvaluation,
-  QualityIssue,
-  QualitySuggestion,
-} from "./types.js";
+import type { QualityEvaluation, QualityIssue, QualitySuggestion } from "./types.js";
 import { DIMENSION_LABELS, DIMENSION_ORDER } from "./dimension-constants.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -120,7 +116,10 @@ export class QualityReportExporter {
       evaluation.issues.length === 0
         ? "<p>No issues found.</p>"
         : `<ul>${evaluation.issues
-            .map((i) => `<li><strong>[${this.htmlEscape(i.dimension)}]</strong> ${this.htmlEscape(i.message)}</li>`)
+            .map(
+              (i) =>
+                `<li><strong>[${this.htmlEscape(i.dimension)}]</strong> ${this.htmlEscape(i.message)}</li>`,
+            )
             .join("")}</ul>`;
 
     const suggestionsHtml =
@@ -128,7 +127,10 @@ export class QualityReportExporter {
         ? "<p>No suggestions.</p>"
         : `<ul>${evaluation.suggestions
             .slice(0, 5)
-            .map((s) => `<li><strong>[${this.htmlEscape(s.dimension)}]</strong> ${this.htmlEscape(s.description)} <em>(+${s.estimatedImpact} pts)</em></li>`)
+            .map(
+              (s) =>
+                `<li><strong>[${this.htmlEscape(s.dimension)}]</strong> ${this.htmlEscape(s.description)} <em>(+${s.estimatedImpact} pts)</em></li>`,
+            )
             .join("")}</ul>`;
 
     return `<!DOCTYPE html>
@@ -227,8 +229,7 @@ ${suggestionsHtml}
   }
 
   private markdownSuggestion(s: QualitySuggestion): string {
-    const priority =
-      s.priority === "high" ? "🔴" : s.priority === "medium" ? "🟡" : "🔵";
+    const priority = s.priority === "high" ? "🔴" : s.priority === "medium" ? "🟡" : "🔵";
     return `- ${priority} **[${s.dimension}]** ${s.description} _(+${s.estimatedImpact} pts)_`;
   }
 }

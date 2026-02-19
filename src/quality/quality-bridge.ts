@@ -49,18 +49,14 @@ export const DEFAULT_CONVERGENCE_OPTIONS: ConvergenceOptions = {
  * Only fields explicitly set in `config.quality` are included.
  * Returns an empty object when there is nothing to override.
  */
-export function thresholdsFromProjectConfig(
-  config: ProjectConfig,
-): Partial<QualityThresholds> {
+export function thresholdsFromProjectConfig(config: ProjectConfig): Partial<QualityThresholds> {
   const q = config.quality;
   if (!q) return {};
 
   const result: Partial<QualityThresholds> = {};
 
   const hasMinimum =
-    q.minScore !== undefined ||
-    q.minCoverage !== undefined ||
-    q.securityThreshold !== undefined;
+    q.minScore !== undefined || q.minCoverage !== undefined || q.securityThreshold !== undefined;
 
   if (hasMinimum) {
     result.minimum = {
@@ -101,10 +97,7 @@ export function mergeThresholds(
  */
 export function resolvedThresholds(projectConfig: ProjectConfig | null): QualityThresholds {
   if (!projectConfig) return DEFAULT_QUALITY_THRESHOLDS;
-  return mergeThresholds(
-    DEFAULT_QUALITY_THRESHOLDS,
-    thresholdsFromProjectConfig(projectConfig),
-  );
+  return mergeThresholds(DEFAULT_QUALITY_THRESHOLDS, thresholdsFromProjectConfig(projectConfig));
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -155,9 +148,7 @@ export function resolvedWeights(projectConfig: ProjectConfig | null): QualityWei
  * Build `ConvergenceOptions` from a `ProjectConfig`.
  * Uses `minScore`, `maxIterations` from `config.quality` when available.
  */
-export function convergenceOptionsFromProjectConfig(
-  config: ProjectConfig,
-): ConvergenceOptions {
+export function convergenceOptionsFromProjectConfig(config: ProjectConfig): ConvergenceOptions {
   const q = config.quality;
   return {
     minScore: q?.minScore ?? DEFAULT_CONVERGENCE_OPTIONS.minScore,

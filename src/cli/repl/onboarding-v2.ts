@@ -962,8 +962,7 @@ function formatLocalModelSuggestions(
   models.forEach((m, i) => {
     const num = i + 1;
     const label = m.recommended ? `${m.id} (RECOMMENDED)` : m.id;
-    const cmd =
-      providerType === "ollama" ? `ollama pull ${m.id}` : `search '${m.id}' in LM Studio`;
+    const cmd = providerType === "ollama" ? `ollama pull ${m.id}` : `search '${m.id}' in LM Studio`;
 
     // Extract RAM from description if present (e.g., "... (16GB RAM)")
     const ramMatch = m.description?.match(/\((\d+GB)\s*RAM\)/i);
@@ -971,9 +970,7 @@ function formatLocalModelSuggestions(
     const ctxInfo = m.contextWindow ? `${Math.round(m.contextWindow / 1000)}K ctx` : null;
 
     // Clean description: remove RAM part since we show it separately
-    const cleanDesc = m.description
-      ? m.description.replace(/\s*\(\d+GB\s*RAM\)/i, "").trim()
-      : "";
+    const cleanDesc = m.description ? m.description.replace(/\s*\(\d+GB\s*RAM\)/i, "").trim() : "";
 
     lines.push(`  ${num}. ${label}`);
     if (cleanDesc) lines.push(`     ${cleanDesc}`);
@@ -1417,10 +1414,12 @@ async function handleLocalProviderUnavailable(
   const displayName = cfg.displayName;
 
   p.log.message("");
-  p.log.warn(
-    chalk.yellow(`  ${displayName} is not running or not reachable.`),
+  p.log.warn(chalk.yellow(`  ${displayName} is not running or not reachable.`));
+  p.log.message(
+    chalk.dim(
+      `  URL: ${providerType === "ollama" ? "http://localhost:11434" : "http://localhost:1234"}`,
+    ),
   );
-  p.log.message(chalk.dim(`  URL: ${providerType === "ollama" ? "http://localhost:11434" : "http://localhost:1234"}`));
   p.log.message("");
 
   const choice = await p.select({
@@ -1528,7 +1527,9 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
   // they use a local server that may or may not be running.
   const preferredProviderDef = providers.find((p) => p.id === config.provider.type);
   const preferredIsLocal = preferredProviderDef?.requiresApiKey === false;
-  const preferredHasApiKey = preferredProviderDef ? !!process.env[preferredProviderDef.envVar] : false;
+  const preferredHasApiKey = preferredProviderDef
+    ? !!process.env[preferredProviderDef.envVar]
+    : false;
   const preferredIsConfigured = preferredIsLocal || preferredHasApiKey;
 
   if (preferredProviderDef && preferredIsConfigured) {

@@ -76,7 +76,9 @@ async function runList(options: { scope?: string; kind?: string }): Promise<void
     const builtins = getBuiltinSkillsForDiscovery();
     allSkills = await discoverAllSkills(projectPath, builtins);
   } catch (error) {
-    p.log.error(`Failed to discover skills: ${error instanceof Error ? error.message : String(error)}`);
+    p.log.error(
+      `Failed to discover skills: ${error instanceof Error ? error.message : String(error)}`,
+    );
     p.outro("");
     return;
   }
@@ -115,9 +117,7 @@ async function runList(options: { scope?: string; kind?: string }): Promise<void
 
     for (const skill of skills) {
       const kindBadge = skill.kind === "markdown" ? chalk.cyan("[MD]") : chalk.yellow("[TS]");
-      const aliasText = skill.aliases?.length
-        ? chalk.dim(` (${skill.aliases.join(", ")})`)
-        : "";
+      const aliasText = skill.aliases?.length ? chalk.dim(` (${skill.aliases.join(", ")})`) : "";
       console.log(
         `    ${kindBadge} ${chalk.bold(skill.name)}${aliasText}  ${chalk.dim(skill.description)}`,
       );
@@ -209,7 +209,9 @@ async function runAdd(source: string, options: { global?: boolean }): Promise<vo
       p.log.error(`Failed to clone skill: ${msg}`);
     }
   } else {
-    p.log.error("Invalid source. Use a GitHub owner/repo (e.g., 'anthropics/skills') or a git URL.");
+    p.log.error(
+      "Invalid source. Use a GitHub owner/repo (e.g., 'anthropics/skills') or a git URL.",
+    );
   }
 
   p.outro("");
@@ -268,7 +270,9 @@ async function runInfo(name: string): Promise<void> {
     const builtins = getBuiltinSkillsForDiscovery();
     allSkills = await discoverAllSkills(projectPath, builtins);
   } catch (error) {
-    p.log.error(`Failed to discover skills: ${error instanceof Error ? error.message : String(error)}`);
+    p.log.error(
+      `Failed to discover skills: ${error instanceof Error ? error.message : String(error)}`,
+    );
     p.outro("");
     return;
   }

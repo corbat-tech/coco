@@ -38,7 +38,12 @@ export function registerCheckCommand(program: Command): void {
       "text",
     )
     .option("--output-file <file>", "Write report to this file (in addition to stdout)")
-    .addOption(new Option("--no-fail", "Exit 0 even if quality is below minimum threshold").default(true, "exit 1 on failure"))
+    .addOption(
+      new Option("--no-fail", "Exit 0 even if quality is below minimum threshold").default(
+        true,
+        "exit 1 on failure",
+      ),
+    )
     .action(async (opts: CheckCommandOptions) => {
       const spinner = p.spinner();
       try {

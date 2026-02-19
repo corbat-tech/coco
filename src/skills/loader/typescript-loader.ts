@@ -6,12 +6,7 @@
  * converts existing skills without requiring changes to their code.
  */
 
-import type {
-  SkillMetadata,
-  NativeSkillContent,
-  LoadedSkill,
-  SkillScope,
-} from "../types.js";
+import type { SkillMetadata, NativeSkillContent, LoadedSkill, SkillScope } from "../types.js";
 import { resolveCategory } from "../types.js";
 import { toKebabCase } from "./markdown-loader.js";
 

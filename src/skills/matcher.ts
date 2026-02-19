@@ -29,13 +29,71 @@ const GLOB_BOOST = 0.3;
 
 /** Common stop words to ignore */
 const STOP_WORDS = new Set([
-  "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-  "have", "has", "had", "do", "does", "did", "will", "would", "shall",
-  "should", "may", "might", "must", "can", "could", "i", "me", "my",
-  "you", "your", "we", "our", "they", "their", "it", "its", "this",
-  "that", "these", "those", "and", "or", "but", "if", "then", "else",
-  "when", "where", "how", "what", "which", "who", "whom", "to", "for",
-  "with", "at", "by", "from", "in", "on", "of", "as", "not", "no",
+  "a",
+  "an",
+  "the",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "have",
+  "has",
+  "had",
+  "do",
+  "does",
+  "did",
+  "will",
+  "would",
+  "shall",
+  "should",
+  "may",
+  "might",
+  "must",
+  "can",
+  "could",
+  "i",
+  "me",
+  "my",
+  "you",
+  "your",
+  "we",
+  "our",
+  "they",
+  "their",
+  "it",
+  "its",
+  "this",
+  "that",
+  "these",
+  "those",
+  "and",
+  "or",
+  "but",
+  "if",
+  "then",
+  "else",
+  "when",
+  "where",
+  "how",
+  "what",
+  "which",
+  "who",
+  "whom",
+  "to",
+  "for",
+  "with",
+  "at",
+  "by",
+  "from",
+  "in",
+  "on",
+  "of",
+  "as",
+  "not",
+  "no",
 ]);
 
 /** Match options */
@@ -64,7 +122,7 @@ export function matchSkills(
   if (queryTokens.length === 0) return [];
 
   // Filter out skills that opt-out of auto-activation
-  const matchableSkills = skills.filter(s => s.disableModelInvocation !== true);
+  const matchableSkills = skills.filter((s) => s.disableModelInvocation !== true);
 
   const matches: SkillMatch[] = [];
 
@@ -79,7 +137,7 @@ export function matchSkills(
   matches.sort((a, b) => b.score - a.score);
 
   // Clamp scores to [0, 1] for the public API
-  return matches.slice(0, maxResults).map(m => ({
+  return matches.slice(0, maxResults).map((m) => ({
     ...m,
     score: Math.min(m.score, 1.0),
   }));
@@ -123,7 +181,8 @@ function scoreSkill(
   }
 
   // Normalize: compute maxPossible dynamically so tag-less skills aren't penalized
-  const maxPossible = NAME_WEIGHT + DESC_WEIGHT + (skill.tags && skill.tags.length > 0 ? TAG_WEIGHT : 0);
+  const maxPossible =
+    NAME_WEIGHT + DESC_WEIGHT + (skill.tags && skill.tags.length > 0 ? TAG_WEIGHT : 0);
   let normalized = totalScore / maxPossible;
 
   // Glob-aware boosting: if skill has globs and any active file matches, boost score

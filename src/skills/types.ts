@@ -49,8 +49,17 @@ export type SkillCategory =
 
 /** All valid skill categories as a runtime set */
 export const VALID_CATEGORIES = new Set<string>([
-  "general", "git", "model", "coco", "debug", "custom",
-  "coding", "testing", "deployment", "documentation", "workflow",
+  "general",
+  "git",
+  "model",
+  "coco",
+  "debug",
+  "custom",
+  "coding",
+  "testing",
+  "deployment",
+  "documentation",
+  "workflow",
 ]);
 
 /** Resolve a string to a valid SkillCategory, defaulting to "general" */

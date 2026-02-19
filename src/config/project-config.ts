@@ -178,9 +178,7 @@ export async function loadProjectConfig(projectPath: string): Promise<ProjectCon
   const parsed = JSON.parse(raw) as unknown;
   const result = ProjectConfigSchema.safeParse(parsed);
   if (!result.success) {
-    throw new Error(
-      `Invalid ${PROJECT_CONFIG_FILENAME} at ${configPath}: ${result.error.message}`,
-    );
+    throw new Error(`Invalid ${PROJECT_CONFIG_FILENAME} at ${configPath}: ${result.error.message}`);
   }
 
   let config = result.data;
@@ -213,10 +211,7 @@ export async function loadProjectConfig(projectPath: string): Promise<ProjectCon
  * Validate and write a `ProjectConfig` as `.coco.config.json` at the given
  * project root. The file is created if it does not exist.
  */
-export async function saveProjectConfig(
-  config: ProjectConfig,
-  projectPath: string,
-): Promise<void> {
+export async function saveProjectConfig(config: ProjectConfig, projectPath: string): Promise<void> {
   const validated = ProjectConfigSchema.parse(config);
   const configPath = getProjectConfigPath(projectPath);
   await writeFile(configPath, JSON.stringify(validated, null, 2) + "\n", "utf-8");

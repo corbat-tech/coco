@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { nativeSkillToMetadata, nativeSkillToLoaded, type LegacySkill } from "./typescript-loader.js";
+import {
+  nativeSkillToMetadata,
+  nativeSkillToLoaded,
+  type LegacySkill,
+} from "./typescript-loader.js";
 
 const mockSkill: LegacySkill = {
   name: "ship",

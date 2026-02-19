@@ -83,11 +83,7 @@ describe("discoverAllSkills", () => {
   });
 
   it("should return skills sorted by name", async () => {
-    const skills = await discoverAllSkills(
-      "/non-existent-project",
-      mockBuiltins,
-      FIXTURES_DIR,
-    );
+    const skills = await discoverAllSkills("/non-existent-project", mockBuiltins, FIXTURES_DIR);
 
     const names = skills.map((s) => s.name);
     const sorted = [...names].sort();
@@ -95,11 +91,9 @@ describe("discoverAllSkills", () => {
   });
 
   it("should accept DiscoveryOptions object (new API)", async () => {
-    const skills = await discoverAllSkills(
-      "/non-existent-project",
-      mockBuiltins,
-      { globalDir: FIXTURES_DIR },
-    );
+    const skills = await discoverAllSkills("/non-existent-project", mockBuiltins, {
+      globalDir: FIXTURES_DIR,
+    });
     expect(skills.length).toBeGreaterThanOrEqual(2);
 
     const testSkill = skills.find((s) => s.name === "test-skill");
@@ -108,11 +102,7 @@ describe("discoverAllSkills", () => {
   });
 
   it("should accept string for backward compat (old API)", async () => {
-    const skills = await discoverAllSkills(
-      "/non-existent-project",
-      mockBuiltins,
-      FIXTURES_DIR,
-    );
+    const skills = await discoverAllSkills("/non-existent-project", mockBuiltins, FIXTURES_DIR);
     expect(skills.length).toBeGreaterThanOrEqual(2);
   });
 });

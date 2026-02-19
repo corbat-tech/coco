@@ -314,9 +314,7 @@ describe("BuildVerifier", () => {
 
   describe("verifyBuild — safe-command allowlist (Fix #2)", () => {
     it("safe 'npm run build' is allowed and execAsync is called", async () => {
-      mockFs.readFile.mockResolvedValue(
-        JSON.stringify({ scripts: { build: "tsc" } }),
-      );
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ scripts: { build: "tsc" } }));
       mockExecAsync.mockResolvedValue({ stdout: "ok", stderr: "" });
 
       const result = await verifier.verifyBuild();
@@ -348,7 +346,8 @@ describe("BuildVerifier", () => {
     it("SAFE_BUILD_PATTERN rejects arbitrary npx calls and bare binaries", () => {
       // The pattern allows "npx tsc [--flags]" (hardcoded by detectBuildCommand)
       // but must reject arbitrary npx invocations and bare binaries.
-      const SAFE_BUILD_PATTERN = /^(npm|pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+$|^npx\s+tsc(\s+--[\w-]+)*$/;
+      const SAFE_BUILD_PATTERN =
+        /^(npm|pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+$|^npx\s+tsc(\s+--[\w-]+)*$/;
       // bare arbitrary binary
       expect(SAFE_BUILD_PATTERN.test("malicious-script")).toBe(false);
       // npx with a non-tsc binary
@@ -364,7 +363,7 @@ describe("BuildVerifier", () => {
       // instead verify the pattern rejection logic in isolation, which is what
       // matters for the security guarantee.
       const SAFE_BUILD_PATTERN = /^(npm|pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+$/;
-      const dangerous = 'npm run build && cat /etc/passwd';
+      const dangerous = "npm run build && cat /etc/passwd";
       expect(SAFE_BUILD_PATTERN.test(dangerous.trim())).toBe(false);
       // If the guard fires it must return success=false with a descriptive error
       // (not throw). We can't easily inject an unsafe command via the public API

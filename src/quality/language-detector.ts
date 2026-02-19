@@ -208,9 +208,7 @@ function buildEvidence(
   const evidence: string[] = [];
   const dominantCount = counts.get(dominant) ?? 0;
 
-  evidence.push(
-    `${dominantCount} of ${totalSourceFiles} source files are ${dominant}`,
-  );
+  evidence.push(`${dominantCount} of ${totalSourceFiles} source files are ${dominant}`);
 
   // Add project configuration file evidence
   const configFiles = ["tsconfig.json", "pom.xml", "build.gradle", "Cargo.toml", "go.mod"];

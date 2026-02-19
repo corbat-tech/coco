@@ -82,9 +82,7 @@ while ((match = regex.exec(input)) !== null) {
 `;
 
     const result = await scanner.scan([{ path: "test.ts", content }]);
-    const cmdInjection = result.vulnerabilities.filter(
-      (v) => v.type === "Command Injection",
-    );
+    const cmdInjection = result.vulnerabilities.filter((v) => v.type === "Command Injection");
     expect(cmdInjection).toHaveLength(0);
   });
 
@@ -99,9 +97,7 @@ exec(userInput);
 `;
 
     const result = await scanner.scan([{ path: "test.ts", content }]);
-    const cmdInjection = result.vulnerabilities.filter(
-      (v) => v.type === "Command Injection",
-    );
+    const cmdInjection = result.vulnerabilities.filter((v) => v.type === "Command Injection");
     expect(cmdInjection.length).toBeGreaterThan(0);
   });
 
@@ -112,9 +108,7 @@ exec(userInput);
     const content = `child_process.exec(cmd, callback);`;
 
     const result = await scanner.scan([{ path: "test.ts", content }]);
-    const cmdInjection = result.vulnerabilities.filter(
-      (v) => v.type === "Command Injection",
-    );
+    const cmdInjection = result.vulnerabilities.filter((v) => v.type === "Command Injection");
     expect(cmdInjection.length).toBeGreaterThan(0);
   });
 
@@ -128,9 +122,7 @@ const another = myRegex.exec(line);
 `;
 
     const result = await scanner.scan([{ path: "test.ts", content }]);
-    const cmdInjection = result.vulnerabilities.filter(
-      (v) => v.type === "Command Injection",
-    );
+    const cmdInjection = result.vulnerabilities.filter((v) => v.type === "Command Injection");
     expect(cmdInjection).toHaveLength(0);
   });
 });

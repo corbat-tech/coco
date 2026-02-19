@@ -36,10 +36,7 @@ async function loadFiles(files: string[]): Promise<ReactFileInput[]> {
   );
 }
 
-async function findReactFiles(
-  projectPath: string,
-  pattern = "**/*.{tsx,jsx}",
-): Promise<string[]> {
+async function findReactFiles(projectPath: string, pattern = "**/*.{tsx,jsx}"): Promise<string[]> {
   return glob(pattern, {
     cwd: projectPath,
     absolute: true,
@@ -98,7 +95,9 @@ export class ReactComponentAnalyzer {
         const lineNum = i + 1;
 
         // Count component declarations (function starting with uppercase)
-        if (/\bfunction\s+[A-Z]\w*\s*\(|const\s+[A-Z]\w*\s*=\s*(?:\([^)]*\)|[a-z]\w*)\s*=>/.test(line)) {
+        if (
+          /\bfunction\s+[A-Z]\w*\s*\(|const\s+[A-Z]\w*\s*=\s*(?:\([^)]*\)|[a-z]\w*)\s*=>/.test(line)
+        ) {
           totalComponents++;
           inComponent = true;
         }
@@ -139,7 +138,8 @@ export class ReactComponentAnalyzer {
             rule: "react/prop-types",
             file: filePath,
             line: lineNum,
-            message: "Component props are not typed — use a TypeScript interface or destructure with types",
+            message:
+              "Component props are not typed — use a TypeScript interface or destructure with types",
             severity: "error",
           });
         }
@@ -295,7 +295,8 @@ export class ReactA11yAnalyzer {
               rule: "jsx-a11y/interactive-supports-focus",
               file: filePath,
               line: lineNum,
-              message: "Non-interactive element with onClick handler — add keyboard support (onKeyDown, tabIndex, role)",
+              message:
+                "Non-interactive element with onClick handler — add keyboard support (onKeyDown, tabIndex, role)",
               severity: "warning",
               wcag: "WCAG 2.1.1",
             });
@@ -309,7 +310,8 @@ export class ReactA11yAnalyzer {
           rule: "jsx-a11y/label-association",
           file: filePath,
           line: lineNum,
-          message: "<input> missing label association (aria-label, aria-labelledby, or id for <label>)",
+          message:
+            "<input> missing label association (aria-label, aria-labelledby, or id for <label>)",
           severity: "warning",
           wcag: "WCAG 1.3.1",
         });
@@ -420,7 +422,8 @@ export class ReactHookAnalyzer {
             rule: "react-hooks/exhaustive-deps",
             file: filePath,
             line: lineNum,
-            message: "useEffect without dependency array — runs on every render (possibly unintentional)",
+            message:
+              "useEffect without dependency array — runs on every render (possibly unintentional)",
             severity: "warning",
           });
         }

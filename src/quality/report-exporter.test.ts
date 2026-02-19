@@ -31,12 +31,14 @@ function makeDimensions(override: Partial<QualityDimensions> = {}): QualityDimen
   };
 }
 
-function makeEvaluation(opts: {
-  overall?: number;
-  meetsMinimum?: boolean;
-  issues?: QualityEvaluation["issues"];
-  suggestions?: QualityEvaluation["suggestions"];
-} = {}): QualityEvaluation {
+function makeEvaluation(
+  opts: {
+    overall?: number;
+    meetsMinimum?: boolean;
+    issues?: QualityEvaluation["issues"];
+    suggestions?: QualityEvaluation["suggestions"];
+  } = {},
+): QualityEvaluation {
   return {
     scores: {
       overall: opts.overall ?? 85,
@@ -53,8 +55,12 @@ function makeEvaluation(opts: {
 }
 
 let tmpDir: string;
-beforeEach(async () => { tmpDir = await mkdtemp(join(tmpdir(), "coco-report-")); });
-afterEach(async () => { await rm(tmpDir, { recursive: true, force: true }); });
+beforeEach(async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "coco-report-"));
+});
+afterEach(async () => {
+  await rm(tmpDir, { recursive: true, force: true });
+});
 
 // ──────────────────────────────────────────────────────────────────────────────
 // toJson
@@ -132,7 +138,12 @@ describe("QualityReportExporter.toMarkdown", () => {
 
   it("should include suggestion with impact", () => {
     const suggestions: QualityEvaluation["suggestions"] = [
-      { dimension: "testCoverage", priority: "high", description: "Write tests", estimatedImpact: 10 },
+      {
+        dimension: "testCoverage",
+        priority: "high",
+        description: "Write tests",
+        estimatedImpact: 10,
+      },
     ];
     const md = exporter.toMarkdown(makeEvaluation({ suggestions }));
     expect(md).toContain("## Suggestions");

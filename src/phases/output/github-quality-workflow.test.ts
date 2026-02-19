@@ -3,10 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  generateQualityWorkflow,
-  formatQualityPRComment,
-} from "./github-quality-workflow.js";
+import { generateQualityWorkflow, formatQualityPRComment } from "./github-quality-workflow.js";
 import type { QualityEvaluation, QualityDimensions } from "../../quality/types.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -15,18 +12,28 @@ import type { QualityEvaluation, QualityDimensions } from "../../quality/types.j
 
 function makeDimensions(): QualityDimensions {
   return {
-    correctness: 90, completeness: 85, robustness: 88,
-    readability: 82, maintainability: 78, complexity: 75,
-    duplication: 95, testCoverage: 80, testQuality: 70,
-    security: 100, documentation: 60, style: 90,
+    correctness: 90,
+    completeness: 85,
+    robustness: 88,
+    readability: 82,
+    maintainability: 78,
+    complexity: 75,
+    duplication: 95,
+    testCoverage: 80,
+    testQuality: 70,
+    security: 100,
+    documentation: 60,
+    style: 90,
   };
 }
 
-function makeEvaluation(opts: {
-  overall?: number;
-  meetsMinimum?: boolean;
-  issues?: QualityEvaluation["issues"];
-} = {}): QualityEvaluation {
+function makeEvaluation(
+  opts: {
+    overall?: number;
+    meetsMinimum?: boolean;
+    issues?: QualityEvaluation["issues"];
+  } = {},
+): QualityEvaluation {
   return {
     scores: {
       overall: opts.overall ?? 85,

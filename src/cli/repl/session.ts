@@ -320,7 +320,16 @@ const SHELL_METACHARACTERS = /[;|&`$(){}<>!\n\\'"]/;
  */
 const SAFE_COMMAND_VALIDATORS: Record<string, (args: string[]) => boolean> = {
   git: (args) => {
-    const safeSubcommands = new Set(["status", "log", "branch", "diff", "rev-parse", "remote", "tag", "show"]);
+    const safeSubcommands = new Set([
+      "status",
+      "log",
+      "branch",
+      "diff",
+      "rev-parse",
+      "remote",
+      "tag",
+      "show",
+    ]);
     return args.length > 0 && safeSubcommands.has(args[0]!);
   },
   cat: () => true,
@@ -418,9 +427,7 @@ export function getConversationContext(
 
     // Lightweight catalog of available markdown skills (for LLM awareness)
     if (markdownSkills.length > 0) {
-      const skillList = markdownSkills
-        .map((s) => `- **${s.name}**: ${s.description}`)
-        .join("\n");
+      const skillList = markdownSkills.map((s) => `- **${s.name}**: ${s.description}`).join("\n");
       systemPrompt = `${systemPrompt}\n\n# Available Skills\n\nThe following skills can be activated to guide your work:\n${skillList}`;
     }
 
@@ -460,8 +467,11 @@ export function getConversationContext(
         if (finalInstructions.length > MAX_SKILL_INSTRUCTIONS_CHARS) {
           // Find last paragraph break before the budget limit to avoid cutting mid-markdown
           const cutPoint = finalInstructions.lastIndexOf("\n\n", MAX_SKILL_INSTRUCTIONS_CHARS);
-          const safeCut = cutPoint > MAX_SKILL_INSTRUCTIONS_CHARS * 0.5 ? cutPoint : MAX_SKILL_INSTRUCTIONS_CHARS;
-          finalInstructions = finalInstructions.slice(0, safeCut) + "\n\n[... skill instructions truncated for context budget]";
+          const safeCut =
+            cutPoint > MAX_SKILL_INSTRUCTIONS_CHARS * 0.5 ? cutPoint : MAX_SKILL_INSTRUCTIONS_CHARS;
+          finalInstructions =
+            finalInstructions.slice(0, safeCut) +
+            "\n\n[... skill instructions truncated for context budget]";
         }
         systemPrompt = `${systemPrompt}\n\n# Active Skill Instructions\n\n${finalInstructions}`;
       }

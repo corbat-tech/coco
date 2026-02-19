@@ -83,9 +83,7 @@ vi.mock("glob", () => ({
 describe("calculateQualityTool — uses registry-aware evaluator (Fix #2)", () => {
   it("quality.ts source imports createQualityEvaluatorWithRegistry, not createQualityEvaluator", () => {
     // Read source to confirm the correct factory is imported.
-    const qualityTsPath = fileURLToPath(
-      new URL("./quality.ts", import.meta.url),
-    );
+    const qualityTsPath = fileURLToPath(new URL("./quality.ts", import.meta.url));
     const source = readFileSync(qualityTsPath, "utf-8");
     expect(source).toContain("createQualityEvaluatorWithRegistry");
     // The old plain factory must NOT be imported

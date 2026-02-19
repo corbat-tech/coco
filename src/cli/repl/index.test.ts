@@ -140,7 +140,6 @@ vi.mock("./output/spinner.js", () => ({
   })),
 }));
 
-
 vi.mock("./agent-loop.js", () => ({
   executeAgentTurn: vi.fn(),
   formatAbortSummary: vi.fn(),
@@ -177,9 +176,17 @@ vi.mock("../../skills/index.js", () => ({
 
 // Mock REPL builtin skills to prevent loading ship/review/diff implementations
 vi.mock("./skills/index.js", () => ({
-  createDefaultRegistry: vi.fn(() => ({ register: vi.fn(), execute: vi.fn(), getAll: vi.fn().mockReturnValue([]) })),
+  createDefaultRegistry: vi.fn(() => ({
+    register: vi.fn(),
+    execute: vi.fn(),
+    getAll: vi.fn().mockReturnValue([]),
+  })),
   getBuiltinSkillsForDiscovery: vi.fn().mockReturnValue([]),
-  createSkillRegistry: vi.fn(() => ({ register: vi.fn(), execute: vi.fn(), getAll: vi.fn().mockReturnValue([]) })),
+  createSkillRegistry: vi.fn(() => ({
+    register: vi.fn(),
+    execute: vi.fn(),
+    getAll: vi.fn().mockReturnValue([]),
+  })),
   createHelpSkill: vi.fn().mockReturnValue({ name: "help", execute: vi.fn() }),
   clearSkill: { name: "clear", execute: vi.fn() },
   statusSkill: { name: "status", execute: vi.fn() },
@@ -192,7 +199,9 @@ vi.mock("./skills/index.js", () => ({
 
 // Mock stack detector to prevent filesystem operations
 vi.mock("./context/stack-detector.js", () => ({
-  detectProjectStack: vi.fn().mockResolvedValue({ type: "node", language: "typescript", frameworks: [] }),
+  detectProjectStack: vi
+    .fn()
+    .mockResolvedValue({ type: "node", language: "typescript", frameworks: [] }),
 }));
 
 // Mock config loader used in skill registry setup

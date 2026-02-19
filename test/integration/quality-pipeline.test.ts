@@ -11,10 +11,7 @@ import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
-import {
-  loadProjectConfig,
-  validateProjectConfig,
-} from "../../src/config/project-config.js";
+import { loadProjectConfig, validateProjectConfig } from "../../src/config/project-config.js";
 import {
   resolvedThresholds,
   resolvedWeights,
@@ -145,14 +142,8 @@ describe("Language detection on fixture projects", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("Java analyzer pipeline with fixture files", () => {
-  const userServicePath = join(
-    JAVA_PROJECT,
-    "src/main/java/com/example/UserService.java",
-  );
-  const vulnerablePath = join(
-    JAVA_PROJECT,
-    "src/main/java/com/example/VulnerableService.java",
-  );
+  const userServicePath = join(JAVA_PROJECT, "src/main/java/com/example/UserService.java");
+  const vulnerablePath = join(JAVA_PROJECT, "src/main/java/com/example/VulnerableService.java");
 
   it("should detect security vulnerabilities in VulnerableService.java", async () => {
     const analyzer = new JavaSecurityAnalyzer(JAVA_PROJECT);
@@ -273,10 +264,18 @@ describe("Report exporter and formatter integration", () => {
       scores: {
         overall: 82,
         dimensions: {
-          correctness: 90, completeness: 85, robustness: 80,
-          readability: 78, maintainability: 75, complexity: 70,
-          duplication: 92, testCoverage: 75, testQuality: 68,
-          security: 100, documentation: 65, style: 88,
+          correctness: 90,
+          completeness: 85,
+          robustness: 80,
+          readability: 78,
+          maintainability: 75,
+          complexity: 70,
+          duplication: 92,
+          testCoverage: 75,
+          testQuality: 68,
+          security: 100,
+          documentation: 65,
+          style: 88,
         },
         evaluatedAt: new Date("2026-02-19T12:00:00.000Z"),
         evaluationDurationMs: 500,
@@ -285,10 +284,19 @@ describe("Report exporter and formatter integration", () => {
       meetsTarget: false,
       converged: false,
       issues: [
-        { dimension: "testCoverage" as const, severity: "major" as const, message: "Coverage below 80%" },
+        {
+          dimension: "testCoverage" as const,
+          severity: "major" as const,
+          message: "Coverage below 80%",
+        },
       ],
       suggestions: [
-        { dimension: "testCoverage" as const, priority: "high" as const, description: "Add unit tests", estimatedImpact: 5 },
+        {
+          dimension: "testCoverage" as const,
+          priority: "high" as const,
+          description: "Add unit tests",
+          estimatedImpact: 5,
+        },
       ],
     };
   }

@@ -136,7 +136,7 @@ export class JavaComplexityAnalyzer {
 
     while ((match = methodRegex.exec(content)) !== null) {
       const nameMatch = /\s(\w+)\s*\(/.exec(match[0]);
-      const methodName = nameMatch ? nameMatch[1] ?? "unknown" : "unknown";
+      const methodName = nameMatch ? (nameMatch[1] ?? "unknown") : "unknown";
       const body = this.extractBlock(content, match.index + match[0].length - 1);
       methods.push({ name: methodName, body });
     }
@@ -252,7 +252,8 @@ const JAVA_SECURITY_PATTERNS: JavaSecurityPattern[] = [
     severity: "high",
     type: "XML External Entity (XXE)",
     description: "XML parsing without disabling external entities",
-    recommendation: "Disable external entities: factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)",
+    recommendation:
+      "Disable external entities: factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)",
     cwe: "CWE-611",
   },
   // Insecure Random
@@ -389,10 +390,7 @@ export class JavaStyleAnalyzer {
     }
 
     // Score: each error = -10 points, each warning = -5 points
-    const deduction = violations.reduce(
-      (sum, v) => sum + (v.severity === "error" ? 10 : 5),
-      0,
-    );
+    const deduction = violations.reduce((sum, v) => sum + (v.severity === "error" ? 10 : 5), 0);
     const score = Math.max(0, 100 - deduction);
 
     return { score, violations };
@@ -418,7 +416,8 @@ export class JavaStyleAnalyzer {
       }
 
       // Class naming (PascalCase — must start with uppercase)
-      const classMatch = /^(?:public|private|protected)?\s*(?:class|interface|enum|record)\s+([a-z]\w*)/.exec(line);
+      const classMatch =
+        /^(?:public|private|protected)?\s*(?:class|interface|enum|record)\s+([a-z]\w*)/.exec(line);
       if (classMatch) {
         violations.push({
           rule: "TypeName",
@@ -430,7 +429,10 @@ export class JavaStyleAnalyzer {
       }
 
       // Method naming (camelCase — must NOT start with uppercase)
-      const methodMatch = /\b(?:public|private|protected|static)\s+(?!class|interface|enum|record|new\b)(?:void|[\w<>[\]]+)\s+([A-Z]\w*)\s*\(/.exec(line);
+      const methodMatch =
+        /\b(?:public|private|protected|static)\s+(?!class|interface|enum|record|new\b)(?:void|[\w<>[\]]+)\s+([A-Z]\w*)\s*\(/.exec(
+          line,
+        );
       if (methodMatch && !line.trim().startsWith("class") && !line.includes("class ")) {
         violations.push({
           rule: "MethodName",
@@ -503,9 +505,16 @@ export class JavaDocumentationAnalyzer {
   constructor(private projectPath: string) {}
 
   async analyze(files?: string[]): Promise<JavaDocumentationResult> {
-    const javaFiles = files ?? (await findJavaFiles(this.projectPath, { srcPattern: "src/main/**/*.java" }));
+    const javaFiles =
+      files ?? (await findJavaFiles(this.projectPath, { srcPattern: "src/main/**/*.java" }));
     if (!javaFiles.length) {
-      return { score: 100, javadocCoverage: 1, totalMethods: 0, documentedMethods: 0, undocumentedPublicMethods: [] };
+      return {
+        score: 100,
+        javadocCoverage: 1,
+        totalMethods: 0,
+        documentedMethods: 0,
+        undocumentedPublicMethods: [],
+      };
     }
 
     const fileContents: JavaFileInput[] = await Promise.all(
@@ -520,7 +529,13 @@ export class JavaDocumentationAnalyzer {
 
   analyzeContent(files: JavaFileInput[]): JavaDocumentationResult {
     if (!files.length) {
-      return { score: 100, javadocCoverage: 1, totalMethods: 0, documentedMethods: 0, undocumentedPublicMethods: [] };
+      return {
+        score: 100,
+        javadocCoverage: 1,
+        totalMethods: 0,
+        documentedMethods: 0,
+        undocumentedPublicMethods: [],
+      };
     }
 
     let totalMethods = 0;
@@ -570,7 +585,6 @@ export class JavaDocumentationAnalyzer {
     }
     return false;
   }
-
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -617,7 +631,13 @@ export class JavaCoverageAnalyzer {
 
   parseJacocoXml(xml: string): JavaCoverageResult {
     if (!xml.trim()) {
-      return { score: 0, lineCoverage: 0, branchCoverage: 0, methodCoverage: 0, reportFound: false };
+      return {
+        score: 0,
+        lineCoverage: 0,
+        branchCoverage: 0,
+        methodCoverage: 0,
+        reportFound: false,
+      };
     }
 
     const lineCoverage = this.extractCoverage(xml, "LINE");
@@ -631,9 +651,7 @@ export class JavaCoverageAnalyzer {
   }
 
   private extractCoverage(xml: string, type: string): number {
-    const regex = new RegExp(
-      `<counter\\s+type="${type}"\\s+missed="(\\d+)"\\s+covered="(\\d+)"`,
-    );
+    const regex = new RegExp(`<counter\\s+type="${type}"\\s+missed="(\\d+)"\\s+covered="(\\d+)"`);
     const match = regex.exec(xml);
     if (!match) return 0;
 
