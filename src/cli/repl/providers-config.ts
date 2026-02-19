@@ -109,6 +109,15 @@ export interface ModelDefinition {
 }
 
 /**
+ * Provider payment type
+ * - "api"      → pay per token (API key required)
+ * - "sub"      → subscription required (e.g., ChatGPT Plus/Pro)
+ * - "free"     → completely free (local providers)
+ * - "freemium" → free tier available, paid tiers for higher limits
+ */
+export type ProviderPaymentType = "api" | "sub" | "free" | "freemium";
+
+/**
  * Provider configuration
  */
 export interface ProviderDefinition {
@@ -123,6 +132,8 @@ export interface ProviderDefinition {
   models: ModelDefinition[];
   supportsCustomModels: boolean;
   openaiCompatible: boolean;
+  /** Payment model: api, sub, free, or freemium */
+  paymentType: ProviderPaymentType;
   /** Whether to ask for custom URL during setup (for proxies, local servers, etc.) */
   askForCustomUrl?: boolean;
   /** Whether API key is required (false for local providers like LM Studio) */
@@ -155,6 +166,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     baseUrl: "https://api.anthropic.com/v1",
     supportsCustomModels: true,
     openaiCompatible: false,
+    paymentType: "api",
     features: {
       streaming: true,
       functionCalling: true,
@@ -213,6 +225,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     supportsCustomModels: true,
     openaiCompatible: true,
     askForCustomUrl: false, // OpenAI has fixed endpoint
+    paymentType: "api",
     features: {
       streaming: true,
       functionCalling: true,
@@ -308,6 +321,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     openaiCompatible: false, // Uses different API format
     requiresApiKey: false, // Uses OAuth
     internal: true, // Hidden from user - use "openai" with OAuth instead
+    paymentType: "sub",
     features: {
       streaming: true,
       functionCalling: true,
@@ -359,6 +373,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     openaiCompatible: false,
     supportsGcloudADC: true, // Supports gcloud auth application-default login
     // NOTE: OAuth removed - Google's client ID is restricted to official apps only
+    paymentType: "freemium",
     features: {
       streaming: true,
       functionCalling: true,
@@ -432,6 +447,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     supportsCustomModels: true,
     openaiCompatible: true,
     askForCustomUrl: true, // Some users may use proxies
+    paymentType: "api",
     features: {
       streaming: true,
       functionCalling: true,
@@ -505,6 +521,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     openaiCompatible: true,
     askForCustomUrl: true, // User might use different port
     requiresApiKey: false, // LM Studio doesn't need API key
+    paymentType: "free",
     features: {
       streaming: true,
       functionCalling: true, // Some models support it
@@ -516,7 +533,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       // Qwen3-Coder - State of the art (July 2025)
       {
         id: "qwen3-coder-3b-instruct",
-        name: "⚡ Qwen3 Coder 3B",
+        name: "Qwen3 Coder 3B",
         description: "Search: 'qwen3 coder 3b' (8GB RAM)",
         contextWindow: 256000,
         maxOutputTokens: 8192,
@@ -524,21 +541,21 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       },
       {
         id: "qwen3-coder-8b-instruct",
-        name: "🎯 Qwen3 Coder 8B",
+        name: "Qwen3 Coder 8B",
         description: "Search: 'qwen3 coder 8b' (16GB RAM)",
         contextWindow: 256000,
         maxOutputTokens: 8192,
       },
       {
         id: "qwen3-coder-14b-instruct",
-        name: "💪 Qwen3 Coder 14B",
+        name: "Qwen3 Coder 14B",
         description: "Search: 'qwen3 coder 14b' (32GB RAM)",
         contextWindow: 256000,
         maxOutputTokens: 8192,
       },
       {
         id: "qwen3-coder-30b-a3b-instruct",
-        name: "🚀 Qwen3 Coder 30B MoE",
+        name: "Qwen3 Coder 30B MoE",
         description: "Search: 'qwen3 coder 30b' — MoE 30B/3B active (24GB RAM)",
         contextWindow: 262000,
         maxOutputTokens: 8192,
@@ -583,6 +600,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     openaiCompatible: true,
     askForCustomUrl: true,
     requiresApiKey: false,
+    paymentType: "free",
     features: {
       streaming: true,
       functionCalling: true,
@@ -592,23 +610,23 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     models: [
       {
         id: "qwen2.5-coder:14b",
-        name: "⭐ Qwen 2.5 Coder 14B",
-        description: "ollama pull qwen2.5-coder:14b — best coding model (16GB RAM)",
+        name: "Qwen 2.5 Coder 14B",
+        description: "Best coding model (16GB RAM)",
         contextWindow: 32768,
         maxOutputTokens: 8192,
         recommended: true,
       },
       {
         id: "qwen3-coder:30b",
-        name: "🚀 Qwen3 Coder 30B",
-        description: "ollama pull qwen3-coder:30b — MoE 30B/3B active, 262K ctx (24GB RAM)",
+        name: "Qwen3 Coder 30B",
+        description: "MoE 30B/3B active, 262K context (24GB RAM)",
         contextWindow: 262144,
         maxOutputTokens: 8192,
       },
       {
         id: "deepseek-r1:14b",
-        name: "🧠 DeepSeek R1 14B",
-        description: "ollama pull deepseek-r1:14b — reasoning model (16GB RAM)",
+        name: "DeepSeek R1 14B",
+        description: "Advanced reasoning model (16GB RAM)",
         contextWindow: 128000,
         maxOutputTokens: 8192,
       },
@@ -625,6 +643,291 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         description: "ollama pull llama3.1:8b — lightest option (8GB RAM)",
         contextWindow: 128000,
         maxOutputTokens: 8192,
+      },
+    ],
+  },
+
+  // Groq - Ultra-fast inference API (freemium)
+  groq: {
+    id: "groq",
+    name: "Groq",
+    emoji: "⚡",
+    description: "Ultra-fast inference — fastest API available",
+    envVar: "GROQ_API_KEY",
+    apiKeyUrl: "https://console.groq.com/keys",
+    docsUrl: "https://console.groq.com/docs",
+    baseUrl: "https://api.groq.com/openai/v1",
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "freemium",
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: false,
+    },
+    models: [
+      {
+        id: "llama-3.3-70b-versatile",
+        name: "Llama 3.3 70B Versatile",
+        description: "Best for complex tasks — free tier (128K context)",
+        contextWindow: 128000,
+        maxOutputTokens: 32768,
+        recommended: true,
+      },
+      {
+        id: "llama-3.1-8b-instant",
+        name: "Llama 3.1 8B Instant",
+        description: "Fastest responses — ideal for simple tasks (128K)",
+        contextWindow: 128000,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "mixtral-8x7b-32768",
+        name: "Mixtral 8x7B",
+        description: "Mistral's MoE model — good balance (32K context)",
+        contextWindow: 32768,
+        maxOutputTokens: 4096,
+      },
+      {
+        id: "gemma2-9b-it",
+        name: "Gemma 2 9B",
+        description: "Google's compact model (8K context)",
+        contextWindow: 8192,
+        maxOutputTokens: 4096,
+      },
+    ],
+  },
+
+  // OpenRouter - Routes to 100+ models via one API
+  openrouter: {
+    id: "openrouter",
+    name: "OpenRouter",
+    emoji: "🔀",
+    description: "Access 100+ models from one API key",
+    envVar: "OPENROUTER_API_KEY",
+    apiKeyUrl: "https://openrouter.ai/keys",
+    docsUrl: "https://openrouter.ai/docs",
+    baseUrl: "https://openrouter.ai/api/v1",
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "api",
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: true,
+    },
+    models: [
+      {
+        id: "anthropic/claude-opus-4-6",
+        name: "Claude Opus 4.6 (via OR)",
+        description: "Anthropic's best — via OpenRouter (200K context)",
+        contextWindow: 200000,
+        maxOutputTokens: 128000,
+        recommended: true,
+      },
+      {
+        id: "openai/gpt-5.3-codex",
+        name: "GPT-5.3 Codex (via OR)",
+        description: "OpenAI's coding model — via OpenRouter",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "google/gemini-3-flash-preview",
+        name: "Gemini 3 Flash (via OR)",
+        description: "Google's fast model — via OpenRouter (1M context)",
+        contextWindow: 1000000,
+        maxOutputTokens: 65536,
+      },
+      {
+        id: "meta-llama/llama-3.3-70b-instruct",
+        name: "Llama 3.3 70B (via OR)",
+        description: "Meta's open model — often free routes available",
+        contextWindow: 128000,
+        maxOutputTokens: 32768,
+      },
+    ],
+  },
+
+  // Mistral AI - French AI lab, strong coding models
+  mistral: {
+    id: "mistral",
+    name: "Mistral AI",
+    emoji: "🌊",
+    description: "Codestral and Mistral models — European AI",
+    envVar: "MISTRAL_API_KEY",
+    apiKeyUrl: "https://console.mistral.ai/api-keys",
+    docsUrl: "https://docs.mistral.ai",
+    baseUrl: "https://api.mistral.ai/v1",
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "api",
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: false,
+    },
+    models: [
+      {
+        id: "codestral-latest",
+        name: "Codestral Latest",
+        description: "Best coding model — fill-in-middle support (32K)",
+        contextWindow: 32768,
+        maxOutputTokens: 8192,
+        recommended: true,
+      },
+      {
+        id: "mistral-large-latest",
+        name: "Mistral Large",
+        description: "Most capable — complex reasoning (128K context)",
+        contextWindow: 131072,
+        maxOutputTokens: 4096,
+      },
+      {
+        id: "mistral-small-latest",
+        name: "Mistral Small",
+        description: "Fast and cost-efficient (128K context)",
+        contextWindow: 131072,
+        maxOutputTokens: 4096,
+      },
+      {
+        id: "open-mixtral-8x22b",
+        name: "Mixtral 8x22B",
+        description: "Large MoE model — powerful open weights (64K)",
+        contextWindow: 65536,
+        maxOutputTokens: 4096,
+      },
+    ],
+  },
+
+  // DeepSeek - Chinese AI lab, very competitive pricing
+  deepseek: {
+    id: "deepseek",
+    name: "DeepSeek",
+    emoji: "🔍",
+    description: "Excellent coding at ultra-low cost",
+    envVar: "DEEPSEEK_API_KEY",
+    apiKeyUrl: "https://platform.deepseek.com/api_keys",
+    docsUrl: "https://platform.deepseek.com/docs",
+    baseUrl: "https://api.deepseek.com/v1",
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "api",
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: false,
+    },
+    models: [
+      {
+        id: "deepseek-coder",
+        name: "DeepSeek Coder",
+        description: "Specialized coding model — best value (128K context)",
+        contextWindow: 128000,
+        maxOutputTokens: 8192,
+        recommended: true,
+      },
+      {
+        id: "deepseek-chat",
+        name: "DeepSeek Chat",
+        description: "General purpose — instruction following (64K context)",
+        contextWindow: 65536,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "deepseek-reasoner",
+        name: "DeepSeek Reasoner (R1)",
+        description: "Chain-of-thought reasoning model (64K context)",
+        contextWindow: 65536,
+        maxOutputTokens: 8192,
+      },
+    ],
+  },
+
+  // Together AI - Fast inference, many open models
+  together: {
+    id: "together",
+    name: "Together AI",
+    emoji: "🤝",
+    description: "Fast inference for open-source models",
+    envVar: "TOGETHER_API_KEY",
+    apiKeyUrl: "https://api.together.ai/settings/api-keys",
+    docsUrl: "https://docs.together.ai",
+    baseUrl: "https://api.together.xyz/v1",
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "api",
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: false,
+    },
+    models: [
+      {
+        id: "Qwen/Qwen2.5-Coder-32B-Instruct",
+        name: "Qwen 2.5 Coder 32B",
+        description: "Best open coding model — 32K context",
+        contextWindow: 32768,
+        maxOutputTokens: 8192,
+        recommended: true,
+      },
+      {
+        id: "meta-llama/Meta-Llama-3.1-70B-Instruct",
+        name: "Llama 3.1 70B",
+        description: "Meta's open model — 128K context",
+        contextWindow: 128000,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        name: "Mixtral 8x7B",
+        description: "Mistral MoE — fast & capable (32K context)",
+        contextWindow: 32768,
+        maxOutputTokens: 4096,
+      },
+    ],
+  },
+
+  // HuggingFace Inference - Free tier for open models
+  huggingface: {
+    id: "huggingface",
+    name: "HuggingFace Inference",
+    emoji: "🤗",
+    description: "Open models with free inference tier",
+    envVar: "HF_TOKEN",
+    apiKeyUrl: "https://huggingface.co/settings/tokens",
+    docsUrl: "https://huggingface.co/docs/api-inference",
+    baseUrl: "https://api-inference.huggingface.co/v1",
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "freemium",
+    features: {
+      streaming: true,
+      functionCalling: false,
+      vision: false,
+    },
+    models: [
+      {
+        id: "Qwen/Qwen2.5-Coder-32B-Instruct",
+        name: "Qwen 2.5 Coder 32B",
+        description: "Best coding model — free tier available (32K)",
+        contextWindow: 32768,
+        maxOutputTokens: 8192,
+        recommended: true,
+      },
+      {
+        id: "meta-llama/Llama-3.3-70B-Instruct",
+        name: "Llama 3.3 70B",
+        description: "Meta's latest — strong reasoning (128K)",
+        contextWindow: 128000,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "microsoft/Phi-4",
+        name: "Phi-4",
+        description: "Microsoft's small but capable model (16K)",
+        contextWindow: 16384,
+        maxOutputTokens: 4096,
       },
     ],
   },

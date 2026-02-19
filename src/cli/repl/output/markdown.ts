@@ -6,6 +6,7 @@
 import { Marked } from "marked";
 import { markedTerminal, type TerminalRendererOptions } from "marked-terminal";
 import chalk from "chalk";
+import stringWidth from "string-width";
 
 /**
  * Custom terminal renderer options
@@ -48,6 +49,9 @@ const terminalOptions: TerminalRendererOptions = {
       "right-mid": "┤",
       middle: "│",
     },
+    // Use string-width for correct column measurement with emoji/CJK characters
+    // Without this, emoji (2 visual columns) are counted as 1, causing misalignment
+    stringLength: stringWidth,
   },
 
   // Emphasis
@@ -82,13 +86,31 @@ const marked = new Marked();
 marked.use(markedTerminal(terminalOptions));
 
 /**
+ * Unescape HTML entities for terminal display.
+ * marked encodes entities (e.g. &lt; &gt;) for browser safety, but in a
+ * terminal we always want the raw characters so XML tags render correctly.
+ * &amp; must be decoded last to avoid double-unescaping (e.g. &amp;lt; → &lt;).
+ */
+function unescapeHtmlEntities(str: string): string {
+  return str
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/**
  * Render markdown to terminal-formatted string
  */
 export function renderMarkdown(markdown: string): string {
   try {
     const rendered = marked.parse(markdown);
     if (typeof rendered === "string") {
-      return rendered;
+      // Unescape HTML entities: marked encodes < > & for browser contexts,
+      // but terminal output needs raw characters (e.g. <thinking>, <tag>)
+      return unescapeHtmlEntities(rendered);
     }
     // If it returns a Promise (shouldn't with sync parsing), return original
     return markdown;

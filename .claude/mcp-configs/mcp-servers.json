@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json.schemastore.org/mcp-config.json",
+  "_comment": "corbat-coco MCP Server Configurations. Copy relevant servers to your Claude Code settings: ~/.claude/claude.json",
+  "mcpServers": {
+    "github": {
+      "_description": "GitHub operations — PRs, issues, repos, code search",
+      "_priority": "HIGH — most used for corbat-coco development",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "memory": {
+      "_description": "Persistent memory across sessions — stores learned patterns, context",
+      "_priority": "HIGH — enables continuous learning across sessions",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "_filesystem_disabled": {
+      "_description": "Enhanced filesystem operations with search and indexing",
+      "_priority": "MEDIUM — useful for large codebase navigation",
+      "_note": "MACHINE-SPECIFIC — to enable, copy this entry to ~/.claude/claude.json as 'filesystem' and replace the path with your actual workspace root (e.g. /Users/yourname/workspace). Disabled here because the path cannot be shared across machines.",
+      "_enable_by_copying": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/your/workspace/path/here"
+        ]
+      }
+    },
+    "sequential-thinking": {
+      "_description": "Chain-of-thought reasoning for complex multi-step problems",
+      "_priority": "MEDIUM — helps with architectural decisions",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "context7": {
+      "_description": "Live documentation lookup — always up-to-date library docs",
+      "_priority": "HIGH — prevents hallucinated APIs",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"]
+    },
+    "supabase": {
+      "_description": "Supabase database operations — for projects using Supabase",
+      "_priority": "LOW — only needed if project uses Supabase",
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest"],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
+      }
+    },
+    "vercel": {
+      "_description": "Vercel deployments and project management",
+      "_priority": "LOW — only needed for Vercel deployments",
+      "url": "https://mcp.vercel.com/api",
+      "headers": {
+        "Authorization": "Bearer ${VERCEL_TOKEN}"
+      }
+    },
+    "railway": {
+      "_description": "Railway deployments — for projects deployed on Railway",
+      "_priority": "LOW — only needed for Railway deployments",
+      "command": "npx",
+      "args": ["-y", "@railway/mcp-server"]
+    },
+    "firecrawl": {
+      "_description": "Web scraping and crawling — for research tasks",
+      "_priority": "LOW — for web research workflows",
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+      }
+    },
+    "clickhouse": {
+      "_description": "ClickHouse analytics queries — for projects using ClickHouse",
+      "_priority": "LOW — only needed for ClickHouse projects",
+      "_note": "HTTP is safe for localhost only — use HTTPS if pointing to a remote ClickHouse instance",
+      "url": "http://localhost:8123",
+      "headers": {
+        "Authorization": "Basic ${CLICKHOUSE_AUTH}"
+      }
+    }
+  },
+  "_usage": {
+    "quick_start": "To enable a server, add it to ~/.claude/claude.json under 'mcpServers'",
+    "recommended_minimum": ["github", "memory", "context7"],
+    "docs": "See docs/MCP.md for setup instructions and environment variables"
+  }
+}

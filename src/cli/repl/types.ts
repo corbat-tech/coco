@@ -3,6 +3,7 @@
  */
 
 import type { Message, ToolCall, StreamChunk } from "../../providers/types.js";
+import type { ProviderType } from "../../providers/index.js";
 import type { ContextManager } from "./context/manager.js";
 import type { ProgressTracker } from "./progress/tracker.js";
 import type { MemoryContext } from "./memory/types.js";
@@ -39,7 +40,7 @@ export interface ReplSession {
  */
 export interface ReplConfig {
   provider: {
-    type: "anthropic" | "openai" | "codex" | "gemini" | "kimi" | "lmstudio" | "ollama";
+    type: ProviderType;
     model: string;
     maxTokens: number;
   };

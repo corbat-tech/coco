@@ -57,7 +57,13 @@ export type ProviderType =
   | "gemini"
   | "kimi"
   | "lmstudio"
-  | "ollama";
+  | "ollama"
+  | "groq"
+  | "openrouter"
+  | "mistral"
+  | "deepseek"
+  | "together"
+  | "huggingface";
 
 /**
  * Get API key for a provider
@@ -81,6 +87,18 @@ export function getApiKey(provider: ProviderType): string | undefined {
     case "codex":
       // Codex uses OAuth tokens, not API keys - return undefined to trigger OAuth flow
       return undefined;
+    case "groq":
+      return process.env["GROQ_API_KEY"];
+    case "openrouter":
+      return process.env["OPENROUTER_API_KEY"];
+    case "mistral":
+      return process.env["MISTRAL_API_KEY"];
+    case "deepseek":
+      return process.env["DEEPSEEK_API_KEY"];
+    case "together":
+      return process.env["TOGETHER_API_KEY"];
+    case "huggingface":
+      return process.env["HF_TOKEN"] ?? process.env["HUGGINGFACE_API_KEY"];
     default:
       return undefined;
   }
@@ -103,6 +121,18 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
       return process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434/v1";
     case "codex":
       return "https://chatgpt.com/backend-api/codex/responses";
+    case "groq":
+      return process.env["GROQ_BASE_URL"] ?? "https://api.groq.com/openai/v1";
+    case "openrouter":
+      return process.env["OPENROUTER_BASE_URL"] ?? "https://openrouter.ai/api/v1";
+    case "mistral":
+      return process.env["MISTRAL_BASE_URL"] ?? "https://api.mistral.ai/v1";
+    case "deepseek":
+      return process.env["DEEPSEEK_BASE_URL"] ?? "https://api.deepseek.com/v1";
+    case "together":
+      return process.env["TOGETHER_BASE_URL"] ?? "https://api.together.xyz/v1";
+    case "huggingface":
+      return process.env["HF_BASE_URL"] ?? "https://api-inference.huggingface.co/v1";
     default:
       return undefined;
   }
@@ -131,20 +161,46 @@ export function getDefaultModel(provider: ProviderType): string {
     case "codex":
       // Codex via ChatGPT subscription uses different models
       return process.env["CODEX_MODEL"] ?? "gpt-5.3-codex";
+    case "groq":
+      return process.env["GROQ_MODEL"] ?? "llama-3.3-70b-versatile";
+    case "openrouter":
+      return process.env["OPENROUTER_MODEL"] ?? "anthropic/claude-opus-4-6";
+    case "mistral":
+      return process.env["MISTRAL_MODEL"] ?? "codestral-latest";
+    case "deepseek":
+      return process.env["DEEPSEEK_MODEL"] ?? "deepseek-coder";
+    case "together":
+      return process.env["TOGETHER_MODEL"] ?? "Qwen/Qwen2.5-Coder-32B-Instruct";
+    case "huggingface":
+      return process.env["HF_MODEL"] ?? "Qwen/Qwen2.5-Coder-32B-Instruct";
     default:
       return "gpt-5.3-codex";
   }
 }
+
+/** All valid provider type strings */
+const VALID_PROVIDERS: ProviderType[] = [
+  "anthropic",
+  "openai",
+  "codex",
+  "gemini",
+  "kimi",
+  "lmstudio",
+  "ollama",
+  "groq",
+  "openrouter",
+  "mistral",
+  "deepseek",
+  "together",
+  "huggingface",
+];
 
 /**
  * Get default provider from environment
  */
 export function getDefaultProvider(): ProviderType {
   const provider = process.env["COCO_PROVIDER"]?.toLowerCase();
-  if (
-    provider &&
-    ["anthropic", "openai", "codex", "gemini", "kimi", "lmstudio", "ollama"].includes(provider)
-  ) {
+  if (provider && (VALID_PROVIDERS as string[]).includes(provider)) {
     return provider as ProviderType;
   }
   return "anthropic";
@@ -287,20 +343,12 @@ export function getInternalProviderId(provider: ProviderType): ProviderType {
  */
 export function getLastUsedProvider(): ProviderType {
   const prefs = loadUserPreferences();
-  if (
-    prefs.provider &&
-    ["anthropic", "openai", "codex", "gemini", "kimi", "lmstudio", "ollama"].includes(
-      prefs.provider,
-    )
-  ) {
+  if (prefs.provider && (VALID_PROVIDERS as string[]).includes(prefs.provider)) {
     return prefs.provider;
   }
   // Fall back to env variable or default
   const envProvider = process.env["COCO_PROVIDER"]?.toLowerCase();
-  if (
-    envProvider &&
-    ["anthropic", "openai", "codex", "gemini", "kimi", "lmstudio", "ollama"].includes(envProvider)
-  ) {
+  if (envProvider && (VALID_PROVIDERS as string[]).includes(envProvider)) {
     return envProvider as ProviderType;
   }
   return "anthropic";

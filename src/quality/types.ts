@@ -185,7 +185,20 @@ export const DEFAULT_QUALITY_THRESHOLDS: QualityThresholds = {
 export interface QualityEvaluation {
   scores: QualityScores;
   meetsMinimum: boolean;
+  /**
+   * Whether the current score meets or exceeds the target overall score AND target test coverage.
+   * Used for UI display to indicate the project has reached excellent quality.
+   * In a single-shot evaluation this shares the same overall threshold check as `converged`,
+   * but it also enforces the testCoverage target threshold.
+   */
   meetsTarget: boolean;
+  /**
+   * Whether quality is stable at or above the target overall score.
+   * Used by the convergence loop to decide whether further iterations are needed.
+   * In a single-shot evaluation this checks only the overall score threshold;
+   * in an iterative context it can additionally require stability across iterations
+   * (score delta below convergenceThreshold).
+   */
   converged: boolean;
   issues: QualityIssue[];
   suggestions: QualitySuggestion[];

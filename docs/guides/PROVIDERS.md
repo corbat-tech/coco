@@ -133,12 +133,171 @@ coco  # Start REPL
 /coco off  # Disable COCO mode
 ```
 
+## New Providers (v2.0.0)
+
+### ⚡ Groq — Ultra-Fast Inference
+
+**Best for:** Speed-critical tasks, rapid prototyping
+
+**Models:** `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `mixtral-8x7b-32768`
+
+**Free tier:** Yes (generous rate limits)
+
+**Setup:**
+```bash
+export GROQ_API_KEY="gsk_..."
+```
+
+```json
+{
+  "provider": {
+    "type": "groq",
+    "model": "llama-3.3-70b-versatile"
+  }
+}
+```
+
+> **Note:** Groq is the fastest API available (up to 500 tok/s). COCO mode works well with `llama-3.3-70b`.
+
+---
+
+### 🔀 OpenRouter — Model Aggregator
+
+**Best for:** Trying many models through a single API key
+
+**Models:** Any model from OpenRouter's catalog (Claude, GPT-4, Llama, Mistral, etc.)
+
+**Free tier:** Yes (several free models available)
+
+**Setup:**
+```bash
+export OPENROUTER_API_KEY="sk-or-..."
+```
+
+```json
+{
+  "provider": {
+    "type": "openrouter",
+    "model": "anthropic/claude-sonnet-4-5"
+  }
+}
+```
+
+> Prefix model IDs with provider: `anthropic/`, `openai/`, `meta-llama/`, etc.
+
+---
+
+### 🌊 Mistral AI
+
+**Best for:** European data-residency requirements, cost-efficiency
+
+**Models:** `mistral-large-latest`, `mistral-small-latest`, `codestral-latest`
+
+**Free tier:** Yes (via La Plateforme)
+
+**Setup:**
+```bash
+export MISTRAL_API_KEY="..."
+```
+
+```json
+{
+  "provider": {
+    "type": "mistral",
+    "model": "mistral-large-latest"
+  }
+}
+```
+
+> **`codestral-latest`** is optimised for code generation and often outperforms larger general models.
+
+---
+
+### 🔵 DeepSeek
+
+**Best for:** Maximum quality at minimal cost
+
+**Models:** `deepseek-chat`, `deepseek-reasoner`
+
+**Free tier:** Trial credits on sign-up
+
+**Setup:**
+```bash
+export DEEPSEEK_API_KEY="sk-..."
+```
+
+```json
+{
+  "provider": {
+    "type": "deepseek",
+    "model": "deepseek-chat"
+  }
+}
+```
+
+> DeepSeek V3/R1 offer near-GPT-4-class quality at ~10× lower cost. `deepseek-reasoner` is the reasoning model (equivalent to R1).
+
+---
+
+### 🤝 Together AI
+
+**Best for:** Open-source models, fine-tuning, batch inference
+
+**Models:** `meta-llama/Llama-3.3-70B-Instruct-Turbo`, `Qwen/Qwen2.5-Coder-32B-Instruct`
+
+**Free tier:** Yes ($25 trial credits)
+
+**Setup:**
+```bash
+export TOGETHER_API_KEY="..."
+```
+
+```json
+{
+  "provider": {
+    "type": "together",
+    "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+  }
+}
+```
+
+---
+
+### 🤗 Hugging Face Inference API
+
+**Best for:** Experimenting with community models
+
+**Models:** Any model with inference API support
+
+**Free tier:** Yes (serverless, rate-limited)
+
+**Setup:**
+```bash
+# Either variable is accepted:
+export HF_TOKEN=your-key       # recommended (standard HuggingFace name)
+export HUGGINGFACE_API_KEY=your-key  # also works
+```
+
+```json
+{
+  "provider": {
+    "type": "huggingface",
+    "model": "Qwen/Qwen2.5-Coder-32B-Instruct"
+  }
+}
+```
+
 ## COCO Mode Compatibility Matrix
 
 | Provider | COCO Mode | Tool Calling | Data Accuracy | Recommendation |
 |----------|-----------|--------------|---------------|----------------|
 | Claude (Anthropic) | ✅ Excellent | ✅ Excellent | ✅ Excellent | **RECOMMENDED** |
 | OpenAI GPT-4 | ✅ Very Good | ✅ Very Good | ✅ Very Good | Good |
+| Groq (Llama 3.3) | ✅ Good | ✅ Good | ✅ Good | Good |
+| DeepSeek V3 | ✅ Good | ✅ Good | ✅ Good | Good |
+| Mistral Large | ⚠️ Variable | ✅ Good | ✅ Good | Test First |
+| OpenRouter | ⚠️ Depends on model | ⚠️ Depends on model | ⚠️ Depends on model | Test First |
+| Together / HF | ⚠️ Variable | ⚠️ Variable | ⚠️ Variable | Test First |
 | Local (Qwen/DeepSeek) | ⚠️ Variable | ⚠️ Variable | ⚠️ Variable | Test First |
 | Kimi/Moonshot | ❌ Poor | ❌ Poor | ❌ Poor | **NOT RECOMMENDED** |
 
@@ -234,11 +393,16 @@ Approximate costs per 1M tokens (input/output):
 
 | Provider | Model | Input | Output | Notes |
 |----------|-------|-------|--------|-------|
-| Anthropic | Sonnet 4 | $3 | $15 | **Best value** |
-| Anthropic | Opus 4 | $15 | $75 | Most capable |
-| OpenAI | GPT-4o | $2.50 | $10 | Competitive |
+| Anthropic | Sonnet 4.6 | $3 | $15 | **Best quality** |
+| Anthropic | Opus 4.6 | $15 | $75 | Most capable |
+| OpenAI | GPT-4.1 | $2 | $8 | Competitive |
+| DeepSeek | V3 | $0.14 | $0.28 | **Best value** |
+| Groq | Llama 3.3 70B | $0.05 | $0.08 | Fastest |
+| Mistral | Large | $0.25 | $0.75 | Good EU option |
+| Together | Llama 3.3 70B | $0.20 | $0.20 | Open source |
+| Hugging Face | Various | $0 | $0 | Free tier |
 | Local | Any | $0 | $0 | Free but slower |
-| Kimi | Moonshot | ¥12/M | ¥12/M | Cheap but unreliable |
+| Kimi | Moonshot | ¥12/M | ¥12/M | Unreliable |
 
 **COCO mode cost impact:**
 - COCO mode typically uses 2-5x more tokens (multiple iterations)
@@ -247,6 +411,22 @@ Approximate costs per 1M tokens (input/output):
 - With Kimi: Cheaper but may produce incorrect code
 
 **Recommendation:** Don't sacrifice quality for cost. Claude Sonnet provides best quality/cost ratio.
+
+## API Key Environment Variables
+
+| Variable | Provider |
+|----------|----------|
+| `ANTHROPIC_API_KEY` | Claude (Anthropic) |
+| `OPENAI_API_KEY` | OpenAI |
+| `GEMINI_API_KEY` | Google Gemini |
+| `GROQ_API_KEY` | Groq |
+| `OPENROUTER_API_KEY` | OpenRouter |
+| `MISTRAL_API_KEY` | Mistral AI |
+| `DEEPSEEK_API_KEY` | DeepSeek |
+| `TOGETHER_API_KEY` | Together AI |
+| `HF_TOKEN` | Hugging Face (primary — standard HF CLI name) |
+| `HUGGINGFACE_API_KEY` | Hugging Face (alias — also accepted) |
+| `KIMI_API_KEY` | Moonshot/Kimi |
 
 ---
 

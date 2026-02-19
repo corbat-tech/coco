@@ -614,14 +614,21 @@ describe("config set action handler", () => {
     expect(mockFsWriteFile).toHaveBeenCalled();
   });
 
-  it("should save config to .coco directory", async () => {
+  it("should save config to .coco directory using absolute path", async () => {
     expect(setHandler).not.toBeNull();
     const promise = setHandler!("test.key", "test-value");
     await vi.runAllTimersAsync();
     await promise;
 
-    expect(mockFsMkdir).toHaveBeenCalledWith(".coco", { recursive: true });
-    expect(mockFsWriteFile).toHaveBeenCalledWith(".coco/config.json", expect.any(String));
+    // The path must be absolute and end with .coco/config.json
+    expect(mockFsMkdir).toHaveBeenCalledWith(
+      expect.stringMatching(/\.coco$/),
+      { recursive: true },
+    );
+    expect(mockFsWriteFile).toHaveBeenCalledWith(
+      expect.stringMatching(/\.coco[/\\]config\.json$/),
+      expect.any(String),
+    );
   });
 });
 
@@ -834,9 +841,12 @@ describe("config init action handler", () => {
     await vi.runAllTimersAsync();
     await promise;
 
-    expect(mockFsMkdir).toHaveBeenCalledWith(".coco", { recursive: true });
+    expect(mockFsMkdir).toHaveBeenCalledWith(
+      expect.stringMatching(/\.coco$/),
+      { recursive: true },
+    );
     expect(mockFsWriteFile).toHaveBeenCalledWith(
-      ".coco/config.json",
+      expect.stringMatching(/\.coco[/\\]config\.json$/),
       expect.stringContaining("provider"),
     );
   });
@@ -1145,5 +1155,80 @@ describe("helper functions", () => {
 
       expect(p.log.success).toHaveBeenCalledWith("Set provider = new-value");
     });
+  });
+});
+
+describe("loadConfig and saveConfig use the same deterministic path", () => {
+  let _getHandler: ((key: string) => Promise<void>) | null = null;
+  let setHandler: ((key: string, value: string) => Promise<void>) | null = null;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    process.exit = vi.fn() as unknown as typeof process.exit;
+    mockFsWriteFile.mockClear();
+    mockFsMkdir.mockClear();
+
+    const { registerConfigCommand } = await import("./config.js");
+
+    let callCount = 0;
+    const mockSubCommand = {
+      command: vi.fn().mockReturnThis(),
+      description: vi.fn().mockReturnThis(),
+      option: vi.fn().mockReturnThis(),
+      action: vi.fn((handler) => {
+        callCount++;
+        if (callCount === 1) _getHandler = handler;
+        if (callCount === 2) setHandler = handler;
+        return mockSubCommand;
+      }),
+    };
+
+    const mockConfigCmd = {
+      command: vi.fn().mockReturnValue(mockSubCommand),
+      description: vi.fn().mockReturnThis(),
+    };
+
+    const mockProgram = {
+      command: vi.fn().mockReturnValue(mockConfigCmd),
+    };
+
+    registerConfigCommand(mockProgram as any);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    process.exit = originalExit;
+    _getHandler = null;
+    setHandler = null;
+  });
+
+  it("saveConfig writes to an absolute path containing .coco/config.json", async () => {
+    expect(setHandler).not.toBeNull();
+    const promise = setHandler!("provider.type", "openai");
+    await vi.runAllTimersAsync();
+    await promise;
+
+    // The path passed to writeFile must be absolute and end with .coco/config.json
+    expect(mockFsWriteFile).toHaveBeenCalled();
+    const writtenPath = mockFsWriteFile.mock.calls[0][0] as string;
+    expect(writtenPath).toMatch(/\.coco[/\\]config\.json$/);
+    expect(writtenPath.startsWith("/")).toBe(true);
+  });
+
+  it("saveConfig creates the directory for the same path it writes to", async () => {
+    expect(setHandler).not.toBeNull();
+    const promise = setHandler!("provider.type", "openai");
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mockFsMkdir).toHaveBeenCalled();
+    const mkdirPath = mockFsMkdir.mock.calls[0][0] as string;
+    const writeFilePath = mockFsWriteFile.mock.calls[0][0] as string;
+
+    // The directory created must be the parent of the file written
+    const { join: pathJoin, dirname } = await import("node:path");
+    expect(pathJoin(mkdirPath, "config.json")).toBe(writeFilePath);
+    expect(dirname(writeFilePath)).toBe(mkdirPath);
   });
 });

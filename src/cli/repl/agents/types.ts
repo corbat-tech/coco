@@ -6,7 +6,19 @@
 /**
  * Available agent types for specialized tasks
  */
-export type AgentType = "explore" | "plan" | "test" | "debug" | "review";
+export type AgentType =
+  | "explore"
+  | "plan"
+  | "test"
+  | "debug"
+  | "review"
+  | "architect"
+  | "security"
+  | "tdd"
+  | "refactor"
+  | "e2e"
+  | "docs"
+  | "database";
 
 /**
  * Agent status indicating current state

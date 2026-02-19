@@ -402,6 +402,34 @@ function formatWriteFilePreview(toolCall: ToolCall, maxLines: number = 10): stri
 }
 
 /**
+ * Wrap long command text to multiple lines so the user can see the full command.
+ * Critical for security: user must see the COMPLETE command before confirming.
+ * @param text - The command or path to display
+ * @param maxWidth - Maximum characters per line (default: 70)
+ * @param indent - Indentation for continuation lines
+ */
+function wrapCommandText(text: string, maxWidth: number = 70, indent: string = "      "): string {
+  if (text.length <= maxWidth) return text;
+  const lines: string[] = [];
+  let remaining = text;
+  while (remaining.length > maxWidth) {
+    // Try to break at a space or slash for readability
+    let breakAt = maxWidth;
+    const spaceIdx = remaining.lastIndexOf(" ", maxWidth);
+    const slashIdx = remaining.lastIndexOf("/", maxWidth);
+    if (spaceIdx > maxWidth - 20) {
+      breakAt = spaceIdx + 1;
+    } else if (slashIdx > maxWidth - 20) {
+      breakAt = slashIdx + 1;
+    }
+    lines.push(remaining.slice(0, breakAt));
+    remaining = indent + remaining.slice(breakAt);
+  }
+  lines.push(remaining);
+  return lines.join("\n");
+}
+
+/**
  * Format tool call for confirmation display with CREATE/MODIFY distinction.
  * Returns the description line and the trust pattern.
  */
@@ -443,14 +471,18 @@ function formatToolCallForConfirmation(
 
     // Shell execution
     case "bash_exec": {
-      const cmd = truncateLine(String(input.command ?? ""), 60);
-      description = `${chalk.yellow.bold("EXECUTE")}: ${chalk.cyan(cmd)}`;
+      // Show full command — user MUST see the complete command before confirming
+      const cmd = String(input.command ?? "");
+      const wrappedCmd = wrapCommandText(cmd, 70, "      ");
+      description = `${chalk.yellow.bold("EXECUTE")}: ${chalk.cyan(wrappedCmd)}`;
       break;
     }
 
     case "bash_background": {
-      const cmd = truncateLine(String(input.command ?? ""), 60);
-      description = `${chalk.yellow.bold("BACKGROUND")}: ${chalk.cyan(cmd)}`;
+      // Show full command — user MUST see the complete command before confirming
+      const cmd = String(input.command ?? "");
+      const wrappedCmd = wrapCommandText(cmd, 70, "      ");
+      description = `${chalk.yellow.bold("BACKGROUND")}: ${chalk.cyan(wrappedCmd)}`;
       break;
     }
 

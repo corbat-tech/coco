@@ -201,13 +201,19 @@ describe("Providers module exports", () => {
 
     it("should return list of providers", () => {
       const providers = ProviderExports.listProviders();
-      expect(providers).toHaveLength(7);
+      expect(providers).toHaveLength(13);
       expect(providers.map((p) => p.id)).toEqual([
         "anthropic",
         "openai",
         "codex",
         "gemini",
         "kimi",
+        "groq",
+        "openrouter",
+        "mistral",
+        "deepseek",
+        "together",
+        "huggingface",
         "lmstudio",
         "ollama",
       ]);

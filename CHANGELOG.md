@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Quality Analyzers — Language-Specific (Phase 3)
+- **React quality analyzers** (`src/quality/analyzers/react/`)
+  - `ReactComponentAnalyzer` — detects missing key props, untyped `props: any`, missing JSDoc, large components (>300 LOC)
+  - `ReactA11yAnalyzer` — WCAG 2.1 rule checks: missing `alt`, missing `aria-label`, non-semantic click handlers without keyboard support, empty link text
+  - `ReactHookAnalyzer` — Rules of Hooks enforcement: conditional hooks, missing `useEffect` dependencies, stale closure detection
+  - `registerReactAnalyzers(registry, projectPath)` for plugin registration
+- **Java quality analyzers** (`src/quality/analyzers/java/`)
+  - `JavaComplexityAnalyzer` — cyclomatic complexity per method, class metrics
+  - `JavaSecurityAnalyzer` — OWASP pattern detection (SQL injection, hardcoded credentials, unsafe deserialization, path traversal, XXE)
+  - `JavaDocumentationAnalyzer` — Javadoc coverage for public methods and classes
+  - `registerJavaAnalyzers(registry, projectPath)` for plugin registration
+
+#### Project-Level Configuration (Phase 4.1)
+- **`.coco.config.json`** — project-committed config file alongside source code
+  - Schema: `name`, `version`, `description`, `language`, `quality` overrides, `analyzers` (Java/React), `extend`
+  - Config inheritance via `extend` field (relative path to base config, arrays concatenated, scalars override)
+  - `loadProjectConfig(projectPath)` — loads and resolves inheritance chain
+  - `saveProjectConfig(config, projectPath)` — writes validated config
+  - `validateProjectConfig(raw)` — Zod-based validation returning typed result
+  - `mergeProjectConfigs(base, override)` — explicit merge utility
+  - `createDefaultProjectConfig(name, language?)` — factory for new projects
+  - All symbols re-exported from `src/config/index.ts`
+
+#### Quality Bridge (Phase 4.2)
+- **`src/quality/quality-bridge.ts`** — translates `ProjectConfig` into internal quality types
+  - `resolvedThresholds(config)` → `QualityThresholds` (merges `minScore`, `minCoverage`, `securityThreshold`, `maxIterations`)
+  - `resolvedWeights(config)` → `QualityWeights` (normalised to sum 1.0)
+  - `resolvedConvergenceOptions(config)` → `ConvergenceOptions`
+  - `thresholdsFromProjectConfig`, `mergeThresholds`, `weightsFromProjectConfig`, `convergenceOptionsFromProjectConfig` — composable helpers
+  - `DEFAULT_CONVERGENCE_OPTIONS` exported constant
+
+#### Quality Formatter (Phase 4.3)
+- **`src/quality/quality-formatter.ts`** — terminal ASCII quality reports (no ANSI colours, CI-friendly)
+  - `QualityFormatter` class with `formatSummary`, `formatTable`, `formatIssues`, `formatSuggestions`, `formatFull`
+  - Box-drawing table with score bars (`█░`) and per-dimension pass/fail icons
+  - Severity-prefixed issue list; suggestions sorted by priority then estimated impact
+
+#### Report Exporter (Phase 4.4)
+- **`src/quality/report-exporter.ts`** — multi-format quality report export
+  - `QualityReportExporter` class with `toJson`, `toMarkdown`, `toHtml`, `saveReport`
+  - JSON: pretty-printed, serialisable
+  - Markdown: tables + issues + suggestions + footer
+  - HTML: self-contained with inline CSS, progress bars, XSS-safe (`htmlEscape`)
+  - `saveReport` persists to `.coco/reports/quality-<ISO-timestamp>.<ext>`
+
+#### GitHub Actions Integration (Phase 5)
+- **`src/phases/output/github-quality-workflow.ts`** — YAML workflow generator
+  - `generateQualityWorkflow(options)` — produces `.github/workflows/quality.yml`
+  - Supports `nodeVersion`, `packageManager` (pnpm/npm/yarn), `failOnBelowMinimum`, `commentOnPR`, `branches`
+  - pnpm setup step only included when `packageManager === "pnpm"`
+  - `continue-on-error` only set when `failOnBelowMinimum === false`
+  - `formatQualityPRComment(evaluation, options)` — Markdown PR comment with collapsible `<details>` blocks
+
+#### Multi-Provider Expansion
+- **6 new LLM providers** added to provider support:
+  - **Groq** (`GROQ_API_KEY`) — Llama 4, Mixtral, Gemma; ultra-low latency inference
+  - **OpenRouter** (`OPENROUTER_API_KEY`) — 200+ models via unified OpenAI-compatible API
+  - **Mistral AI** (`MISTRAL_API_KEY`) — Mistral Large, Codestral (code-optimised)
+  - **DeepSeek** (`DEEPSEEK_API_KEY`) — DeepSeek-V3, DeepSeek-R1 (reasoning)
+  - **Together AI** (`TOGETHER_API_KEY`) — Llama 4, Qwen, Falcon; pay-per-token
+  - **Hugging Face** (`HF_API_KEY`) — any HF Inference Endpoint
+
+#### Test Infrastructure (Phase 7)
+- **Java fixture project** (`test/fixtures/java-project/`)
+  - `UserService.java` — well-documented, security-clean service
+  - `VulnerableService.java` — intentional OWASP vulnerabilities (SQL injection, hardcoded creds, unsafe deserialization)
+  - `.coco.config.json` with `minScore: 70`, `maxIterations: 5`
+- **React fixture project** (`test/fixtures/react-project/`)
+  - `UserCard.tsx` — fully-typed, a11y-correct, hooks-compliant component
+  - `BadComponent.tsx` — missing key, missing alt, no keyboard support
+  - `.coco.config.json` with React analyzer options
+- **Integration test suite** (`test/integration/quality-pipeline.test.ts`) — 27 tests covering the full pipeline end-to-end (config load → language detection → analyzers → registry → exporter/formatter) using real fixture files, zero mocks
+
+### Changed
+- **Provider table** in README expanded from 6 to 12 providers
+- **Known Limitations** — removed "TypeScript/JavaScript first" limitation (Java/React now fully supported)
+- **Test count** updated to 5,100+
+
+### Documentation (Phase 6)
+- **`docs/guides/QUALITY.md`** (new) — complete quality analysis guide: 12-dimension weight table, language support matrix, React/Java rule references, config examples, terminal output format, convergence algorithm, ignore patterns
+- **`docs/guides/GITHUB-ACTIONS.md`** (new) — GitHub Actions integration guide: full `quality.yml` template, npm/yarn/pnpm variants, Java/JaCoCo integration, monorepo matrix strategy, PR comment format, JSON report schema
+- **`docs/guides/PROVIDERS.md`** (updated) — expanded to 12 providers with COCO Mode Compatibility Matrix (9 rows), Cost Considerations table (10 rows), API Key reference table
+- **`docs/guides/CONFIGURATION.md`** (updated) — new "Project-Level Configuration" section with full `.coco.config.json` schema, field reference, `extend` inheritance example, precedence chain
+
 ---
 
 ## [1.8.0] - 2026-02-18
@@ -380,6 +466,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 2.0.0 | 2026-02-19 | React/Java analyzers, ProjectConfig, quality bridge, report exporter, GitHub Actions generator, 6 new providers |
+| 1.9.0 | 2026-02-19 | Parallel development skills for isolated feature work |
 | 1.8.0 | 2026-02-18 | Release workflow skills, /open fix, SkillRegistry integration |
 | 1.7.0 | 2026-02-17 | Concurrent input with auto-classification and abort/rollback |
 | 1.6.0 | 2026-02-17 | Streaming, JSON repair, COCO mode feedback, provider guide |
