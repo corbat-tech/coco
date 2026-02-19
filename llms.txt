@@ -1,0 +1,159 @@
+# Corbat-Coco
+
+> Autonomous coding agent with self-review and quality convergence. Runs a 4-phase COCO methodology (Converge → Orchestrate → Complete → Output) to build production-quality software from natural language task descriptions.
+
+## Project
+
+- [README](README.md): Project overview, installation, usage
+- [Master Plan](docs/MASTER_PLAN.md): Complete development roadmap
+- [Architecture](docs/architecture/ARCHITECTURE.md): System architecture overview
+- [ADRs](docs/architecture/adrs/): Architecture Decision Records
+
+## Core Source
+
+- [src/cli/](src/cli/): CLI entry points and REPL interface
+- [src/orchestrator/](src/orchestrator/): Central task coordinator
+- [src/phases/](src/phases/): COCO phase implementations (converge, orchestrate, complete, output)
+- [src/quality/](src/quality/): 12-dimension quality scoring system
+- [src/providers/](src/providers/): LLM provider abstractions (Anthropic, OpenAI, Ollama)
+- [src/tools/](src/tools/): Tool registry and 30+ tool implementations
+- [src/config/](src/config/): Zod-validated configuration system
+- [src/types/](src/types/): Core TypeScript type definitions
+- [src/persistence/](src/persistence/): Checkpoint and recovery system
+
+## Agent System
+
+corbat-coco includes 12 specialized subagents available via `manager.spawn(type, task)`:
+
+| Agent | Purpose |
+|-------|---------|
+| `explore` | Search codebase, gather information |
+| `plan` | Design implementation approaches |
+| `test` | Write and run tests |
+| `debug` | Analyze errors and fix issues |
+| `review` | Quality review with 12-dimension scoring |
+| `architect` | System design and ADRs |
+| `security` | OWASP Top 10 security audits |
+| `tdd` | Test-first development (RED-GREEN-REFACTOR) |
+| `refactor` | Structural improvements without behavior change |
+| `e2e` | End-to-end workflow testing |
+| `docs` | JSDoc, README, architecture documentation |
+| `database` | Schema design, migrations, query optimization |
+
+## Quality System
+
+12-dimension scoring model (minimum 85/100 for release):
+
+| Dimension | Weight | Description |
+|-----------|--------|-------------|
+| correctness | 0.15 | Code does what it is supposed to |
+| completeness | 0.10 | All requirements addressed |
+| robustness | 0.10 | Handles errors and edge cases |
+| readability | 0.10 | Clear, self-documenting code |
+| maintainability | 0.10 | Easy to modify and extend |
+| complexity | 0.08 | Low cyclomatic complexity |
+| duplication | 0.07 | DRY — no repeated logic |
+| testCoverage | 0.10 | 80%+ line coverage |
+| testQuality | 0.05 | Tests are meaningful |
+| security | 0.08 | No vulnerabilities |
+| documentation | 0.04 | Public APIs documented |
+| style | 0.03 | Consistent formatting |
+
+## Tech Stack
+
+- **Runtime**: Node.js 22+
+- **Language**: TypeScript (strict, ESM only)
+- **Package manager**: pnpm
+- **Build**: tsup
+- **Test**: Vitest (target: 80%+ coverage)
+- **Lint**: oxlint
+- **Format**: oxfmt
+- **Validation**: Zod
+- **CLI**: Commander + Clack
+
+## Development Commands
+
+```bash
+pnpm install        # Install dependencies
+pnpm dev            # Run with tsx (watch mode)
+pnpm build          # Build with tsup
+pnpm test           # Run Vitest
+pnpm test:coverage    # With coverage report
+pnpm lint           # oxlint
+pnpm format         # oxfmt
+pnpm typecheck      # tsc --noEmit
+pnpm check          # typecheck + lint + test
+```
+
+## Claude Code Tooling (.claude/)
+
+Developer tooling for working ON corbat-coco:
+
+### Agents (.claude/agents/)
+- `architect` — System design, ADRs (opus model, read-only)
+- `planner` — Implementation plans before coding (opus model)
+- `tdd-guide` — TDD workflow with Vitest (sonnet model)
+- `security-reviewer` — OWASP security audits (sonnet model)
+- `code-reviewer` — 12-dimension quality review (sonnet model)
+
+### Skills (.claude/skills/)
+Slash commands available in the Claude Code REPL:
+
+**corbat-coco development skills:**
+
+| Command | Purpose |
+|---------|---------|
+| `/plan` | Create phased plan before coding |
+| `/tdd` | Full 6-phase RED-GREEN-REFACTOR TDD workflow (with coverage) |
+| `/coco-fix-iterate` | Multi-agent quality convergence loop (Reviewer→Fixer→Verifier) |
+| `/code-review` | 12-dimension quality review with P0-P3 severity |
+| `/code-fix` | Single-pass fix by priority after `/code-review` |
+| `/build-fix` | Fix TypeScript/lint errors iteratively |
+| `/verify` | Full check: typecheck + lint + test + build |
+| `/verification-loop` | Iterative fix loop until clean |
+| `/security-review` | OWASP audit skill |
+| `/learn` | Save session patterns as skills |
+| `/skill-create` | Generate skills from git history |
+| `/continuous-learning` | Concrete 4-step session learning workflow |
+| `/coding-standards` | Multi-stack standards generator |
+
+**User-project skills** (for projects *built with* corbat-coco, in `user-project/` subfolder):
+
+| Command | Purpose |
+|---------|---------|
+| `/user-project/api-design` | REST/GraphQL design review |
+| `/user-project/deployment-patterns` | Docker + CI/CD configs |
+| `/user-project/backend-patterns` | Repository/service layer patterns |
+| `/user-project/database-migrations` | Safe migration patterns |
+
+### Rules (rules/)
+Always-active guidelines loaded by Claude Code for corbat-coco development:
+
+- `rules/common/` — Coding style, testing, security, git workflow, patterns, performance
+- `rules/typescript/` — TypeScript strict patterns, ESM, Zod, Vitest
+
+**Language guides for user projects** (reference only, not auto-loaded):
+
+- `docs/language-guides/python/` — FastAPI, pytest, Pydantic, async patterns
+- `docs/language-guides/java/` — Spring Boot, hexagonal architecture, JUnit 5, Java 21+
+- `docs/language-guides/golang/` — Go 1.21+, interface-driven design, slog, table-driven tests
+
+### MCP Servers (.claude/mcp-configs/)
+Pre-configured integrations: github, memory, context7, filesystem, sequential-thinking, supabase, vercel, railway, firecrawl, clickhouse.
+
+## COCO Phases
+
+1. **Converge**: Gather requirements → create specification
+2. **Orchestrate**: Design architecture → create task backlog
+3. **Complete**: Execute tasks → quality iteration loop (max 10, convergence delta < 2)
+4. **Output**: Generate CI/CD config, docs, deployment artifacts
+
+## Multi-Language Support
+
+corbat-coco builds projects in any language. Language guides for user projects:
+- TypeScript / Node.js — `rules/typescript/` (auto-loaded for corbat-coco development)
+- Python (FastAPI, Django, pytest) — `docs/language-guides/python/`
+- Java (Spring Boot, Gradle/Maven) — `docs/language-guides/java/`
+- Go (standard library, Echo, Gin) — `docs/language-guides/golang/`
+
+Additional language guides can be added to `docs/language-guides/<language>/`.
