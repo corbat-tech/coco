@@ -151,11 +151,21 @@ describe("UnifiedSkillRegistry", () => {
       expect(result.success).toBe(true);
     });
 
-    it("should activate a markdown skill when executed", async () => {
-      const result = await registry.execute("test-skill", "", { cwd: "/test" });
+    it("should fork a markdown skill with context: fork", async () => {
+      const result = await registry.execute("test-skill", "--verbose", { cwd: "/test" });
+      expect(result.success).toBe(true);
+      // test-skill has context: fork, so it returns instructions for subagent
+      expect(result.shouldFork).toBe(true);
+      expect(result.output).toContain("Test Skill");
+      expect(result.output).toContain("--verbose"); // $ARGUMENTS substituted
+    });
+
+    it("should activate an inline markdown skill when executed", async () => {
+      // minimal-skill has no context field (defaults to inline activation)
+      const result = await registry.execute("minimal-skill", "", { cwd: "/test" });
       expect(result.success).toBe(true);
       expect(result.output).toContain("activated");
-      expect(registry.getActiveSkillIds()).toContain("test-skill");
+      expect(registry.getActiveSkillIds()).toContain("minimal-skill");
     });
 
     it("should return error for unknown skill", async () => {

@@ -15,6 +15,9 @@ import { CONFIG_PATHS } from "../../config/paths.js";
 import type { ToolRegistry } from "../../tools/registry.js";
 import { isMarkdownContent, type MarkdownSkillContent } from "../../skills/types.js";
 
+/** Maximum total characters budget for active skill instructions (~4000 tokens, ~2% of typical 200K context) */
+const MAX_SKILL_INSTRUCTIONS_CHARS = 16000;
+
 /**
  * Trust settings file location
  */
@@ -309,11 +312,29 @@ export function getConversationContext(
           // Substitute $ARGUMENTS with empty string for auto-activated skills
           // (actual arguments are provided when user invokes via /skillname args)
           body = body.replace(/\$ARGUMENTS/g, session.lastSkillArguments ?? "");
-          return `## Skill: ${s.metadata.name}\n\n${body}`;
+
+          let header = `## Skill: ${s.metadata.name}`;
+
+          // Include tool restrictions if specified
+          if (s.metadata.allowedTools && s.metadata.allowedTools.length > 0) {
+            header += `\n\n**Allowed tools for this skill**: ${s.metadata.allowedTools.join(", ")}`;
+            header += `\nYou MUST only use the listed tools when executing this skill's instructions.`;
+          }
+
+          // Include model override if specified
+          if (s.metadata.model) {
+            header += `\n**Model**: Use ${s.metadata.model} for this skill.`;
+          }
+
+          return `${header}\n\n${body}`;
         })
         .join("\n\n");
       if (instructions) {
-        systemPrompt = `${systemPrompt}\n\n# Active Skill Instructions\n\n${instructions}`;
+        // Budget guard: truncate skill instructions if they exceed the budget
+        const truncated = instructions.length > MAX_SKILL_INSTRUCTIONS_CHARS
+          ? instructions.slice(0, MAX_SKILL_INSTRUCTIONS_CHARS) + "\n\n[... skill instructions truncated for context budget]"
+          : instructions;
+        systemPrompt = `${systemPrompt}\n\n# Active Skill Instructions\n\n${truncated}`;
       }
     }
   }

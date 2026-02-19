@@ -287,7 +287,22 @@ export class UnifiedSkillRegistry {
       }
     }
 
-    // Markdown skills get activated, not executed
+    // Check if skill should run in a forked/agent context (subagent)
+    if (meta.context === "fork" || meta.context === "agent") {
+      // Load full content for the subagent prompt
+      const content = loaded.content as import("./types.js").MarkdownSkillContent;
+      let body = content.instructions;
+      body = body.replace(/\$ARGUMENTS/g, args);
+
+      return {
+        success: true,
+        output: body,
+        // Signal to the REPL that this should be run as a subagent
+        shouldFork: true,
+      };
+    }
+
+    // Inline markdown skills get activated and injected into system prompt
     await this.activateSkill(meta.id);
     return {
       success: true,

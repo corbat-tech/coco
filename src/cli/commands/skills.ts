@@ -135,15 +135,16 @@ async function runList(options: { scope?: string; kind?: string }): Promise<void
 async function runAdd(source: string, options: { global?: boolean }): Promise<void> {
   p.intro(chalk.magenta("Add Skill"));
 
-  const targetDir = options.global
-    ? CONFIG_PATHS.skills
-    : path.join(process.cwd(), ".coco", "skills");
-
-  // Check if source is a local path
+  const isGitUrl = source.includes("://") || source.includes("git@");
+  const isGithubShorthand = source.includes("/") && !isGitUrl;
   const isLocalPath = source.startsWith(".") || source.startsWith("/");
 
   if (isLocalPath) {
     // Copy local skill directory
+    const targetDir = options.global
+      ? CONFIG_PATHS.skills
+      : path.join(process.cwd(), ".coco", "skills");
+
     const sourcePath = path.resolve(source);
     const skillName = path.basename(sourcePath);
     const destPath = path.join(targetDir, skillName);
@@ -157,28 +158,56 @@ async function runAdd(source: string, options: { global?: boolean }): Promise<vo
         `Failed to copy skill: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-  } else {
-    // Execute npx skills add for GitHub/registry sources
-    p.log.info(`Installing from: ${source}`);
+  } else if (isGithubShorthand && !isGitUrl) {
+    // Use npx skills add for registry/GitHub sources
+    const targetFlag = options.global ? "-g" : "";
+    const cmd = `npx skills add ${source} ${targetFlag}`.trim();
+
+    p.log.info(`Installing via skills registry: ${source}`);
     const spinner = p.spinner();
-    spinner.start("Installing skill...");
+    spinner.start("Running npx skills add...");
+
     try {
       const { execSync } = await import("node:child_process");
-      await fs.mkdir(targetDir, { recursive: true });
-      execSync(`npx --yes skills add ${source} --path "${targetDir}"`, {
+      execSync(cmd, {
         stdio: "pipe",
-        timeout: 60_000,
+        timeout: 120_000,
+        cwd: process.cwd(),
+        env: { ...process.env, COCO_AGENT: "true" },
       });
       spinner.stop("Skill installed successfully");
-      p.log.success(`Installed to: ${targetDir}`);
-      p.log.info("Restart Coco to discover the new skill.");
     } catch (error) {
       spinner.stop("Installation failed");
       const msg = error instanceof Error ? error.message : String(error);
-      p.log.error(`Failed to install: ${msg}`);
-      p.log.step("You can try manually:");
-      console.log(chalk.cyan(`  npx skills add ${source}`));
+      p.log.error(`Failed to install skill: ${msg}`);
+      p.log.info("Try installing manually: git clone the repo into .coco/skills/");
     }
+  } else if (isGitUrl) {
+    // Git clone for direct URLs
+    const targetDir = options.global
+      ? CONFIG_PATHS.skills
+      : path.join(process.cwd(), ".coco", "skills");
+
+    await fs.mkdir(targetDir, { recursive: true });
+    const skillName = source.split("/").pop()?.replace(".git", "") ?? "skill";
+    const skillDir = path.join(targetDir, skillName);
+
+    const spinner = p.spinner();
+    spinner.start(`Cloning ${source}...`);
+    try {
+      const { execSync } = await import("node:child_process");
+      execSync(`git clone --depth 1 ${source} ${skillDir}`, {
+        stdio: "pipe",
+        timeout: 60_000,
+      });
+      spinner.stop(`Skill cloned to ${skillDir}`);
+    } catch (error) {
+      spinner.stop("Clone failed");
+      const msg = error instanceof Error ? error.message : String(error);
+      p.log.error(`Failed to clone skill: ${msg}`);
+    }
+  } else {
+    p.log.error("Invalid source. Use a GitHub owner/repo (e.g., 'anthropics/skills') or a git URL.");
   }
 
   p.outro("");

@@ -187,6 +187,8 @@ export interface SkillExecutionResult {
   output?: string;
   error?: string;
   shouldExit?: boolean;
+  /** If true, the output should be run as a subagent prompt (for context: fork/agent skills) */
+  shouldFork?: boolean;
 }
 
 // ============================================================================
