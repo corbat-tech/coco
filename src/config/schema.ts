@@ -9,7 +9,21 @@ import { z } from "zod";
  */
 export const ProviderConfigSchema = z.object({
   type: z
-    .enum(["anthropic", "openai", "gemini", "kimi", "lmstudio", "ollama"])
+    .enum([
+      "anthropic",
+      "openai",
+      "codex",
+      "gemini",
+      "kimi",
+      "lmstudio",
+      "ollama",
+      "groq",
+      "openrouter",
+      "mistral",
+      "deepseek",
+      "together",
+      "huggingface",
+    ])
     .default("anthropic"),
   apiKey: z.string().optional(),
   model: z.string().default("claude-sonnet-4-20250514"),

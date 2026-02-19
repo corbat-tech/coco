@@ -46,6 +46,23 @@ export {
   type DocOptions,
 } from "./docs.js";
 
+// Project-level config (.coco.config.json)
+export {
+  PROJECT_CONFIG_FILENAME,
+  ProjectConfigSchema,
+  getProjectConfigPath,
+  projectConfigExists,
+  loadProjectConfig,
+  saveProjectConfig,
+  mergeProjectConfigs,
+  createDefaultProjectConfig,
+  validateProjectConfig,
+  type ProjectConfig,
+  type ProjectQualityOverrides,
+  type ProjectAnalyzersConfig,
+  type QualityWeightsOverride,
+} from "./project-config.js";
+
 // Config migrations
 export {
   MigrationRegistry,
