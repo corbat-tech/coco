@@ -69,7 +69,7 @@ const SECURITY_PATTERNS: SecurityPattern[] = [
 
   // Command Injection
   {
-    regex: /exec\s*\(/g,
+    regex: /(?:^|[\s;,({])exec\s*\(/gm,
     severity: "critical",
     type: "Command Injection",
     message: "Use of exec() can execute shell commands with user input",
@@ -208,6 +208,36 @@ const SECURITY_PATTERNS: SecurityPattern[] = [
 ];
 
 /**
+ * Compute a security score from 0–100 given a list of vulnerabilities.
+ * Critical: -25 points each
+ * High: -10 points each
+ * Medium: -5 points each
+ * Low: -2 points each
+ */
+function computeSecurityScore(vulnerabilities: SecurityVulnerability[]): number {
+  let score = 100;
+
+  for (const vuln of vulnerabilities) {
+    switch (vuln.severity) {
+      case "critical":
+        score -= 25;
+        break;
+      case "high":
+        score -= 10;
+        break;
+      case "medium":
+        score -= 5;
+        break;
+      case "low":
+        score -= 2;
+        break;
+    }
+  }
+
+  return Math.max(0, score);
+}
+
+/**
  * Pattern-based Security Scanner
  */
 export class PatternSecurityScanner {
@@ -269,34 +299,8 @@ export class PatternSecurityScanner {
     return lastLine.length + 1;
   }
 
-  /**
-   * Calculate security score based on vulnerabilities
-   * Critical: -25 points each
-   * High: -10 points each
-   * Medium: -5 points each
-   * Low: -2 points each
-   */
   private calculateScore(vulnerabilities: SecurityVulnerability[]): number {
-    let score = 100;
-
-    for (const vuln of vulnerabilities) {
-      switch (vuln.severity) {
-        case "critical":
-          score -= 25;
-          break;
-        case "high":
-          score -= 10;
-          break;
-        case "medium":
-          score -= 5;
-          break;
-        case "low":
-          score -= 2;
-          break;
-      }
-    }
-
-    return Math.max(0, score);
+    return computeSecurityScore(vulnerabilities);
   }
 }
 
@@ -384,24 +388,7 @@ export class SnykSecurityScanner {
   }
 
   private calculateScore(vulnerabilities: SecurityVulnerability[]): number {
-    let score = 100;
-    for (const vuln of vulnerabilities) {
-      switch (vuln.severity) {
-        case "critical":
-          score -= 25;
-          break;
-        case "high":
-          score -= 10;
-          break;
-        case "medium":
-          score -= 5;
-          break;
-        case "low":
-          score -= 2;
-          break;
-      }
-    }
-    return Math.max(0, score);
+    return computeSecurityScore(vulnerabilities);
   }
 }
 

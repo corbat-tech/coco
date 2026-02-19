@@ -149,6 +149,58 @@ describe("DimensionRegistry", () => {
     });
   });
 
+  describe("analyze (stderr for failures)", () => {
+    it("should write analyzer failures to stderr, not stdout", async () => {
+      const registry = new DimensionRegistry();
+      const failingAnalyzer: DimensionAnalyzer = {
+        dimensionId: "security",
+        language: "typescript",
+        analyze: vi.fn().mockRejectedValue(new Error("analyzer boom")),
+      };
+      registry.register(failingAnalyzer);
+
+      const stderrChunks: string[] = [];
+      const stdoutChunks: string[] = [];
+      const originalStderrWrite = process.stderr.write.bind(process.stderr);
+      const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+
+      const stderrSpy = vi
+        .spyOn(process.stderr, "write")
+        .mockImplementation((chunk: unknown) => {
+          stderrChunks.push(String(chunk));
+          return true;
+        });
+      const stdoutSpy = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation((chunk: unknown) => {
+          stdoutChunks.push(String(chunk));
+          return true;
+        });
+
+      try {
+        const input: AnalyzerInput = {
+          projectPath: "/project",
+          files: [],
+          language: "typescript",
+        };
+        const results = await registry.analyze(input);
+
+        // Failed analyzer should be omitted from results
+        expect(results).toHaveLength(0);
+        // Error message should appear on stderr
+        expect(stderrChunks.join("")).toContain("[DimensionRegistry] Analyzer failed:");
+        expect(stderrChunks.join("")).toContain("analyzer boom");
+        // Nothing should be written to stdout
+        expect(stdoutChunks.join("")).toBe("");
+      } finally {
+        stderrSpy.mockRestore();
+        stdoutSpy.mockRestore();
+        void originalStderrWrite;
+        void originalStdoutWrite;
+      }
+    });
+  });
+
   describe("analyze", () => {
     it("should run all matching analyzers and return results", async () => {
       const registry = new DimensionRegistry();

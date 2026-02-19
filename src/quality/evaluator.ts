@@ -15,9 +15,16 @@ import { StyleAnalyzer } from "./analyzers/style.js";
 import { ReadabilityAnalyzer } from "./analyzers/readability.js";
 import { MaintainabilityAnalyzer } from "./analyzers/maintainability.js";
 import type { QualityScores, QualityDimensions, QualityEvaluation } from "./types.js";
-import { DEFAULT_QUALITY_WEIGHTS, DEFAULT_QUALITY_THRESHOLDS } from "./types.js";
+import { DEFAULT_QUALITY_WEIGHTS } from "./types.js";
+import { loadProjectConfig } from "../config/project-config.js";
+import { resolvedWeights, resolvedThresholds } from "./quality-bridge.js";
 import { readFile } from "node:fs/promises";
 import { glob } from "glob";
+import { type DimensionRegistry } from "./dimension-registry.js";
+import { detectProjectLanguage } from "./language-detector.js";
+import { registerJavaAnalyzers } from "./analyzers/java/index.js";
+import { registerReactAnalyzers } from "./analyzers/react/index.js";
+import { createDefaultRegistry } from "./dimension-registry.js";
 
 /**
  * Unified Quality Evaluator
@@ -40,6 +47,7 @@ export class QualityEvaluator {
   constructor(
     private projectPath: string,
     useSnyk: boolean = false,
+    private registry?: DimensionRegistry,
   ) {
     this.coverageAnalyzer = new CoverageAnalyzer(projectPath);
     this.securityScanner = new CompositeSecurityScanner(projectPath, useSnyk);
@@ -66,10 +74,12 @@ export class QualityEvaluator {
     const targetFiles = files ?? (await this.findSourceFiles());
 
     // Read file contents for security scanner
+    // Use .catch(() => "") so unreadable files (missing symlinks, permission errors)
+    // produce an empty string instead of crashing the entire evaluate() call.
     const fileContents = await Promise.all(
       targetFiles.map(async (file) => ({
         path: file,
-        content: await readFile(file, "utf-8"),
+        content: await readFile(file, "utf-8").catch(() => ""),
       })),
     );
 
@@ -118,9 +128,37 @@ export class QualityEvaluator {
       documentation: documentationResult.score,
     };
 
-    // Calculate overall weighted score
+    // Apply language-specific registry overrides (Java, React, etc.)
+    // Registry analyzer scores take precedence over the generic baseline for detected language.
+    // TODO: Skip baseline analyzers for dimensions covered by registry to avoid double execution.
+    //       When registry.hasAnalyzers(language) is true, the 12 built-in analyzers above and
+    //       the registry analyzers both run — the registry result overwrites the evaluator result
+    //       (last-write-wins), making the first run wasted. Skipping the per-dimension calls for
+    //       registry-covered languages would halve analysis time for TypeScript/Java/React projects.
+    if (this.registry) {
+      const { language } = detectProjectLanguage(targetFiles);
+      const registryResults = await this.registry.analyze({
+        projectPath: this.projectPath,
+        files: targetFiles,
+        language,
+      });
+      for (const { dimensionId, result } of registryResults) {
+        if (dimensionId in dimensions) {
+          (dimensions as unknown as Record<string, number>)[dimensionId] = result.score;
+        }
+      }
+    }
+
+    // Calculate overall weighted score using project config weights (or defaults)
+    let projectConfig = null;
+    try {
+      projectConfig = await loadProjectConfig(this.projectPath);
+    } catch {
+      // Use defaults if config cannot be loaded (invalid JSON, permission error, etc.)
+    }
+    const weights = resolvedWeights(projectConfig);
     const overall = Object.entries(dimensions).reduce((sum, [key, value]) => {
-      const weight = DEFAULT_QUALITY_WEIGHTS[key as keyof typeof DEFAULT_QUALITY_WEIGHTS] ?? 0;
+      const weight = weights[key as keyof typeof DEFAULT_QUALITY_WEIGHTS] ?? 0;
       return sum + value * weight;
     }, 0);
 
@@ -142,21 +180,28 @@ export class QualityEvaluator {
     );
     const suggestions = this.generateSuggestions(dimensions);
 
-    // Check thresholds
-    const meetsMinimum =
-      scores.overall >= DEFAULT_QUALITY_THRESHOLDS.minimum.overall &&
-      dimensions.testCoverage >= DEFAULT_QUALITY_THRESHOLDS.minimum.testCoverage &&
-      dimensions.security >= DEFAULT_QUALITY_THRESHOLDS.minimum.security;
+    // Check thresholds using resolved project config thresholds (not hardcoded defaults)
+    const thresholds = resolvedThresholds(projectConfig);
 
+    const meetsMinimum =
+      scores.overall >= thresholds.minimum.overall &&
+      dimensions.testCoverage >= thresholds.minimum.testCoverage &&
+      dimensions.security >= thresholds.minimum.security;
+
+    // meetsTarget: UI signal — overall AND testCoverage both reach the target threshold.
     const meetsTarget =
-      scores.overall >= DEFAULT_QUALITY_THRESHOLDS.target.overall &&
-      dimensions.testCoverage >= DEFAULT_QUALITY_THRESHOLDS.target.testCoverage;
+      scores.overall >= thresholds.target.overall &&
+      dimensions.testCoverage >= thresholds.target.testCoverage;
+
+    // converged: convergence-loop signal — overall score is at or above the target threshold.
+    // In an iterative context the loop additionally checks score delta stability between runs.
+    const converged = scores.overall >= thresholds.target.overall;
 
     return {
       scores,
       meetsMinimum,
       meetsTarget,
-      converged: false,
+      converged,
       issues,
       suggestions,
     };
@@ -375,7 +420,26 @@ export class QualityEvaluator {
 
 /**
  * Create quality evaluator instance
+ * @deprecated Use {@link createQualityEvaluatorWithRegistry} for language-aware analysis (Java, React).
+ * Still appropriate for TypeScript-only projects that do not need the registry overhead.
  */
 export function createQualityEvaluator(projectPath: string, useSnyk?: boolean): QualityEvaluator {
   return new QualityEvaluator(projectPath, useSnyk);
+}
+
+/**
+ * Create a quality evaluator pre-configured with language-specific analyzers.
+ * Automatically registers Java and React analyzers in the DimensionRegistry.
+ * Use this instead of createQualityEvaluator() for multi-language projects.
+ * @note Currently runs baseline analyzers AND registry analyzers for each dimension.
+ * Registry results take precedence. Performance optimization (skip baseline when registry covers all dims) is tracked as a TODO.
+ */
+export function createQualityEvaluatorWithRegistry(
+  projectPath: string,
+  useSnyk?: boolean,
+): QualityEvaluator {
+  const registry = createDefaultRegistry(projectPath);
+  registerJavaAnalyzers(registry, projectPath);
+  registerReactAnalyzers(registry, projectPath);
+  return new QualityEvaluator(projectPath, useSnyk ?? false, registry);
 }

@@ -10,7 +10,7 @@ import fs from "node:fs/promises";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
 import type { QualityScores } from "../quality/types.js";
-import { createQualityEvaluator } from "../quality/evaluator.js";
+import { createQualityEvaluatorWithRegistry } from "../quality/evaluator.js";
 
 /**
  * Lint result interface
@@ -430,7 +430,7 @@ Examples:
 
     try {
       // Use the new unified QualityEvaluator
-      const evaluator = createQualityEvaluator(projectDir, useSnyk);
+      const evaluator = createQualityEvaluatorWithRegistry(projectDir, useSnyk);
       const evaluation = await evaluator.evaluate(files);
 
       // Return QualityScores format

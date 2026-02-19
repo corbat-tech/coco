@@ -289,6 +289,19 @@ describe("QualityEvaluator E2E", () => {
     });
   });
 
+  describe("Resilience — unreadable files", () => {
+    it("should not throw when a file in the list cannot be read (catch → empty string)", async () => {
+      // Pass a path that does not exist alongside a valid file; evaluate() must not throw.
+      const validFile = join(testProject, "resilience-valid.ts");
+      await writeFile(validFile, "function ok(): boolean { return true; }");
+      const missingFile = join(testProject, "this-file-does-not-exist.ts");
+
+      const evaluator = new QualityEvaluator(testProject, false);
+      // Must resolve without throwing — the unreadable file is treated as empty string
+      await expect(evaluator.evaluate([validFile, missingFile])).resolves.toBeDefined();
+    });
+  });
+
   describe("Performance", () => {
     it("should complete evaluation in reasonable time", async () => {
       await writeFile(
@@ -308,6 +321,99 @@ describe("QualityEvaluator E2E", () => {
       expect(result.scores.evaluationDurationMs).toBeLessThan(10000); // < 10 seconds
       expect(duration).toBeLessThan(10000);
     });
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Fix #3 — Custom quality.weights from .coco.config.json must be honoured
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("resolvedWeights — custom weights from project config (Fix #3)", () => {
+  it("returns DEFAULT_QUALITY_WEIGHTS when projectConfig is null", async () => {
+    const { DEFAULT_QUALITY_WEIGHTS } = await import("./types.js");
+    const { resolvedWeights } = await import("./quality-bridge.js");
+    expect(resolvedWeights(null)).toEqual(DEFAULT_QUALITY_WEIGHTS);
+  });
+
+  it("returns DEFAULT_QUALITY_WEIGHTS when config has no quality.weights", async () => {
+    const { DEFAULT_QUALITY_WEIGHTS } = await import("./types.js");
+    const { resolvedWeights } = await import("./quality-bridge.js");
+    const config = {};
+    expect(resolvedWeights(config as any)).toEqual(DEFAULT_QUALITY_WEIGHTS);
+  });
+
+  it("overrides a single dimension weight and normalises the result", async () => {
+    const { DEFAULT_QUALITY_WEIGHTS } = await import("./types.js");
+    const { resolvedWeights } = await import("./quality-bridge.js");
+
+    // Double the security weight
+    const config = {
+      quality: { weights: { security: DEFAULT_QUALITY_WEIGHTS.security * 2 } },
+    };
+    const weights = resolvedWeights(config as any);
+
+    // The security weight must be strictly greater than the default after normalisation
+    expect(weights.security).toBeGreaterThan(DEFAULT_QUALITY_WEIGHTS.security);
+
+    // All weights must sum to 1.0 (allowing floating point tolerance)
+    const total = Object.values(weights).reduce((s, v) => s + v, 0);
+    expect(total).toBeCloseTo(1.0, 5);
+  });
+
+  it("normalised weights applied to identical dimension scores changes overall proportionally", async () => {
+    const { DEFAULT_QUALITY_WEIGHTS } = await import("./types.js");
+    const { resolvedWeights } = await import("./quality-bridge.js");
+
+    // With all dimension scores equal (say 80), the overall must equal 80
+    // regardless of weights (because weights sum to 1).
+    const uniformScore = 80;
+    const dimensions = Object.fromEntries(
+      Object.keys(DEFAULT_QUALITY_WEIGHTS).map((k) => [k, uniformScore]),
+    ) as Record<string, number>;
+
+    const config = {
+      quality: { weights: { security: 0.5 } }, // extreme override
+    };
+    const weights = resolvedWeights(config as any);
+
+    const overall = Object.entries(dimensions).reduce((sum, [key, value]) => {
+      const weight = weights[key as keyof typeof DEFAULT_QUALITY_WEIGHTS] ?? 0;
+      return sum + value * weight;
+    }, 0);
+
+    // Should still be ~80 because weights are normalised to sum to 1
+    expect(Math.round(overall)).toBe(uniformScore);
+  });
+
+  it("custom weights affect the weighted sum when dimensions differ", async () => {
+    const { DEFAULT_QUALITY_WEIGHTS } = await import("./types.js");
+    const { resolvedWeights } = await import("./quality-bridge.js");
+
+    // Set security score = 0 (worst), all others = 100 (best)
+    const dimensions = Object.fromEntries(
+      Object.keys(DEFAULT_QUALITY_WEIGHTS).map((k) => [k, k === "security" ? 0 : 100]),
+    ) as Record<string, number>;
+
+    // With a very heavy security weight, overall should be much lower
+    const heavySecConfig = { quality: { weights: { security: 0.9 } } };
+    const heavyWeights = resolvedWeights(heavySecConfig as any);
+
+    const overallHeavy = Object.entries(dimensions).reduce((sum, [key, value]) => {
+      const weight = heavyWeights[key as keyof typeof DEFAULT_QUALITY_WEIGHTS] ?? 0;
+      return sum + value * weight;
+    }, 0);
+
+    // With a tiny security weight, overall should be much higher
+    const lightSecConfig = { quality: { weights: { security: 0.001 } } };
+    const lightWeights = resolvedWeights(lightSecConfig as any);
+
+    const overallLight = Object.entries(dimensions).reduce((sum, [key, value]) => {
+      const weight = lightWeights[key as keyof typeof DEFAULT_QUALITY_WEIGHTS] ?? 0;
+      return sum + value * weight;
+    }, 0);
+
+    // Heavy security weight → penalises more when security is 0
+    expect(overallHeavy).toBeLessThan(overallLight);
   });
 });
 

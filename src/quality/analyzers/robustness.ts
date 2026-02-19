@@ -74,11 +74,6 @@ function analyzeRobustnessPatterns(ast: TSESTree.Program): FileRobustness {
       if (currentFunctionHasTryCatch) {
         functionsWithTryCatch++;
       }
-      // Don't double-count: undo the increment we did above
-      if (isFunctionNode) {
-        functions--;
-        functions++;
-      }
       insideFunction = previousInsideFunction;
       currentFunctionHasTryCatch = previousHasTryCatch;
       return;

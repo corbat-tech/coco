@@ -1,0 +1,17 @@
+{
+  "name": "java-fixture-project",
+  "version": "1.0.0",
+  "language": "java",
+  "quality": {
+    "minScore": 70,
+    "minCoverage": 60,
+    "securityThreshold": 100,
+    "maxIterations": 5
+  },
+  "analyzers": {
+    "enabledLanguages": ["java"],
+    "java": {
+      "minCoverage": 60
+    }
+  }
+}

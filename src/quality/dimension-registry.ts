@@ -10,6 +10,7 @@
  *   const results = await registry.analyze({ projectPath, files, language: "typescript" });
  */
 
+import { readFile } from "node:fs/promises";
 import type { LanguageId } from "./language-detector.js";
 import type { QualityDimensions, QualityIssue } from "./types.js";
 import { CoverageAnalyzer } from "./analyzers/coverage.js";
@@ -86,10 +87,19 @@ export class DimensionRegistry {
   private analyzers: DimensionAnalyzer[] = [];
 
   /**
-   * Register a dimension analyzer plugin
+   * Register a dimension analyzer plugin.
+   * If an analyzer for the same (language, dimensionId) pair already exists,
+   * it is replaced — preventing order-dependent duplicate accumulation.
    */
   register(analyzer: DimensionAnalyzer): void {
-    this.analyzers.push(analyzer);
+    const existing = this.analyzers.findIndex(
+      (a) => a.language === analyzer.language && a.dimensionId === analyzer.dimensionId,
+    );
+    if (existing !== -1) {
+      this.analyzers[existing] = analyzer; // replace, don't accumulate
+    } else {
+      this.analyzers.push(analyzer);
+    }
   }
 
   /**
@@ -137,14 +147,21 @@ export class DimensionRegistry {
     const matching = this.getAnalyzers(input.language);
     if (!matching.length) return [];
 
-    const results = await Promise.all(
-      matching.map(async (analyzer) => {
-        const result = await analyzer.analyze(input);
-        return { dimensionId: analyzer.dimensionId, result };
-      }),
+    const settled = await Promise.allSettled(
+      matching.map((analyzer) =>
+        analyzer.analyze(input).then((result) => ({ dimensionId: analyzer.dimensionId, result })),
+      ),
     );
 
-    return results;
+    return settled
+      .filter((s): s is PromiseFulfilledResult<DimensionAnalysisResult> => {
+        if (s.status === "rejected") {
+          // Log but do not abort — partial results are better than none
+          process.stderr.write(`[DimensionRegistry] Analyzer failed: ${String(s.reason)}\n`);
+        }
+        return s.status === "fulfilled";
+      })
+      .map((s) => s.value);
   }
 }
 
@@ -178,7 +195,7 @@ function wrapAnalyzer(
  * Create the default registry pre-populated with all TypeScript/JavaScript
  * quality analyzers (wraps existing QualityEvaluator analyzers).
  *
- * New language analyzers (Java, React) will be added in Phases 2 & 3.
+ * Java and React analyzers are available via registerJavaAnalyzers / registerReactAnalyzers.
  */
 export function createDefaultRegistry(projectPath: string): DimensionRegistry {
   const registry = new DimensionRegistry();
@@ -197,15 +214,15 @@ export function createDefaultRegistry(projectPath: string): DimensionRegistry {
   const readabilityAnalyzer = new ReadabilityAnalyzer(projectPath);
   const maintainabilityAnalyzer = new MaintainabilityAnalyzer(projectPath);
 
-  // Languages supported by the existing analyzers (TypeScript, JavaScript and React variants)
-  const jsLangs: Array<LanguageId | "all"> = [
-    "typescript",
-    "javascript",
-    "react-typescript",
-    "react-javascript",
-  ];
+  // Languages for the baseline TS/JS analyzers — all 12 dimensions
+  const baseLangs: Array<LanguageId | "all"> = ["typescript", "javascript"];
 
-  for (const lang of jsLangs) {
+  // React variants get 9 baseline dimensions.
+  // correctness, robustness, and style are intentionally excluded here:
+  // registerReactAnalyzers() provides React-specific implementations for those 3.
+  const reactLangs: Array<LanguageId | "all"> = ["react-typescript", "react-javascript"];
+
+  for (const lang of baseLangs) {
     registry.register(
       wrapAnalyzer("correctness", lang, async () => {
         const r = await correctnessAnalyzer.analyze();
@@ -273,7 +290,6 @@ export function createDefaultRegistry(projectPath: string): DimensionRegistry {
 
     registry.register(
       wrapAnalyzer("security", lang, async (input) => {
-        const { readFile } = await import("node:fs/promises");
         const fileContents = await Promise.all(
           input.files.map(async (f) => ({
             path: f,
@@ -295,6 +311,80 @@ export function createDefaultRegistry(projectPath: string): DimensionRegistry {
     registry.register(
       wrapAnalyzer("style", lang, async () => {
         const r = await styleAnalyzer.analyze();
+        return { score: r.score };
+      }),
+    );
+  }
+
+  for (const lang of reactLangs) {
+    // Skip correctness, robustness, style — registerReactAnalyzers() owns those for React
+    registry.register(
+      wrapAnalyzer("completeness", lang, async (input) => {
+        const r = await completenessAnalyzer.analyze(input.files);
+        return { score: r.score };
+      }),
+    );
+
+    registry.register(
+      wrapAnalyzer("readability", lang, async (input) => {
+        const r = await readabilityAnalyzer.analyze(input.files);
+        return { score: r.score };
+      }),
+    );
+
+    registry.register(
+      wrapAnalyzer("maintainability", lang, async (input) => {
+        const r = await maintainabilityAnalyzer.analyze(input.files);
+        return { score: r.score };
+      }),
+    );
+
+    registry.register(
+      wrapAnalyzer("complexity", lang, async (input) => {
+        const r = await complexityAnalyzer.analyze(input.files);
+        return { score: r.score };
+      }),
+    );
+
+    registry.register(
+      wrapAnalyzer("duplication", lang, async (input) => {
+        const r = await duplicationAnalyzer.analyze(input.files);
+        // DuplicationResult has `percentage` (not `score`); convert: lower % → higher score
+        return { score: Math.max(0, 100 - r.percentage) };
+      }),
+    );
+
+    registry.register(
+      wrapAnalyzer("testCoverage", lang, async () => {
+        const r = await coverageAnalyzer.analyze();
+        // CoverageMetrics has lines.percentage; null means no coverage data
+        return { score: r?.lines.percentage ?? 0 };
+      }),
+    );
+
+    registry.register(
+      wrapAnalyzer("testQuality", lang, async () => {
+        const r = await testQualityAnalyzer.analyze();
+        return { score: r.score };
+      }),
+    );
+
+    registry.register(
+      wrapAnalyzer("security", lang, async (input) => {
+        const fileContents = await Promise.all(
+          input.files.map(async (f) => ({
+            path: f,
+            content: await readFile(f, "utf-8").catch(() => ""),
+          })),
+        );
+        const r = await securityScanner.scan(fileContents);
+        return { score: r.score };
+      }),
+    );
+
+    registry.register(
+      wrapAnalyzer("documentation", lang, async (input) => {
+        const r = await documentationAnalyzer.analyze(input.files);
         return { score: r.score };
       }),
     );
