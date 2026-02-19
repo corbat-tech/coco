@@ -682,7 +682,7 @@ describe("AgentManager", () => {
     it("should return list of available agent types", () => {
       const types = agentManager.getAvailableAgentTypes();
 
-      expect(types).toHaveLength(5);
+      expect(types).toHaveLength(12);
 
       const typeNames = types.map((t) => t.type);
       expect(typeNames).toContain("explore");
@@ -690,6 +690,13 @@ describe("AgentManager", () => {
       expect(typeNames).toContain("test");
       expect(typeNames).toContain("debug");
       expect(typeNames).toContain("review");
+      expect(typeNames).toContain("architect");
+      expect(typeNames).toContain("security");
+      expect(typeNames).toContain("tdd");
+      expect(typeNames).toContain("refactor");
+      expect(typeNames).toContain("e2e");
+      expect(typeNames).toContain("docs");
+      expect(typeNames).toContain("database");
     });
 
     it("should provide human-readable names for agents", () => {
