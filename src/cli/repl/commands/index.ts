@@ -146,7 +146,7 @@ export async function executeSlashCommand(
     return command.execute(args, session);
   }
 
-  // 2. Fall back to skill registry
+  // 2. Fall back to skill registry (native builtin skills)
   const registry = getSkillRegistry();
   const skill = registry.get(commandName);
 
@@ -165,7 +165,26 @@ export async function executeSlashCommand(
     return result.shouldExit ?? false;
   }
 
-  // 3. Nothing found
+  // 3. Fall back to unified skill registry (markdown + native from all scopes)
+  if (session.skillRegistry && session.skillRegistry.has(commandName)) {
+    const argsString = args.join(" ");
+    const result = await session.skillRegistry.execute(commandName, argsString, {
+      cwd: session.projectPath,
+      session,
+      config: session.config,
+    });
+
+    if (result.output) {
+      console.log(result.output);
+    }
+    if (result.error) {
+      renderError(result.error);
+    }
+
+    return result.shouldExit ?? false;
+  }
+
+  // 4. Nothing found
   renderError(`Unknown command: /${commandName}. Type /help for available commands.`);
   return false;
 }

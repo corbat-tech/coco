@@ -53,6 +53,9 @@ export const CONFIG_PATHS = {
 
   /** Search index directory: ~/.coco/search-index/ */
   searchIndex: join(COCO_HOME, "search-index"),
+
+  /** Global skills directory: ~/.coco/skills/ */
+  skills: join(COCO_HOME, "skills"),
 } as const;
 
 /**

@@ -162,6 +162,25 @@ export async function startRepl(
   setAgentProvider(provider);
   setAgentToolRegistry(toolRegistry);
 
+  // Initialize unified skill registry (discover skills across all scopes)
+  const { createUnifiedSkillRegistry } = await import("../../skills/index.js");
+  const { getBuiltinSkillsForDiscovery } = await import("./skills/index.js");
+  const { loadConfig: loadCocoConfig } = await import("../../config/loader.js");
+  session.skillRegistry = createUnifiedSkillRegistry();
+  // Wire skills config from CocoConfig if available
+  try {
+    const cocoConfig = await loadCocoConfig();
+    if (cocoConfig.skills) {
+      session.skillRegistry.setConfig(cocoConfig.skills);
+    }
+  } catch {
+    // Config not available — use defaults (all enabled, no overrides)
+  }
+  await session.skillRegistry.discoverAndRegister(
+    projectPath,
+    getBuiltinSkillsForDiscovery(),
+  );
+
   // Create input handler
   const inputHandler = createInputHandler(session);
 
@@ -317,6 +336,30 @@ export async function startRepl(
     // Save the original user message before any context injection.
     // Used to re-send the task when user modifies during execution.
     const originalUserMessage = typeof agentMessage === "string" ? agentMessage : null;
+
+    // Auto-activate relevant skills based on user message
+    if (
+      session.skillRegistry &&
+      session.skillRegistry.config.autoActivate !== false &&
+      typeof agentMessage === "string" &&
+      agentMessage.length > 0
+    ) {
+      const matches = session.skillRegistry.findRelevantSkills(agentMessage, 3, 0.4);
+      const mdMatches = matches.filter((m) => m.skill.kind === "markdown");
+
+      if (mdMatches.length > 0) {
+        // Deactivate previous auto-activated skills, then activate new ones
+        session.skillRegistry.deactivateAll();
+        const activated: string[] = [];
+        for (const match of mdMatches) {
+          const ok = await session.skillRegistry.activateSkill(match.skill.id);
+          if (ok) activated.push(match.skill.name);
+        }
+        if (activated.length > 0) {
+          renderInfo(`Skills: ${activated.join(", ")}`);
+        }
+      }
+    }
 
     // Inject any pending interruption context from the previous turn
     if (pendingInterruptionContext && typeof agentMessage === "string") {
@@ -725,7 +768,7 @@ export async function startRepl(
  * Print welcome message - retro terminal style, compact
  * Brand color: Magenta/Purple
  */
-async function printWelcome(session: { projectPath: string; config: ReplConfig }): Promise<void> {
+async function printWelcome(session: { projectPath: string; config: ReplConfig; skillRegistry?: import("../../skills/registry.js").UnifiedSkillRegistry }): Promise<void> {
   const trustStore = createTrustStore();
   await trustStore.init();
   const trustLevel = trustStore.getLevel(session.projectPath);
@@ -822,6 +865,19 @@ async function printWelcome(session: { projectPath: string; config: ReplConfig }
       chalk.dim(" — iterates until quality \u2265 85. /coco to disable")
     : chalk.dim("  \u{1F4A1} /coco on — enable auto-test & quality iteration");
   console.log(cocoStatus);
+
+  // Show discovered skills count
+  if (session.skillRegistry && session.skillRegistry.size > 0) {
+    const allMeta = session.skillRegistry.getAllMetadata();
+    const mdCount = allMeta.filter((s) => s.kind === "markdown").length;
+    const nativeCount = session.skillRegistry.size - mdCount;
+    const parts: string[] = [];
+    if (mdCount > 0) parts.push(`${mdCount} markdown`);
+    if (nativeCount > 0) parts.push(`${nativeCount} native`);
+    console.log(
+      chalk.dim(`  ${session.skillRegistry.size} skills (${parts.join(" + ")})`),
+    );
+  }
 
   console.log();
   console.log(

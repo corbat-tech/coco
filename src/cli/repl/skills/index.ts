@@ -56,3 +56,40 @@ export function createDefaultRegistry(): SkillRegistry {
 
   return registry;
 }
+
+/**
+ * Get builtin skills as LegacySkill array for the unified skill discovery system.
+ * This bridges the existing REPL skills into the new unified registry.
+ */
+export function getBuiltinSkillsForDiscovery(): Array<{
+  name: string;
+  description: string;
+  aliases?: string[];
+  category?: string;
+  execute: (
+    args: string,
+    context: unknown,
+  ) => Promise<{ success: boolean; output?: string; error?: string; shouldExit?: boolean }>;
+}> {
+  // Note: help skill excluded here (it needs registry reference)
+  // It will be available via slash commands, not the unified discovery
+  const builtins = [
+    clearSkill,
+    statusSkill,
+    compactSkill,
+    reviewSkill,
+    diffSkill,
+    shipSkill,
+    openSkill,
+  ];
+  return builtins.map((s) => ({
+    name: s.name,
+    description: s.description,
+    aliases: s.aliases,
+    category: s.category,
+    execute: s.execute as (
+      args: string,
+      context: unknown,
+    ) => Promise<{ success: boolean; output?: string; error?: string; shouldExit?: boolean }>,
+  }));
+}

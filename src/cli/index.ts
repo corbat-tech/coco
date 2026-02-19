@@ -13,6 +13,7 @@ import { registerStatusCommand } from "./commands/status.js";
 import { registerResumeCommand } from "./commands/resume.js";
 import { registerConfigCommand } from "./commands/config.js";
 import { registerMCPCommand } from "./commands/mcp.js";
+import { registerSkillsCommand } from "./commands/skills.js";
 import { startRepl } from "./repl/index.js";
 import { runOnboardingV2 } from "./repl/onboarding-v2.js";
 import { getLastUsedProvider } from "../config/env.js";
@@ -34,6 +35,7 @@ registerStatusCommand(program);
 registerResumeCommand(program);
 registerConfigCommand(program);
 registerMCPCommand(program);
+registerSkillsCommand(program);
 
 // Setup command - configure provider
 program

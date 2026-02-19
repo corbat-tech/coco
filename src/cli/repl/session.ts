@@ -13,6 +13,7 @@ import { createContextCompactor, type CompactionResult } from "./context/compact
 import { createMemoryLoader, type MemoryContext } from "./memory/index.js";
 import { CONFIG_PATHS } from "../../config/paths.js";
 import type { ToolRegistry } from "../../tools/registry.js";
+import { isMarkdownContent, type MarkdownSkillContent } from "../../skills/types.js";
 
 /**
  * Trust settings file location
@@ -282,6 +283,35 @@ export function getConversationContext(
   if (session.projectContext) {
     const stackInfo = formatStackContext(session.projectContext);
     systemPrompt = `${systemPrompt}\n\n${stackInfo}`;
+  }
+
+  // Inject skill catalog and active skill instructions
+  if (session.skillRegistry) {
+    const allSkills = session.skillRegistry.getAllMetadata();
+    const markdownSkills = allSkills.filter((s) => s.kind === "markdown");
+
+    // Lightweight catalog of available markdown skills (for LLM awareness)
+    if (markdownSkills.length > 0) {
+      const skillList = markdownSkills
+        .map((s) => `- **${s.name}**: ${s.description}`)
+        .join("\n");
+      systemPrompt = `${systemPrompt}\n\n# Available Skills\n\nThe following skills can be activated to guide your work:\n${skillList}`;
+    }
+
+    // Inject full instructions of currently active skills
+    const activeSkills = session.skillRegistry.getActiveSkills();
+    if (activeSkills.length > 0) {
+      const instructions = activeSkills
+        .filter((s) => isMarkdownContent(s.content))
+        .map((s) => {
+          const mc = s.content as MarkdownSkillContent;
+          return `## Skill: ${s.metadata.name}\n\n${mc.instructions}`;
+        })
+        .join("\n\n");
+      if (instructions) {
+        systemPrompt = `${systemPrompt}\n\n# Active Skill Instructions\n\n${instructions}`;
+      }
+    }
   }
 
   return [{ role: "system", content: systemPrompt }, ...session.messages];

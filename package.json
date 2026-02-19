@@ -1,6 +1,6 @@
 {
   "name": "@corbat-tech/coco",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Autonomous Coding Agent with Self-Review, Quality Convergence, and Production-Ready Output",
   "type": "module",
   "main": "dist/index.js",
@@ -83,6 +83,7 @@
     "diff": "^8.0.3",
     "execa": "^9.5.0",
     "glob": "^13.0.1",
+    "gray-matter": "^4.0.3",
     "highlight.js": "^11.11.1",
     "json5": "^2.2.3",
     "jsonrepair": "^3.13.2",

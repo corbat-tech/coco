@@ -7,6 +7,7 @@ import type { ContextManager } from "./context/manager.js";
 import type { ProgressTracker } from "./progress/tracker.js";
 import type { MemoryContext } from "./memory/types.js";
 import type { ProjectStackContext } from "./context/stack-detector.js";
+import type { UnifiedSkillRegistry } from "../../skills/registry.js";
 
 /**
  * REPL session state
@@ -27,6 +28,8 @@ export interface ReplSession {
   memoryContext?: MemoryContext;
   /** Project stack context (detected at startup) */
   projectContext?: ProjectStackContext;
+  /** Unified skill registry (markdown + native skills) */
+  skillRegistry?: UnifiedSkillRegistry;
 }
 
 /**
