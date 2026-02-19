@@ -14,7 +14,7 @@
 [![License](https://img.shields.io/badge/license-MIT-f5c542?style=flat-square)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/Node.js-22+-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/tests-4350%2B-22c55e?style=flat-square)](https://github.com/corbat/corbat-coco/actions)
+[![Tests](https://img.shields.io/badge/tests-5100%2B-22c55e?style=flat-square)](https://github.com/corbat/corbat-coco/actions)
 
 </div>
 
@@ -69,13 +69,15 @@ Real metrics, not guesses:
 | Dimension | How It's Measured |
 |-----------|-------------------|
 | Test Coverage | c8/v8 instrumentation |
-| Security | Pattern matching + optional Snyk |
+| Security | Pattern matching (OWASP) + optional Snyk |
 | Complexity | Cyclomatic complexity (AST) |
 | Duplication | Line-based similarity |
 | Correctness | Test pass rate + build verification |
 | Style | oxlint / eslint / biome |
-| Documentation | JSDoc coverage |
+| Documentation | JSDoc / Javadoc coverage |
 | + 5 more | Readability, Maintainability, Test Quality, Completeness, Robustness |
+
+Language-specific analyzers included for **TypeScript/JavaScript**, **React/TSX**, and **Java**.
 
 ### 🚀 **Full Release Pipeline**
 
@@ -109,6 +111,12 @@ Bring your own API key:
 | **Anthropic** | API key / OAuth | Claude Opus, Sonnet, Haiku |
 | **OpenAI** | API key | GPT-5.3 Codex, GPT-4.1, o4-mini |
 | **Google** | API key / gcloud | Gemini 3, 2.5 Pro/Flash |
+| **Groq** | API key | Llama 4, Mixtral, Gemma |
+| **OpenRouter** | API key | 200+ models (Claude, GPT, Llama…) |
+| **Mistral AI** | API key | Mistral Large, Codestral |
+| **DeepSeek** | API key | DeepSeek-V3, DeepSeek-R1 |
+| **Together AI** | API key | Llama 4, Qwen, Falcon |
+| **Hugging Face** | API key | Any HF Inference Endpoint |
 | **Ollama** | Local | Any local model |
 | **LM Studio** | Local | Any GGUF model |
 | **Moonshot** | API key | Kimi models |
@@ -201,6 +209,9 @@ Four phases for production-ready output:
 ## 📖 Documentation
 
 - [Configuration Guide](docs/guides/CONFIGURATION.md)
+- [Quality Analysis Guide](docs/guides/QUALITY.md)
+- [Provider Guide](docs/guides/PROVIDERS.md)
+- [GitHub Actions Integration](docs/guides/GITHUB-ACTIONS.md)
 - [Quick Start Tutorial](docs/guides/QUICK_START.md)
 - [Troubleshooting](docs/guides/TROUBLESHOOTING.md)
 - [API Reference](docs/API.md)
@@ -215,7 +226,7 @@ git clone https://github.com/corbat/corbat-coco
 cd corbat-coco
 pnpm install
 pnpm dev          # Run in dev mode
-pnpm test         # 4,350+ tests
+pnpm test         # 5,100+ tests
 pnpm check        # Typecheck + lint + test
 ```
 
@@ -249,7 +260,6 @@ src/
 
 We'd rather you know upfront:
 
-- **TypeScript/JavaScript first** — Other languages have basic support
 - **CLI-only** — No IDE extension yet (VS Code planned)
 - **Iteration takes time** — Convergence adds 2-5 min per task
 - **LLM-dependent** — Quality depends on your model choice

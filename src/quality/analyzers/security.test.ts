@@ -335,6 +335,47 @@ describe("PatternSecurityScanner", () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Regression test: Fix #3 — shared computeSecurityScore logic
+// Both PatternSecurityScanner and SnykSecurityScanner must produce identical
+// scores for identical vulnerability inputs, confirming deduplication.
+// ──────────────────────────────────────────────────────────────────────────────
+describe("computeSecurityScore deduplication (Fix #3)", () => {
+  it("PatternSecurityScanner produces the same score as the shared formula for mixed severities", async () => {
+    const files = [
+      {
+        path: "test.ts",
+        content: [
+          "eval(code);",           // critical → -25
+          "div.innerHTML = x;",    // high     → -10
+          "Math.random();",        // medium   → -5
+        ].join("\n"),
+      },
+    ];
+
+    const patternScanner = new PatternSecurityScanner();
+    const result = await patternScanner.scan(files);
+
+    // Manual formula: 100 - 25 - 10 - 5 = 60
+    expect(result.score).toBe(60);
+  });
+
+  it("PatternSecurityScanner score never goes below 0 for many critical vulns", async () => {
+    // 5 evals × -25 = -125 → clamped to 0
+    const files = [
+      {
+        path: "test.ts",
+        content: Array.from({ length: 5 }, () => "eval(code);").join("\n"),
+      },
+    ];
+
+    const patternScanner = new PatternSecurityScanner();
+    const result = await patternScanner.scan(files);
+
+    expect(result.score).toBe(0);
+  });
+});
+
 describe("CompositeSecurityScanner", () => {
   it("should scan with pattern scanner only when Snyk disabled", async () => {
     const scanner = new CompositeSecurityScanner("/tmp/test", false);

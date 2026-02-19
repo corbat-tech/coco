@@ -17,6 +17,8 @@ export type Spinner = {
   fail(message?: string): void;
   /** Update tool counter for multi-tool operations */
   setToolCount(current: number, total?: number): void;
+  /** Get elapsed seconds since start (0 if not started) */
+  getElapsed(): number;
 };
 
 /**
@@ -109,12 +111,15 @@ export function createSpinner(message: string): Spinner {
         elapsedInterval = null;
       }
       if (spinner) {
-        // Count lines in current text (echo appends \n + line)
-        const textLines = (spinner.text || "").split("\n").length;
+        // Use ora's built-in clear method which properly handles terminal state
+        // Then additionally clear the line to avoid artifacts in all terminal types
         spinner.stop();
-        // Clear all lines the spinner occupied (Ora may leave artifacts on multi-line)
+        // Clear the current line and any extra lines the spinner may have used
         process.stdout.write("\r\x1b[K");
-        for (let i = 1; i < textLines; i++) {
+        // Move up and clear additional lines if text was multi-line
+        const textContent = spinner.text || "";
+        const lineCount = textContent.split("\n").length;
+        for (let i = 1; i < lineCount; i++) {
           process.stdout.write("\x1b[1A\x1b[2K");
         }
         process.stdout.write("\r");
@@ -147,6 +152,10 @@ export function createSpinner(message: string): Spinner {
       toolCurrent = current;
       toolTotal = total;
       updateText();
+    },
+
+    getElapsed(): number {
+      return startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
     },
   };
 }

@@ -93,7 +93,13 @@ export type ProviderType =
   | "gemini"
   | "kimi"
   | "lmstudio"
-  | "ollama";
+  | "ollama"
+  | "groq"
+  | "openrouter"
+  | "mistral"
+  | "deepseek"
+  | "together"
+  | "huggingface";
 
 /**
  * Create a provider by type
@@ -151,6 +157,36 @@ export async function createProvider(
       mergedConfig.apiKey = mergedConfig.apiKey ?? "ollama"; // Ollama doesn't need real key
       break;
 
+    case "groq":
+      provider = new OpenAIProvider("groq", "Groq");
+      mergedConfig.baseUrl = mergedConfig.baseUrl ?? "https://api.groq.com/openai/v1";
+      break;
+
+    case "openrouter":
+      provider = new OpenAIProvider("openrouter", "OpenRouter");
+      mergedConfig.baseUrl = mergedConfig.baseUrl ?? "https://openrouter.ai/api/v1";
+      break;
+
+    case "mistral":
+      provider = new OpenAIProvider("mistral", "Mistral AI");
+      mergedConfig.baseUrl = mergedConfig.baseUrl ?? "https://api.mistral.ai/v1";
+      break;
+
+    case "deepseek":
+      provider = new OpenAIProvider("deepseek", "DeepSeek");
+      mergedConfig.baseUrl = mergedConfig.baseUrl ?? "https://api.deepseek.com/v1";
+      break;
+
+    case "together":
+      provider = new OpenAIProvider("together", "Together AI");
+      mergedConfig.baseUrl = mergedConfig.baseUrl ?? "https://api.together.xyz/v1";
+      break;
+
+    case "huggingface":
+      provider = new OpenAIProvider("huggingface", "HuggingFace Inference");
+      mergedConfig.baseUrl = mergedConfig.baseUrl ?? "https://api-inference.huggingface.co/v1";
+      break;
+
     default:
       throw new ProviderError(`Unknown provider type: ${type}`, {
         provider: type,
@@ -179,40 +215,22 @@ export function listProviders(): Array<{
   configured: boolean;
 }> {
   return [
-    {
-      id: "anthropic",
-      name: "Anthropic Claude",
-      configured: !!getApiKey("anthropic"),
-    },
-    {
-      id: "openai",
-      name: "OpenAI (API Key)",
-      configured: !!getApiKey("openai"),
-    },
+    { id: "anthropic", name: "Anthropic Claude", configured: !!getApiKey("anthropic") },
+    { id: "openai", name: "OpenAI (API Key)", configured: !!getApiKey("openai") },
     {
       id: "codex",
       name: "OpenAI Codex (ChatGPT Plus/Pro)",
       configured: false, // Will check OAuth tokens separately
     },
-    {
-      id: "gemini",
-      name: "Google Gemini",
-      configured: !!getApiKey("gemini"),
-    },
-    {
-      id: "kimi",
-      name: "Kimi (Moonshot)",
-      configured: !!getApiKey("kimi"),
-    },
-    {
-      id: "lmstudio",
-      name: "LM Studio (Local)",
-      configured: true, // Always available locally
-    },
-    {
-      id: "ollama",
-      name: "Ollama (Local)",
-      configured: true, // Always available locally
-    },
+    { id: "gemini", name: "Google Gemini", configured: !!getApiKey("gemini") },
+    { id: "kimi", name: "Kimi (Moonshot)", configured: !!getApiKey("kimi") },
+    { id: "groq", name: "Groq", configured: !!getApiKey("groq") },
+    { id: "openrouter", name: "OpenRouter", configured: !!getApiKey("openrouter") },
+    { id: "mistral", name: "Mistral AI", configured: !!getApiKey("mistral") },
+    { id: "deepseek", name: "DeepSeek", configured: !!getApiKey("deepseek") },
+    { id: "together", name: "Together AI", configured: !!getApiKey("together") },
+    { id: "huggingface", name: "HuggingFace Inference", configured: !!getApiKey("huggingface") },
+    { id: "lmstudio", name: "LM Studio (Local)", configured: true },
+    { id: "ollama", name: "Ollama (Local)", configured: true },
   ];
 }

@@ -1,0 +1,18 @@
+{
+  "name": "react-fixture-project",
+  "version": "1.0.0",
+  "language": "react-typescript",
+  "quality": {
+    "minScore": 70,
+    "maxIterations": 5,
+    "ignoreFiles": ["**/node_modules/**"]
+  },
+  "analyzers": {
+    "enabledLanguages": ["react-typescript"],
+    "react": {
+      "checkA11y": true,
+      "checkHooks": true,
+      "checkComponents": true
+    }
+  }
+}

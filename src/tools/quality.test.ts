@@ -3,6 +3,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 vi.mock("execa", () => ({
   execa: vi.fn().mockResolvedValue({
@@ -74,6 +76,22 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 vi.mock("glob", () => ({
   glob: vi.fn().mockResolvedValue(["/test/src/file.ts"]),
 }));
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Regression test: Fix #2 — calculate_quality uses createQualityEvaluatorWithRegistry
+// ──────────────────────────────────────────────────────────────────────────────
+describe("calculateQualityTool — uses registry-aware evaluator (Fix #2)", () => {
+  it("quality.ts source imports createQualityEvaluatorWithRegistry, not createQualityEvaluator", () => {
+    // Read source to confirm the correct factory is imported.
+    const qualityTsPath = fileURLToPath(
+      new URL("./quality.ts", import.meta.url),
+    );
+    const source = readFileSync(qualityTsPath, "utf-8");
+    expect(source).toContain("createQualityEvaluatorWithRegistry");
+    // The old plain factory must NOT be imported
+    expect(source).not.toMatch(/import[^;]*createQualityEvaluator[^W]/);
+  });
+});
 
 describe("runLinterTool", () => {
   beforeEach(() => {

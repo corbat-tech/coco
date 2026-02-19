@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import * as p from "@clack/prompts";
 import chalk from "chalk";
+import { join } from "node:path";
 import {
   getAllProviders,
   getProviderDefinition,
@@ -173,30 +174,43 @@ async function runConfigInit(): Promise<void> {
 
 type ConfigObject = Record<string, unknown>;
 
+/** Deterministic config file path — always relative to process.cwd() at module load time */
+const CONFIG_PATH = join(process.cwd(), ".coco", "config.json");
+
+const DEFAULT_CONFIG: ConfigObject = {
+  provider: {
+    type: "anthropic",
+    model: "claude-sonnet-4-20250514",
+  },
+  quality: {
+    minScore: 85,
+    minCoverage: 80,
+    maxIterations: 10,
+  },
+  persistence: {
+    checkpointInterval: 300000,
+    maxCheckpoints: 50,
+  },
+};
+
 async function loadConfig(): Promise<ConfigObject> {
-  // TODO: Load from .coco/config.json
-  return {
-    provider: {
-      type: "anthropic",
-      model: "claude-sonnet-4-20250514",
-    },
-    quality: {
-      minScore: 85,
-      minCoverage: 80,
-      maxIterations: 10,
-    },
-    persistence: {
-      checkpointInterval: 300000,
-      maxCheckpoints: 50,
-    },
-  };
+  const fs = await import("node:fs/promises");
+  try {
+    const raw = await fs.readFile(CONFIG_PATH, "utf-8");
+    const parsed = JSON.parse(raw) as ConfigObject;
+    // Merge with defaults so missing keys are filled in
+    return { ...DEFAULT_CONFIG, ...parsed };
+  } catch {
+    // File missing, unreadable, or invalid JSON — return defaults
+    return { ...DEFAULT_CONFIG };
+  }
 }
 
 async function saveConfig(config: ConfigObject): Promise<void> {
-  // TODO: Save to .coco/config.json
   const fs = await import("node:fs/promises");
-  await fs.mkdir(".coco", { recursive: true });
-  await fs.writeFile(".coco/config.json", JSON.stringify(config, null, 2));
+  const dir = join(CONFIG_PATH, "..");
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
 function getNestedValue(obj: ConfigObject, path: string): unknown {

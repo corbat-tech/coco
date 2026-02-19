@@ -81,6 +81,12 @@ export const DEFAULT_PRICING: Record<ProviderType, ModelPricing> = {
   kimi: { inputPerMillion: 1.2, outputPerMillion: 1.2, contextWindow: 8192 },
   lmstudio: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 32768 }, // Free - local models
   ollama: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 128000 }, // Free - local models
+  groq: { inputPerMillion: 0.05, outputPerMillion: 0.08, contextWindow: 128000 }, // Free tier available
+  openrouter: { inputPerMillion: 2, outputPerMillion: 8, contextWindow: 200000 }, // Varies by model
+  mistral: { inputPerMillion: 0.25, outputPerMillion: 0.75, contextWindow: 32768 },
+  deepseek: { inputPerMillion: 0.14, outputPerMillion: 0.28, contextWindow: 128000 }, // Very cheap
+  together: { inputPerMillion: 0.2, outputPerMillion: 0.2, contextWindow: 32768 },
+  huggingface: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 32768 }, // Free tier
 };
 
 /**

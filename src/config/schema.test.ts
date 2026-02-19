@@ -127,6 +127,30 @@ describe("CocoConfigSchema", () => {
 });
 
 describe("ProviderConfigSchema", () => {
+  it("should accept all ProviderType values — schema enum matches runtime ProviderType union", () => {
+    // All values that exist in src/config/env.ts ProviderType must also pass the schema.
+    const allProviderTypes = [
+      "anthropic",
+      "openai",
+      "codex",
+      "gemini",
+      "kimi",
+      "lmstudio",
+      "ollama",
+      "groq",
+      "openrouter",
+      "mistral",
+      "deepseek",
+      "together",
+      "huggingface",
+    ] as const;
+
+    for (const type of allProviderTypes) {
+      const result = ProviderConfigSchema.safeParse({ type });
+      expect(result.success, `ProviderType "${type}" should pass ProviderConfigSchema`).toBe(true);
+    }
+  });
+
   it("should accept anthropic provider", () => {
     const config = {
       type: "anthropic",
