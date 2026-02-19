@@ -22,6 +22,8 @@ Thumbs.db
 
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
+# Claude Code session state (developer workflow metadata, not for version control)
+.claude/session-state.json
 
 # Environment
 .env

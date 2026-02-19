@@ -93,7 +93,7 @@ export class AgentManager extends EventEmitter {
    * The agent will run autonomously, making LLM calls and executing tools until
    * it completes the task or reaches the maximum turn limit.
    *
-   * @param type - Type of agent to spawn (explore, plan, test, debug, review)
+   * @param type - Type of agent to spawn (explore, plan, test, debug, review, architect, security, tdd, refactor, e2e, docs, database)
    * @param task - Task description for the agent to execute
    * @param options - Optional spawn configuration including callbacks, abort signal, and timeout
    * @returns Promise resolving to the agent result with output and usage stats
@@ -304,8 +304,7 @@ export class AgentManager extends EventEmitter {
    * @returns Array of agent registry entries with type, name, description, and config
    */
   getAvailableAgentTypes(): AgentRegistryEntry[] {
-    const types: AgentType[] = ["explore", "plan", "test", "debug", "review"];
-    return types.map((type) => ({
+    return (Object.keys(AGENT_NAMES) as AgentType[]).map((type) => ({
       type,
       name: AGENT_NAMES[type],
       description: AGENT_DESCRIPTIONS[type],
