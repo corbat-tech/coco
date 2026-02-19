@@ -96,6 +96,8 @@ export async function discoverAllSkills(
  * Scan a directory for skills
  *
  * Each immediate subdirectory is a potential skill.
+ * Also supports one level of nesting for namespace/monorepo structures
+ * (e.g., skills/owner/skill-name/SKILL.md).
  */
 export async function scanSkillsDirectory(
   dir: string,
@@ -105,9 +107,30 @@ export async function scanSkillsDirectory(
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const skillDirs = entries.filter((e) => e.isDirectory());
 
-    const results = await Promise.all(
-      skillDirs.map((entry) => loadSkillFromDirectory(path.join(dir, entry.name), scope)),
-    );
+    const results: (SkillMetadata | null)[] = [];
+
+    for (const entry of skillDirs) {
+      const entryPath = path.join(dir, entry.name);
+
+      // Try loading directly (flat structure: skills/my-skill/SKILL.md)
+      const directResult = await loadSkillFromDirectory(entryPath, scope);
+      if (directResult) {
+        results.push(directResult);
+        continue;
+      }
+
+      // Try nested scan (namespace structure: skills/owner/skill-name/SKILL.md)
+      try {
+        const subEntries = await fs.readdir(entryPath, { withFileTypes: true });
+        const subDirs = subEntries.filter((e) => e.isDirectory());
+        const nestedResults = await Promise.all(
+          subDirs.map((sub) => loadSkillFromDirectory(path.join(entryPath, sub.name), scope)),
+        );
+        results.push(...nestedResults);
+      } catch {
+        // Not a directory or can't read -- skip
+      }
+    }
 
     return results.filter((meta): meta is SkillMetadata => meta !== null);
   } catch (error) {

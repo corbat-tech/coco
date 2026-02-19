@@ -3,6 +3,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { execSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Message, LLMProvider } from "../../providers/types.js";
@@ -258,6 +259,28 @@ export function addMessage(session: ReplSession, message: Message): void {
 }
 
 /**
+ * Substitute $(!command) patterns in skill instructions with dynamic output.
+ * Only supports safe read-only commands. Limited to 500 chars per substitution.
+ */
+function substituteDynamicContext(body: string, cwd: string): string {
+  const SAFE_COMMANDS = /^\$\(!(git\s+(status|log|branch|diff|rev-parse)|cat|head|tail|ls|pwd|echo|date|node\s+-[ep])\b/;
+
+  return body.replace(/\$\(!([^)]+)\)/g, (match, cmd: string) => {
+    // Only allow safe read-only commands
+    if (!SAFE_COMMANDS.test(match)) {
+      return match; // Leave unsafe commands as-is
+    }
+    try {
+      const output = execSync(cmd.trim(), { cwd, timeout: 5000, encoding: "utf-8" });
+      const trimmed = output.trim();
+      return trimmed.length > 500 ? trimmed.slice(0, 500) + "..." : trimmed;
+    } catch {
+      return `[error: command failed: ${cmd.trim()}]`;
+    }
+  });
+}
+
+/**
  * Get conversation context for LLM (with system prompt, tool catalog, and memory)
  *
  * When a toolRegistry is provided and the system prompt contains the {TOOL_CATALOG}
@@ -312,6 +335,8 @@ export function getConversationContext(
           // Substitute $ARGUMENTS with empty string for auto-activated skills
           // (actual arguments are provided when user invokes via /skillname args)
           body = body.replace(/\$ARGUMENTS/g, session.lastSkillArguments ?? "");
+          // Substitute $(!command) patterns with dynamic output
+          body = substituteDynamicContext(body, session.projectPath);
 
           let header = `## Skill: ${s.metadata.name}`;
 

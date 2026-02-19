@@ -20,6 +20,15 @@ import { loadFullSkill, nativeSkillToLoaded } from "./loader/index.js";
 import { matchSkills } from "./matcher.js";
 import type { LegacySkill } from "./loader/typescript-loader.js";
 
+/** Skill lifecycle events */
+export type SkillEvent =
+  | { type: "activated"; skillId: string }
+  | { type: "deactivated"; skillId: string }
+  | { type: "executed"; skillId: string; success: boolean }
+  | { type: "discovered"; count: number };
+
+type SkillEventListener = (event: SkillEvent) => void;
+
 /** Skills configuration (mirrors SkillsConfigSchema from config/schema.ts) */
 export interface SkillsRuntimeConfig {
   enabled?: boolean;
@@ -46,6 +55,9 @@ export class UnifiedSkillRegistry {
   /** Currently active markdown skill IDs (injected into system prompt) */
   private activeSkillIds: Set<string> = new Set();
 
+  /** Event listeners for skill lifecycle events */
+  private listeners: SkillEventListener[] = [];
+
   /** Runtime configuration from CocoConfig.skills */
   private _config: SkillsRuntimeConfig = {};
 
@@ -63,6 +75,28 @@ export class UnifiedSkillRegistry {
   /** Get current configuration (read-only) */
   get config(): Readonly<SkillsRuntimeConfig> {
     return this._config;
+  }
+
+  // ============================================================================
+  // Event System
+  // ============================================================================
+
+  /** Subscribe to skill lifecycle events. Returns an unsubscribe function. */
+  on(listener: SkillEventListener): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
+
+  private emit(event: SkillEvent): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch {
+        /* listener errors should not break the registry */
+      }
+    }
   }
 
   // ============================================================================
@@ -106,6 +140,8 @@ export class UnifiedSkillRegistry {
         this.loadedCache.set(loaded.metadata.id, loaded);
       }
     }
+
+    this.emit({ type: "discovered", count: this.metadata.size });
   }
 
   /**
@@ -222,12 +258,14 @@ export class UnifiedSkillRegistry {
     }
 
     this.activeSkillIds.add(id);
+    this.emit({ type: "activated", skillId: id });
     return true;
   }
 
   /** Deactivate a skill */
   deactivateSkill(id: string): void {
     this.activeSkillIds.delete(id);
+    this.emit({ type: "deactivated", skillId: id });
   }
 
   /** Deactivate all skills */
@@ -280,8 +318,11 @@ export class UnifiedSkillRegistry {
 
     if (isNativeContent(loaded.content)) {
       try {
-        return await loaded.content.execute(args, context);
+        const result = await loaded.content.execute(args, context);
+        this.emit({ type: "executed", skillId: meta.id, success: result.success });
+        return result;
       } catch (error) {
+        this.emit({ type: "executed", skillId: meta.id, success: false });
         const message = error instanceof Error ? error.message : String(error);
         return { success: false, error: `Error in /${meta.name}: ${message}` };
       }
@@ -294,6 +335,7 @@ export class UnifiedSkillRegistry {
       let body = content.instructions;
       body = body.replace(/\$ARGUMENTS/g, args);
 
+      this.emit({ type: "executed", skillId: meta.id, success: true });
       return {
         success: true,
         output: body,
@@ -304,6 +346,7 @@ export class UnifiedSkillRegistry {
 
     // Inline markdown skills get activated and injected into system prompt
     await this.activateSkill(meta.id);
+    this.emit({ type: "executed", skillId: meta.id, success: true });
     return {
       success: true,
       output: `Skill "${meta.name}" activated. Its instructions are now guiding the conversation.`,

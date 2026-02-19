@@ -51,9 +51,18 @@ export async function loadMarkdownMetadata(
     const fm = parsed.data;
     const dirName = path.basename(skillDir);
 
+    // Detect namespace from directory structure.
+    // If the skill is inside a source directory (e.g., ".coco/skills/anthropics/release/"),
+    // the parent directory name ("anthropics") becomes the namespace.
+    const parentDir = path.basename(path.dirname(skillDir));
+    const isNested = !["skills", ".coco", ".claude", ".agents"].includes(parentDir);
+    const namespace = isNested ? parentDir : undefined;
+    const fullId = namespace ? `${namespace}/${toKebabCase(fm.name || dirName)}` : toKebabCase(fm.name || dirName);
+
     return {
-      id: toKebabCase(fm.name || dirName),
+      id: fullId,
       name: fm.name || dirName,
+      namespace,
       description: fm.description,
       version: fm.version,
       category: resolveCategory(fm.metadata?.category),

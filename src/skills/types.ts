@@ -106,6 +106,10 @@ export interface SkillMetadata {
   name: string;
   /** Short description -- used for semantic matching */
   description: string;
+  /** Source repository or origin (e.g., "anthropics/skills", "local") */
+  source?: string;
+  /** Namespace prefix (derived from source directory structure) */
+  namespace?: string;
   /** Version */
   version: string;
   /** Category for organization */

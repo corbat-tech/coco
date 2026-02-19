@@ -25,7 +25,7 @@ export { SkillFrontmatterSchema, SCOPE_PRIORITY, VALID_CATEGORIES, resolveCatego
 
 // Registry
 export { UnifiedSkillRegistry, createUnifiedSkillRegistry } from "./registry.js";
-export type { SkillsRuntimeConfig } from "./registry.js";
+export type { SkillsRuntimeConfig, SkillEvent } from "./registry.js";
 
 // Discovery
 export { discoverAllSkills, scanSkillsDirectory } from "./discovery.js";
