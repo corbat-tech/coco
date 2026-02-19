@@ -51,8 +51,30 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const {execSync}=require('child_process');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const modified=execSync('git diff --name-only HEAD 2>/dev/null',{encoding:'utf8'}).split('\\n').filter(f=>/\\.ts$/.test(f)&&!/\\.d\\.ts$/.test(f));const withLogs=modified.filter(f=>{try{const content=require('fs').readFileSync(f,'utf8');return /console\\.log/.test(content)}catch{return false}});if(withLogs.length>0){console.error('[Hook] console.log found in: '+withLogs.join(', '));console.error('[Hook] Consider replacing with getLogger() before committing')}}catch{}console.log(d)})\"",
+            "command": "node -e \"const {execSync}=require('child_process');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const unstaged=execSync('git diff --name-only HEAD 2>/dev/null',{encoding:'utf8'}).split('\\n');const staged=execSync('git diff --name-only --cached HEAD 2>/dev/null',{encoding:'utf8'}).split('\\n');const modified=[...new Set([...unstaged,...staged])].filter(f=>/\\.ts$/.test(f)&&!/\\.d\\.ts$/.test(f));const withLogs=modified.filter(f=>{try{const content=require('fs').readFileSync(f,'utf8');return /console\\.log/.test(content)}catch{return false}});if(withLogs.length>0){console.error('[Hook] console.log found in: '+withLogs.join(', '));console.error('[Hook] Consider replacing with getLogger() before committing')}}catch{}process.stdout.write(d)})\"",
             "description": "Check for console.log in modified files on response end"
+          },
+          {
+            "type": "command",
+            "command": "node scripts/hooks/evaluate-session.mjs",
+            "description": "Analyze cross-session patterns and print workflow tips"
+          },
+          {
+            "type": "command",
+            "command": "node scripts/hooks/session-end.mjs",
+            "description": "Persist session context to .claude/session-state.json"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/session-start.mjs",
+            "description": "Load and summarize previous session context from .claude/session-state.json"
           }
         ]
       }

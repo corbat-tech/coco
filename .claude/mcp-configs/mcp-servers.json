@@ -17,16 +17,18 @@
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-memory"]
     },
-    "filesystem": {
+    "_filesystem_disabled": {
       "_description": "Enhanced filesystem operations with search and indexing",
       "_priority": "MEDIUM — useful for large codebase navigation",
-      "_note": "MACHINE-SPECIFIC — replace /path/to/your/workspace with your actual workspace root (e.g. /Users/yourname/workspace)",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/path/to/your/workspace"
-      ]
+      "_note": "MACHINE-SPECIFIC — to enable, copy this entry to ~/.claude/claude.json as 'filesystem' and replace the path with your actual workspace root (e.g. /Users/yourname/workspace). Disabled here because the path cannot be shared across machines.",
+      "_enable_by_copying": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/your/workspace/path/here"
+        ]
+      }
     },
     "sequential-thinking": {
       "_description": "Chain-of-thought reasoning for complex multi-step problems",
