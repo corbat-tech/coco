@@ -7,6 +7,7 @@ import { execa } from "execa";
 import { readFile, access } from "node:fs/promises";
 import { join } from "node:path";
 import { constants } from "node:fs";
+import { trackSubprocess } from "../../utils/subprocess-registry.js";
 
 /**
  * Coverage metrics for a single metric type (lines, branches, etc.)
@@ -206,11 +207,14 @@ export class CoverageAnalyzer {
 
     try {
       // Run tests with coverage
-      const result = await execa(commands.command, commands.args, {
+      const proc = execa(commands.command, commands.args, {
         cwd: this.projectPath,
         reject: false,
         timeout: 120000, // 2 minutes
+        cleanup: true, // kill process tree on parent exit
       });
+      trackSubprocess(proc);
+      const result = await proc;
 
       // Check if tests failed
       if (result.exitCode !== 0 && !result.stdout.includes("coverage")) {

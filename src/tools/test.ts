@@ -9,6 +9,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
+import { trackSubprocess } from "../utils/subprocess-registry.js";
 
 /**
  * Test result interface
@@ -147,11 +148,14 @@ Examples:
           });
       }
 
-      const result = await execa(command, args, {
+      const proc = execa(command, args, {
         cwd: projectDir,
         reject: false,
         timeout: 300000, // 5 minute timeout
+        cleanup: true, // kill process tree on parent exit
       });
+      trackSubprocess(proc);
+      const result = await proc;
 
       const duration = performance.now() - startTime;
 

@@ -4,6 +4,9 @@
  */
 
 import type { AgentExecutor, AgentDefinition, AgentTask, AgentResult } from "./executor.js";
+import { createResourceAwareSemaphore } from "../utils/resource-semaphore.js";
+import { getMaxSafeAgents } from "../utils/resource-monitor.js";
+import { getLogger } from "../utils/logger.js";
 
 export interface CoordinationOptions {
   maxParallelAgents?: number;
@@ -124,7 +127,11 @@ export class AgentCoordinator {
     options?: CoordinationOptions,
   ): Promise<CoordinationResult> {
     const startTime = Date.now();
-    const maxParallel = options?.maxParallelAgents ?? 5;
+    const maxParallel = options?.maxParallelAgents ?? getMaxSafeAgents();
+    const resourceSem = createResourceAwareSemaphore({
+      maxConcurrency: maxParallel,
+      minConcurrency: 1,
+    });
 
     // Build dependency graph
     const graph = this.buildDependencyGraph(tasks);
@@ -139,7 +146,7 @@ export class AgentCoordinator {
     for (let levelIdx = 0; levelIdx < levels.length; levelIdx++) {
       const level = levels[levelIdx];
 
-      console.log(
+      getLogger().debug(
         `[Coordinator] Executing level ${levelIdx + 1}/${levels.length} with ${level?.length || 0} agents`,
       );
 
@@ -148,25 +155,27 @@ export class AgentCoordinator {
       const batches = this.createBatches(level, maxParallel);
 
       for (const batch of batches) {
-        // Execute batch in parallel
+        // Execute batch in parallel, gated by resource-aware semaphore
         const batchResults = await Promise.all(
-          batch.map(async (task) => {
-            // Build context from dependency results
-            const context = this.buildContext(task, results);
+          batch.map((task) =>
+            resourceSem.withSemaphore(async () => {
+              // Build context from dependency results
+              const context = this.buildContext(task, results);
 
-            // Get agent definition for this task
-            const agentDef = this.getAgentForTask(task);
+              // Get agent definition for this task
+              const agentDef = this.getAgentForTask(task);
 
-            // Execute agent
-            const result = await this.executor.execute(agentDef, {
-              ...task,
-              context,
-            });
+              // Execute agent
+              const result = await this.executor.execute(agentDef, {
+                ...task,
+                context,
+              });
 
-            totalAgentsExecuted++;
+              totalAgentsExecuted++;
 
-            return { taskId: task.id, result };
-          }),
+              return { taskId: task.id, result };
+            }),
+          ),
         );
 
         // Store results
@@ -239,9 +248,13 @@ export class AgentCoordinator {
       }
 
       if (currentLevel.length === 0) {
-        // No progress made - circular dependency or error
-        console.warn("[Coordinator] Circular dependency detected or invalid graph");
-        break;
+        // No progress made — circular dependency in the task graph.
+        // Identify which tasks are stuck and surface them in the error.
+        const remaining = [...graph.keys()].filter((id) => !completed.has(id));
+        throw new Error(
+          `[Coordinator] Circular dependency detected. ` +
+            `Tasks that could not be scheduled: ${remaining.join(", ")}`,
+        );
       }
 
       // Mark as completed
@@ -271,8 +284,11 @@ export class AgentCoordinator {
   /**
    * Build context for a task from its dependencies' results
    */
-  private buildContext(task: AgentTask, results: Map<string, AgentResult>): Record<string, any> {
-    const context: Record<string, any> = { ...task.context };
+  private buildContext(
+    task: AgentTask,
+    results: Map<string, AgentResult>,
+  ): Record<string, unknown> {
+    const context: Record<string, unknown> = { ...(task.context as Record<string, unknown>) };
 
     if (task.dependencies) {
       for (const depId of task.dependencies) {

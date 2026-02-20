@@ -15,6 +15,7 @@ import { registerConfigCommand } from "./commands/config.js";
 import { registerMCPCommand } from "./commands/mcp.js";
 import { registerSkillsCommand } from "./commands/skills.js";
 import { registerCheckCommand } from "./commands/check.js";
+import { registerSwarmCommand } from "./commands/swarm.js";
 import { startRepl } from "./repl/index.js";
 import { runOnboardingV2 } from "./repl/onboarding-v2.js";
 import { checkForUpdatesInteractive } from "./repl/version-check.js";
@@ -39,6 +40,7 @@ registerConfigCommand(program);
 registerMCPCommand(program);
 registerSkillsCommand(program);
 registerCheckCommand(program);
+registerSwarmCommand(program);
 
 // Setup command - configure provider
 program

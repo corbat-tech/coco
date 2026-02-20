@@ -64,6 +64,10 @@ import {
 } from "./coco-mode.js";
 import { getGitContext, formatGitLine, type GitContext } from "./git-context.js";
 import { renderStatusBar } from "./status-bar.js";
+import {
+  registerGlobalCleanup,
+  killOrphanedTestProcesses,
+} from "../../utils/subprocess-registry.js";
 
 // stringWidth (from 'string-width') is the industry-standard way to measure
 // visual terminal width of strings.  It correctly handles ANSI codes, emoji
@@ -79,6 +83,12 @@ export async function startRepl(
   } = {},
 ): Promise<void> {
   const projectPath = options.projectPath ?? process.cwd();
+
+  // Register global subprocess cleanup handlers (idempotent — safe to call multiple times)
+  registerGlobalCleanup();
+
+  // Best-effort: kill any vitest/jest workers left over from a previous crash
+  killOrphanedTestProcesses().catch(() => {});
 
   // Create session
   const session = createSession(projectPath, options.config);
@@ -150,11 +160,12 @@ export async function startRepl(
     }
   }
 
-  // Load COCO mode and full-access mode preferences in parallel — both read
-  // different keys from the same config file and write to separate module-level
-  // variables with no shared state between them.
+  // Load COCO mode, full-access mode, and full-power-risk mode preferences in
+  // parallel — all read different keys from the same config file and write to
+  // separate module-level variables with no shared state between them.
   const { loadFullAccessPreference } = await import("./full-access-mode.js");
-  await Promise.all([loadCocoModePreference(), loadFullAccessPreference()]);
+  const { loadFullPowerRiskPreference } = await import("./full-power-risk-mode.js");
+  await Promise.all([loadCocoModePreference(), loadFullAccessPreference(), loadFullPowerRiskPreference()]);
 
   // Initialize tool registry
   const toolRegistry = createFullToolRegistry();
