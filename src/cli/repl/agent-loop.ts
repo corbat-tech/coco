@@ -371,8 +371,7 @@ export async function executeAgentTurn(
                 }
                 // Remove from project deny list if previously denied
                 removeDeniedTool(p, session.projectPath).catch(() => {});
-              } else {
-                // deny / ask
+              } else if (action === "deny") {
                 session.trustedTools.delete(p);
                 if (scope === "global") {
                   // Global deny = remove from global allow list
@@ -381,6 +380,9 @@ export async function executeAgentTurn(
                   // Project deny = add to project deny list (overrides global)
                   saveDeniedTool(p, session.projectPath).catch(() => {});
                 }
+              } else {
+                // ask: untrust for this session only — do NOT write to deny list
+                session.trustedTools.delete(p);
               }
             }
           }

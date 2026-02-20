@@ -69,7 +69,7 @@ export function looksLikeFeatureRequest(input: string): boolean {
   const trimmed = input.trim();
 
   // Too short to be a feature request
-  if (trimmed.length < 40) return false;
+  if (trimmed.length < 20) return false;
 
   // Questions are usually not feature requests
   if (trimmed.endsWith("?") && trimmed.length < 80) return false;
@@ -87,6 +87,10 @@ export function looksLikeFeatureRequest(input: string): boolean {
     /\bwrite\b.*\b(code|function|test|module)/i,
     /\bdevelop/i,
     /\bdesign\b/i,
+    /\bfix\b.*\b(bug|issue|error|problem)/i,
+    /\bupdate\b.*\b(function|component|service|module)/i,
+    /\bgenerate\b/i,
+    /\bconvert\b/i,
   ];
 
   return featureKeywords.some((re) => re.test(trimmed));
@@ -214,6 +218,52 @@ export async function saveCocoModePreference(enabled: boolean): Promise<void> {
   } catch {
     // Silently fail
   }
+}
+
+/**
+ * Parse COCO quality report from agent response content
+ */
+export function parseCocoQualityReport(content: string): CocoQualityResult | null {
+  const marker = "COCO_QUALITY_REPORT";
+  const idx = content.indexOf(marker);
+  if (idx === -1) return null;
+
+  const block = content.slice(idx);
+
+  const getField = (name: string): string | undefined => {
+    const match = block.match(new RegExp(`${name}:\\s*(.+)`));
+    return match?.[1]?.trim();
+  };
+
+  const scoreHistoryRaw = getField("score_history");
+  if (!scoreHistoryRaw) return null;
+
+  // Parse [72, 84, 87, 88]
+  const scores = scoreHistoryRaw
+    .replace(/[[\]]/g, "")
+    .split(",")
+    .map((s) => parseFloat(s.trim()))
+    .filter((n) => !isNaN(n));
+
+  if (scores.length === 0) return null;
+
+  const testsPassed = parseInt(getField("tests_passed") ?? "", 10);
+  const testsTotal = parseInt(getField("tests_total") ?? "", 10);
+  const coverage = parseInt(getField("coverage") ?? "", 10);
+  const security = parseInt(getField("security") ?? "", 10);
+  const iterations = parseInt(getField("iterations") ?? "", 10) || scores.length;
+  const converged = getField("converged") === "true";
+
+  return {
+    converged,
+    scoreHistory: scores,
+    finalScore: scores[scores.length - 1] ?? 0,
+    iterations,
+    testsPassed: isNaN(testsPassed) ? undefined : testsPassed,
+    testsTotal: isNaN(testsTotal) ? undefined : testsTotal,
+    coverage: isNaN(coverage) ? undefined : coverage,
+    securityScore: isNaN(security) ? undefined : security,
+  };
 }
 
 /**

@@ -15,7 +15,7 @@ export const cocoCommand: SlashCommand = {
   description: "Toggle quality mode — auto-test, self-review, iterate until converged",
   usage: "/coco [on|off]",
 
-  async execute(args: string[], _session: ReplSession): Promise<boolean> {
+  async execute(args: string[], session: ReplSession): Promise<boolean> {
     const arg = args[0]?.toLowerCase();
 
     let newState: boolean;
@@ -26,14 +26,30 @@ export const cocoCommand: SlashCommand = {
       newState = false;
     } else if (arg === "status") {
       const state = isCocoMode();
+      const skillAvailable = session.skillRegistry?.has("coco-fix-iterate");
+      const modeType =
+        state && skillAvailable
+          ? chalk.cyan(" (skill-based)")
+          : state
+            ? chalk.dim(" (prompt-based)")
+            : "";
       console.log();
       console.log(
         chalk.magenta("  COCO quality mode: ") +
-          (state ? chalk.green.bold("ON") : chalk.dim("OFF")),
+          (state ? chalk.green.bold("ON") : chalk.dim("OFF")) +
+          modeType,
       );
       console.log();
       if (state) {
-        console.log(chalk.dim("  When active, the agent will:"));
+        if (skillAvailable) {
+          console.log(
+            chalk.dim("  Using: ") +
+              chalk.cyan("coco-fix-iterate") +
+              chalk.dim(" skill (Reviewer+Fixer+Verifier pipeline)"),
+          );
+        } else {
+          console.log(chalk.dim("  Using: text protocol injection (skill not found)"));
+        }
         console.log(chalk.dim("  1. Implement code + tests"));
         console.log(chalk.dim("  2. Run tests automatically"));
         console.log(chalk.dim("  3. Self-review against 12 quality dimensions"));
