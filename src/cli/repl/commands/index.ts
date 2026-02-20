@@ -41,6 +41,8 @@ import { fullAccessCommand } from "./full-access.js";
 import { updateCocoCommand } from "./update-coco.js";
 import { imageCommand } from "./image.js";
 import { tutorialCommand } from "./tutorial.js";
+import { mcpCommand } from "./mcp.js";
+import { intentCommand } from "./intent.js";
 import { renderError } from "../output/renderer.js";
 import { createDefaultRegistry } from "../skills/index.js";
 import type { SkillRegistry } from "../skills/index.js";
@@ -79,6 +81,8 @@ const commands: SlashCommand[] = [
   updateCocoCommand,
   imageCommand,
   tutorialCommand,
+  mcpCommand,
+  intentCommand,
 ];
 
 /**
@@ -230,3 +234,4 @@ export function getRegisteredSkills(): SkillRegistry {
 export { addTokenUsage, resetTokenUsage, getTokenUsage } from "./cost.js";
 export { isCompactMode } from "./compact.js";
 export { consumePendingImage, hasPendingImage, setPendingImage } from "./image.js";
+export { isIntentRecognitionEnabled } from "./intent.js";

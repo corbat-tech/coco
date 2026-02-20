@@ -105,6 +105,7 @@ Priority order (highest → lowest):
 
 ---
 
+
 ### Creating a project skill
 
 Any file in `.coco/skills/<name>/SKILL.md` becomes a `/name` command:
