@@ -3,12 +3,17 @@
  * Checks for new versions on npm and notifies the user
  */
 
+import os from "node:os";
+import path from "node:path";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import chalk from "chalk";
 import { VERSION } from "../../version.js";
 
 const NPM_REGISTRY_URL = "https://registry.npmjs.org/@corbat-tech/coco";
-const CACHE_KEY = "corbat-tech-coco-version-check";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const FETCH_TIMEOUT_MS = 3000;
+const CACHE_DIR = path.join(os.homedir(), ".coco");
+const CACHE_FILE = path.join(CACHE_DIR, "version-check-cache.json");
 
 interface VersionCache {
   latestVersion: string;
@@ -26,8 +31,16 @@ interface NpmPackageInfo {
  * Returns: 1 if a > b, -1 if a < b, 0 if equal
  */
 function compareVersions(a: string, b: string): number {
-  const partsA = a.replace(/^v/, "").split(".").map(Number);
-  const partsB = b.replace(/^v/, "").split(".").map(Number);
+  // Strip pre-release suffix (e.g. "-rc.1", "-alpha") before parsing so that
+  // Number("0-rc.1") → NaN is avoided. Pre-release is intentionally ignored.
+  const partsA = a
+    .replace(/^v/, "")
+    .split(".")
+    .map((p) => Number(p.replace(/-.*$/, "")));
+  const partsB = b
+    .replace(/^v/, "")
+    .split(".")
+    .map((p) => Number(p.replace(/-.*$/, "")));
 
   for (let i = 0; i < 3; i++) {
     const numA = partsA[i] ?? 0;
@@ -39,27 +52,39 @@ function compareVersions(a: string, b: string): number {
 }
 
 /**
- * Get cached version info from environment or temp storage
+ * Get cached version info from the file-based cache at ~/.coco/version-check-cache.json
  */
-function getCachedVersion(): VersionCache | null {
+async function getCachedVersion(): Promise<VersionCache | null> {
   try {
-    // Use a simple in-memory approach via environment variable
-    // This is reset each session but that's fine - we check at most once per day
-    const cached = process.env[CACHE_KEY];
-    if (cached) {
-      return JSON.parse(cached) as VersionCache;
+    const raw = await readFile(CACHE_FILE, "utf-8");
+    const result = JSON.parse(raw) as unknown;
+    // Validate shape before trusting the cached data
+    if (
+      typeof result !== "object" ||
+      result === null ||
+      typeof (result as Record<string, unknown>)["latestVersion"] !== "string" ||
+      typeof (result as Record<string, unknown>)["checkedAt"] !== "number"
+    ) {
+      return null;
     }
+    return result as VersionCache;
   } catch {
-    // Ignore parse errors
+    // This module is advisory — any cache read failure (ENOENT, EACCES, SyntaxError, etc.)
+    // is silently treated as a cache miss so startup is never blocked.
+    return null;
   }
-  return null;
 }
 
 /**
- * Set cached version info
+ * Persist version cache to ~/.coco/version-check-cache.json
  */
-function setCachedVersion(cache: VersionCache): void {
-  process.env[CACHE_KEY] = JSON.stringify(cache);
+async function setCachedVersion(cache: VersionCache): Promise<void> {
+  try {
+    await mkdir(CACHE_DIR, { recursive: true });
+    await writeFile(CACHE_FILE, JSON.stringify(cache), "utf-8");
+  } catch {
+    // Silently ignore write errors (read-only fs, permissions, etc.)
+  }
 }
 
 /**
@@ -68,23 +93,24 @@ function setCachedVersion(cache: VersionCache): void {
 async function fetchLatestVersion(): Promise<string | null> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000); // 3s timeout
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(NPM_REGISTRY_URL, {
+        headers: {
+          Accept: "application/json",
+        },
+        signal: controller.signal,
+      });
 
-    const response = await fetch(NPM_REGISTRY_URL, {
-      headers: {
-        Accept: "application/json",
-      },
-      signal: controller.signal,
-    });
+      if (!response.ok) {
+        return null;
+      }
 
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      return null;
+      const data = (await response.json()) as NpmPackageInfo;
+      return data["dist-tags"]?.latest ?? null;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const data = (await response.json()) as NpmPackageInfo;
-    return data["dist-tags"]?.latest ?? null;
   } catch {
     // Network error, timeout, etc. - silently fail
     return null;
@@ -100,8 +126,11 @@ export async function checkForUpdates(): Promise<{
   latestVersion: string;
   updateCommand: string;
 } | null> {
+  // Set COCO_NO_UPDATE_CHECK=1 (or any truthy value) to skip the update check entirely
+  if (process.env["COCO_NO_UPDATE_CHECK"]) return null;
+
   // Check cache first
-  const cached = getCachedVersion();
+  const cached = await getCachedVersion();
   const now = Date.now();
 
   if (cached && now - cached.checkedAt < CHECK_INTERVAL_MS) {
@@ -121,7 +150,7 @@ export async function checkForUpdates(): Promise<{
 
   if (latestVersion) {
     // Cache the result
-    setCachedVersion({
+    await setCachedVersion({
       latestVersion,
       checkedAt: now,
     });
@@ -139,17 +168,37 @@ export async function checkForUpdates(): Promise<{
 }
 
 /**
- * Get the appropriate update command based on how coco was installed
+ * Get the appropriate update command based on how coco was installed.
+ * Detection priority:
+ *   1. npm_config_user_agent env var (set by all major package managers when invoking scripts)
+ *   2. Substring match on process.argv[1] (fallback for global installs / direct invocations)
  */
 function getUpdateCommand(): string {
-  // Check if installed globally via npm/pnpm
-  const execPath = process.argv[1] || "";
+  // Priority 1: use the user-agent env var injected by the package manager.
+  // This is more reliable than argv matching because it is set explicitly by the PM itself
+  // and does not produce false positives from paths that coincidentally contain PM names
+  // (e.g. a path like "/home/user/yarn-pnpm-bridge/coco" would confuse pure argv checks).
+  const userAgent = process.env["npm_config_user_agent"] ?? "";
+  if (userAgent.includes("pnpm")) {
+    return "pnpm add -g @corbat-tech/coco@latest";
+  }
+  if (userAgent.includes("yarn")) {
+    // yarn global is not supported in Yarn v2+ (Berry); npm is the reliable fallback
+    return "npm install -g @corbat-tech/coco@latest";
+  }
+  if (userAgent.includes("bun")) {
+    return "bun add -g @corbat-tech/coco@latest";
+  }
 
+  // Priority 2: fall back to argv[1] substring check for direct / global invocations
+  // where npm_config_user_agent may not be set.
+  const execPath = process.argv[1] || "";
   if (execPath.includes("pnpm")) {
     return "pnpm add -g @corbat-tech/coco@latest";
   }
   if (execPath.includes("yarn")) {
-    return "yarn global add @corbat-tech/coco@latest";
+    // yarn global is not supported in Yarn v2+ (Berry); npm is the reliable fallback
+    return "npm install -g @corbat-tech/coco@latest";
   }
   if (execPath.includes("bun")) {
     return "bun add -g @corbat-tech/coco@latest";
@@ -160,10 +209,10 @@ function getUpdateCommand(): string {
 }
 
 /**
- * Print update notification if available
- * Non-blocking - runs check in background
+ * Print the update available banner to the console.
+ * Shared by interactive and background notifications.
  */
-export function printUpdateNotification(updateInfo: {
+export function printUpdateBanner(updateInfo: {
   currentVersion: string;
   latestVersion: string;
   updateCommand: string;
@@ -171,11 +220,56 @@ export function printUpdateNotification(updateInfo: {
   console.log();
   console.log(
     chalk.yellow(
-      `  ⬆️  Update available: ${chalk.dim(updateInfo.currentVersion)} → ${chalk.green(updateInfo.latestVersion)}`,
+      `  \u2B06 Update available: ${chalk.dim(updateInfo.currentVersion)} \u2192 ${chalk.green.bold(updateInfo.latestVersion)}`,
     ),
   );
-  console.log(chalk.dim(`     Run: ${chalk.white(updateInfo.updateCommand)}`));
+  console.log(chalk.dim(`  Run: ${chalk.white(updateInfo.updateCommand)}`));
   console.log();
+}
+
+/**
+ * Check for updates interactively before starting the REPL.
+ * If an update is found, prompts the user to exit and run the update command.
+ * Returns true to continue starting coco, or exits the process if the user chooses to update.
+ */
+export async function checkForUpdatesInteractive(): Promise<void> {
+  const updateInfo = await checkForUpdates();
+  if (!updateInfo) return;
+
+  const p = await import("@clack/prompts");
+
+  printUpdateBanner(updateInfo);
+
+  const answer = await p.confirm({
+    message: "Exit now to update?",
+    initialValue: false,
+  });
+
+  if (!p.isCancel(answer) && answer) {
+    console.log();
+    console.log(chalk.dim(`  Running: ${updateInfo.updateCommand}`));
+    console.log();
+
+    try {
+      const { execa } = await import("execa");
+      const [cmd, ...args] = updateInfo.updateCommand.split(" ");
+      if (!cmd) return;
+      await execa(cmd, args, { stdio: "inherit", timeout: 120_000 });
+      console.log();
+      console.log(chalk.green("  \u2713 Updated! Run coco again to start the new version."));
+      console.log();
+      process.exit(0);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("EACCES") || msg.includes("permission")) {
+        console.log(chalk.red("  \u2717 Permission denied. Try with sudo:"));
+        console.log(chalk.white(`  sudo ${updateInfo.updateCommand}`));
+      } else {
+        console.log(chalk.red(`  \u2717 Update failed: ${msg}`));
+      }
+      return;
+    }
+  }
 }
 
 /**
@@ -186,7 +280,7 @@ export function checkForUpdatesInBackground(callback?: () => void): void {
   checkForUpdates()
     .then((updateInfo) => {
       if (updateInfo) {
-        printUpdateNotification(updateInfo);
+        printUpdateBanner(updateInfo);
       }
       callback?.();
     })

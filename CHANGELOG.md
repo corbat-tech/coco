@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **System prompt silently dropped in Anthropic and Gemini providers** — `convertMessages()` strips `role: "system"` entries (both APIs require it as a top-level parameter), but all call sites only read `options.system` which was always `undefined`. Added `extractSystem()` helper to both `AnthropicProvider` and `GeminiProvider` that falls back to scanning the messages array, so the agent-loop system prompt is now reliably forwarded on every call.
+- **Tool-trust `ask` action wrote to deny list** — in `agent-loop.ts`, the `ask` branch shared an `else` block with `deny`, causing "ask" to persist the untrust decision to the deny list. Now `ask` only removes the tool from the session's trusted set without any file I/O.
+
+### Changed
+
+- **COCO mode routes through `coco-fix-iterate` skill when available** — `index.ts` now checks the skill registry first; if the skill is discovered it executes the quality-loop pipeline and uses its output as the effective prompt. Falls back to text-protocol injection when the skill is not present.
+- **`looksLikeFeatureRequest()` threshold lowered** (40 → 20 chars) and four new keywords added (`fix … bug/issue/error/problem`, `update … function/component/service/module`, `generate`, `convert`) so more natural requests are correctly classified as feature work.
+- **`/coco status` shows active mode type** — displays `(skill-based)` or `(prompt-based)` depending on whether `coco-fix-iterate` was discovered, and names the active pipeline.
+
+### Added
+
+- **`checkForUpdatesInteractive()`** — nueva función en `version-check.ts` que muestra el aviso de actualización disponible **antes de abrir el REPL**, de forma interactiva (una vez por sesión). Reemplaza el check inline en `printWelcome()`.
+- **Caché persistente de versión** — la caché de version-check se escribe en `~/.coco/version-check-cache.json` (válida 24h) en lugar de una variable de entorno que se perdía en cada sesión.
+- **`parseCocoQualityReport(content)`** — extracted from `index.ts` to `coco-mode.ts` as a public, tested function. Parses the structured `COCO_QUALITY_REPORT` marker block from agent responses into a typed `CocoQualityResult`. Covered by 7 new unit tests (full report, missing marker, missing `score_history`, optional fields, embedded in LLM prose, non-numeric score filtering, empty-after-filter).
+
+---
+
 ## [2.0.0] - 2026-02-20
 
 ### Added

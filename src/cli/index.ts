@@ -17,6 +17,7 @@ import { registerSkillsCommand } from "./commands/skills.js";
 import { registerCheckCommand } from "./commands/check.js";
 import { startRepl } from "./repl/index.js";
 import { runOnboardingV2 } from "./repl/onboarding-v2.js";
+import { checkForUpdatesInteractive } from "./repl/version-check.js";
 import { getLastUsedProvider } from "../config/env.js";
 import { formatError } from "../utils/errors.js";
 import type { ProviderType } from "../providers/index.js";
@@ -69,6 +70,9 @@ program
         return;
       }
     }
+
+    // Check for updates before opening the REPL
+    await checkForUpdatesInteractive();
 
     // Use last used provider from preferences (falls back to env/anthropic)
     const providerType = (options.provider as ProviderType) ?? getLastUsedProvider();

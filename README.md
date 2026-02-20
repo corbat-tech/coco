@@ -8,11 +8,11 @@
 [![Node](https://img.shields.io/badge/Node.js-22+-22c55e?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-5283_passing-22c55e?style=flat-square)](https://github.com/corbat-tech/coco/actions)
+[![Tests](https://img.shields.io/badge/tests-5290_passing-22c55e?style=flat-square)](https://github.com/corbat-tech/coco/actions)
 
 <br/>
 
-[Install](#-install) · [Quick Start](#-quick-start) · [How It Works](#-how-it-works) · [Providers](#-providers) · [Skills](#-skills) · [Docs](#-documentation)
+[Install](#install) · [Quick Start](#quick-start) · [How It Works](#how-it-works) · [Providers](#providers) · [Skills](#skills) · [Docs](#documentation)
 
 </div>
 
@@ -73,6 +73,55 @@ $ coco "Add JWT authentication to the Express API"
 
 ## Install
 
+### Prerequisites
+
+Coco requires **Node.js 22 or higher**. Check your version:
+
+```bash
+node --version   # should print v22.x.x or higher
+```
+
+Don't have Node.js? Install it for your platform:
+
+**macOS**
+```bash
+# Homebrew (recommended)
+brew install node
+
+# Or use the official installer: https://nodejs.org
+```
+
+**Linux (Debian/Ubuntu)**
+```bash
+# Via NodeSource (keeps Node up to date)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+**Linux (Fedora/RHEL)**
+```bash
+sudo dnf install nodejs
+```
+
+**WSL2 (Windows)**
+
+Coco works great on WSL2. If you don't have WSL2 set up yet:
+
+```powershell
+# In PowerShell (as Administrator)
+wsl --install
+```
+
+Then open your WSL2 terminal and follow the Linux instructions above.
+
+> **Native Windows is not supported.** Use WSL2 — it gives you a full Linux environment on Windows with better performance and tool compatibility.
+
+---
+
+### Install Coco
+
+Once Node.js 22+ is ready:
+
 ```bash
 # npm
 npm install -g @corbat-tech/coco
@@ -84,7 +133,11 @@ pnpm add -g @corbat-tech/coco
 bun add -g @corbat-tech/coco
 ```
 
-Requires **Node.js 22+**. Works on macOS, Linux, and WSL2.
+Verify the installation:
+
+```bash
+coco --version
+```
 
 ---
 
@@ -221,7 +274,7 @@ Skills are reusable workflows committed to your repo. They're discovered automat
 **Three scopes, one system:**
 
 ```
-~/.claude/skills/          # your machine — personal workflows
+~/.coco/skills/            # your machine — personal workflows
 .coco/skills/              # this repo — shared with the team
 built-in                   # shipped with coco
 ```
@@ -271,7 +324,7 @@ coco mcp add postgres \
   --env "DATABASE_URL=postgresql://..."
 ```
 
-MCP tools become native Coco tools — the agent picks them up automatically.
+Once connected, MCP tools are registered and available to the agent alongside built-in tools.
 
 **[MCP guide →](docs/MCP.md)**
 
@@ -346,7 +399,7 @@ pnpm install
 
 pnpm dev          # run with tsx (hot reload)
 pnpm check        # typecheck + lint + test
-pnpm test         # 5283 tests
+pnpm test         # 5290 tests
 pnpm format:fix   # fix formatting
 ```
 

@@ -159,6 +159,8 @@ while ITERATION < MAX_ITERATIONS:
         OSCILLATING → STOP
     if is_diminishing(SCORE_HISTORY):
         DIMINISHING → STOP
+    if ITERATION >= 3 and is_stalled(SCORE_HISTORY):
+        STALLED → STOP  # last 2 deltas both < 2 pts; at noise floor, stop wasting iterations
 
     # 3. PLAN FIXES (Orchestrator — P0 first, then P1, then P2)
     plan = prioritize(issues, recurring_keys)
@@ -205,6 +207,12 @@ REPORT final results
 #   example: is_oscillating([70, 73, 71, 74]) → True
 # is_diminishing(history): True if the last 3 score improvements are all < 1 point
 #   example: is_diminishing([80, 80.5, 81, 81.3]) → True
+# is_stalled(history): True if len(history) >= 3 AND both last 2 deltas are < 2 points (abs value or regression)
+#   example: is_stalled([72, 74, 75, 76]) → True  (deltas: +1, +1 — both < 2)
+#   example: is_stalled([72, 74, 78, 79]) → False (deltas: +4, +1 — only last 1 is < 2)
+#   example: is_stalled([80, 89, 76, 77]) → True  (deltas: -13, +1 — both < 2 in abs value: |-13|... wait)
+#   Note: "< 2" applies to the IMPROVEMENT (positive delta only). A regression (negative delta) always counts as < 2.
+#   So: delta < 2 means (score[i] - score[i-1]) < 2  i.e. improved by less than 2 points, or went down
 # make_key(issue): returns "<file>:<first-6-words-of-description-lowercased-slugified>"
 #   example: make_key({file:"src/foo.ts", desc:"Missing error handling in token refresh path"})
 #            → "src/foo.ts:missing_error_handling_in_token_refresh"
@@ -432,6 +440,13 @@ IF last 3 improvements are all < 1 point:
   → STOP (DIMINISHING)
 ```
 
+### 2.4b Stalled
+```
+IF iteration >= 3 AND last 2 deltas are both < 2 points (including regressions):
+  → STOP (STALLED — AI cannot improve further; remaining issues are design decisions or noise)
+```
+Note: This catches the case where the model has run out of clear fixes. Fresh reviewers scoring the same code within ±2 points of each other indicates we are at the noise floor. Continuing wastes iterations without meaningful quality gains.
+
 ### 2.5 Stuck
 
 Two independent conditions trigger STUCK:
@@ -654,7 +669,7 @@ When the loop stops (for any reason), present the final report:
 ## COCO Fix Iterate — Final Report
 
 ### Result
-- **Status: CONVERGED** (or: EXCELLENT / MAX_ITERATIONS / OSCILLATING / DIMINISHING / STUCK)
+- **Status: CONVERGED** (or: EXCELLENT / MAX_ITERATIONS / OSCILLATING / DIMINISHING / STALLED / STUCK)
 - **Final Score: XX/100 (Grade X)**
 - **Target: XX | Iterations: N/MAX**
 - **Mode: multi-agent (3 agents/iteration)** or **single-agent**
