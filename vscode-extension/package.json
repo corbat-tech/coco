@@ -1,0 +1,49 @@
+{
+  "name": "corbat-coco",
+  "displayName": "COCO — Autonomous Coding Agent",
+  "description": "Corbat-Coco: AI agent with quality convergence",
+  "version": "2.0.0",
+  "publisher": "corbat-tech",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["AI", "Programming Languages"],
+  "icon": "media/icon.png",
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "coco.open",
+        "title": "Open COCO Agent",
+        "category": "COCO",
+        "icon": "$(robot)"
+      },
+      {
+        "command": "coco.newSession",
+        "title": "New COCO Session",
+        "category": "COCO"
+      }
+    ],
+    "configuration": {
+      "title": "COCO",
+      "properties": {
+        "coco.cliPath": {
+          "type": "string",
+          "default": "coco",
+          "description": "Path to the coco CLI binary"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0",
+    "@vscode/vsce": "^3.0.0"
+  }
+}

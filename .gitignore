@@ -52,5 +52,8 @@ yarn.lock
 *.tape
 *.gif
 
+# VSCode extension build artifacts
+*.vsix
+
 # Development plans (internal, not published)
 .dev/
