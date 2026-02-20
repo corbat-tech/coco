@@ -73,6 +73,55 @@ $ coco "Add JWT authentication to the Express API"
 
 ## Install
 
+### Prerequisites
+
+Coco requires **Node.js 22 or higher**. Check your version:
+
+```bash
+node --version   # should print v22.x.x or higher
+```
+
+Don't have Node.js? Install it for your platform:
+
+**macOS**
+```bash
+# Homebrew (recommended)
+brew install node
+
+# Or use the official installer: https://nodejs.org
+```
+
+**Linux (Debian/Ubuntu)**
+```bash
+# Via NodeSource (keeps Node up to date)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+**Linux (Fedora/RHEL)**
+```bash
+sudo dnf install nodejs
+```
+
+**WSL2 (Windows)**
+
+Coco works great on WSL2. If you don't have WSL2 set up yet:
+
+```powershell
+# In PowerShell (as Administrator)
+wsl --install
+```
+
+Then open your WSL2 terminal and follow the Linux instructions above.
+
+> **Native Windows is not supported.** Use WSL2 — it gives you a full Linux environment on Windows with better performance and tool compatibility.
+
+---
+
+### Install Coco
+
+Once Node.js 22+ is ready:
+
 ```bash
 # npm
 npm install -g @corbat-tech/coco
@@ -84,7 +133,11 @@ pnpm add -g @corbat-tech/coco
 bun add -g @corbat-tech/coco
 ```
 
-Requires **Node.js 22+**. Works on macOS, Linux, and WSL2.
+Verify the installation:
+
+```bash
+coco --version
+```
 
 ---
 
