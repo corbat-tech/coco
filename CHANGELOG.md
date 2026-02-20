@@ -7,22 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+---
 
-- **System prompt silently dropped in Anthropic and Gemini providers** — `convertMessages()` strips `role: "system"` entries (both APIs require it as a top-level parameter), but all call sites only read `options.system` which was always `undefined`. Added `extractSystem()` helper to both `AnthropicProvider` and `GeminiProvider` that falls back to scanning the messages array, so the agent-loop system prompt is now reliably forwarded on every call.
-- **Tool-trust `ask` action wrote to deny list** — in `agent-loop.ts`, the `ask` branch shared an `else` block with `deny`, causing "ask" to persist the untrust decision to the deny list. Now `ask` only removes the tool from the session's trusted set without any file I/O.
-
-### Changed
-
-- **COCO mode routes through `coco-fix-iterate` skill when available** — `index.ts` now checks the skill registry first; if the skill is discovered it executes the quality-loop pipeline and uses its output as the effective prompt. Falls back to text-protocol injection when the skill is not present.
-- **`looksLikeFeatureRequest()` threshold lowered** (40 → 20 chars) and four new keywords added (`fix … bug/issue/error/problem`, `update … function/component/service/module`, `generate`, `convert`) so more natural requests are correctly classified as feature work.
-- **`/coco status` shows active mode type** — displays `(skill-based)` or `(prompt-based)` depending on whether `coco-fix-iterate` was discovered, and names the active pipeline.
+## [2.1.0] - 2026-02-20
 
 ### Added
 
-- **`checkForUpdatesInteractive()`** — new function in `version-check.ts` that displays the available update notice **before opening the REPL**, interactively (once per session). Replaces the inline check in `printWelcome()`.
-- **Persistent version cache** — the version-check cache is written to `~/.coco/version-check-cache.json` (valid for 24 h) instead of an environment variable that was lost between sessions.
-- **`parseCocoQualityReport(content)`** — extracted from `index.ts` to `coco-mode.ts` as a public, tested function. Parses the structured `COCO_QUALITY_REPORT` marker block from agent responses into a typed `CocoQualityResult`. Covered by 7 new unit tests (full report, missing marker, missing `score_history`, optional fields, embedded in LLM prose, non-numeric score filtering, empty-after-filter).
+- **`/mcp` command** — interactive MCP server management directly from the REPL: list connected servers, add/remove servers, and toggle them on or off without restarting
+- **`/intent` command** — display or reset the agent's current task intent; useful for confirming what the agent understood before it starts executing
+- **`kimi-code` provider** (`KIMI_CODE_API_KEY`) — Kimi Code subscription endpoint (`api.kimi.com/coding/v1`), separate from the pay-per-token Moonshot Kimi provider; `paymentType: "sub"` for users on a monthly plan
+- **MCP manager + skill discovery wired to REPL** — both the MCP server manager and the unified skill registry are now initialised at startup and available to all REPL commands
+- **VS Code extension scaffolding** — initial extension structure (`feat(repl,vscode)`) enabling IDE integration
+- **`checkForUpdatesInteractive()`** — displays the available update notice **before** opening the REPL (once per session). Replaces the inline check in `printWelcome()`
+- **Persistent version cache** — version-check result written to `~/.coco/version-check-cache.json` (valid 24 h) instead of an env variable that reset each session
+- **`parseCocoQualityReport(content)`** — extracted from `index.ts` to `coco-mode.ts` as a public tested function; parses the `COCO_QUALITY_REPORT` marker block into a typed `CocoQualityResult`; covered by 7 unit tests
+
+### Changed
+
+- **Welcome screen** now shows MCP server count, loaded skill count (builtin vs project), and trust level at startup — single compact block, no restarting required
+- **MCP manager switched to singleton pattern** (`getMCPServerManager`) — prevents duplicate instantiation across REPL lifecycle
+- **COCO mode routes through `coco-fix-iterate` skill when available** — checks skill registry first; falls back to text-protocol injection when skill is not found
+- **`/coco status` shows active mode type** — displays `(skill-based)` or `(prompt-based)` depending on whether `coco-fix-iterate` was discovered
+- **`looksLikeFeatureRequest()` threshold lowered** (40 → 20 chars) and four new keywords added (`fix … bug/issue/error/problem`, `update … function/component/service/module`, `generate`, `convert`) so more natural language requests are correctly classified as feature work
+- **Git status shown in REPL welcome** — current branch and dirty-state indicator displayed at startup using project git context
+- **`merge-back` skill runs `format:fix` both before and after merge** — eliminates CI Lint & Format failures caused by cross-branch formatting drift
+
+### Fixed
+
+- **System prompt silently dropped in Anthropic and Gemini providers** — added `extractSystem()` helper that falls back to scanning the messages array, so the agent-loop system prompt is now reliably forwarded on every call
+- **Tool-trust `ask` action wrote to deny list** — the `ask` branch no longer persists the decision to disk; it only removes the tool from the session's trusted set
+
+### Documentation
+
+- **README** — added `## Privacy` section and provider comparison table (Coco vs Aider vs Claude Code vs Cursor)
+- **`docs/guides/QUICK_START.md`** — fully rewritten for v2 REPL-first flow; removed stale `coco init/plan/build` references
+- **`docs/guides/ECOSYSTEM.md`** — added skill discovery priority order section
+- **`SECURITY.md`** — supported versions updated to `2.0.x` / `2.1.x`
+- **`CONTRIBUTING.md`** — repository URL corrected to `github.com/corbat-tech/coco`
+- **`CHANGELOG.md`** — `[Unreleased]` comparison link fixed, Spanish bullet points translated
 
 ---
 
@@ -514,6 +536,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 2.1.0 | 2026-02-20 | /mcp, /intent commands, kimi-code provider, MCP+skills wired to REPL, VS Code extension, improved welcome screen |
 | 2.0.0 | 2026-02-20 | React/Java analyzers, ProjectConfig, quality bridge, report exporter, GitHub Actions generator, 6 new providers |
 | 1.9.0 | 2026-02-19 | Parallel development skills for isolated feature work |
 | 1.8.0 | 2026-02-18 | Release workflow skills, /open fix, SkillRegistry integration |
@@ -549,7 +572,9 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/corbat-tech/coco/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.5.0...v1.6.0
