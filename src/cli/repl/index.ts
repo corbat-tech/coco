@@ -1021,9 +1021,7 @@ async function printWelcome(
       if (builtinCount > 0) parts.push(`${builtinCount} builtin`);
       if (projectCount > 0) parts.push(`${projectCount} project`);
       const detail = parts.length > 0 ? ` (${parts.join(" \u00B7 ")})` : "";
-      console.log(
-        chalk.green("  \u2713") + chalk.dim(` Skills: ${skillTotal} loaded${detail}`),
-      );
+      console.log(chalk.green("  \u2713") + chalk.dim(` Skills: ${skillTotal} loaded${detail}`));
     } else {
       console.log(chalk.dim("  \u00B7 Skills: none loaded"));
     }
@@ -1031,7 +1029,9 @@ async function printWelcome(
       const names = mcpServers.join(", ");
       console.log(
         chalk.green("  \u2713") +
-          chalk.dim(` MCP: ${names} (${mcpServers.length} server${mcpServers.length === 1 ? "" : "s"} active)`),
+          chalk.dim(
+            ` MCP: ${names} (${mcpServers.length} server${mcpServers.length === 1 ? "" : "s"} active)`,
+          ),
       );
     }
   }

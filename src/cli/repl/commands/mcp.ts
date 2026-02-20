@@ -53,9 +53,7 @@ async function listServers(): Promise<void> {
     const enabledLabel = enabled ? chalk.green("enabled") : chalk.dim("disabled");
     const connectedLabel = connected ? chalk.green("connected") : chalk.dim("disconnected");
     const toolLabel =
-      connected && connection.toolCount > 0
-        ? chalk.dim(` · ${connection.toolCount} tools`)
-        : "";
+      connected && connection.toolCount > 0 ? chalk.dim(` · ${connection.toolCount} tools`) : "";
 
     p.log.message(
       `  ${chalk.bold(server.name)}  ${chalk.dim(server.transport)}  ${enabledLabel}  ${connectedLabel}${toolLabel}`,
@@ -118,9 +116,7 @@ async function runHealthCheck(name?: string): Promise<void> {
     return;
   }
 
-  const targets = name
-    ? connections.filter((c) => c.name === name)
-    : connections;
+  const targets = name ? connections.filter((c) => c.name === name) : connections;
 
   if (name && targets.length === 0) {
     p.log.error(`Server '${name}' is not connected.`);
@@ -222,9 +218,7 @@ export const mcpCommand: SlashCommand = {
           break;
       }
     } catch (error) {
-      p.log.error(
-        `MCP command failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      p.log.error(`MCP command failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return false;

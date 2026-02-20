@@ -30,9 +30,7 @@ export const intentCommand: SlashCommand = {
     const sub = args[0]?.toLowerCase();
 
     if (!sub || sub === "status") {
-      const state = intentRecognitionEnabled
-        ? chalk.green("on")
-        : chalk.red("off");
+      const state = intentRecognitionEnabled ? chalk.green("on") : chalk.red("off");
       console.log(
         chalk.bold("Intent recognition: ") +
           state +
@@ -54,9 +52,7 @@ export const intentCommand: SlashCommand = {
       intentRecognitionEnabled = false;
       console.log(
         chalk.yellow("Intent recognition disabled") +
-          chalk.dim(
-            " — natural-language inputs will go directly to the agent as chat.",
-          ),
+          chalk.dim(" — natural-language inputs will go directly to the agent as chat."),
       );
       return false;
     }
@@ -73,8 +69,7 @@ export const intentCommand: SlashCommand = {
     }
 
     console.log(
-      chalk.red(`Unknown argument: ${args[0]}`) +
-        chalk.dim("  Usage: /intent [on|off|status]"),
+      chalk.red(`Unknown argument: ${args[0]}`) + chalk.dim("  Usage: /intent [on|off|status]"),
     );
     return false;
   },

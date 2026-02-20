@@ -282,7 +282,9 @@ describe("/mcp status", () => {
   });
 
   it("shows healthy indicator for healthy connection", async () => {
-    mockManagerMethods.getAllConnections.mockReturnValue([makeConnection("myserver", "stdio", 3, true)]);
+    mockManagerMethods.getAllConnections.mockReturnValue([
+      makeConnection("myserver", "stdio", 3, true),
+    ]);
 
     await mcpCommand.execute(["status"], mockSession);
 
