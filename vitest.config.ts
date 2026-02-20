@@ -6,6 +6,9 @@ export default defineConfig({
     environment: "node",
     pool: "forks",
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],
+    // src/cli/repl/index.test.ts excluded from main suite: causes OOM when run
+    // alongside the full test suite in headless CI. Run separately with:
+    //   pnpm vitest run --config vitest.repl.config.ts
     exclude: ["node_modules", "dist", "src/cli/repl/index.test.ts"],
     coverage: {
       provider: "v8",

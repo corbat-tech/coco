@@ -2,7 +2,7 @@
  * Tests for REPL main entry point
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import type { LLMProvider } from "../../providers/types.js";
 
 // Mock providers
@@ -209,6 +209,39 @@ vi.mock("../../config/loader.js", () => ({
   loadConfig: vi.fn().mockResolvedValue({ skills: undefined }),
 }));
 
+// Mock MCP lifecycle manager
+vi.mock("../../mcp/lifecycle.js", () => ({
+  createMCPServerManager: vi.fn(() => ({
+    startAll: vi.fn().mockResolvedValue(new Map()),
+    stopAll: vi.fn().mockResolvedValue(undefined),
+    getConnectedServers: vi.fn().mockReturnValue([]),
+  })),
+  getMCPServerManager: vi.fn(),
+}));
+
+// Mock MCP registry
+vi.mock("../../mcp/registry.js", () => ({
+  MCPRegistryImpl: vi.fn().mockImplementation(() => ({
+    load: vi.fn().mockResolvedValue(undefined),
+    listEnabledServers: vi.fn().mockReturnValue([]),
+    listServers: vi.fn().mockReturnValue([]),
+    addServer: vi.fn().mockResolvedValue(undefined),
+    removeServer: vi.fn().mockResolvedValue(true),
+    getServer: vi.fn().mockReturnValue(undefined),
+    hasServer: vi.fn().mockReturnValue(false),
+  })),
+  createMCPRegistry: vi.fn(),
+}));
+
+// Mock MCP tools registration
+vi.mock("../../mcp/tools.js", () => ({
+  registerMCPTools: vi.fn().mockResolvedValue([]),
+  wrapMCPTool: vi.fn(),
+  wrapMCPTools: vi.fn(),
+  createToolsFromMCPServer: vi.fn(),
+  jsonSchemaToZod: vi.fn(),
+}));
+
 // Mock modules that are now lazy-loaded inside startRepl()
 vi.mock("./interruptions/llm-classifier.js", () => ({
   createLLMClassifier: vi.fn(() => ({
@@ -280,11 +313,17 @@ describe("REPL index", () => {
 
   afterEach(() => {
     process.exit = originalExit;
-    // Remove all process listeners added by startRepl() to allow V8 to GC the closure scopes
+    // Remove all process listeners added by startRepl() to prevent leaks between tests
     process.removeAllListeners("exit");
     process.removeAllListeners("SIGTERM");
     process.removeAllListeners("SIGINT");
-    vi.resetModules(); // Also reset module cache between tests
+    // NOTE: vi.resetModules() was removed — it caused OOM by creating a fresh module graph
+    // per test (~15 graphs × module sizes = 3-4 GB heap). vi.clearAllMocks() in beforeEach
+    // is sufficient to reset mock state between tests without duplicating module instances.
+  });
+
+  afterAll(() => {
+    mockConsoleLog.mockRestore();
   });
 
   describe("startRepl", () => {
@@ -304,7 +343,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -358,7 +397,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -405,7 +444,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -450,7 +489,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -470,7 +509,7 @@ describe("REPL index", () => {
         command: "help",
         args: [],
       });
-      vi.mocked(executeSlashCommand).mockResolvedValue(false);
+      vi.mocked(executeSlashCommand).mockResolvedValue({ shouldExit: false });
 
       const { startRepl } = await import("./index.js");
       await startRepl();
@@ -497,7 +536,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -517,7 +556,7 @@ describe("REPL index", () => {
         command: "exit",
         args: [],
       });
-      vi.mocked(executeSlashCommand).mockResolvedValue(true);
+      vi.mocked(executeSlashCommand).mockResolvedValue({ shouldExit: true });
 
       const { startRepl } = await import("./index.js");
       await startRepl();
@@ -546,7 +585,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -597,7 +636,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -648,7 +687,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -692,7 +731,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -740,7 +779,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -826,7 +865,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -898,7 +937,7 @@ describe("REPL index", () => {
         config: {
           provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
           autoConfirm: false,
-          trustedTools: [],
+          trustedTools: new Set<string>(),
           maxIterations: 10,
         },
         messages: [],
@@ -957,6 +996,358 @@ describe("REPL index", () => {
         path: "/test",
       });
       expect(renderToolEnd).toHaveBeenCalled();
+    });
+  });
+
+  describe("MCP initialization", () => {
+    /** Helper: build a minimal working session + provider + input handler mock setup */
+    async function setupMinimalRepl(overrides?: { inputPromptValues?: (string | null)[] }) {
+      const { createProvider } = await import("../../providers/index.js");
+      const { createSession } = await import("./session.js");
+      const { createInputHandler } = await import("./input/handler.js");
+
+      const mockProvider: Partial<import("../../providers/types.js").LLMProvider> = {
+        isAvailable: vi.fn().mockResolvedValue(true),
+        chat: vi.fn(),
+        chatWithTools: vi.fn(),
+      };
+      vi.mocked(createProvider).mockResolvedValue(
+        mockProvider as import("../../providers/types.js").LLMProvider,
+      );
+      vi.mocked(createSession).mockReturnValue({
+        projectPath: "/test",
+        config: {
+          provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
+          autoConfirm: false,
+          trustedTools: new Set<string>(),
+          maxIterations: 10,
+        },
+        messages: [],
+        startTime: new Date(),
+        tokenUsage: { input: 0, output: 0 },
+      });
+
+      const promptValues = overrides?.inputPromptValues ?? [null];
+      const mockInputHandler = {
+        prompt: vi.fn(),
+        close: vi.fn(),
+        resume: vi.fn(),
+        pause: vi.fn(),
+      };
+      for (const val of promptValues) {
+        mockInputHandler.prompt.mockResolvedValueOnce(val);
+      }
+      vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
+
+      return { mockInputHandler };
+    }
+
+    it("skips MCP init when registry has no enabled servers", async () => {
+      const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+
+      // Registry returns empty list of enabled servers
+      vi.mocked(MCPRegistryImpl).mockImplementation(
+        () =>
+          ({
+            load: vi.fn().mockResolvedValue(undefined),
+            listEnabledServers: vi.fn().mockReturnValue([]),
+          }) as any,
+      );
+
+      await setupMinimalRepl();
+
+      const { startRepl } = await import("./index.js");
+      await startRepl({ projectPath: "/test" });
+
+      // createMCPServerManager should NOT be called when there are no enabled servers
+      expect(createMCPServerManager).not.toHaveBeenCalled();
+    });
+
+    it("starts MCP servers and registers tools when servers are configured", async () => {
+      const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { registerMCPTools } = await import("../../mcp/tools.js");
+      const { createFullToolRegistry } = await import("../../tools/index.js");
+
+      const fakeClient = { isConnected: vi.fn().mockReturnValue(true), listTools: vi.fn() };
+      const fakeConnection = { name: "test-server", client: fakeClient };
+      const connectionsMap = new Map([["test-server", fakeConnection]]);
+
+      const mockManager = {
+        startAll: vi.fn().mockResolvedValue(connectionsMap),
+        stopAll: vi.fn().mockResolvedValue(undefined),
+        getConnectedServers: vi.fn().mockReturnValue(["test-server"]),
+      };
+      vi.mocked(createMCPServerManager).mockReturnValue(mockManager as any);
+
+      vi.mocked(MCPRegistryImpl).mockImplementation(
+        () =>
+          ({
+            load: vi.fn().mockResolvedValue(undefined),
+            listEnabledServers: vi.fn().mockReturnValue([
+              {
+                name: "test-server",
+                transport: "stdio",
+                enabled: true,
+                stdio: { command: "node", args: ["server.js"] },
+              },
+            ]),
+          }) as any,
+      );
+
+      const mockRegistry = {
+        getAll: vi.fn(() => []),
+        get: vi.fn(),
+        register: vi.fn(),
+      };
+      vi.mocked(createFullToolRegistry).mockReturnValue(mockRegistry as any);
+      vi.mocked(registerMCPTools).mockResolvedValue([]);
+
+      await setupMinimalRepl();
+
+      const { startRepl } = await import("./index.js");
+      await startRepl({ projectPath: "/test" });
+
+      // MCP server manager should have been created and startAll called
+      expect(createMCPServerManager).toHaveBeenCalled();
+      expect(mockManager.startAll).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ name: "test-server" })]),
+      );
+      // registerMCPTools should have been called for the connected server
+      expect(registerMCPTools).toHaveBeenCalledWith(expect.anything(), "test-server", fakeClient);
+    });
+
+    it("continues REPL startup if MCP initialization fails", async () => {
+      const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+
+      // Make registry.load() throw to simulate MCP init failure
+      vi.mocked(MCPRegistryImpl).mockImplementation(
+        () =>
+          ({
+            load: vi.fn().mockRejectedValue(new Error("Registry file corrupted")),
+            listEnabledServers: vi.fn().mockReturnValue([]),
+          }) as any,
+      );
+
+      await setupMinimalRepl();
+
+      const { startRepl } = await import("./index.js");
+
+      // REPL should start normally despite MCP failure — no process.exit from MCP error
+      await expect(startRepl({ projectPath: "/test" })).resolves.toBeUndefined();
+      // process.exit should not have been called due to MCP failure
+      expect(process.exit).not.toHaveBeenCalled();
+    });
+
+    it("calls mcpManager.stopAll() when SIGTERM is received", async () => {
+      const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+
+      const mockMcpManager = {
+        startAll: vi.fn().mockResolvedValue(new Map()),
+        stopAll: vi.fn().mockResolvedValue(undefined),
+        getConnectedServers: vi.fn().mockReturnValue([]),
+      };
+      vi.mocked(createMCPServerManager).mockReturnValue(mockMcpManager as any);
+
+      vi.mocked(MCPRegistryImpl).mockImplementation(
+        () =>
+          ({
+            load: vi.fn().mockResolvedValue(undefined),
+            listEnabledServers: vi.fn().mockReturnValue([
+              {
+                name: "sigterm-server",
+                transport: "stdio",
+                enabled: true,
+                stdio: { command: "node", args: ["server.js"] },
+              },
+            ]),
+          }) as any,
+      );
+
+      // Prompt will block until we resolve it; we control it via a deferred promise
+      let resolvePrompt!: (value: null) => void;
+      const promptBarrier = new Promise<null>((resolve) => {
+        resolvePrompt = resolve;
+      });
+      const { createInputHandler } = await import("./input/handler.js");
+      const { createSession } = await import("./session.js");
+      const { createProvider } = await import("../../providers/index.js");
+
+      const mockProvider: Partial<import("../../providers/types.js").LLMProvider> = {
+        isAvailable: vi.fn().mockResolvedValue(true),
+        chat: vi.fn(),
+        chatWithTools: vi.fn(),
+      };
+      vi.mocked(createProvider).mockResolvedValue(
+        mockProvider as import("../../providers/types.js").LLMProvider,
+      );
+      vi.mocked(createSession).mockReturnValue({
+        projectPath: "/test",
+        config: {
+          provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
+          autoConfirm: false,
+          trustedTools: new Set<string>(),
+          maxIterations: 10,
+        },
+        messages: [],
+        startTime: new Date(),
+        tokenUsage: { input: 0, output: 0 },
+      });
+      const mockInputHandler = {
+        prompt: vi.fn().mockReturnValue(promptBarrier),
+        close: vi.fn(),
+        resume: vi.fn(),
+        pause: vi.fn(),
+      };
+      vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
+
+      const { startRepl } = await import("./index.js");
+
+      // Start REPL without awaiting — it will block at prompt()
+      const replPromise = startRepl({ projectPath: "/test" });
+
+      // Allow the event loop to run so startRepl registers the SIGTERM handler
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      // Emit SIGTERM — triggers cleanup: stopAll() then process.exit(0)
+      process.emit("SIGTERM");
+
+      // Wait for the stopAll + finally chain to settle
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+      expect(mockMcpManager.stopAll).toHaveBeenCalled();
+      expect(process.exit).toHaveBeenCalledWith(0);
+
+      // Unblock prompt so replPromise can settle (process.exit is mocked — REPL keeps running)
+      resolvePrompt(null);
+      await replPromise;
+    });
+
+    it("warns and continues when registerMCPTools throws for a specific server", async () => {
+      const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { registerMCPTools } = await import("../../mcp/tools.js");
+
+      const fakeClient = { isConnected: vi.fn().mockReturnValue(true), listTools: vi.fn() };
+      const fakeConnection = { name: "failing-server", client: fakeClient };
+      const connectionsMap = new Map([["failing-server", fakeConnection]]);
+
+      const mockMcpManager = {
+        startAll: vi.fn().mockResolvedValue(connectionsMap),
+        stopAll: vi.fn().mockResolvedValue(undefined),
+        getConnectedServers: vi.fn().mockReturnValue(["failing-server"]),
+      };
+      vi.mocked(createMCPServerManager).mockReturnValue(mockMcpManager as any);
+
+      vi.mocked(MCPRegistryImpl).mockImplementation(
+        () =>
+          ({
+            load: vi.fn().mockResolvedValue(undefined),
+            listEnabledServers: vi.fn().mockReturnValue([
+              {
+                name: "failing-server",
+                transport: "stdio",
+                enabled: true,
+                stdio: { command: "node", args: ["server.js"] },
+              },
+            ]),
+          }) as any,
+      );
+
+      // registerMCPTools throws for this server
+      vi.mocked(registerMCPTools).mockRejectedValue(new Error("Tool registration failed"));
+
+      await setupMinimalRepl();
+
+      const { startRepl } = await import("./index.js");
+
+      // REPL should start normally despite registerMCPTools throwing
+      await expect(startRepl({ projectPath: "/test" })).resolves.toBeUndefined();
+      // process.exit should not have been called due to the tool registration error
+      expect(process.exit).not.toHaveBeenCalled();
+    });
+
+    it("handles startAll throwing without leaking the manager", async () => {
+      const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+
+      const mockMcpManager = {
+        startAll: vi.fn().mockRejectedValue(new Error("Failed to start servers")),
+        stopAll: vi.fn().mockResolvedValue(undefined),
+        getConnectedServers: vi.fn().mockReturnValue([]),
+      };
+      vi.mocked(createMCPServerManager).mockReturnValue(mockMcpManager as any);
+
+      vi.mocked(MCPRegistryImpl).mockImplementation(
+        () =>
+          ({
+            load: vi.fn().mockResolvedValue(undefined),
+            listEnabledServers: vi.fn().mockReturnValue([
+              {
+                name: "broken-server",
+                transport: "stdio",
+                enabled: true,
+                stdio: { command: "node", args: ["server.js"] },
+              },
+            ]),
+          }) as any,
+      );
+
+      await setupMinimalRepl();
+
+      const { startRepl } = await import("./index.js");
+
+      // REPL should start normally despite startAll throwing
+      await expect(startRepl({ projectPath: "/test" })).resolves.toBeUndefined();
+      // stopAll should have been called as part of partial-start cleanup
+      expect(mockMcpManager.stopAll).toHaveBeenCalled();
+    });
+
+    it("calls mcpManager.stopAll() on normal REPL exit (EOF)", async () => {
+      const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { registerMCPTools } = await import("../../mcp/tools.js");
+
+      const fakeClient = { isConnected: vi.fn().mockReturnValue(true), listTools: vi.fn() };
+      const fakeConnection = { name: "eof-server", client: fakeClient };
+      const connectionsMap = new Map([["eof-server", fakeConnection]]);
+
+      const mockMcpManager = {
+        startAll: vi.fn().mockResolvedValue(connectionsMap),
+        stopAll: vi.fn().mockResolvedValue(undefined),
+        getConnectedServers: vi.fn().mockReturnValue(["eof-server"]),
+      };
+      vi.mocked(createMCPServerManager).mockReturnValue(mockMcpManager as any);
+
+      vi.mocked(MCPRegistryImpl).mockImplementation(
+        () =>
+          ({
+            load: vi.fn().mockResolvedValue(undefined),
+            listEnabledServers: vi.fn().mockReturnValue([
+              {
+                name: "eof-server",
+                transport: "stdio",
+                enabled: true,
+                stdio: { command: "node", args: ["server.js"] },
+              },
+            ]),
+          }) as any,
+      );
+
+      vi.mocked(registerMCPTools).mockResolvedValue([]);
+
+      // Simulate normal exit: prompt returns null (EOF) on first call
+      await setupMinimalRepl({ inputPromptValues: [null] });
+
+      const { startRepl } = await import("./index.js");
+
+      await expect(startRepl({ projectPath: "/test" })).resolves.toBeUndefined();
+
+      // mcpManager.stopAll() should be called on normal REPL exit
+      expect(mockMcpManager.stopAll).toHaveBeenCalled();
     });
   });
 });
