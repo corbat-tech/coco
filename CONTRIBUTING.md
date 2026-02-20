@@ -32,7 +32,7 @@ This project and everyone participating in it is governed by our commitment to c
 
 ```bash
 # Clone the repository
-git clone https://github.com/corbat/corbat-coco.git
+git clone https://github.com/corbat-tech/coco.git
 cd corbat-coco
 
 # Install dependencies
@@ -446,7 +446,7 @@ When contributing to a specific phase, understand its responsibilities:
 
 If you have questions, feel free to:
 
-- Open a [Discussion](https://github.com/corbat/corbat-coco/discussions)
-- Check existing [Issues](https://github.com/corbat/corbat-coco/issues)
+- Open a [Discussion](https://github.com/corbat-tech/coco/discussions)
+- Check existing [Issues](https://github.com/corbat-tech/coco/issues)
 
 Thank you for contributing! 🎉
