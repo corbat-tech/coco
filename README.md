@@ -8,7 +8,7 @@
 [![Node](https://img.shields.io/badge/Node.js-22+-22c55e?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-5283_passing-22c55e?style=flat-square)](https://github.com/corbat-tech/coco/actions)
+[![Tests](https://img.shields.io/badge/tests-5290_passing-22c55e?style=flat-square)](https://github.com/corbat-tech/coco/actions)
 
 <br/>
 
