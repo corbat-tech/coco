@@ -61,7 +61,7 @@ import {
   formatCocoHint,
   formatQualityResult,
   getCocoModeSystemPrompt,
-  type CocoQualityResult,
+  parseCocoQualityReport,
 } from "./coco-mode.js";
 
 // stringWidth (from 'string-width') is the industry-standard way to measure
@@ -452,6 +452,9 @@ export async function startRepl(
       renderInfo("\nOperation cancelled");
     };
 
+    // Declared outside try so finally block can access it for restoration
+    let originalSystemPrompt: string | undefined;
+
     try {
       // Show contextual hint for first feature-like prompt when COCO mode is off
       if (
@@ -466,12 +469,34 @@ export async function startRepl(
 
       console.log(); // Blank line before response
 
-      // If COCO mode is active, temporarily augment the system prompt
-      let originalSystemPrompt: string | undefined;
+      // If COCO mode is active, route through the coco-fix-iterate skill (if available)
+      // or fall back to text protocol injection
+      let cocoForkPrompt: string | undefined;
+
       if (isCocoMode()) {
-        originalSystemPrompt = session.config.agent.systemPrompt;
-        session.config.agent.systemPrompt = originalSystemPrompt + "\n" + getCocoModeSystemPrompt();
+        const skillId = "coco-fix-iterate";
+        const skillAvailable = session.skillRegistry?.has(skillId);
+
+        if (skillAvailable && typeof agentMessage === "string") {
+          // Integrated mode: route through the real quality-loop skill
+          const skillResult = await session.skillRegistry!.execute(skillId, agentMessage, {
+            cwd: session.projectPath,
+            session,
+            config: session.config,
+          });
+          if (skillResult.shouldFork && skillResult.output) {
+            cocoForkPrompt = skillResult.output;
+          }
+        } else {
+          // Fallback: text protocol injection (when skill not discovered)
+          originalSystemPrompt = session.config.agent.systemPrompt;
+          session.config.agent.systemPrompt =
+            originalSystemPrompt + "\n" + getCocoModeSystemPrompt();
+        }
       }
+
+      // Use skill-prepared prompt if available, otherwise use original message
+      const effectiveMessage = cocoForkPrompt ?? agentMessage;
 
       // Pause normal input handler and start concurrent capture
       // This allows the user to type messages during agent execution
@@ -542,7 +567,7 @@ export async function startRepl(
       // Track if we've cleared the spinner for this turn's streaming phase
       let streamStarted = false;
 
-      const result = await executeAgentTurn(session, agentMessage, provider, toolRegistry, {
+      const result = await executeAgentTurn(session, effectiveMessage, provider, toolRegistry, {
         onStream: (chunk) => {
           // Clear any lingering spinner on first text chunk to avoid overlap
           if (!streamStarted) {
@@ -713,11 +738,6 @@ export async function startRepl(
         continue;
       }
 
-      // Restore original system prompt if COCO mode augmented it
-      if (originalSystemPrompt !== undefined) {
-        session.config.agent.systemPrompt = originalSystemPrompt;
-      }
-
       console.log(); // Blank line after response
 
       // Parse and display quality report if COCO mode produced one
@@ -803,6 +823,10 @@ export async function startRepl(
       // Always clean up spinner and resume input handler after agent turn
       clearSpinner();
       inputHandler.resume();
+      // COCO mode: always restore original system prompt after every turn
+      if (originalSystemPrompt !== undefined) {
+        session.config.agent.systemPrompt = originalSystemPrompt;
+      }
     }
   }
 
@@ -995,52 +1019,6 @@ async function checkProjectTrust(projectPath: string): Promise<boolean> {
 
   console.log(chalk.green("  \u2713 Access granted") + chalk.dim(" \u2022 /trust to manage"));
   return true;
-}
-
-/**
- * Parse COCO quality report from agent response content
- */
-function parseCocoQualityReport(content: string): CocoQualityResult | null {
-  const marker = "COCO_QUALITY_REPORT";
-  const idx = content.indexOf(marker);
-  if (idx === -1) return null;
-
-  const block = content.slice(idx);
-
-  const getField = (name: string): string | undefined => {
-    const match = block.match(new RegExp(`${name}:\\s*(.+)`));
-    return match?.[1]?.trim();
-  };
-
-  const scoreHistoryRaw = getField("score_history");
-  if (!scoreHistoryRaw) return null;
-
-  // Parse [72, 84, 87, 88]
-  const scores = scoreHistoryRaw
-    .replace(/[[\]]/g, "")
-    .split(",")
-    .map((s) => parseFloat(s.trim()))
-    .filter((n) => !isNaN(n));
-
-  if (scores.length === 0) return null;
-
-  const testsPassed = parseInt(getField("tests_passed") ?? "", 10);
-  const testsTotal = parseInt(getField("tests_total") ?? "", 10);
-  const coverage = parseInt(getField("coverage") ?? "", 10);
-  const security = parseInt(getField("security") ?? "", 10);
-  const iterations = parseInt(getField("iterations") ?? "", 10) || scores.length;
-  const converged = getField("converged") === "true";
-
-  return {
-    converged,
-    scoreHistory: scores,
-    finalScore: scores[scores.length - 1] ?? 0,
-    iterations,
-    testsPassed: isNaN(testsPassed) ? undefined : testsPassed,
-    testsTotal: isNaN(testsTotal) ? undefined : testsTotal,
-    coverage: isNaN(coverage) ? undefined : coverage,
-    securityScore: isNaN(security) ? undefined : security,
-  };
 }
 
 /**
