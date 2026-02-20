@@ -93,6 +93,13 @@
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "coco.open",
+          "group": "navigation@100",
+          "when": "workbenchState != empty"
+        }
+      ],
       "view/title": [
         {
           "command": "coco.open",
