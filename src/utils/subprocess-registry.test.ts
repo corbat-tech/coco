@@ -21,6 +21,7 @@ function makeMockProc(killed = false): {
       proc.killed = true;
       return true;
     }),
+    // eslint-disable-next-line unicorn/no-thenable -- intentional mock of a thenable subprocess
     then: vi.fn((onFulfilled: () => void, _onRejected: () => void) => {
       // Store the callback so tests can trigger cleanup
       (proc as unknown as { _resolve: () => void })._resolve = onFulfilled;
