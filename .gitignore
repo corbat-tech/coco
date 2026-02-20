@@ -57,3 +57,6 @@ yarn.lock
 
 # Development plans (internal, not published)
 .dev/
+
+# Git worktrees for parallel feature development
+.worktrees/
