@@ -246,6 +246,7 @@ Task(
   Run EACH of these commands and capture full output:
 
   [If pnpm-lock.yaml exists]:
+    pnpm format 2>&1 || true
     pnpm typecheck 2>&1 || true
     pnpm lint 2>&1 || true
     pnpm test 2>&1 || true
@@ -352,6 +353,7 @@ When `--single-agent` is set, the orchestrator runs these commands directly (sam
 ```bash
 # Auto-detect project type and run checks
 if [ -f "pnpm-lock.yaml" ]; then
+  pnpm format 2>&1 || true
   pnpm typecheck 2>&1 || true
   pnpm lint 2>&1 || true
   pnpm test 2>&1 || true
@@ -524,6 +526,7 @@ Task(
   RULES:
   - Fix ONLY the listed issues, nothing else
   - Minimal changes — fix the issue, not the neighborhood
+  - Run `pnpm format:fix` before committing — formatting errors fail CI
   - Run typecheck after each fix to catch regressions
   - Apply fixes in priority order: all P0s first, then P1s, then P2s
   - If a fix breaks something: first try to resolve it (including writing the test below);
@@ -580,6 +583,7 @@ Task(
   Run each of the following commands and capture full output:
 
   [If pnpm-lock.yaml exists]:
+    pnpm format 2>&1 || true
     pnpm typecheck 2>&1 || true
     pnpm lint 2>&1 || true
     pnpm test 2>&1 || true

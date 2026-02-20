@@ -27,7 +27,12 @@ export type {
 export { AnthropicProvider, createAnthropicProvider } from "./anthropic.js";
 
 // OpenAI provider
-export { OpenAIProvider, createOpenAIProvider, createKimiProvider } from "./openai.js";
+export {
+  OpenAIProvider,
+  createOpenAIProvider,
+  createKimiProvider,
+  createKimiCodeProvider,
+} from "./openai.js";
 
 // Codex provider (ChatGPT Plus/Pro via OAuth)
 export { CodexProvider, createCodexProvider } from "./codex.js";
@@ -77,7 +82,7 @@ export {
 // Provider registry
 import type { LLMProvider, ProviderConfig } from "./types.js";
 import { AnthropicProvider } from "./anthropic.js";
-import { OpenAIProvider, createKimiProvider } from "./openai.js";
+import { OpenAIProvider, createKimiProvider, createKimiCodeProvider } from "./openai.js";
 import { GeminiProvider } from "./gemini.js";
 import { CodexProvider } from "./codex.js";
 import { ProviderError } from "../utils/errors.js";
@@ -92,6 +97,7 @@ export type ProviderType =
   | "codex"
   | "gemini"
   | "kimi"
+  | "kimi-code"
   | "lmstudio"
   | "ollama"
   | "groq"
@@ -140,6 +146,11 @@ export async function createProvider(
 
     case "kimi":
       provider = createKimiProvider(mergedConfig);
+      await provider.initialize(mergedConfig);
+      return provider;
+
+    case "kimi-code":
+      provider = createKimiCodeProvider(mergedConfig);
       await provider.initialize(mergedConfig);
       return provider;
 
@@ -223,7 +234,8 @@ export function listProviders(): Array<{
       configured: false, // Will check OAuth tokens separately
     },
     { id: "gemini", name: "Google Gemini", configured: !!getApiKey("gemini") },
-    { id: "kimi", name: "Kimi (Moonshot)", configured: !!getApiKey("kimi") },
+    { id: "kimi", name: "Kimi (Moonshot API)", configured: !!getApiKey("kimi") },
+    { id: "kimi-code", name: "Kimi Code (Subscription)", configured: !!getApiKey("kimi-code") },
     { id: "groq", name: "Groq", configured: !!getApiKey("groq") },
     { id: "openrouter", name: "OpenRouter", configured: !!getApiKey("openrouter") },
     { id: "mistral", name: "Mistral AI", configured: !!getApiKey("mistral") },

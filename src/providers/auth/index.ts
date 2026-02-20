@@ -93,6 +93,7 @@ export function getAuthMethods(provider: string): AuthMethod[] {
     case "gemini":
       return ["api_key", "gcloud"];
     case "kimi":
+    case "kimi-code":
       return ["api_key"];
     case "lmstudio":
     case "ollama":

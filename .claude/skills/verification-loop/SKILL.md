@@ -24,6 +24,7 @@ Maximum iterations: **10** (if not clean after 10, report blockers and stop)
 ## Step 1: Initial State
 
 ```bash
+pnpm format:fix 2>&1
 pnpm typecheck 2>&1 | head -30
 pnpm lint 2>&1 | head -30
 pnpm test 2>&1 | tail -20
@@ -35,10 +36,11 @@ Count failures per category to plan the fix order.
 
 Fix in this order (each category may create/expose the next):
 
-1. **TypeScript import errors** — missing `.js` extensions, wrong paths
-2. **TypeScript type errors** — incorrect types, missing returns
-3. **Lint errors** — oxlint violations
-4. **Test failures** — logic errors, unhandled cases
+1. **Formatting** — run `pnpm format:fix` to auto-fix style issues before anything else
+2. **TypeScript import errors** — missing `.js` extensions, wrong paths
+3. **TypeScript type errors** — incorrect types, missing returns
+4. **Lint errors** — oxlint violations
+5. **Test failures** — logic errors, unhandled cases
 
 ## Step 3: Fix One Category at a Time
 

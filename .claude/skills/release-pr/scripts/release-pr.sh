@@ -148,8 +148,12 @@ if [ -f "package.json" ]; then
     fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
   "
   echo "  Updated package.json version to $NEW_VERSION"
-  git add package.json
-  git commit -m "chore: bump version to $NEW_VERSION" --no-verify
+  HAS_FORMAT=$(node -e "const p=require('./package.json'); console.log(p.scripts?.['format:fix'] ? 'yes' : 'no')" 2>/dev/null || echo "no")
+  if [ "$HAS_FORMAT" = "yes" ]; then
+    echo "  Running 'pnpm format:fix'..."
+    pnpm format:fix 2>&1 || true
+  fi
+  git add -u && git commit -m "chore: bump version to $NEW_VERSION" --no-verify
 fi
 
 # --- Phase 4: Merge to main ---

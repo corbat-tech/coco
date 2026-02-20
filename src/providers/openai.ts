@@ -57,6 +57,7 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "kimi-k2.5": 262144,
   "kimi-k2-0324": 131072,
   "kimi-latest": 131072,
+  "kimi-for-coding": 131072,
   "moonshot-v1-8k": 8000,
   "moonshot-v1-32k": 32000,
   "moonshot-v1-128k": 128000,
@@ -148,7 +149,12 @@ const LOCAL_MODEL_PATTERNS: string[] = [
  * Kimi K2.5 has interleaved reasoning that requires reasoning_content to be passed back
  * Disabling thinking mode avoids this complexity with tool calling
  */
-const MODELS_WITH_THINKING_MODE: string[] = ["kimi-k2.5", "kimi-k2-0324", "kimi-latest"];
+const MODELS_WITH_THINKING_MODE: string[] = [
+  "kimi-k2.5",
+  "kimi-k2-0324",
+  "kimi-latest",
+  "kimi-for-coding",
+];
 
 /**
  * OpenAI provider implementation
@@ -932,6 +938,8 @@ export function createOpenAIProvider(config?: ProviderConfig): OpenAIProvider {
 /**
  * Create a Kimi/Moonshot provider (OpenAI-compatible)
  *
+ * Uses the standard Moonshot API — pay per token.
+ *
  * Note: Moonshot has two API endpoints:
  * - Global: https://api.moonshot.ai/v1 (default)
  * - China: https://api.moonshot.cn/v1
@@ -947,6 +955,30 @@ export function createKimiProvider(config?: ProviderConfig): OpenAIProvider {
   };
   if (kimiConfig.apiKey) {
     provider.initialize(kimiConfig).catch(() => {});
+  }
+  return provider;
+}
+
+/**
+ * Create a Kimi Code provider (OpenAI-compatible)
+ *
+ * Uses the Kimi Code subscription endpoint — quota included in Kimi membership,
+ * no per-token cost. API key obtained from https://www.kimi.com/code
+ *
+ * Endpoints:
+ * - https://api.kimi.com/coding/v1 (default)
+ */
+export function createKimiCodeProvider(config?: ProviderConfig): OpenAIProvider {
+  const provider = new OpenAIProvider("kimi-code", "Kimi Code");
+  const kimiCodeConfig: ProviderConfig = {
+    ...config,
+    baseUrl:
+      config?.baseUrl ?? process.env["KIMI_CODE_BASE_URL"] ?? "https://api.kimi.com/coding/v1",
+    apiKey: config?.apiKey ?? process.env["KIMI_CODE_API_KEY"],
+    model: config?.model ?? "kimi-for-coding",
+  };
+  if (kimiCodeConfig.apiKey) {
+    provider.initialize(kimiCodeConfig).catch(() => {});
   }
   return provider;
 }

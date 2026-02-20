@@ -56,6 +56,7 @@ export type ProviderType =
   | "codex"
   | "gemini"
   | "kimi"
+  | "kimi-code"
   | "lmstudio"
   | "ollama"
   | "groq"
@@ -78,6 +79,8 @@ export function getApiKey(provider: ProviderType): string | undefined {
       return process.env["GEMINI_API_KEY"] ?? process.env["GOOGLE_API_KEY"];
     case "kimi":
       return process.env["KIMI_API_KEY"] ?? process.env["MOONSHOT_API_KEY"];
+    case "kimi-code":
+      return process.env["KIMI_CODE_API_KEY"];
     case "lmstudio":
       // LM Studio doesn't require API key, but we use a placeholder to mark it as configured
       return process.env["LMSTUDIO_API_KEY"] ?? "lm-studio";
@@ -115,6 +118,8 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
       return process.env["OPENAI_BASE_URL"];
     case "kimi":
       return process.env["KIMI_BASE_URL"] ?? "https://api.moonshot.ai/v1";
+    case "kimi-code":
+      return process.env["KIMI_CODE_BASE_URL"] ?? "https://api.kimi.com/coding/v1";
     case "lmstudio":
       return process.env["LMSTUDIO_BASE_URL"] ?? "http://localhost:1234/v1";
     case "ollama":
@@ -152,6 +157,8 @@ export function getDefaultModel(provider: ProviderType): string {
       return process.env["GEMINI_MODEL"] ?? "gemini-3-flash-preview";
     case "kimi":
       return process.env["KIMI_MODEL"] ?? "kimi-k2.5";
+    case "kimi-code":
+      return process.env["KIMI_CODE_MODEL"] ?? "kimi-for-coding";
     case "lmstudio":
       // LM Studio model is selected in the app, we use a placeholder
       return process.env["LMSTUDIO_MODEL"] ?? "local-model";
@@ -185,6 +192,7 @@ const VALID_PROVIDERS: ProviderType[] = [
   "codex",
   "gemini",
   "kimi",
+  "kimi-code",
   "lmstudio",
   "ollama",
   "groq",

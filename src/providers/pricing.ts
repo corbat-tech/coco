@@ -79,6 +79,7 @@ export const DEFAULT_PRICING: Record<ProviderType, ModelPricing> = {
   codex: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 128000 }, // ChatGPT Plus/Pro subscription
   gemini: { inputPerMillion: 0.1, outputPerMillion: 0.4, contextWindow: 1000000 },
   kimi: { inputPerMillion: 1.2, outputPerMillion: 1.2, contextWindow: 8192 },
+  "kimi-code": { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 131072 }, // Included in subscription
   lmstudio: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 32768 }, // Free - local models
   ollama: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 128000 }, // Free - local models
   groq: { inputPerMillion: 0.05, outputPerMillion: 0.08, contextWindow: 128000 }, // Free tier available

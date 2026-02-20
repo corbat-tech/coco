@@ -507,6 +507,36 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     ],
   },
 
+  // Kimi Code - Kimi subscription endpoint
+  "kimi-code": {
+    id: "kimi-code",
+    name: "Kimi Code",
+    emoji: "🤖",
+    description: "Kimi Code subscription — quota included in Kimi membership, no per-token cost",
+    envVar: "KIMI_CODE_API_KEY",
+    apiKeyUrl: "https://www.kimi.com/code",
+    docsUrl: "https://www.kimi.com/code/docs/en/",
+    baseUrl: "https://api.kimi.com/coding/v1",
+    supportsCustomModels: false,
+    openaiCompatible: true,
+    paymentType: "sub",
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: false,
+    },
+    models: [
+      {
+        id: "kimi-for-coding",
+        name: "Kimi for Coding",
+        description: "Kimi Code model optimised for programming tasks",
+        contextWindow: 131072,
+        maxOutputTokens: 8192,
+        recommended: true,
+      },
+    ],
+  },
+
   // LM Studio - Local models via OpenAI-compatible API
   lmstudio: {
     id: "lmstudio",

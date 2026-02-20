@@ -15,6 +15,7 @@ export const ProviderConfigSchema = z.object({
       "codex",
       "gemini",
       "kimi",
+      "kimi-code",
       "lmstudio",
       "ollama",
       "groq",
