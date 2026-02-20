@@ -755,3 +755,156 @@ describe("createAnthropicProvider", () => {
     expect(provider).toBeDefined();
   });
 });
+
+describe("system prompt extraction (regression: bug fix)", () => {
+  // Regression test for: system prompt was silently dropped from all API calls.
+  // The messages array always contains a { role: "system" } entry from
+  // getConversationContext(), but convertMessages() filters it out because
+  // Anthropic requires it as a top-level parameter. Previously, streamWithTools
+  // and chatWithTools never passed it, so the LLM ran without a system prompt.
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockMessagesCreate.mockResolvedValue({
+      id: "msg_sys",
+      type: "message",
+      role: "assistant",
+      content: [{ type: "text", text: "ok" }],
+      model: "claude-sonnet-4-20250514",
+      stop_reason: "end_turn",
+      usage: { input_tokens: 5, output_tokens: 5 },
+    });
+    mockMessagesStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "content_block_delta", delta: { type: "text_delta", text: "ok" } };
+      },
+    });
+  });
+
+  it("chat() passes system message from messages array to Anthropic API", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await provider.chat([
+      { role: "system", content: "You are a helpful assistant." },
+      { role: "user", content: "hello" },
+    ]);
+
+    const call = mockMessagesCreate.mock.calls[0]?.[0];
+    expect(call?.system).toBe("You are a helpful assistant.");
+    // The messages array must NOT contain the system entry (Anthropic rejects it)
+    expect(call?.messages?.find((m: { role: string }) => m.role === "system")).toBeUndefined();
+  });
+
+  it("chatWithTools() passes system message from messages array to Anthropic API", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await provider.chatWithTools(
+      [
+        { role: "system", content: "You are a coding agent." },
+        { role: "user", content: "write a file" },
+      ],
+      {
+        tools: [
+          {
+            name: "write_file",
+            description: "Write a file",
+            input_schema: { type: "object", properties: {}, required: [] },
+          },
+        ],
+      },
+    );
+
+    const call = mockMessagesCreate.mock.calls[0]?.[0];
+    expect(call?.system).toBe("You are a coding agent.");
+    expect(call?.messages?.find((m: { role: string }) => m.role === "system")).toBeUndefined();
+  });
+
+  it("stream() passes system message from messages array to Anthropic API", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const chunks = [];
+    for await (const chunk of provider.stream([
+      { role: "system", content: "Be concise." },
+      { role: "user", content: "hello" },
+    ])) {
+      chunks.push(chunk);
+    }
+
+    const call = mockMessagesStream.mock.calls[0]?.[0];
+    expect(call?.system).toBe("Be concise.");
+    expect(call?.messages?.find((m: { role: string }) => m.role === "system")).toBeUndefined();
+  });
+
+  it("streamWithTools() passes system message from messages array to Anthropic API", async () => {
+    // This is the PRIMARY code path used by agent-loop.ts — it MUST have a regression test.
+    mockMessagesStream.mockReturnValueOnce({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: "content_block_start",
+          content_block: { type: "tool_use", id: "tool_1", name: "write_file" },
+        };
+        yield {
+          type: "content_block_delta",
+          delta: { type: "input_json_delta", partial_json: '{"path":"out.html","content":"<h1>Hi</h1>"}' },
+        };
+        yield { type: "content_block_stop" };
+      },
+    });
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const chunks = [];
+    for await (const chunk of provider.streamWithTools(
+      [
+        { role: "system", content: "You are an execution agent." },
+        { role: "user", content: "create a file" },
+      ],
+      {
+        tools: [
+          {
+            name: "write_file",
+            description: "Write a file",
+            input_schema: { type: "object", properties: {}, required: [] },
+          },
+        ],
+      },
+    )) {
+      chunks.push(chunk);
+    }
+
+    const call = mockMessagesStream.mock.calls[0]?.[0];
+    expect(call?.system).toBe("You are an execution agent.");
+    expect(call?.messages?.find((m: { role: string }) => m.role === "system")).toBeUndefined();
+
+    // Also verify the tool call was correctly assembled from streaming
+    const toolEnd = chunks.find((c) => c.type === "tool_use_end");
+    expect(toolEnd).toBeDefined();
+    expect((toolEnd?.toolCall as { name?: string })?.name).toBe("write_file");
+    expect((toolEnd?.toolCall as { input?: { path?: string } })?.input?.path).toBe("out.html");
+  });
+
+  it("options.system takes precedence over system message in array", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    await provider.chat(
+      [
+        { role: "system", content: "From messages array." },
+        { role: "user", content: "hello" },
+      ],
+      { system: "From options — should win." },
+    );
+
+    const call = mockMessagesCreate.mock.calls[0]?.[0];
+    expect(call?.system).toBe("From options — should win.");
+  });
+});
