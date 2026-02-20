@@ -54,6 +54,30 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "coco-sidebar",
+          "title": "COCO",
+          "icon": "media/coco-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "coco-sidebar": [
+        {
+          "id": "coco.welcome",
+          "name": "COCO Agent",
+          "icon": "media/coco-icon.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "coco.welcome",
+        "contents": "COCO is an autonomous coding agent with quality convergence.\n\nIt runs in the integrated terminal — no context switching.\n[$(robot) Open COCO Agent](command:coco.open)\n[$(add) New Session](command:coco.newSession)\n\n[Learn more](https://github.com/corbat/corbat-coco)"
+      }
+    ],
     "commands": [
       {
         "command": "coco.open",
@@ -68,20 +92,17 @@
         "icon": "$(add)"
       }
     ],
-    "keybindings": [
-      {
-        "command": "coco.open",
-        "key": "ctrl+shift+o",
-        "mac": "cmd+shift+o",
-        "when": "!terminalFocus"
-      }
-    ],
     "menus": {
-      "editor/title": [
+      "view/title": [
         {
           "command": "coco.open",
-          "group": "navigation@100",
-          "when": "workbenchState != empty"
+          "when": "view == coco.welcome",
+          "group": "navigation@1"
+        },
+        {
+          "command": "coco.newSession",
+          "when": "view == coco.welcome",
+          "group": "navigation@2"
         }
       ],
       "commandPalette": [
@@ -93,6 +114,14 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "coco.open",
+        "key": "ctrl+shift+o",
+        "mac": "cmd+shift+o",
+        "when": "!terminalFocus"
+      }
+    ],
     "configuration": {
       "title": "COCO",
       "properties": {

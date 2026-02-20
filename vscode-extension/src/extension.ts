@@ -15,6 +15,12 @@ let cocoTerminal: vscode.Terminal | undefined;
 let statusBarItem: vscode.StatusBarItem | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
+  // Activity bar sidebar — empty provider triggers viewsWelcome content
+  vscode.window.registerTreeDataProvider("coco.welcome", {
+    getTreeItem: (el: vscode.TreeItem) => el,
+    getChildren: () => [],
+  });
+
   // Status bar item — bottom-left, clickable to open COCO
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBarItem.text = "$(robot) COCO";
