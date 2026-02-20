@@ -851,7 +851,10 @@ describe("system prompt extraction (regression: bug fix)", () => {
         };
         yield {
           type: "content_block_delta",
-          delta: { type: "input_json_delta", partial_json: '{"path":"out.html","content":"<h1>Hi</h1>"}' },
+          delta: {
+            type: "input_json_delta",
+            partial_json: '{"path":"out.html","content":"<h1>Hi</h1>"}',
+          },
         };
         yield { type: "content_block_stop" };
       },
