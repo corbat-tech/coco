@@ -35,6 +35,7 @@ import {
   addTokenUsage,
   hasPendingImage,
   consumePendingImage,
+  isIntentRecognitionEnabled,
 } from "./commands/index.js";
 import type { MessageContent, ImageContent, TextContent } from "../../providers/types.js";
 import type { ReplConfig } from "./types.js";
@@ -129,12 +130,14 @@ export async function startRepl(
   const { createLLMClassifier } = await import("./interruptions/llm-classifier.js");
   const llmClassifier = createLLMClassifier(provider);
 
-  // Detect and enrich project stack context
+  // Detect project stack and load allowed paths in parallel — both depend only
+  // on projectPath and have no shared writes between them or with the steps above.
   const { detectProjectStack } = await import("./context/stack-detector.js");
-  session.projectContext = await detectProjectStack(projectPath);
-
-  // Load persisted allowed paths for this project
-  await loadAllowedPaths(projectPath);
+  const [projectContext] = await Promise.all([
+    detectProjectStack(projectPath),
+    loadAllowedPaths(projectPath),
+  ]);
+  session.projectContext = projectContext;
 
   // Show recommended permissions suggestion for first-time users
   if (await shouldShowPermissionSuggestion()) {
@@ -146,12 +149,11 @@ export async function startRepl(
     }
   }
 
-  // Load COCO mode preference
-  await loadCocoModePreference();
-
-  // Load full-access mode preference
+  // Load COCO mode and full-access mode preferences in parallel — both read
+  // different keys from the same config file and write to separate module-level
+  // variables with no shared state between them.
   const { loadFullAccessPreference } = await import("./full-access-mode.js");
-  await loadFullAccessPreference();
+  await Promise.all([loadCocoModePreference(), loadFullAccessPreference()]);
 
   // Initialize tool registry
   const toolRegistry = createFullToolRegistry();
@@ -186,7 +188,7 @@ export async function startRepl(
   let mcpManager: MCPServerManager | null = null;
   const logger = (await import("../../utils/logger.js")).getLogger();
   try {
-    const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+    const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
     const { MCPRegistryImpl } = await import("../../mcp/registry.js");
     const { registerMCPTools } = await import("../../mcp/tools.js");
 
@@ -195,7 +197,7 @@ export async function startRepl(
     const enabledServers = mcpRegistry.listEnabledServers();
 
     if (enabledServers.length > 0) {
-      mcpManager = createMCPServerManager();
+      mcpManager = getMCPServerManager();
       let connections: Map<string, ServerConnection>;
       try {
         connections = await mcpManager.startAll(enabledServers);
@@ -265,7 +267,7 @@ export async function startRepl(
   const intentRecognizer = createIntentRecognizer();
 
   // Print welcome
-  await printWelcome(session);
+  await printWelcome(session, mcpManager);
 
   // Ensure terminal state is restored on exit (bracketed paste, raw mode, etc.)
   const cleanupTerminal = () => {
@@ -376,8 +378,8 @@ export async function startRepl(
       ];
     }
 
-    // Detect intent from natural language (skip for image-only messages)
-    if (agentMessage === null && input) {
+    // Detect intent from natural language (skip for image-only messages and when disabled)
+    if (agentMessage === null && input && isIntentRecognitionEnabled()) {
       const intent = await intentRecognizer.recognize(input);
 
       // If intent is not chat and has good confidence, offer to execute as command
@@ -903,11 +905,14 @@ export async function startRepl(
  * Print welcome message - retro terminal style, compact
  * Brand color: Magenta/Purple
  */
-async function printWelcome(session: {
-  projectPath: string;
-  config: ReplConfig;
-  skillRegistry?: import("../../skills/registry.js").UnifiedSkillRegistry;
-}): Promise<void> {
+async function printWelcome(
+  session: {
+    projectPath: string;
+    config: ReplConfig;
+    skillRegistry?: import("../../skills/registry.js").UnifiedSkillRegistry;
+  },
+  mcpManager?: MCPServerManager | null,
+): Promise<void> {
   const trustStore = createTrustStore();
   await trustStore.init();
   const trustLevel = trustStore.getLevel(session.projectPath);
@@ -1005,15 +1010,32 @@ async function printWelcome(session: {
     : chalk.dim("  \u{1F4A1} /coco on — enable auto-test & quality iteration");
   console.log(cocoStatus);
 
-  // Show discovered skills count
-  if (session.skillRegistry && session.skillRegistry.size > 0) {
-    const allMeta = session.skillRegistry.getAllMetadata();
-    const mdCount = allMeta.filter((s) => s.kind === "markdown").length;
-    const nativeCount = session.skillRegistry.size - mdCount;
-    const parts: string[] = [];
-    if (mdCount > 0) parts.push(`${mdCount} markdown`);
-    if (nativeCount > 0) parts.push(`${nativeCount} native`);
-    console.log(chalk.dim(`  ${session.skillRegistry.size} skills (${parts.join(" + ")})`));
+  // Show skills and MCP status summary (only when something is active)
+  const skillTotal = session.skillRegistry?.size ?? 0;
+  const mcpServers = mcpManager?.getConnectedServers() ?? [];
+  const hasSomething = skillTotal > 0 || mcpServers.length > 0;
+  if (hasSomething) {
+    if (skillTotal > 0) {
+      const allMeta = session.skillRegistry!.getAllMetadata();
+      const builtinCount = allMeta.filter((s) => s.scope === "builtin").length;
+      const projectCount = skillTotal - builtinCount;
+      const parts: string[] = [];
+      if (builtinCount > 0) parts.push(`${builtinCount} builtin`);
+      if (projectCount > 0) parts.push(`${projectCount} project`);
+      const detail = parts.length > 0 ? ` (${parts.join(" \u00B7 ")})` : "";
+      console.log(
+        chalk.green("  \u2713") + chalk.dim(` Skills: ${skillTotal} loaded${detail}`),
+      );
+    } else {
+      console.log(chalk.dim("  \u00B7 Skills: none loaded"));
+    }
+    if (mcpServers.length > 0) {
+      const names = mcpServers.join(", ");
+      console.log(
+        chalk.green("  \u2713") +
+          chalk.dim(` MCP: ${names} (${mcpServers.length} server${mcpServers.length === 1 ? "" : "s"} active)`),
+      );
+    }
   }
 
   console.log();
