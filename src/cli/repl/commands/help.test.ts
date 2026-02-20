@@ -126,5 +126,29 @@ describe("helpCommand", () => {
       expect(allOutput).toContain("Tips");
       expect(allOutput).toContain("Ctrl+D");
     });
+
+    it("should display Skills section when skillRegistry has skills", async () => {
+      const sampleSkill = {
+        id: "my-skill",
+        name: "my-skill",
+        description: "A sample skill for testing",
+        scope: "project" as const,
+        kind: "markdown" as const,
+      };
+      const mockSkillRegistry = {
+        size: 1,
+        getAllMetadata: vi.fn(() => [sampleSkill]),
+      };
+      const sessionWithSkills = {
+        ...mockSession,
+        skillRegistry: mockSkillRegistry,
+      } as unknown as ReplSession;
+
+      await helpCommand.execute([], sessionWithSkills);
+
+      const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
+      expect(allOutput).toContain("Skills");
+      expect(allOutput).toContain("my-skill");
+    });
   });
 });

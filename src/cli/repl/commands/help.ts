@@ -3,7 +3,7 @@
  */
 
 import chalk from "chalk";
-import type { SlashCommand } from "../types.js";
+import type { SlashCommand, ReplSession } from "../types.js";
 
 export const helpCommand: SlashCommand = {
   name: "help",
@@ -11,7 +11,7 @@ export const helpCommand: SlashCommand = {
   description: "Show available commands",
   usage: "/help [tools]",
 
-  async execute(args: string[]): Promise<boolean> {
+  async execute(args: string[], session: ReplSession): Promise<boolean> {
     // Show tools help if requested
     if (args[0] === "tools" || args[0] === "herramientas") {
       return showToolsHelp();
@@ -91,6 +91,25 @@ export const helpCommand: SlashCommand = {
         } else {
           console.log(`  ${chalk.yellow(cmd.padEnd(22))} ${chalk.dim(desc)}`);
         }
+      }
+      console.log();
+    }
+
+    // Show skills from session.skillRegistry if available
+    if (session?.skillRegistry && session.skillRegistry.size > 0) {
+      const allSkills = session.skillRegistry.getAllMetadata();
+
+      console.log(chalk.bold("Skills"));
+      for (const skill of allSkills) {
+        const scopeLabel =
+          skill.scope === "project"
+            ? chalk.cyan("[project]")
+            : skill.scope === "global"
+              ? chalk.yellow("[global]")
+              : chalk.dim("[builtin]");
+        const nameStr = `/${skill.name}`.padEnd(22);
+        const descStr = skill.description ?? "";
+        console.log(`  ${chalk.yellow(nameStr)} ${chalk.dim(descStr)} ${scopeLabel}`);
       }
       console.log();
     }
