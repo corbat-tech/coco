@@ -6,6 +6,7 @@
 import { execa } from "execa";
 import { BuildVerifier, type BuildError } from "./build-verifier.js";
 import { detectTestFramework, type TestFramework } from "./coverage.js";
+import { trackSubprocess } from "../../utils/subprocess-registry.js";
 
 /**
  * Correctness analysis result
@@ -165,11 +166,14 @@ export class CorrectnessAnalyzer {
     }
 
     try {
-      const result = await execa(cmd.command, cmd.args, {
+      const proc = execa(cmd.command, cmd.args, {
         cwd: this.projectPath,
         reject: false,
         timeout: 300000, // 5 minutes
+        cleanup: true, // kill process tree on parent exit
       });
+      trackSubprocess(proc);
+      const result = await proc;
 
       const output = result.stdout + "\n" + result.stderr;
 

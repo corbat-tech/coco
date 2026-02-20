@@ -43,6 +43,8 @@ import { imageCommand } from "./image.js";
 import { tutorialCommand } from "./tutorial.js";
 import { mcpCommand } from "./mcp.js";
 import { intentCommand } from "./intent.js";
+import { fullPowerRiskCommand } from "./full-power-risk.js";
+import { buildAppCommand } from "./build-app.js";
 import { renderError } from "../output/renderer.js";
 import { createDefaultRegistry } from "../skills/index.js";
 import type { SkillRegistry } from "../skills/index.js";
@@ -83,6 +85,8 @@ const commands: SlashCommand[] = [
   tutorialCommand,
   mcpCommand,
   intentCommand,
+  fullPowerRiskCommand,
+  buildAppCommand,
 ];
 
 /**
