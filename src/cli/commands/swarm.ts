@@ -113,11 +113,7 @@ async function runSwarm(options: SwarmCommandOptions): Promise<void> {
     });
 
     spinner.stop("Swarm execution complete");
-    p.outro(
-      chalk.green(
-        `Swarm complete! Artifacts written to: ${chalk.bold(options.output)}`,
-      ),
-    );
+    p.outro(chalk.green(`Swarm complete! Artifacts written to: ${chalk.bold(options.output)}`));
   } catch (error) {
     spinner.stop(chalk.red("Swarm failed"));
     throw error;

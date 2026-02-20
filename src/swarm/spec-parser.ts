@@ -365,18 +365,12 @@ function parseMarkdownSpec(content: string): SwarmSpec {
     const featureId = `f-${featureIdx}`;
 
     // Extract description
-    const bodyDescMatch = featureBody.match(
-      /^([^#\n][^\n]*(?:\n[^#\n][^\n]*)*?)(?=\n###|\n$|$)/m,
-    );
+    const bodyDescMatch = featureBody.match(/^([^#\n][^\n]*(?:\n[^#\n][^\n]*)*?)(?=\n###|\n$|$)/m);
     const featureDesc =
-      bodyDescMatch && bodyDescMatch[1] !== undefined
-        ? bodyDescMatch[1].trim()
-        : featureName;
+      bodyDescMatch && bodyDescMatch[1] !== undefined ? bodyDescMatch[1].trim() : featureName;
 
     // Extract acceptance criteria from ### Acceptance Criteria
-    const acMatch = featureBody.match(
-      /###\s+Acceptance Criteria\s*\n([\s\S]*?)(?=\n###|\n$|$)/i,
-    );
+    const acMatch = featureBody.match(/###\s+Acceptance Criteria\s*\n([\s\S]*?)(?=\n###|\n$|$)/i);
     const acceptanceCriteria: string[] = [];
     if (acMatch) {
       const acContent = acMatch[1];

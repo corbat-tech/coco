@@ -294,8 +294,7 @@ export const AGENT_DEFINITIONS: Record<SwarmAgentRole, SwarmAgentDefinition> = {
   pm: {
     role: "pm",
     goal: "Transform specifications into actionable, testable task breakdowns",
-    backstory:
-      "Senior PM with 15 years shipping developer tools and SaaS platforms",
+    backstory: "Senior PM with 15 years shipping developer tools and SaaS platforms",
     systemPrompt: PM_PROMPT,
     allowedTools: ["read_file", "glob", "grep"],
     maxTurns: 15,
@@ -347,8 +346,7 @@ export const AGENT_DEFINITIONS: Record<SwarmAgentRole, SwarmAgentDefinition> = {
   "external-reviewer": {
     role: "external-reviewer",
     goal: "Provide direct, honest assessment synthesizing all review inputs",
-    backstory:
-      "Senior engineer who has reviewed thousands of PRs across companies and tech stacks",
+    backstory: "Senior engineer who has reviewed thousands of PRs across companies and tech stacks",
     systemPrompt: EXTERNAL_REVIEWER_PROMPT,
     allowedTools: ["read_file", "glob", "grep"],
     maxTurns: 15,

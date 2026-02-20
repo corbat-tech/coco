@@ -202,9 +202,7 @@ describe("runSprints", () => {
 
   it("retries on test failures and creates fix tasks", async () => {
     // First iteration: tests fail → retry with fix tasks → pass on second
-    mockRunTests
-      .mockResolvedValueOnce(failingTestResult())
-      .mockResolvedValue(passingTestResult());
+    mockRunTests.mockResolvedValueOnce(failingTestResult()).mockResolvedValue(passingTestResult());
 
     // Quality check returns passing score
     mockCoordinateAgents.mockResolvedValue(successCoordResult());
@@ -223,9 +221,7 @@ describe("runSprints", () => {
 
   it("reports iterations count correctly", async () => {
     // Fail once, then pass
-    mockRunTests
-      .mockResolvedValueOnce(failingTestResult())
-      .mockResolvedValue(passingTestResult());
+    mockRunTests.mockResolvedValueOnce(failingTestResult()).mockResolvedValue(passingTestResult());
     mockCoordinateAgents.mockResolvedValue(successCoordResult());
 
     const result = await runSprints({

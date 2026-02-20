@@ -28,10 +28,7 @@ export interface SwarmEvent {
  * Append a single event to the JSONL event log.
  * Creates the file and parent directories if they don't exist.
  */
-export async function appendSwarmEvent(
-  projectPath: string,
-  event: SwarmEvent,
-): Promise<void> {
+export async function appendSwarmEvent(projectPath: string, event: SwarmEvent): Promise<void> {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
 

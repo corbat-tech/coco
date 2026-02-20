@@ -76,13 +76,7 @@ function makeSprintResult(overrides: Partial<SprintResult> = {}): SprintResult {
 
 describe("BacklogTask", () => {
   it("accepts all valid roles", () => {
-    const roles: BacklogTask["role"][] = [
-      "researcher",
-      "coder",
-      "tester",
-      "reviewer",
-      "optimizer",
-    ];
+    const roles: BacklogTask["role"][] = ["researcher", "coder", "tester", "reviewer", "optimizer"];
     for (const role of roles) {
       const task = makeTask({ role });
       expect(task.role).toBe(role);

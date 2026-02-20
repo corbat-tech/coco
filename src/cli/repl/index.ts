@@ -165,7 +165,11 @@ export async function startRepl(
   // separate module-level variables with no shared state between them.
   const { loadFullAccessPreference } = await import("./full-access-mode.js");
   const { loadFullPowerRiskPreference } = await import("./full-power-risk-mode.js");
-  await Promise.all([loadCocoModePreference(), loadFullAccessPreference(), loadFullPowerRiskPreference()]);
+  await Promise.all([
+    loadCocoModePreference(),
+    loadFullAccessPreference(),
+    loadFullPowerRiskPreference(),
+  ]);
 
   // Initialize tool registry
   const toolRegistry = createFullToolRegistry();

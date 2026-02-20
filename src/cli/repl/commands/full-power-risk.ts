@@ -63,8 +63,7 @@ function printStatus(): void {
   const state = isFullPowerRiskMode();
   console.log();
   console.log(
-    chalk.red.bold("  ⚡ full-power-risk: ") +
-      (state ? chalk.red.bold("ON") : chalk.dim("OFF")),
+    chalk.red.bold("  ⚡ full-power-risk: ") + (state ? chalk.red.bold("ON") : chalk.dim("OFF")),
   );
   console.log();
   if (state) {
@@ -100,8 +99,6 @@ function printEnabled(): void {
 function printDisabled(): void {
   console.log(chalk.dim("  ⚡ full-power-risk mode: OFF"));
   console.log(
-    chalk.dim(
-      "  Enable with /full-power-risk on for autonomous development (less prompts).",
-    ),
+    chalk.dim("  Enable with /full-power-risk on for autonomous development (less prompts)."),
   );
 }

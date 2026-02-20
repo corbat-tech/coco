@@ -841,7 +841,9 @@ Return JSON with: { "verdict": "APPROVE|REQUEST_CHANGES|REJECT", "score": number
       temperature: 0.4,
     });
     const json = extractJson<ExternalReviewResult>(response.content);
-    const avgScore = Math.round((reviews.arch.score + reviews.security.score + reviews.qa.score) / 3);
+    const avgScore = Math.round(
+      (reviews.arch.score + reviews.security.score + reviews.qa.score) / 3,
+    );
     return (
       json ?? {
         verdict: avgScore >= 85 ? "APPROVE" : "REQUEST_CHANGES",
@@ -851,7 +853,9 @@ Return JSON with: { "verdict": "APPROVE|REQUEST_CHANGES|REJECT", "score": number
       }
     );
   } catch {
-    const avgScore = Math.round((reviews.arch.score + reviews.security.score + reviews.qa.score) / 3);
+    const avgScore = Math.round(
+      (reviews.arch.score + reviews.security.score + reviews.qa.score) / 3,
+    );
     return {
       verdict: avgScore >= 85 ? "APPROVE" : "REQUEST_CHANGES",
       score: avgScore,
@@ -911,11 +915,7 @@ Return JSON with: { "integrationPassed": boolean, "summary": "...", "conflicts":
 // Utilities
 // ---------------------------------------------------------------------------
 
-function progress(
-  options: SwarmLifecycleOptions,
-  state: SwarmState,
-  message: string,
-): void {
+function progress(options: SwarmLifecycleOptions, state: SwarmState, message: string): void {
   options.onProgress?.(state, message);
 }
 

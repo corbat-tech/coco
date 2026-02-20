@@ -92,9 +92,7 @@ export async function killOrphanedTestProcesses(): Promise<number> {
     const pids = result.stdout
       .split("\n")
       .map((s) => parseInt(s.trim(), 10))
-      .filter(
-        (pid) => !isNaN(pid) && pid !== process.pid && pid !== process.ppid,
-      );
+      .filter((pid) => !isNaN(pid) && pid !== process.pid && pid !== process.ppid);
 
     for (const pid of pids) {
       try {

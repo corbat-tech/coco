@@ -25,10 +25,7 @@ export interface KnowledgeEntry {
  * Append a knowledge entry to the JSONL knowledge base.
  * Creates the file and parent directories if they don't exist.
  */
-export async function appendKnowledge(
-  projectPath: string,
-  entry: KnowledgeEntry,
-): Promise<void> {
+export async function appendKnowledge(projectPath: string, entry: KnowledgeEntry): Promise<void> {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
 
@@ -86,36 +83,28 @@ export function formatKnowledgeForContext(entries: KnowledgeEntry[]): string {
   if (grouped.failure.length > 0) {
     sections.push(
       `## Known Failures to Avoid\n` +
-        grouped.failure
-          .map((e) => `- [${e.featureId}/${e.gate}] ${e.description}`)
-          .join("\n"),
+        grouped.failure.map((e) => `- [${e.featureId}/${e.gate}] ${e.description}`).join("\n"),
     );
   }
 
   if (grouped.gotcha.length > 0) {
     sections.push(
       `## Gotchas\n` +
-        grouped.gotcha
-          .map((e) => `- [${e.featureId}/${e.gate}] ${e.description}`)
-          .join("\n"),
+        grouped.gotcha.map((e) => `- [${e.featureId}/${e.gate}] ${e.description}`).join("\n"),
     );
   }
 
   if (grouped.success.length > 0) {
     sections.push(
       `## Successful Patterns\n` +
-        grouped.success
-          .map((e) => `- [${e.featureId}/${e.gate}] ${e.description}`)
-          .join("\n"),
+        grouped.success.map((e) => `- [${e.featureId}/${e.gate}] ${e.description}`).join("\n"),
     );
   }
 
   if (grouped.optimization.length > 0) {
     sections.push(
       `## Optimizations\n` +
-        grouped.optimization
-          .map((e) => `- [${e.featureId}/${e.gate}] ${e.description}`)
-          .join("\n"),
+        grouped.optimization.map((e) => `- [${e.featureId}/${e.gate}] ${e.description}`).join("\n"),
     );
   }
 

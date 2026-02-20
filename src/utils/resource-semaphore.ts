@@ -47,10 +47,7 @@ function computeEffectiveConcurrency(cfg: ResourceLimits): number {
 
   if (loadAvg1m > cpuCount * cfg.cpuLoadThreshold) {
     // CPU load: reduce by 25%
-    return Math.max(
-      cfg.minConcurrency,
-      Math.floor(cfg.maxConcurrency * 0.75),
-    );
+    return Math.max(cfg.minConcurrency, Math.floor(cfg.maxConcurrency * 0.75));
   }
 
   return cfg.maxConcurrency;

@@ -87,7 +87,9 @@ export class SwarmOrchestrator {
       minScore,
       maxIterations,
       noQuestions,
-      onProgress: onProgress as ((state: import("./lifecycle.js").SwarmState, message: string) => void) | undefined,
+      onProgress: onProgress as
+        | ((state: import("./lifecycle.js").SwarmState, message: string) => void)
+        | undefined,
     });
   }
 }

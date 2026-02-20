@@ -75,8 +75,7 @@ export async function clarify(
         );
       } else {
         // Ask the user (or use test handler)
-        const handler =
-          options._promptHandler ?? defaultPromptHandler;
+        const handler = options._promptHandler ?? defaultPromptHandler;
         const answer = await handler(q);
         answers[q.question] = answer;
         if (answer === q.assumedAnswer) {
@@ -84,9 +83,7 @@ export async function clarify(
             `- **${q.impact}**: ${q.question}\n  → Confirmed assumption: "${answer}"`,
           );
         } else {
-          assumptions.push(
-            `- **${q.impact}**: ${q.question}\n  → User clarified: "${answer}"`,
-          );
+          assumptions.push(`- **${q.impact}**: ${q.question}\n  → User clarified: "${answer}"`);
         }
       }
     }
@@ -138,10 +135,11 @@ Rules:
 - If the spec is clear enough, return []`;
 
   try {
-    const response = await provider.chat(
-      [{ role: "user", content: userMessage }],
-      { system: systemPrompt, maxTokens: 1024, temperature: 0.2 },
-    );
+    const response = await provider.chat([{ role: "user", content: userMessage }], {
+      system: systemPrompt,
+      maxTokens: 1024,
+      temperature: 0.2,
+    });
 
     const content = response.content.trim();
     // Strip markdown code fences if present

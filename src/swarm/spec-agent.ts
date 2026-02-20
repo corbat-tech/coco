@@ -215,12 +215,10 @@ Response format:
 Project description: ${answers.originalDescription}
 MVP scope: ${answers.mvpScope}
 External integrations: ${answers.externalIntegrations}
-${
-  Object.entries(answers)
-    .filter(([k]) => k.startsWith("clarify_"))
-    .map(([, v], i) => `Answer to clarifying question ${i + 1}: ${v}`)
-    .join("\n")
-}
+${Object.entries(answers)
+  .filter(([k]) => k.startsWith("clarify_"))
+  .map(([, v], i) => `Answer to clarifying question ${i + 1}: ${v}`)
+  .join("\n")}
 
 Generate a complete BacklogSpec JSON.
 Requirements:

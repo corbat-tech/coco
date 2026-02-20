@@ -45,7 +45,11 @@ import type { LLMProvider, ChatResponse } from "../providers/types.js";
 
 const MOCK_CLARIFY_RESPONSE = JSON.stringify({
   questions: [
-    { question: "What database do you want?", options: ["PostgreSQL", "SQLite"], defaultAnswer: "SQLite" },
+    {
+      question: "What database do you want?",
+      options: ["PostgreSQL", "SQLite"],
+      defaultAnswer: "SQLite",
+    },
   ],
 });
 
@@ -118,12 +122,9 @@ describe("runSpecInterview", () => {
   it("returns a valid BacklogSpec with at least one sprint", async () => {
     const provider = makeMockProvider([MOCK_CLARIFY_RESPONSE, MOCK_BACKLOG_RESPONSE]);
 
-    const spec = await runSpecInterview(
-      "Build a simple REST API",
-      provider,
-      "/tmp/test-output",
-      { skipConfirmation: true },
-    );
+    const spec = await runSpecInterview("Build a simple REST API", provider, "/tmp/test-output", {
+      skipConfirmation: true,
+    });
 
     expect(spec).toBeDefined();
     expect(spec.sprints.length).toBeGreaterThan(0);
@@ -133,12 +134,9 @@ describe("runSpecInterview", () => {
   it("sets outputPath to the provided value", async () => {
     const provider = makeMockProvider([MOCK_CLARIFY_RESPONSE, MOCK_BACKLOG_RESPONSE]);
 
-    const spec = await runSpecInterview(
-      "Build a todo app",
-      provider,
-      "/tmp/my-todo-app",
-      { skipConfirmation: true },
-    );
+    const spec = await runSpecInterview("Build a todo app", provider, "/tmp/my-todo-app", {
+      skipConfirmation: true,
+    });
 
     expect(spec.outputPath).toBe("/tmp/my-todo-app");
   });
@@ -146,12 +144,9 @@ describe("runSpecInterview", () => {
   it("uses default qualityThreshold of 85", async () => {
     const provider = makeMockProvider([MOCK_CLARIFY_RESPONSE, MOCK_BACKLOG_RESPONSE]);
 
-    const spec = await runSpecInterview(
-      "Simple app",
-      provider,
-      "/tmp/out",
-      { skipConfirmation: true },
-    );
+    const spec = await runSpecInterview("Simple app", provider, "/tmp/out", {
+      skipConfirmation: true,
+    });
 
     expect(spec.qualityThreshold).toBe(85);
   });
@@ -159,12 +154,9 @@ describe("runSpecInterview", () => {
   it("uses default maxIterationsPerSprint of 3", async () => {
     const provider = makeMockProvider([MOCK_CLARIFY_RESPONSE, MOCK_BACKLOG_RESPONSE]);
 
-    const spec = await runSpecInterview(
-      "Simple app",
-      provider,
-      "/tmp/out",
-      { skipConfirmation: true },
-    );
+    const spec = await runSpecInterview("Simple app", provider, "/tmp/out", {
+      skipConfirmation: true,
+    });
 
     expect(spec.maxIterationsPerSprint).toBe(3);
   });
@@ -172,12 +164,9 @@ describe("runSpecInterview", () => {
   it("maps task roles to valid SprintTaskRole values", async () => {
     const provider = makeMockProvider([MOCK_CLARIFY_RESPONSE, MOCK_BACKLOG_RESPONSE]);
 
-    const spec = await runSpecInterview(
-      "Build something",
-      provider,
-      "/tmp/out",
-      { skipConfirmation: true },
-    );
+    const spec = await runSpecInterview("Build something", provider, "/tmp/out", {
+      skipConfirmation: true,
+    });
 
     const validRoles = ["researcher", "coder", "tester", "reviewer", "optimizer"];
     for (const sprint of spec.sprints) {
@@ -191,12 +180,9 @@ describe("runSpecInterview", () => {
     // First response is garbage, second is valid backlog
     const provider = makeMockProvider(["NOT VALID JSON AT ALL", MOCK_BACKLOG_RESPONSE]);
 
-    const spec = await runSpecInterview(
-      "Some description",
-      provider,
-      "/tmp/out",
-      { skipConfirmation: true },
-    );
+    const spec = await runSpecInterview("Some description", provider, "/tmp/out", {
+      skipConfirmation: true,
+    });
 
     // Should still produce a spec (clarify questions are skipped on parse error)
     expect(spec.sprints.length).toBeGreaterThan(0);
@@ -227,14 +213,9 @@ describe("runSpecInterview", () => {
       ],
     });
 
-    const provider = makeMockProvider(["{\"questions\":[]}", responseWithBadRole]);
+    const provider = makeMockProvider(['{"questions":[]}', responseWithBadRole]);
 
-    const spec = await runSpecInterview(
-      "test",
-      provider,
-      "/tmp/out",
-      { skipConfirmation: true },
-    );
+    const spec = await runSpecInterview("test", provider, "/tmp/out", { skipConfirmation: true });
 
     expect(spec.sprints[0]?.tasks[0]?.role).toBe("coder");
   });
@@ -247,7 +228,7 @@ describe("runSpecInterview", () => {
       sprints: [],
     });
 
-    const provider = makeMockProvider(["{\"questions\":[]}", emptySpecResponse]);
+    const provider = makeMockProvider(['{"questions":[]}', emptySpecResponse]);
 
     await expect(
       runSpecInterview("test", provider, "/tmp/out", { skipConfirmation: true }),
@@ -257,12 +238,7 @@ describe("runSpecInterview", () => {
   it("calls provider.chat twice (clarify + generate)", async () => {
     const provider = makeMockProvider([MOCK_CLARIFY_RESPONSE, MOCK_BACKLOG_RESPONSE]);
 
-    await runSpecInterview(
-      "Build an API",
-      provider,
-      "/tmp/out",
-      { skipConfirmation: true },
-    );
+    await runSpecInterview("Build an API", provider, "/tmp/out", { skipConfirmation: true });
 
     expect(provider.chat).toHaveBeenCalledTimes(2);
   });
@@ -291,7 +267,7 @@ describe("runSpecInterview — cancellation", () => {
 
   it("throws UserCancelledError when user cancels the MVP scope question", async () => {
     // LLM returns no clarifying questions so we go straight to the fixed questions
-    const provider = makeMockProvider(["{\"questions\":[]}", MOCK_BACKLOG_RESPONSE]);
+    const provider = makeMockProvider(['{"questions":[]}', MOCK_BACKLOG_RESPONSE]);
 
     // First p.text call (MVP scope) is cancelled
     vi.mocked(clack.text).mockResolvedValueOnce(Symbol("cancel") as unknown as string);
@@ -303,7 +279,7 @@ describe("runSpecInterview — cancellation", () => {
   });
 
   it("throws UserCancelledError when user cancels the integrations question", async () => {
-    const provider = makeMockProvider(["{\"questions\":[]}", MOCK_BACKLOG_RESPONSE]);
+    const provider = makeMockProvider(['{"questions":[]}', MOCK_BACKLOG_RESPONSE]);
 
     // MVP scope passes, integrations question is cancelled
     vi.mocked(clack.text)
@@ -319,7 +295,7 @@ describe("runSpecInterview — cancellation", () => {
   });
 
   it("throws UserCancelledError when user declines the confirmation prompt", async () => {
-    const provider = makeMockProvider(["{\"questions\":[]}", MOCK_BACKLOG_RESPONSE]);
+    const provider = makeMockProvider(['{"questions":[]}', MOCK_BACKLOG_RESPONSE]);
 
     // All text prompts pass, but confirm returns a cancel symbol
     vi.mocked(clack.text).mockResolvedValue("some answer");
@@ -338,7 +314,7 @@ describe("runSpecInterview — cancellation", () => {
       throw new Error("process.exit should not be called");
     });
 
-    const provider = makeMockProvider(["{\"questions\":[]}", MOCK_BACKLOG_RESPONSE]);
+    const provider = makeMockProvider(['{"questions":[]}', MOCK_BACKLOG_RESPONSE]);
     vi.mocked(clack.text).mockResolvedValueOnce(Symbol("cancel") as unknown as string);
     vi.mocked(clack.isCancel).mockReturnValueOnce(true);
 

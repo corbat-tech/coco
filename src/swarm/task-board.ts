@@ -167,9 +167,7 @@ export async function saveBoard(projectPath: string, board: SwarmBoard): Promise
  * Returns null if no task is ready.
  */
 export function getNextTask(board: SwarmBoard): SwarmTask | null {
-  const doneIds = new Set(
-    board.tasks.filter((t) => t.status === "done").map((t) => t.id),
-  );
+  const doneIds = new Set(board.tasks.filter((t) => t.status === "done").map((t) => t.id));
 
   for (const task of board.tasks) {
     if (task.status !== "pending") continue;
@@ -219,11 +217,7 @@ export function markTaskDone(board: SwarmBoard, taskId: string, result: string):
 /**
  * Mark a task as failed (immutable update — returns new board).
  */
-export function markTaskFailed(
-  board: SwarmBoard,
-  taskId: string,
-  reason: string,
-): SwarmBoard {
+export function markTaskFailed(board: SwarmBoard, taskId: string, reason: string): SwarmBoard {
   const now = new Date().toISOString();
   const tasks = board.tasks.map((t) => {
     if (t.id !== taskId) return t;

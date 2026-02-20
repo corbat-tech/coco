@@ -68,10 +68,7 @@ export function isCpuLoaded(thresholdMultiplier = 0.8): boolean {
  * - Under CPU load (> cpuThresholdMultiplier per core): reduce by 25%
  * - Always at least 1
  */
-export function getMaxSafeAgents(
-  memThresholdPct = 85,
-  cpuThresholdMultiplier = 0.8,
-): number {
+export function getMaxSafeAgents(memThresholdPct = 85, cpuThresholdMultiplier = 0.8): number {
   const snap = getResourceSnapshot();
   let max = Math.max(1, Math.floor(snap.cpuCount * 0.75));
 
