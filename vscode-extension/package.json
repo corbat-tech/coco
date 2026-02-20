@@ -1,13 +1,57 @@
 {
   "name": "corbat-coco",
   "displayName": "COCO — Autonomous Coding Agent",
-  "description": "Corbat-Coco: AI agent with quality convergence",
-  "version": "2.0.0",
+  "description": "AI coding agent with multi-provider LLM support, quality convergence loops, and terminal-first UX. Supports Anthropic, OpenAI, Gemini, Ollama, and 10+ providers.",
+  "version": "2.1.0",
   "publisher": "corbat-tech",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["AI", "Programming Languages"],
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "coding",
+    "autonomous",
+    "anthropic",
+    "openai",
+    "gemini",
+    "ollama",
+    "llm",
+    "copilot",
+    "code generation",
+    "quality",
+    "terminal"
+  ],
   "icon": "media/icon.png",
-  "activationEvents": ["onStartupFinished"],
+  "galleryBanner": {
+    "color": "#1a1a2e",
+    "theme": "dark"
+  },
+  "badges": [
+    {
+      "url": "https://img.shields.io/npm/v/@corbat-tech/coco.svg",
+      "href": "https://www.npmjs.com/package/@corbat-tech/coco",
+      "description": "npm version"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbat/corbat-coco.git"
+  },
+  "homepage": "https://github.com/corbat/corbat-coco#readme",
+  "bugs": {
+    "url": "https://github.com/corbat/corbat-coco/issues"
+  },
+  "qna": "https://github.com/corbat/corbat-coco/discussions",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -20,16 +64,47 @@
       {
         "command": "coco.newSession",
         "title": "New COCO Session",
-        "category": "COCO"
+        "category": "COCO",
+        "icon": "$(add)"
       }
     ],
+    "keybindings": [
+      {
+        "command": "coco.open",
+        "key": "ctrl+shift+o",
+        "mac": "cmd+shift+o",
+        "when": "!terminalFocus"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "coco.open",
+          "group": "navigation@100",
+          "when": "workbenchState != empty"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "coco.open"
+        },
+        {
+          "command": "coco.newSession"
+        }
+      ]
+    },
     "configuration": {
       "title": "COCO",
       "properties": {
         "coco.cliPath": {
           "type": "string",
           "default": "coco",
-          "description": "Path to the coco CLI binary"
+          "markdownDescription": "Path to the `coco` CLI binary. Defaults to `coco` (must be on `$PATH`). Use an absolute path if the binary is installed in a non-standard location.",
+          "examples": [
+            "coco",
+            "/usr/local/bin/coco",
+            "~/.local/bin/coco"
+          ]
         }
       }
     }
@@ -37,13 +112,14 @@
   "scripts": {
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
-    "package": "vsce package"
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish --no-dependencies"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
     "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.24.0",
-    "typescript": "^5.7.0",
-    "@vscode/vsce": "^3.0.0"
+    "typescript": "^5.7.0"
   }
 }

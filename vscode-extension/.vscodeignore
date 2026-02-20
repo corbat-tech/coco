@@ -1,10 +1,26 @@
-.vscode/**
-.vscode-test/**
+# Source files — not needed in packaged extension
 src/**
-node_modules/**
-.gitignore
-tsconfig.json
-esbuild.js
-**/*.map
 **/*.ts
 !dist/**
+
+# Build tooling
+esbuild.js
+tsconfig.json
+pnpm-lock.yaml
+node_modules/**
+
+# Dev & editor config
+.vscode/**
+.vscode-test/**
+.gitignore
+.npmrc
+
+# Debug artifacts
+**/*.map
+**/*.log
+
+# CI/CD
+.github/**
+
+# Generation scripts (only needed for dev)
+scripts/**
