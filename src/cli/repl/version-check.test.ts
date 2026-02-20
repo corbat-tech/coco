@@ -304,7 +304,9 @@ describe("version-check", () => {
 
     it("getCachedVersion returns null (cache miss) when cache file contains valid JSON but wrong shape", async () => {
       // Valid JSON but latestVersion is a number and checkedAt is a string — shape is wrong.
-      mockReadFile.mockResolvedValue(JSON.stringify({ latestVersion: 42, checkedAt: "not-a-number" }));
+      mockReadFile.mockResolvedValue(
+        JSON.stringify({ latestVersion: 42, checkedAt: "not-a-number" }),
+      );
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -649,7 +651,9 @@ describe("version-check", () => {
         isCancel: vi.fn().mockReturnValue(false),
       }));
 
-      const processExitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as () => never);
+      const processExitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation((() => {}) as () => never);
 
       const { checkForUpdatesInteractive } = await importModule();
       await checkForUpdatesInteractive();
@@ -670,7 +674,9 @@ describe("version-check", () => {
         isCancel: vi.fn().mockReturnValue(true),
       }));
 
-      const processExitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as () => never);
+      const processExitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation((() => {}) as () => never);
 
       const { checkForUpdatesInteractive } = await importModule();
       await checkForUpdatesInteractive();
@@ -691,16 +697,17 @@ describe("version-check", () => {
         isCancel: vi.fn().mockReturnValue(false),
       }));
 
-      const processExitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as () => never);
+      const processExitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation((() => {}) as () => never);
 
       const { checkForUpdatesInteractive } = await importModule();
       await checkForUpdatesInteractive();
 
-      expect(execaSpy).toHaveBeenCalledWith(
-        "npm",
-        ["install", "-g", "@corbat-tech/coco@latest"],
-        { stdio: "inherit", timeout: 120_000 },
-      );
+      expect(execaSpy).toHaveBeenCalledWith("npm", ["install", "-g", "@corbat-tech/coco@latest"], {
+        stdio: "inherit",
+        timeout: 120_000,
+      });
       expect(processExitSpy).toHaveBeenCalledWith(0);
 
       processExitSpy.mockRestore();
@@ -717,7 +724,9 @@ describe("version-check", () => {
         isCancel: vi.fn().mockReturnValue(false),
       }));
 
-      const processExitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as () => never);
+      const processExitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation((() => {}) as () => never);
 
       const { checkForUpdatesInteractive } = await importModule();
       await checkForUpdatesInteractive();
@@ -741,7 +750,9 @@ describe("version-check", () => {
         isCancel: vi.fn().mockReturnValue(false),
       }));
 
-      const processExitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as () => never);
+      const processExitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation((() => {}) as () => never);
 
       const { checkForUpdatesInteractive } = await importModule();
       await checkForUpdatesInteractive();
