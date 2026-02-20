@@ -600,9 +600,7 @@ export async function startRepl(
                 // Abort current execution so the task restarts with modification
                 wasAborted = true;
                 abortController.abort();
-                console.log(
-                  chalk.yellow(`  \u26A1 Modifying: `) + chalk.dim(preview) + sourceHint,
-                );
+                console.log(chalk.yellow(`  \u26A1 Modifying: `) + chalk.dim(preview) + sourceHint);
                 break;
 
               case InterruptionAction.Queue:

@@ -1001,9 +1001,7 @@ describe("REPL index", () => {
 
   describe("MCP initialization", () => {
     /** Helper: build a minimal working session + provider + input handler mock setup */
-    async function setupMinimalRepl(overrides?: {
-      inputPromptValues?: (string | null)[];
-    }) {
+    async function setupMinimalRepl(overrides?: { inputPromptValues?: (string | null)[] }) {
       const { createProvider } = await import("../../providers/index.js");
       const { createSession } = await import("./session.js");
       const { createInputHandler } = await import("./input/handler.js");
