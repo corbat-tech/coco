@@ -62,6 +62,8 @@ import {
   getCocoModeSystemPrompt,
   type CocoQualityResult,
 } from "./coco-mode.js";
+import { getGitContext, formatGitLine, type GitContext } from "./git-context.js";
+import { renderStatusBar } from "./status-bar.js";
 
 // stringWidth (from 'string-width') is the industry-standard way to measure
 // visual terminal width of strings.  It correctly handles ANSI codes, emoji
@@ -212,8 +214,11 @@ export async function startRepl(
   // Initialize intent recognizer
   const intentRecognizer = createIntentRecognizer();
 
+  // Fetch git context (concurrent — no added latency since provider init already awaited)
+  let gitContext: GitContext | null = await getGitContext(projectPath);
+
   // Print welcome
-  await printWelcome(session);
+  await printWelcome(session, gitContext);
 
   // Ensure terminal state is restored on exit (bracketed paste, raw mode, etc.)
   const cleanupTerminal = () => {
@@ -737,6 +742,16 @@ export async function startRepl(
         result.toolCalls.length,
       );
 
+      // Fire-and-forget: refresh git context without blocking the loop
+      getGitContext(session.projectPath)
+        .then((ctx) => {
+          if (ctx) gitContext = ctx;
+        })
+        .catch(() => {});
+
+      // Render status bar with current git context
+      renderStatusBar(session.projectPath, session.config, gitContext);
+
       // Check and perform context compaction if needed
       try {
         const usageBefore = getContextUsagePercent(session);
@@ -813,11 +828,14 @@ export async function startRepl(
  * Print welcome message - retro terminal style, compact
  * Brand color: Magenta/Purple
  */
-async function printWelcome(session: {
-  projectPath: string;
-  config: ReplConfig;
-  skillRegistry?: import("../../skills/registry.js").UnifiedSkillRegistry;
-}): Promise<void> {
+async function printWelcome(
+  session: {
+    projectPath: string;
+    config: ReplConfig;
+    skillRegistry?: import("../../skills/registry.js").UnifiedSkillRegistry;
+  },
+  gitCtx: GitContext | null,
+): Promise<void> {
   const trustStore = createTrustStore();
   await trustStore.init();
   const trustLevel = trustStore.getLevel(session.projectPath);
@@ -897,6 +915,10 @@ async function printWelcome(session: {
       chalk.magenta(modelName) +
       (trustText ? chalk.dim(` \u2022 \u{1F510} ${trustText}`) : ""),
   );
+  // Show git context if available
+  if (gitCtx) {
+    console.log(`  ${formatGitLine(gitCtx)}`);
+  }
   // Show COCO mode status
   const cocoStatus = isCocoMode()
     ? chalk.magenta("  \u{1F504} quality mode: ") +
