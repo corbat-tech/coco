@@ -42,7 +42,11 @@ export const cocoCommand: SlashCommand = {
       console.log();
       if (state) {
         if (skillAvailable) {
-          console.log(chalk.dim("  Using: ") + chalk.cyan("coco-fix-iterate") + chalk.dim(" skill (Reviewer+Fixer+Verifier pipeline)"));
+          console.log(
+            chalk.dim("  Using: ") +
+              chalk.cyan("coco-fix-iterate") +
+              chalk.dim(" skill (Reviewer+Fixer+Verifier pipeline)"),
+          );
         } else {
           console.log(chalk.dim("  Using: text protocol injection (skill not found)"));
         }
