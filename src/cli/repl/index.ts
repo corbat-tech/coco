@@ -38,12 +38,11 @@ import {
 } from "./commands/index.js";
 import type { MessageContent, ImageContent, TextContent } from "../../providers/types.js";
 import type { ReplConfig } from "./types.js";
+import type { MCPServerManager, ServerConnection } from "../../mcp/lifecycle.js";
 import { VERSION } from "../../version.js";
 import { createTrustStore, type TrustLevel } from "./trust-store.js";
 import * as p from "@clack/prompts";
 import { createIntentRecognizer, type Intent } from "./intent/index.js";
-// State manager available for future use
-// import { getStateManager, formatStateStatus, getStateSummary } from "./state/index.js";
 import { ensureConfiguredV2 } from "./onboarding-v2.js";
 import { checkForUpdates } from "./version-check.js";
 import { getInternalProviderId } from "../../config/env.js";
@@ -183,6 +182,58 @@ export async function startRepl(
     );
   }
 
+  // Initialize MCP servers (non-fatal — REPL starts even if MCP fails)
+  let mcpManager: MCPServerManager | null = null;
+  const logger = (await import("../../utils/logger.js")).getLogger();
+  try {
+    const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+    const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+    const { registerMCPTools } = await import("../../mcp/tools.js");
+
+    const mcpRegistry = new MCPRegistryImpl();
+    await mcpRegistry.load();
+    const enabledServers = mcpRegistry.listEnabledServers();
+
+    if (enabledServers.length > 0) {
+      mcpManager = createMCPServerManager();
+      let connections: Map<string, ServerConnection>;
+      try {
+        connections = await mcpManager.startAll(enabledServers);
+      } catch (startError) {
+        logger.warn(
+          `[MCP] Failed to start servers: ${startError instanceof Error ? startError.message : String(startError)}`,
+        );
+        try {
+          await mcpManager.stopAll();
+        } catch {
+          // Ignore errors during partial-start cleanup
+        }
+        mcpManager = null;
+        connections = new Map();
+      }
+
+      // Register tools from each successfully connected server
+      for (const connection of connections.values()) {
+        try {
+          await registerMCPTools(toolRegistry, connection.name, connection.client);
+        } catch (toolError) {
+          logger.warn(
+            `[MCP] Failed to register tools for server '${connection.name}': ${toolError instanceof Error ? toolError.message : String(toolError)}`,
+          );
+        }
+      }
+
+      const activeCount = connections.size;
+      if (activeCount > 0) {
+        logger.info(`[MCP] ${activeCount} MCP server(s) active`);
+      }
+    }
+  } catch (mcpError) {
+    logger.warn(
+      `[MCP] Initialization failed: ${mcpError instanceof Error ? mcpError.message : String(mcpError)}`,
+    );
+  }
+
   // Create input handler
   const inputHandler = createInputHandler(session);
 
@@ -223,11 +274,13 @@ export async function startRepl(
       process.stdin.setRawMode(false);
     }
   };
-  process.on("exit", cleanupTerminal);
-  process.on("SIGTERM", () => {
-    cleanupTerminal();
-    process.exit(0);
-  });
+  process.once("exit", cleanupTerminal);
+  const sigtermHandler = () => {
+    // Don't call cleanupTerminal() here — the "exit" listener handles it
+    const cleanup = mcpManager ? mcpManager.stopAll() : Promise.resolve();
+    cleanup.catch(() => {}).finally(() => process.exit(0));
+  };
+  process.once("SIGTERM", sigtermHandler);
 
   // Main loop
   while (true) {
@@ -246,12 +299,12 @@ export async function startRepl(
             ? pendingModificationPreview.slice(0, 67) + "\u2026"
             : pendingModificationPreview;
         console.log(
-          chalk.yellow(`\n\u26A1 Re-enviando con modificación: `) + chalk.dim(modPreview),
+          chalk.yellow(`\n\u26A1 Re-sending with modification: `) + chalk.dim(modPreview),
         );
         console.log();
       } else {
         const preview = autoInput.length > 70 ? autoInput.slice(0, 67) + "\u2026" : autoInput;
-        console.log(chalk.cyan(`\n\uD83D\uDCCB Auto-enviando mensaje encolado:`));
+        console.log(chalk.cyan(`\n\uD83D\uDCCB Auto-sending queued message:`));
         console.log(chalk.dim(`  ${preview}`));
         console.log();
       }
@@ -516,7 +569,7 @@ export async function startRepl(
           inputEcho.clear();
 
           const preview = msg.text.length > 60 ? msg.text.slice(0, 57) + "\u2026" : msg.text;
-          console.log(chalk.dim(`  \u2026 Clasificando: ${preview}`));
+          console.log(chalk.dim(`  \u2026 Classifying: ${preview}`));
 
           // Step 2: Launch LLM classification (async, tracked for later await)
           const classificationPromise = (async () => {
@@ -529,7 +582,7 @@ export async function startRepl(
               case InterruptionAction.Abort:
                 wasAborted = true;
                 abortController.abort();
-                console.log(chalk.red(`  \u23F9 Abortando\u2026`) + sourceHint);
+                console.log(chalk.red(`  \u23F9 Aborting\u2026`) + sourceHint);
                 break;
 
               case InterruptionAction.Modify:
@@ -544,14 +597,14 @@ export async function startRepl(
                 wasAborted = true;
                 abortController.abort();
                 console.log(
-                  chalk.yellow(`  \u26A1 Modificando: `) + chalk.dim(preview) + sourceHint,
+                  chalk.yellow(`  \u26A1 Modifying: `) + chalk.dim(preview) + sourceHint,
                 );
                 break;
 
               case InterruptionAction.Queue:
                 turnQueuedMessages.push(msg.text);
                 console.log(
-                  chalk.cyan(`  \uD83D\uDCCB Encolado: `) + chalk.dim(preview) + sourceHint,
+                  chalk.cyan(`  \uD83D\uDCCB Queued: `) + chalk.dim(preview) + sourceHint,
                 );
                 break;
             }
@@ -832,6 +885,18 @@ export async function startRepl(
 
   inputHandler.close();
   feedbackSystem.dispose();
+
+  // Graceful MCP shutdown: await here so async cleanup completes before the
+  // process exits normally. The fire-and-forget on "exit" stays as a fallback.
+  if (mcpManager) {
+    await mcpManager.stopAll().catch(() => {
+      // Ignore errors during shutdown
+    });
+  }
+
+  // Clean up SIGTERM listener to prevent listener leak on repeated startRepl calls.
+  // process.once removes it automatically if SIGTERM fires; we remove it here on normal exit.
+  process.off("SIGTERM", sigtermHandler);
 }
 
 /**
