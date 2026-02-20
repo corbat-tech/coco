@@ -78,6 +78,7 @@ npm version NEW_VERSION --no-git-tag-version
 ## Step 5: Run full checks
 
 ```bash
+pnpm format:fix   # always run first — auto-fixes style, prevents CI failures
 pnpm check
 ```
 

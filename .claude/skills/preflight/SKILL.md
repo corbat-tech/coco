@@ -43,6 +43,7 @@ Analyze commits and suggest:
 ## Step 3: Run checks
 
 ```bash
+pnpm format:fix 2>&1   # auto-fix formatting before checking — prevents CI failures on style
 pnpm check
 ```
 

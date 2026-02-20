@@ -92,6 +92,18 @@ if [ -f "package.json" ]; then
   HAS_CHECK=$(node -e "const p=require('./package.json'); console.log(p.scripts?.check ? 'yes' : 'no')" 2>/dev/null || echo "no")
   HAS_TEST=$(node -e "const p=require('./package.json'); console.log(p.scripts?.test ? 'yes' : 'no')" 2>/dev/null || echo "no")
 
+  # Always auto-fix formatting first — prevents CI Lint & Format failures
+  HAS_FORMAT=$(node -e "const p=require('./package.json'); console.log(p.scripts?.['format:fix'] ? 'yes' : 'no')" 2>/dev/null || echo "no")
+  if [ "$HAS_FORMAT" = "yes" ]; then
+    echo "  Running 'pnpm format:fix' in copy..."
+    pnpm format:fix 2>&1 || true
+    git add -u 2>/dev/null || true
+    if ! git diff --cached --quiet 2>/dev/null; then
+      git commit -m "fix(format): apply formatter before merge-back" --no-verify
+      echo "  Formatter applied and committed."
+    fi
+  fi
+
   if [ "$HAS_CHECK" = "yes" ]; then
     echo "  Running 'pnpm check' in copy..."
     if ! pnpm check 2>&1; then
@@ -173,6 +185,31 @@ git remote remove "$REMOTE_NAME"
 if [ "$STASHED" = "true" ]; then
   echo "  Restoring stashed changes..."
   git stash pop || echo "  Warning: could not restore stash automatically"
+fi
+
+# Post-merge: auto-fix formatting in the original and run lint
+# Merge conflicts or cross-branch diffs can leave format issues
+cd "$ORIGINAL_DIR"
+if [ -f "package.json" ]; then
+  HAS_FORMAT=$(node -e "const p=require('./package.json'); console.log(p.scripts?.['format:fix'] ? 'yes' : 'no')" 2>/dev/null || echo "no")
+  HAS_LINT=$(node -e "const p=require('./package.json'); console.log(p.scripts?.lint ? 'yes' : 'no')" 2>/dev/null || echo "no")
+  if [ "$HAS_FORMAT" = "yes" ]; then
+    echo ""
+    echo "[post-merge] Running 'pnpm format:fix' in original..."
+    pnpm format:fix 2>&1 || true
+    git add -u 2>/dev/null || true
+    if ! git diff --cached --quiet 2>/dev/null; then
+      git commit -m "fix(format): apply formatter after merge-back" --no-verify
+      echo "  Formatter applied and committed."
+    fi
+  fi
+  if [ "$HAS_LINT" = "yes" ]; then
+    echo "[post-merge] Running 'pnpm lint'..."
+    if ! pnpm lint 2>&1; then
+      echo ""
+      echo "Warning: lint errors found after merge. Fix before pushing."
+    fi
+  fi
 fi
 
 echo ""
