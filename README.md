@@ -69,6 +69,19 @@ $ coco "Add JWT authentication to the Express API"
 | One model, one provider, take it or leave it | 12 providers, switch any time |
 | Workflows live in your head or Confluence | Reusable skills committed to the repo |
 
+### How Coco compares
+
+| | Coco | Aider | Claude Code | Cursor |
+|---|---|---|---|---|
+| Quality convergence loop | ✅ | ❌ | ❌ | ❌ |
+| Runs tests + measures coverage | ✅ | ❌ | ❌ | ❌ |
+| Provider-agnostic (12 providers) | ✅ | ✅ | ❌ Anthropic only | Partial |
+| Works in terminal | ✅ | ✅ | ✅ | ❌ IDE only |
+| Reusable team workflows (Skills) | ✅ | ❌ | ✅ CLAUDE.md | ❌ |
+| MCP tool integration | ✅ | ❌ | ✅ | ✅ |
+| Local models (Ollama, LM Studio) | ✅ | ✅ | ❌ | Partial |
+| Subscription-based providers | ✅ ChatGPT, Kimi Code | ❌ | ✅ Claude Max | ✅ |
+
 ---
 
 ## Install
@@ -413,6 +426,19 @@ pnpm format:fix   # fix formatting
 - **Convergence takes time** — expect 2–5 min per task depending on complexity
 - **Quality depends on the model** — Claude Opus gives the best results; smaller models score lower
 - **Not yet battle-tested at enterprise scale** — production use at medium-scale projects, feedback welcome
+
+---
+
+## Privacy
+
+Coco sends your prompts and relevant code context to the LLM provider you configure. Your code is not stored by Coco and is not used to train models — that is governed by each provider's own data policy:
+
+- **Anthropic**: https://www.anthropic.com/privacy
+- **OpenAI**: https://openai.com/policies/privacy-policy
+- **Google Gemini**: https://policies.google.com/privacy
+- **Local models** (Ollama, LM Studio): nothing leaves your machine
+
+Coco does not collect telemetry. No usage data is sent to Corbat.
 
 ---
 

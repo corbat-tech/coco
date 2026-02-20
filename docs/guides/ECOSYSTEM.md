@@ -89,6 +89,22 @@ cp -r .claude/skills/coco-fix-iterate ~/.coco/skills/
 | **release-pr** | Create a release pull request with changelog | Formal release workflows |
 | **verify** | Run a verification suite and report results | Post-deploy or pre-release checks |
 
+### Skill discovery — priority order
+
+Coco scans for skills in the following directories. When the same skill name exists in more than one location, the **highest-priority** location wins:
+
+```
+Priority order (highest → lowest):
+1. .coco/skills/         — project-level skills, committed to your repo
+2. ~/.coco/skills/       — your personal global skills
+3. ~/.claude/skills/     — Claude Code compatibility alias (lower priority than ~/.coco/skills/)
+4. Built-in              — shipped with Coco
+```
+
+> **Note:** `.claude/skills/` at the project root is supported as a compatibility alias for Claude Code conventions. `~/.claude/skills/` (global) is also scanned but has lower priority than `~/.coco/skills/`.
+
+---
+
 ### Creating a project skill
 
 Any file in `.coco/skills/<name>/SKILL.md` becomes a `/name` command:

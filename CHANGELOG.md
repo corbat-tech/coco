@@ -20,8 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`checkForUpdatesInteractive()`** — nueva función en `version-check.ts` que muestra el aviso de actualización disponible **antes de abrir el REPL**, de forma interactiva (una vez por sesión). Reemplaza el check inline en `printWelcome()`.
-- **Caché persistente de versión** — la caché de version-check se escribe en `~/.coco/version-check-cache.json` (válida 24h) en lugar de una variable de entorno que se perdía en cada sesión.
+- **`checkForUpdatesInteractive()`** — new function in `version-check.ts` that displays the available update notice **before opening the REPL**, interactively (once per session). Replaces the inline check in `printWelcome()`.
+- **Persistent version cache** — the version-check cache is written to `~/.coco/version-check-cache.json` (valid for 24 h) instead of an environment variable that was lost between sessions.
 - **`parseCocoQualityReport(content)`** — extracted from `index.ts` to `coco-mode.ts` as a public, tested function. Parses the structured `COCO_QUALITY_REPORT` marker block from agent responses into a typed `CocoQualityResult`. Covered by 7 new unit tests (full report, missing marker, missing `score_history`, optional fields, embedded in LLM prose, non-numeric score filtering, empty-after-filter).
 
 ---
@@ -514,7 +514,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| 2.0.0 | 2026-02-19 | React/Java analyzers, ProjectConfig, quality bridge, report exporter, GitHub Actions generator, 6 new providers |
+| 2.0.0 | 2026-02-20 | React/Java analyzers, ProjectConfig, quality bridge, report exporter, GitHub Actions generator, 6 new providers |
 | 1.9.0 | 2026-02-19 | Parallel development skills for isolated feature work |
 | 1.8.0 | 2026-02-18 | Release workflow skills, /open fix, SkillRegistry integration |
 | 1.7.0 | 2026-02-17 | Concurrent input with auto-classification and abort/rollback |
@@ -549,7 +549,7 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v2.0.0...HEAD
 [1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.5.0...v1.6.0
