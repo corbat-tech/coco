@@ -45,7 +45,6 @@ import { createIntentRecognizer, type Intent } from "./intent/index.js";
 // State manager available for future use
 // import { getStateManager, formatStateStatus, getStateSummary } from "./state/index.js";
 import { ensureConfiguredV2 } from "./onboarding-v2.js";
-import { checkForUpdates } from "./version-check.js";
 import { getInternalProviderId } from "../../config/env.js";
 import { loadAllowedPaths } from "../../tools/allowed-paths.js";
 import {
@@ -867,16 +866,6 @@ async function printWelcome(session: {
   console.log("  " + boxLine(taglineContent));
   console.log("  " + boxLine(subtitleContent));
   console.log(chalk.magenta("  \u2570" + "\u2500".repeat(boxWidth - 2) + "\u256F"));
-
-  // Check for updates (non-blocking, with 3s timeout)
-  const updateInfo = await checkForUpdates();
-  if (updateInfo) {
-    console.log(
-      chalk.yellow(
-        `  \u2B06 ${chalk.dim(updateInfo.currentVersion)} \u2192 ${chalk.green(updateInfo.latestVersion)} ${chalk.dim(`(${updateInfo.updateCommand})`)}`,
-      ),
-    );
-  }
 
   // Project info - single compact block
   const maxPathLen = 50;
