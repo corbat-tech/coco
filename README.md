@@ -12,7 +12,7 @@
 
 <br/>
 
-[Install](#-install) · [Quick Start](#-quick-start) · [How It Works](#-how-it-works) · [Providers](#-providers) · [Skills](#-skills) · [Docs](#-documentation)
+[Install](#install) · [Quick Start](#quick-start) · [How It Works](#how-it-works) · [Providers](#providers) · [Skills](#skills) · [Docs](#documentation)
 
 </div>
 
@@ -274,7 +274,7 @@ Skills are reusable workflows committed to your repo. They're discovered automat
 **Three scopes, one system:**
 
 ```
-~/.claude/skills/          # your machine — personal workflows
+~/.coco/skills/            # your machine — personal workflows
 .coco/skills/              # this repo — shared with the team
 built-in                   # shipped with coco
 ```
@@ -324,7 +324,7 @@ coco mcp add postgres \
   --env "DATABASE_URL=postgresql://..."
 ```
 
-MCP tools become native Coco tools — the agent picks them up automatically.
+Once connected, MCP tools are registered and available to the agent alongside built-in tools.
 
 **[MCP guide →](docs/MCP.md)**
 
@@ -399,7 +399,7 @@ pnpm install
 
 pnpm dev          # run with tsx (hot reload)
 pnpm check        # typecheck + lint + test
-pnpm test         # 5283 tests
+pnpm test         # 5290 tests
 pnpm format:fix   # fix formatting
 ```
 
