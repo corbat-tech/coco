@@ -8,7 +8,6 @@
  */
 
 import chalk from "chalk";
-import ansiEscapes from "ansi-escapes";
 import type { SlashCommand, ReplSession } from "../types.js";
 import { getProviderDefinition, getAllProviders } from "../providers-config.js";
 import type { ProviderType } from "../../../providers/index.js";
@@ -158,8 +157,18 @@ async function selectModelInteractively(
       if (selectedIndex === -1) selectedIndex = 0;
     }
 
-    const hasDisabled = models.some((m) => m.disabled);
     const hasEnabled = models.some((m) => !m.disabled);
+
+    let lastTotalLines = 0;
+
+    const clearPrevious = () => {
+      if (lastTotalLines === 0) return;
+      process.stdout.write("\x1b[2K\r");
+      for (let i = 0; i < lastTotalLines; i++) {
+        process.stdout.write("\x1b[1A\x1b[2K");
+      }
+      process.stdout.write("\r");
+    };
 
     /** Skip to next enabled model in a given direction */
     const skipToEnabled = (from: number, direction: 1 | -1): number => {
@@ -172,7 +181,8 @@ async function selectModelInteractively(
     };
 
     const renderMenu = () => {
-      process.stdout.write(ansiEscapes.eraseDown);
+      clearPrevious();
+
       let totalLines = 0;
       let separatorPrinted = false;
 
@@ -183,7 +193,7 @@ async function selectModelInteractively(
 
         // Print separator before first disabled item
         if (model.disabled && !separatorPrinted) {
-          console.log(chalk.dim("  ── not downloaded (install to use) ──"));
+          process.stdout.write(chalk.dim("  ── not downloaded (install to use) ──") + "\n");
           separatorPrinted = true;
           totalLines++;
         }
@@ -204,7 +214,7 @@ async function selectModelInteractively(
           if (model.hint) {
             line += chalk.dim.italic(`  → ${model.hint}`);
           }
-          console.log(line);
+          process.stdout.write(line + "\n");
           totalLines++;
           continue;
         }
@@ -231,17 +241,14 @@ async function selectModelInteractively(
           line += chalk.dim(`  ${model.description}`);
         }
 
-        console.log(line);
+        process.stdout.write(line + "\n");
         totalLines++;
       }
 
-      const footer = hasDisabled
-        ? "↑/↓ navigate • Enter select • Esc cancel"
-        : "↑/↓ navigate • Enter select • Esc cancel";
-      console.log(chalk.dim(`\n${footer}`));
+      process.stdout.write("\n" + chalk.dim("↑/↓ navigate • Enter select • Esc cancel") + "\n");
       totalLines += 2; // blank line + footer
 
-      process.stdout.write(ansiEscapes.cursorUp(totalLines));
+      lastTotalLines = totalLines;
     };
 
     const cleanup = () => {
@@ -249,7 +256,7 @@ async function selectModelInteractively(
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
       }
-      process.stdout.write(ansiEscapes.eraseDown);
+      clearPrevious();
     };
 
     const onKeyPress = (data: Buffer) => {
@@ -281,7 +288,6 @@ async function selectModelInteractively(
       // Up arrow — skip disabled items
       if (key === "\x1b[A") {
         selectedIndex = skipToEnabled(selectedIndex, -1);
-        process.stdout.write(ansiEscapes.eraseDown);
         renderMenu();
         return;
       }
@@ -289,7 +295,6 @@ async function selectModelInteractively(
       // Down arrow — skip disabled items
       if (key === "\x1b[B") {
         selectedIndex = skipToEnabled(selectedIndex, 1);
-        process.stdout.write(ansiEscapes.eraseDown);
         renderMenu();
         return;
       }

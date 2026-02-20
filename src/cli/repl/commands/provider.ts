@@ -4,7 +4,6 @@
  */
 
 import chalk from "chalk";
-import ansiEscapes from "ansi-escapes";
 import * as p from "@clack/prompts";
 import { truncate } from "../../../utils/strings.js";
 import type { SlashCommand, ReplSession } from "../types.js";
@@ -49,8 +48,20 @@ async function selectProviderInteractively(
     let selectedIndex = providers.findIndex((p) => p.id === currentProviderId);
     if (selectedIndex === -1) selectedIndex = 0;
 
+    let lastTotalLines = 0;
+
+    const clearPrevious = () => {
+      if (lastTotalLines === 0) return;
+      process.stdout.write("\x1b[2K\r");
+      for (let i = 0; i < lastTotalLines; i++) {
+        process.stdout.write("\x1b[1A\x1b[2K");
+      }
+      process.stdout.write("\r");
+    };
+
     const renderMenu = () => {
-      process.stdout.write(ansiEscapes.eraseDown);
+      clearPrevious();
+
       const termWidth = process.stdout.columns || 80;
       // Prefix takes ~22 chars: " ○ ✓ 🦙 ollama       "
       const descWidth = Math.max(20, termWidth - 22);
@@ -65,11 +76,11 @@ async function selectProviderInteractively(
         if (isSelected) {
           let line = chalk.bgBlue.white(` ▶ ${provider.emoji} ${provider.id.padEnd(12)} `);
           line += chalk.bgBlue.white(truncate(provider.description, descWidth, "…"));
-          console.log(line);
+          process.stdout.write(line + "\n");
           totalLines++;
           // Show full description on a second line if it was truncated
           if (provider.description.length > descWidth) {
-            console.log(chalk.bgBlue.white(`    ${provider.description}`));
+            process.stdout.write(chalk.bgBlue.white(`    ${provider.description}`) + "\n");
             totalLines++;
           }
         } else {
@@ -81,17 +92,16 @@ async function selectProviderInteractively(
             ? chalk.green(provider.id.padEnd(12))
             : chalk.yellow(provider.id.padEnd(12));
           line += chalk.dim(truncate(provider.description, descWidth, "…"));
-          console.log(line);
+          process.stdout.write(line + "\n");
           totalLines++;
         }
       }
 
-      console.log(chalk.dim("\n↑/↓ navigate • Enter select • Esc cancel"));
-      console.log(chalk.dim("✓ = API key configured"));
-      totalLines += 3; // 2 footer lines + 1 blank line from \n
+      process.stdout.write("\n" + chalk.dim("↑/↓ navigate • Enter select • Esc cancel") + "\n");
+      process.stdout.write(chalk.dim("✓ = API key configured") + "\n");
+      totalLines += 3; // blank line + 2 footer lines
 
-      // Move cursor back up to redraw on next keypress
-      process.stdout.write(ansiEscapes.cursorUp(totalLines));
+      lastTotalLines = totalLines;
     };
 
     const cleanup = () => {
@@ -99,7 +109,7 @@ async function selectProviderInteractively(
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
       }
-      process.stdout.write(ansiEscapes.eraseDown);
+      clearPrevious();
     };
 
     const onKeyPress = (data: Buffer) => {
@@ -125,14 +135,12 @@ async function selectProviderInteractively(
 
       if (key === "\x1b[A") {
         selectedIndex = (selectedIndex - 1 + providers.length) % providers.length;
-        process.stdout.write(ansiEscapes.eraseDown);
         renderMenu();
         return;
       }
 
       if (key === "\x1b[B") {
         selectedIndex = (selectedIndex + 1) % providers.length;
-        process.stdout.write(ansiEscapes.eraseDown);
         renderMenu();
         return;
       }
