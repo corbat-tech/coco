@@ -146,7 +146,7 @@ export class GeminiProvider implements LLMProvider {
           temperature: options?.temperature ?? this.config.temperature ?? 0,
           stopSequences: options?.stopSequences,
         },
-        systemInstruction: options?.system,
+        systemInstruction: this.extractSystem(messages, options?.system),
       });
 
       const { history, lastMessage } = this.convertMessages(messages);
@@ -183,7 +183,7 @@ export class GeminiProvider implements LLMProvider {
           maxOutputTokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
           temperature: options?.temperature ?? this.config.temperature ?? 0,
         },
-        systemInstruction: options?.system,
+        systemInstruction: this.extractSystem(messages, options?.system),
         tools,
         toolConfig: {
           functionCallingConfig: {
@@ -217,7 +217,7 @@ export class GeminiProvider implements LLMProvider {
           maxOutputTokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
           temperature: options?.temperature ?? this.config.temperature ?? 0,
         },
-        systemInstruction: options?.system,
+        systemInstruction: this.extractSystem(messages, options?.system),
       });
 
       const { history, lastMessage } = this.convertMessages(messages);
@@ -261,7 +261,7 @@ export class GeminiProvider implements LLMProvider {
           maxOutputTokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
           temperature: options?.temperature ?? this.config.temperature ?? 0,
         },
-        systemInstruction: options?.system,
+        systemInstruction: this.extractSystem(messages, options?.system),
         tools,
         toolConfig: {
           functionCallingConfig: {
@@ -388,6 +388,26 @@ export class GeminiProvider implements LLMProvider {
         provider: this.id,
       });
     }
+  }
+
+  /**
+   * Extract system prompt from messages array or options.
+   *
+   * convertMessages() skips system-role messages ("handled via systemInstruction"),
+   * but all callers forgot to also pass it via options.system. This helper bridges
+   * that gap — mirrors the same fix applied to AnthropicProvider.
+   */
+  private extractSystem(messages: Message[], optionsSystem?: string): string | undefined {
+    if (optionsSystem !== undefined) return optionsSystem;
+    const systemMsg = messages.find((m) => m.role === "system");
+    if (!systemMsg) return undefined;
+    if (typeof systemMsg.content === "string") return systemMsg.content;
+    // Array content: join all text blocks. Non-text blocks are skipped.
+    const text = systemMsg.content
+      .filter((b): b is { type: "text"; text: string } => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+    return text || undefined;
   }
 
   /**

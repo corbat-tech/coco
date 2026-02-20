@@ -98,7 +98,7 @@ export class AnthropicProvider implements LLMProvider {
           model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
           max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
           temperature: options?.temperature ?? this.config.temperature ?? 0,
-          system: options?.system,
+          system: this.extractSystem(messages, options?.system),
           messages: this.convertMessages(messages),
           stop_sequences: options?.stopSequences,
         });
@@ -134,7 +134,7 @@ export class AnthropicProvider implements LLMProvider {
           model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
           max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
           temperature: options?.temperature ?? this.config.temperature ?? 0,
-          system: options?.system,
+          system: this.extractSystem(messages, options?.system),
           messages: this.convertMessages(messages),
           tools: this.convertTools(options.tools),
           tool_choice: options.toolChoice ? this.convertToolChoice(options.toolChoice) : undefined,
@@ -170,7 +170,7 @@ export class AnthropicProvider implements LLMProvider {
         model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
         max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
         temperature: options?.temperature ?? this.config.temperature ?? 0,
-        system: options?.system,
+        system: this.extractSystem(messages, options?.system),
         messages: this.convertMessages(messages),
       });
 
@@ -203,7 +203,7 @@ export class AnthropicProvider implements LLMProvider {
         model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
         max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
         temperature: options?.temperature ?? this.config.temperature ?? 0,
-        system: options?.system,
+        system: this.extractSystem(messages, options?.system),
         messages: this.convertMessages(messages),
         tools: this.convertTools(options.tools),
         tool_choice: options.toolChoice ? this.convertToolChoice(options.toolChoice) : undefined,
@@ -357,6 +357,28 @@ export class AnthropicProvider implements LLMProvider {
         provider: this.id,
       });
     }
+  }
+
+  /**
+   * Extract system prompt from messages array or options.
+   *
+   * The agent-loop passes the system message as the first element of the
+   * messages array (role: "system"). convertMessages() strips it out because
+   * Anthropic requires it as a top-level parameter — but all callers forgot
+   * to also pass it via options.system. This helper bridges that gap.
+   */
+  private extractSystem(messages: Message[], optionsSystem?: string): string | undefined {
+    if (optionsSystem !== undefined) return optionsSystem;
+    const systemMsg = messages.find((m) => m.role === "system");
+    if (!systemMsg) return undefined;
+    if (typeof systemMsg.content === "string") return systemMsg.content;
+    // Array content: join all text blocks into a single string. Non-text blocks
+    // (e.g. images) are skipped — Anthropic system supports text only today.
+    const text = systemMsg.content
+      .filter((b): b is TextContent => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+    return text || undefined;
   }
 
   /**
