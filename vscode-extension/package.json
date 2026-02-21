@@ -1,8 +1,8 @@
 {
   "name": "corbat-coco",
-  "displayName": "COCO — Autonomous Coding Agent",
+  "displayName": "COCO Code",
   "description": "AI coding agent with multi-provider LLM support, quality convergence loops, and terminal-first UX. Supports Anthropic, OpenAI, Gemini, Ollama, and 10+ providers.",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "publisher": "corbat-tech",
   "license": "MIT",
   "engines": {
