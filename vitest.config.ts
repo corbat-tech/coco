@@ -43,6 +43,10 @@ export default defineConfig({
         "src/quality/analyzers/build-verifier.ts",
         "src/quality/analyzers/import-analyzer.ts",
         "src/cli/repl/index.ts", // Interactive REPL, OOM in headless test env - needs integration tests
+        // Auth - requires live OAuth flow / browser interaction
+        "src/auth/**",
+        // Swarm - requires live agent coordination with real LLM providers
+        "src/swarm/**",
       ],
       thresholds: {
         lines: 71,
