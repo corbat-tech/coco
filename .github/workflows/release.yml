@@ -77,6 +77,7 @@ jobs:
           retention-days: 90
 
       - name: Publish to VS Code Marketplace
+        continue-on-error: true
         run: npm run publish
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
