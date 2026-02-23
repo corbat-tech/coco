@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] - 2026-02-23
+
+### Added
+
+- **Auto-swarm complexity classification** — the swarm pipeline now classifies each feature's complexity before running reviews and selects the minimal necessary agent roster, instead of always running all 8 agents
+  - Trivial (score 1–3): `tdd-developer` only
+  - Simple (4–5): adds `qa`
+  - Moderate (6–7): adds `architect`
+  - Complex (8–10): adds `security-auditor` + `external-reviewer`
+  - LLM-based classification with automatic heuristic fallback (word count, criteria count, dependency count, keyword signals)
+  - `skipComplexityCheck` escape hatch forces the full roster; `complexityThreshold` sets a minimum level that always triggers the full roster
+- **Per-project commit auto-approval** (`/permissions allow-commits`) — opt a specific project into auto-approving `git commit` without enabling it globally; revert with `/permissions revoke-commits`
+- **`/permissions` command** — dedicated command for managing tool trust, applying the recommended template, and controlling per-project commit behaviour
+  - `/permissions` — show current trust status (global + project tools, deny list)
+  - `/permissions apply` — apply the recommended allow/deny template
+  - `/permissions view` — view the full recommended template before applying
+  - `/permissions reset` — clear all trusted tools (with confirmation)
+  - `/permissions allow-commits` / `/permissions revoke-commits` — project-scoped commit auto-approval
+- **Expanded recommended permissions template** — pnpm direct commands (`pnpm:install`, `pnpm:run`, `pnpm:test`, `pnpm:build`, …), JS/TS runners (`vitest`, `tsc`, `tsx`, `oxlint`), and additional build toolchain entries now included in the default allow-list
+
+### Changed
+
+- **`/coco` renamed to `/quality`** — the quality convergence mode command is now `/quality [on|off]`; `/coco` remains as a backward-compatible alias so existing workflows continue to work without changes
+  - Config key migrated from `cocoMode` → `qualityLoop` with transparent fallback for existing configs
+
+### Fixed
+
+- **Worktree detection in `worktree-list`** — the script used `-d` to test for the `.git` entry, which failed for file-based `.git` refs used by worktrees; switched to `-e` so both regular checkouts and linked worktrees are detected correctly
+- **API key not persisted after `/provider` switch** — switching provider via the interactive menu now writes the new API key to `~/.coco/.env`, matching the behaviour of the initial onboarding setup
+- **Release workflow using non-existent GitHub Actions versions** — `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`, and `actions/download-artifact` were pinned to `@v6` (which does not exist); corrected to `@v4`
+- **OAuth success message showed "ChatGPT subscription" for all providers** — when switching to Gemini via OAuth the confirmation now correctly displays "Google account (OAuth)"
+- **Circular dependency crash in swarm feature ordering** — `topologicalSort` had no cycle guard; a circular dependency between features would cause infinite recursion; now detects cycles early and throws a descriptive error
+
+---
+
 ## [2.1.0] - 2026-02-20
 
 ### Added
@@ -572,7 +607,9 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/corbat-tech/coco/compare/v2.2.5...v2.3.0
+[2.2.5]: https://github.com/corbat-tech/coco/compare/v2.1.0...v2.2.5
 [2.1.0]: https://github.com/corbat-tech/coco/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0

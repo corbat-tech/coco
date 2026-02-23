@@ -552,7 +552,9 @@ async function switchProvider(
     console.log(chalk.green(`\n✓ Switched to ${newProvider.emoji} ${newProvider.name}`));
     console.log(chalk.dim(`  Model: ${newModel}`));
     if (selectedAuthMethod === "oauth") {
-      console.log(chalk.dim(`  Auth: ChatGPT subscription (OAuth)`));
+      const authLabel =
+        newProvider.id === "gemini" ? "Google account (OAuth)" : "ChatGPT subscription (OAuth)";
+      console.log(chalk.dim(`  Auth: ${authLabel}`));
     }
     console.log(chalk.dim(`  Use /model to change models\n`));
   } catch (error) {

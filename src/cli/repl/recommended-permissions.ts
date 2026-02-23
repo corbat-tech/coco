@@ -412,7 +412,9 @@ export async function showPermissionSuggestion(): Promise<void> {
   console.log();
   console.log(chalk.dim("  Coco has a curated set of tool permissions for developers:"));
   console.log(chalk.dim("  • Allow: file read/write, search, git staging, build, tests..."));
-  console.log(chalk.dim("  • Ask each time: git commit, curl, rm, git pull, docker exec, cloud..."));
+  console.log(
+    chalk.dim("  • Ask each time: git commit, curl, rm, git pull, docker exec, cloud..."),
+  );
   console.log(chalk.dim("  • Deny: sudo, git push, git rebase, docker push, k8s apply..."));
   console.log();
   console.log(chalk.dim("  Stored in ~/.coco/trusted-tools.json — edit manually or let"));

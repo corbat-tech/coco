@@ -166,10 +166,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/Recommended allowlist applied/);
     });
 
@@ -180,10 +177,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/Recommended allowlist not applied/);
     });
 
@@ -192,10 +186,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/Recommended allowlist not applied/);
     });
 
@@ -208,10 +199,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/read_file/);
       expect(logged).toMatch(/bash:cat/);
     });
@@ -225,10 +213,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/write_file/);
       expect(logged).toMatch(/edit_file/);
     });
@@ -242,10 +227,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/denied/i);
       expect(logged).toMatch(/bash:rm/);
     });
@@ -259,10 +241,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/\(none\)/);
     });
 
@@ -270,10 +249,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/allow-commits/);
     });
 
@@ -281,10 +257,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/revoke-commits/);
     });
 
@@ -292,10 +265,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/apply/);
     });
 
@@ -303,10 +273,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/view/);
     });
 
@@ -314,10 +281,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/reset/);
     });
 
@@ -347,10 +311,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/denied for this project/);
     });
   });
@@ -406,10 +367,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute(["allow-commits"], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/auto-approved/);
     });
 
@@ -417,9 +375,7 @@ describe("permissionsCommand", () => {
       const session = makeSession({
         trustedTools: new Set(["git_commit", "bash:git:commit"]),
       });
-      await expect(
-        permissionsCommand.execute(["allow-commits"], session),
-      ).resolves.toBe(false);
+      await expect(permissionsCommand.execute(["allow-commits"], session)).resolves.toBe(false);
       expect(session.trustedTools.has("git_commit")).toBe(true);
       expect(session.trustedTools.has("bash:git:commit")).toBe(true);
     });
@@ -486,19 +442,14 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute(["revoke-commits"], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/require confirmation/);
     });
 
     it("is idempotent — works even if the tools were not in session.trustedTools", async () => {
       // Session has an empty trustedTools set
       const session = makeSession();
-      await expect(
-        permissionsCommand.execute(["revoke-commits"], session),
-      ).resolves.toBe(false);
+      await expect(permissionsCommand.execute(["revoke-commits"], session)).resolves.toBe(false);
       // removeTrustedTool is still called to clean up persisted state
       expect(removeTrustedTool).toHaveBeenCalled();
     });
@@ -551,10 +502,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute(["apply"], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/Recommended permissions applied/);
     });
   });
@@ -661,10 +609,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute(["reset"], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/All tool permissions reset/);
     });
 
@@ -700,10 +645,7 @@ describe("permissionsCommand", () => {
       const session = makeSession();
       await permissionsCommand.execute(["reset"], session);
 
-      const logged = vi
-        .mocked(console.log)
-        .mock.calls.flat()
-        .join(" ");
+      const logged = vi.mocked(console.log).mock.calls.flat().join(" ");
       expect(logged).toMatch(/Cancelled/);
     });
 

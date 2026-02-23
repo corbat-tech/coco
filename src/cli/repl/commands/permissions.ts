@@ -112,8 +112,12 @@ async function showStatus(session: ReplSession): Promise<void> {
   console.log(chalk.dim("  /permissions apply          — Apply recommended permissions"));
   console.log(chalk.dim("  /permissions view           — View recommended template"));
   console.log(chalk.dim("  /permissions reset          — Reset to empty"));
-  console.log(chalk.dim("  /permissions allow-commits  — Auto-approve git commit for this project"));
-  console.log(chalk.dim("  /permissions revoke-commits — Require confirmation for git commit again"));
+  console.log(
+    chalk.dim("  /permissions allow-commits  — Auto-approve git commit for this project"),
+  );
+  console.log(
+    chalk.dim("  /permissions revoke-commits — Require confirmation for git commit again"),
+  );
   console.log();
 }
 

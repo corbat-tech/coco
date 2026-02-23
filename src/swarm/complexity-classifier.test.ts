@@ -279,9 +279,7 @@ describe("classifyFeatureHeuristic — edge cases", () => {
   });
 
   it("score is always at least 1 for simple-keyword-only description", () => {
-    const result = classifyFeatureHeuristic(
-      makeFeature({ description: "fix typo style" }),
-    );
+    const result = classifyFeatureHeuristic(makeFeature({ description: "fix typo style" }));
     expect(result.score).toBeGreaterThanOrEqual(1);
   });
 

@@ -423,8 +423,7 @@ async function processFeature(ctx: LifecycleContext, feature: SwarmFeature): Pro
     // always use the full roster regardless of the classified level.
     const threshold = ctx.options.complexityThreshold;
     const roster: ComplexityResult =
-      threshold !== undefined &&
-      COMPLEXITY_RANK[classified.level] >= COMPLEXITY_RANK[threshold]
+      threshold !== undefined && COMPLEXITY_RANK[classified.level] >= COMPLEXITY_RANK[threshold]
         ? {
             score: 10,
             level: "complex",
@@ -1030,20 +1029,28 @@ async function emitGate(
 /**
  * Sort features in topological order based on dependencies.
  * Features with no dependencies come first.
+ * Throws if circular dependencies are detected.
  */
 function topologicalSort(features: SwarmFeature[]): SwarmFeature[] {
   const sorted: SwarmFeature[] = [];
   const visited = new Set<string>();
+  const inProgress = new Set<string>();
   const featureMap = new Map(features.map((f) => [f.id, f]));
 
   function visit(featureId: string): void {
     if (visited.has(featureId)) return;
+    if (inProgress.has(featureId)) {
+      throw new Error(`Circular dependency detected involving feature "${featureId}"`);
+    }
+
     const feature = featureMap.get(featureId);
     if (!feature) return;
 
+    inProgress.add(featureId);
     for (const depId of feature.dependencies) {
       visit(depId);
     }
+    inProgress.delete(featureId);
     visited.add(featureId);
     sorted.push(feature);
   }
