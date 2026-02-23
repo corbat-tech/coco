@@ -33,6 +33,8 @@ const DEFAULT_MODEL = "claude-opus-4-6-20260115";
  * Updated February 2026 - Added Claude 4.6
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
+  // Kimi Code model (Anthropic-compatible endpoint)
+  "kimi-for-coding": 131072,
   // Claude 4.6 (latest, Jan 2026) - 200K-1M context, 128K output
   "claude-opus-4-6-20260115": 200000,
   // Claude 4.5 models (Nov 2025)
@@ -59,12 +61,17 @@ const CONTEXT_WINDOWS: Record<string, number> = {
  * Anthropic provider implementation
  */
 export class AnthropicProvider implements LLMProvider {
-  readonly id = "anthropic";
-  readonly name = "Anthropic Claude";
+  readonly id: string;
+  readonly name: string;
 
   private client: Anthropic | null = null;
   private config: ProviderConfig = {};
   private retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
+
+  constructor(id = "anthropic", name = "Anthropic Claude") {
+    this.id = id;
+    this.name = name;
+  }
 
   /**
    * Initialize the provider
@@ -536,6 +543,31 @@ export function createAnthropicProvider(config?: ProviderConfig): AnthropicProvi
   const provider = new AnthropicProvider();
   if (config) {
     provider.initialize(config).catch(() => {
+      // Initialization will be handled when first method is called
+    });
+  }
+  return provider;
+}
+
+/**
+ * Create a Kimi Code provider (Anthropic-compatible)
+ *
+ * Uses Kimi's Anthropic-compatible endpoint, which is what Kimi officially
+ * recommends for Claude Code and other Anthropic-SDK-based agents.
+ * The subscription key is obtained from https://www.kimi.com/code
+ *
+ * Endpoint: https://api.kimi.com/coding  (Anthropic SDK appends /v1/messages)
+ */
+export function createKimiCodeProvider(config?: ProviderConfig): AnthropicProvider {
+  const provider = new AnthropicProvider("kimi-code", "Kimi Code");
+  const kimiCodeConfig: ProviderConfig = {
+    ...config,
+    baseUrl: config?.baseUrl ?? process.env["KIMI_CODE_BASE_URL"] ?? "https://api.kimi.com/coding",
+    apiKey: config?.apiKey ?? process.env["KIMI_CODE_API_KEY"],
+    model: config?.model ?? "kimi-for-coding",
+  };
+  if (kimiCodeConfig.apiKey) {
+    provider.initialize(kimiCodeConfig).catch(() => {
       // Initialization will be handled when first method is called
     });
   }

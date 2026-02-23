@@ -122,7 +122,8 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
     case "kimi":
       return process.env["KIMI_BASE_URL"] ?? "https://api.moonshot.ai/v1";
     case "kimi-code":
-      return process.env["KIMI_CODE_BASE_URL"] ?? "https://api.kimi.com/coding/v1";
+      // Anthropic SDK appends /v1/messages — do NOT include /v1 here
+      return process.env["KIMI_CODE_BASE_URL"] ?? "https://api.kimi.com/coding";
     case "lmstudio":
       return process.env["LMSTUDIO_BASE_URL"] ?? "http://localhost:1234/v1";
     case "ollama":
