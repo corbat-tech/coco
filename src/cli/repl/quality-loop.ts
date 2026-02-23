@@ -1,5 +1,5 @@
 /**
- * COCO Mode - Quality-driven iterative development
+ * Quality Loop - Quality-driven iterative development
  *
  * When enabled, the agent automatically:
  * 1. Generates code + tests
@@ -7,7 +7,7 @@
  * 3. Self-reviews with 12-dimension quality scoring
  * 4. Iterates until quality converges (score delta < 2)
  *
- * Toggle with /coco command or --coco CLI flag.
+ * Toggle with /quality command or --quality CLI flag.
  */
 
 import chalk from "chalk";
@@ -15,10 +15,10 @@ import fs from "node:fs/promises";
 import { CONFIG_PATHS } from "../../config/paths.js";
 
 /**
- * COCO mode state
- * Default: enabled for better quality (users can disable with /coco off)
+ * Quality loop state
+ * Default: enabled for better quality (users can disable with /quality off)
  */
-let cocoModeEnabled = true;
+let qualityLoopEnabled = true;
 
 /**
  * Whether the contextual hint has been shown this session
@@ -26,25 +26,25 @@ let cocoModeEnabled = true;
 let hintShown = false;
 
 /**
- * Check if COCO mode is enabled
+ * Check if quality loop is enabled
  */
-export function isCocoMode(): boolean {
-  return cocoModeEnabled;
+export function isQualityLoop(): boolean {
+  return qualityLoopEnabled;
 }
 
 /**
- * Set COCO mode state
+ * Set quality loop state
  */
-export function setCocoMode(enabled: boolean): void {
-  cocoModeEnabled = enabled;
+export function setQualityLoop(enabled: boolean): void {
+  qualityLoopEnabled = enabled;
 }
 
 /**
- * Toggle COCO mode, returns new state
+ * Toggle quality loop, returns new state
  */
-export function toggleCocoMode(): boolean {
-  cocoModeEnabled = !cocoModeEnabled;
-  return cocoModeEnabled;
+export function toggleQualityLoop(): boolean {
+  qualityLoopEnabled = !qualityLoopEnabled;
+  return qualityLoopEnabled;
 }
 
 /**
@@ -97,11 +97,11 @@ export function looksLikeFeatureRequest(input: string): boolean {
 }
 
 /**
- * Format the COCO mode status for display in prompt
+ * Format the quality loop status for display in prompt
  */
-export function formatCocoModeIndicator(): string {
-  if (cocoModeEnabled) {
-    return chalk.magenta("[coco]");
+export function formatQualityLoopIndicator(): string {
+  if (qualityLoopEnabled) {
+    return chalk.magenta("[quality loop]");
   }
   return "";
 }
@@ -109,18 +109,18 @@ export function formatCocoModeIndicator(): string {
 /**
  * Format the contextual hint shown on first feature-like prompt
  */
-export function formatCocoHint(): string {
+export function formatQualityLoopHint(): string {
   return (
     chalk.dim("  tip: ") +
-    chalk.magenta("/coco") +
+    chalk.magenta("/quality") +
     chalk.dim(" enables auto-test & iterate until quality converges")
   );
 }
 
 /**
- * Format quality convergence result for display after COCO mode completion
+ * Format quality convergence result for display after quality loop completion
  */
-export function formatQualityResult(result: CocoQualityResult): string {
+export function formatQualityResult(result: QualityLoopResult): string {
   const lines: string[] = [];
 
   // Score progression bar
@@ -170,9 +170,9 @@ export function formatQualityResult(result: CocoQualityResult): string {
 }
 
 /**
- * Result from a COCO mode quality iteration cycle
+ * Result from a quality loop iteration cycle
  */
-export interface CocoQualityResult {
+export interface QualityLoopResult {
   converged: boolean;
   scoreHistory: number[];
   finalScore: number;
@@ -185,15 +185,17 @@ export interface CocoQualityResult {
 }
 
 /**
- * Load COCO mode preference from config
+ * Load quality loop preference from config (with backward compat for cocoMode key)
  */
-export async function loadCocoModePreference(): Promise<boolean> {
+export async function loadQualityLoopPreference(): Promise<boolean> {
   try {
     const content = await fs.readFile(CONFIG_PATHS.config, "utf-8");
     const config = JSON.parse(content);
-    if (typeof config.cocoMode === "boolean") {
-      cocoModeEnabled = config.cocoMode;
-      return config.cocoMode;
+    // Support new key first, fall back to legacy cocoMode key
+    const value = config.qualityLoop ?? config.cocoMode;
+    if (typeof value === "boolean") {
+      qualityLoopEnabled = value;
+      return value;
     }
   } catch {
     // No config or parse error - default is ON
@@ -202,9 +204,9 @@ export async function loadCocoModePreference(): Promise<boolean> {
 }
 
 /**
- * Save COCO mode preference to config
+ * Save quality loop preference to config
  */
-export async function saveCocoModePreference(enabled: boolean): Promise<void> {
+export async function saveQualityLoopPreference(enabled: boolean): Promise<void> {
   try {
     let config: Record<string, unknown> = {};
     try {
@@ -213,7 +215,7 @@ export async function saveCocoModePreference(enabled: boolean): Promise<void> {
     } catch {
       // File doesn't exist yet
     }
-    config.cocoMode = enabled;
+    config.qualityLoop = enabled;
     await fs.writeFile(CONFIG_PATHS.config, JSON.stringify(config, null, 2) + "\n");
   } catch {
     // Silently fail
@@ -221,10 +223,10 @@ export async function saveCocoModePreference(enabled: boolean): Promise<void> {
 }
 
 /**
- * Parse COCO quality report from agent response content
+ * Parse quality loop report from agent response content
  */
-export function parseCocoQualityReport(content: string): CocoQualityResult | null {
-  const marker = "COCO_QUALITY_REPORT";
+export function parseQualityLoopReport(content: string): QualityLoopResult | null {
+  const marker = "QUALITY_LOOP_REPORT";
   const idx = content.indexOf(marker);
   if (idx === -1) return null;
 
@@ -267,14 +269,14 @@ export function parseCocoQualityReport(content: string): CocoQualityResult | nul
 }
 
 /**
- * Build the supplemental system prompt for COCO mode
+ * Build the supplemental system prompt for quality loop mode
  * This instructs the LLM to follow the quality iteration pattern
  */
-export function getCocoModeSystemPrompt(): string {
+export function getQualityLoopSystemPrompt(): string {
   return `
-## COCO Quality Mode (ACTIVE)
+## Quality Loop Mode (ACTIVE)
 
-You are operating in COCO quality mode. After implementing code changes, you MUST follow this iteration cycle:
+You are operating in quality loop mode. After implementing code changes, you MUST follow this iteration cycle:
 
 1. **Implement** the requested changes (code + tests)
 2. **Run tests** using the run_tests or bash_exec tool
@@ -289,7 +291,7 @@ You are operating in COCO quality mode. After implementing code changes, you MUS
 After completing the cycle, output a quality summary in this exact format:
 
 \`\`\`
-COCO_QUALITY_REPORT
+QUALITY_LOOP_REPORT
 score_history: [first_score, ..., final_score]
 tests_passed: X
 tests_total: Y

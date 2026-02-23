@@ -1,19 +1,19 @@
 /**
- * /coco command - Toggle COCO quality mode
+ * /quality command - Toggle quality loop mode
  *
- * COCO mode enables automatic quality iteration:
+ * Quality loop mode enables automatic quality iteration:
  * auto-test, self-review, iterate until quality converges (≥85/100)
  */
 
 import chalk from "chalk";
 import type { SlashCommand, ReplSession } from "../types.js";
-import { isCocoMode, setCocoMode, saveCocoModePreference } from "../coco-mode.js";
+import { isQualityLoop, setQualityLoop, saveQualityLoopPreference } from "../quality-loop.js";
 
-export const cocoCommand: SlashCommand = {
-  name: "coco",
-  aliases: [],
+export const qualityCommand: SlashCommand = {
+  name: "quality",
+  aliases: ["coco"],
   description: "Toggle quality mode — auto-test, self-review, iterate until converged",
-  usage: "/coco [on|off]",
+  usage: "/quality [on|off]",
 
   async execute(args: string[], session: ReplSession): Promise<boolean> {
     const arg = args[0]?.toLowerCase();
@@ -25,7 +25,7 @@ export const cocoCommand: SlashCommand = {
     } else if (arg === "off") {
       newState = false;
     } else if (arg === "status") {
-      const state = isCocoMode();
+      const state = isQualityLoop();
       const skillAvailable = session.skillRegistry?.has("coco-fix-iterate");
       const modeType =
         state && skillAvailable
@@ -35,7 +35,7 @@ export const cocoCommand: SlashCommand = {
             : "";
       console.log();
       console.log(
-        chalk.magenta("  COCO quality mode: ") +
+        chalk.magenta("  Quality loop: ") +
           (state ? chalk.green.bold("ON") : chalk.dim("OFF")) +
           modeType,
       );
@@ -55,26 +55,26 @@ export const cocoCommand: SlashCommand = {
         console.log(chalk.dim("  3. Self-review against 12 quality dimensions"));
         console.log(chalk.dim("  4. Iterate until quality converges (≥85/100)"));
       } else {
-        console.log(chalk.dim("  Enable with /coco on for quality-driven development"));
+        console.log(chalk.dim("  Enable with /quality on for quality-driven development"));
       }
       console.log();
       return false;
     } else {
       // Toggle
-      newState = !isCocoMode();
+      newState = !isQualityLoop();
     }
 
-    setCocoMode(newState);
-    saveCocoModePreference(newState).catch(() => {});
+    setQualityLoop(newState);
+    saveQualityLoopPreference(newState).catch(() => {});
 
     console.log();
     if (newState) {
-      console.log(chalk.magenta("  COCO quality mode: ") + chalk.green.bold("ON"));
+      console.log(chalk.magenta("  Quality loop: ") + chalk.green.bold("ON"));
       console.log(
         chalk.dim("  Agent will auto-test, self-review, and iterate until quality ≥ 85/100"),
       );
     } else {
-      console.log(chalk.magenta("  COCO quality mode: ") + chalk.dim("OFF"));
+      console.log(chalk.magenta("  Quality loop: ") + chalk.dim("OFF"));
       console.log(chalk.dim("  Fast mode — agent responds without quality iteration"));
     }
     console.log();

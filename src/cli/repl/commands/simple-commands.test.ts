@@ -1,5 +1,5 @@
 /**
- * Tests for simple REPL commands: coco, compact, copy, clear, exit, image, allow-path
+ * Tests for simple REPL commands: quality, compact, copy, clear, exit, image, allow-path
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -7,11 +7,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Mocks
 // ============================================================================
 
-vi.mock("../coco-mode.js", () => ({
-  isCocoMode: vi.fn().mockReturnValue(false),
-  setCocoMode: vi.fn(),
-  saveCocoModePreference: vi.fn().mockReturnValue(Promise.resolve(undefined)),
-  toggleCocoMode: vi.fn(),
+vi.mock("../quality-loop.js", () => ({
+  isQualityLoop: vi.fn().mockReturnValue(false),
+  setQualityLoop: vi.fn(),
+  saveQualityLoopPreference: vi.fn().mockReturnValue(Promise.resolve(undefined)),
+  toggleQualityLoop: vi.fn(),
 }));
 
 vi.mock("../session.js", () => ({
@@ -28,23 +28,23 @@ vi.mock("../output/clipboard.js", () => ({
   isClipboardAvailable: vi.fn().mockResolvedValue(true),
 }));
 
-import { cocoCommand } from "./coco.js";
+import { qualityCommand } from "./quality.js";
 import { compactCommand, isCompactMode } from "./compact.js";
 import { copyCommand } from "./copy.js";
 import { clearCommand } from "./clear.js";
 import { exitCommand } from "./exit.js";
-import { isCocoMode, setCocoMode, saveCocoModePreference } from "../coco-mode.js";
+import { isQualityLoop, setQualityLoop, saveQualityLoopPreference } from "../quality-loop.js";
 import { clearSession } from "../session.js";
 import { getRawMarkdown } from "../output/renderer.js";
 import { copyToClipboard, isClipboardAvailable } from "../output/clipboard.js";
 
 const mockSession = {} as any;
 
-describe("cocoCommand", () => {
+describe("qualityCommand", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(saveCocoModePreference).mockReturnValue(Promise.resolve(undefined));
-    vi.mocked(isCocoMode).mockReturnValue(false);
+    vi.mocked(saveQualityLoopPreference).mockReturnValue(Promise.resolve(undefined));
+    vi.mocked(isQualityLoop).mockReturnValue(false);
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -53,27 +53,27 @@ describe("cocoCommand", () => {
   });
 
   it("should have correct metadata", () => {
-    expect(cocoCommand.name).toBe("coco");
-    expect(cocoCommand.description).toBeTruthy();
+    expect(qualityCommand.name).toBe("quality");
+    expect(qualityCommand.description).toBeTruthy();
   });
 
   it("should turn on with 'on' arg", async () => {
-    const result = await cocoCommand.execute(["on"], mockSession);
+    const result = await qualityCommand.execute(["on"], mockSession);
     expect(result).toBe(false);
-    expect(setCocoMode).toHaveBeenCalledWith(true);
-    expect(saveCocoModePreference).toHaveBeenCalledWith(true);
+    expect(setQualityLoop).toHaveBeenCalledWith(true);
+    expect(saveQualityLoopPreference).toHaveBeenCalledWith(true);
   });
 
   it("should turn off with 'off' arg", async () => {
-    const result = await cocoCommand.execute(["off"], mockSession);
+    const result = await qualityCommand.execute(["off"], mockSession);
     expect(result).toBe(false);
-    expect(setCocoMode).toHaveBeenCalledWith(false);
-    expect(saveCocoModePreference).toHaveBeenCalledWith(false);
+    expect(setQualityLoop).toHaveBeenCalledWith(false);
+    expect(saveQualityLoopPreference).toHaveBeenCalledWith(false);
   });
 
   it("should show status when mode is on", async () => {
-    vi.mocked(isCocoMode).mockReturnValue(true);
-    const result = await cocoCommand.execute(["status"], mockSession);
+    vi.mocked(isQualityLoop).mockReturnValue(true);
+    const result = await qualityCommand.execute(["status"], mockSession);
     expect(result).toBe(false);
     const output = vi
       .mocked(console.log)
@@ -83,8 +83,8 @@ describe("cocoCommand", () => {
   });
 
   it("should show status when mode is off", async () => {
-    vi.mocked(isCocoMode).mockReturnValue(false);
-    const result = await cocoCommand.execute(["status"], mockSession);
+    vi.mocked(isQualityLoop).mockReturnValue(false);
+    const result = await qualityCommand.execute(["status"], mockSession);
     expect(result).toBe(false);
     const output = vi
       .mocked(console.log)
@@ -94,17 +94,17 @@ describe("cocoCommand", () => {
   });
 
   it("should toggle when no args", async () => {
-    vi.mocked(isCocoMode).mockReturnValue(false);
-    const result = await cocoCommand.execute([], mockSession);
+    vi.mocked(isQualityLoop).mockReturnValue(false);
+    const result = await qualityCommand.execute([], mockSession);
     expect(result).toBe(false);
-    expect(setCocoMode).toHaveBeenCalledWith(true);
+    expect(setQualityLoop).toHaveBeenCalledWith(true);
   });
 
   it("should toggle from on to off", async () => {
-    vi.mocked(isCocoMode).mockReturnValue(true);
-    const result = await cocoCommand.execute([], mockSession);
+    vi.mocked(isQualityLoop).mockReturnValue(true);
+    const result = await qualityCommand.execute([], mockSession);
     expect(result).toBe(false);
-    expect(setCocoMode).toHaveBeenCalledWith(false);
+    expect(setQualityLoop).toHaveBeenCalledWith(false);
   });
 });
 

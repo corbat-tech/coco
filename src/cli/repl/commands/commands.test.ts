@@ -122,10 +122,16 @@ describe("commands/index", () => {
       expect(rewind).toBeDefined();
     });
 
-    it("should include coco command", () => {
+    it("should include quality command", () => {
       const commands = getAllCommands();
-      const coco = commands.find((c) => c.name === "coco");
-      expect(coco).toBeDefined();
+      const quality = commands.find((c) => c.name === "quality");
+      expect(quality).toBeDefined();
+    });
+
+    it("should support /coco as alias for /quality", () => {
+      const commands = getAllCommands();
+      const quality = commands.find((c) => c.aliases.includes("coco"));
+      expect(quality).toBeDefined();
     });
 
     it("all commands should have required fields", () => {

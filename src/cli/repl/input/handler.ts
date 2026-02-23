@@ -23,7 +23,7 @@ import chalk from "chalk";
 import ansiEscapes from "ansi-escapes";
 import type { ReplSession } from "../types.js";
 import { getAllCommands, setPendingImage, hasPendingImage } from "../commands/index.js";
-import { isCocoMode } from "../coco-mode.js";
+import { isQualityLoop } from "../quality-loop.js";
 import { readClipboardImage } from "../output/clipboard.js";
 
 /**
@@ -150,17 +150,17 @@ export function createInputHandler(_session: ReplSession): InputHandler {
   // Clipboard image read state (Ctrl+V)
   let isReadingClipboard = false;
 
-  // Prompt changes dynamically based on COCO mode
+  // Prompt changes dynamically based on quality loop mode
   // Visual length must be tracked separately from ANSI-colored string
   const getPrompt = () => {
     const imageIndicator = hasPendingImage() ? chalk.cyan(" \u{1F4CE} 1 image") : "";
     const imageIndicatorLen = hasPendingImage() ? 10 : 0; // " 📎 1 image" = 10 visible chars (📎=2)
 
-    if (isCocoMode()) {
+    if (isQualityLoop()) {
       return {
-        str: "\u{1F965} " + chalk.magenta("[coco]") + " \u203A " + imageIndicator,
-        // 🥥=2 + space=1 + [coco]=6 + space=1 + ›=1 + space=1 = 12 + image indicator
-        visualLen: 12 + imageIndicatorLen,
+        str: "\u{1F965} " + chalk.magenta("[quality]") + " \u203A " + imageIndicator,
+        // 🥥=2 + space=1 + [quality]=9 + space=1 + ›=1 + space=1 = 15 + image indicator
+        visualLen: 15 + imageIndicatorLen,
       };
     }
     return {
