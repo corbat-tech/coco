@@ -142,8 +142,11 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
     case "huggingface":
       return process.env["HF_BASE_URL"] ?? "https://api-inference.huggingface.co/v1";
     case "qwen":
+      // Default: international endpoint (modelstudio.console.alibabacloud.com)
+      // China domestic users override with: DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
       return (
-        process.env["DASHSCOPE_BASE_URL"] ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        process.env["DASHSCOPE_BASE_URL"] ??
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
       );
     default:
       return undefined;

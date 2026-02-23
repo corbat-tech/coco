@@ -1231,7 +1231,7 @@ async function testConnection(
       p.log.message(chalk.dim("  • Network connectivity issues"));
       p.log.message(chalk.dim("  • Provider service unavailable"));
 
-      // Para Kimi, mostrar información específica
+      // Kimi-specific troubleshooting hints
       if (provider.id === "kimi") {
         p.log.message(chalk.dim("\n🌙 Kimi/Moonshot specific:"));
         p.log.message(
@@ -1239,6 +1239,20 @@ async function testConnection(
         );
         p.log.message(chalk.dim("  • Ensure your account has credits"));
         p.log.message(chalk.dim("  • Try model: moonshot-v1-8k (most compatible)"));
+      }
+
+      // Qwen-specific troubleshooting hints
+      if (provider.id === "qwen") {
+        p.log.message(chalk.dim("\n🟦 Alibaba Qwen specific:"));
+        p.log.message(chalk.dim("  • International console: modelstudio.console.alibabacloud.com"));
+        p.log.message(chalk.dim("  • International API endpoint: dashscope-intl.aliyuncs.com"));
+        p.log.message(chalk.dim("  • China domestic endpoint: dashscope.aliyuncs.com"));
+        p.log.message(
+          chalk.dim(
+            "  • If using China endpoint, set: DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1",
+          ),
+        );
+        p.log.message(chalk.dim("  • Ensure your account has API access enabled"));
       }
 
       return false;

@@ -201,9 +201,11 @@ export async function createProvider(
 
     case "qwen":
       // Alibaba DashScope — OpenAI-compatible endpoint
+      // International users (modelstudio.console.alibabacloud.com) use dashscope-intl
+      // China domestic users (dashscope.console.aliyun.com) use dashscope
       provider = new OpenAIProvider("qwen", "Alibaba Qwen");
       mergedConfig.baseUrl =
-        mergedConfig.baseUrl ?? "https://dashscope.aliyuncs.com/compatible-mode/v1";
+        mergedConfig.baseUrl ?? "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
       break;
 
     default:

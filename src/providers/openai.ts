@@ -194,10 +194,16 @@ export class OpenAIProvider implements LLMProvider {
       });
     }
 
+    // Kimi For Coding requires the client to identify as a known coding agent
+    // via User-Agent, otherwise it returns 403.
+    const defaultHeaders: Record<string, string> =
+      this.id === "kimi-code" ? { "User-Agent": "claude-code" } : {};
+
     this.client = new OpenAI({
       apiKey,
       baseURL: config.baseUrl,
       timeout: config.timeout ?? 120000,
+      defaultHeaders,
     });
   }
 

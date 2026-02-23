@@ -162,12 +162,14 @@ describe("getBaseUrl", () => {
     expect(url).toBe("https://custom-dashscope.com/v1");
   });
 
-  it("should return default dashscope URL when DASHSCOPE_BASE_URL is not set", () => {
+  it("should return default dashscope-intl URL when DASHSCOPE_BASE_URL is not set", () => {
     delete process.env.DASHSCOPE_BASE_URL;
 
     const url = getBaseUrl("qwen");
 
-    expect(url).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
+    // International endpoint is the default (modelstudio.console.alibabacloud.com users)
+    // China domestic users can override with DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/...
+    expect(url).toBe("https://dashscope-intl.aliyuncs.com/compatible-mode/v1");
   });
 
   it("should return undefined for unknown provider", () => {
