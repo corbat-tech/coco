@@ -169,6 +169,15 @@ describe("Providers module exports", () => {
       expect(typeof provider.chat).toBe("function");
     });
 
+    it("should create qwen provider", async () => {
+      const provider = await ProviderExports.createProvider("qwen", {
+        apiKey: "test-key",
+      });
+
+      expect(provider).toBeDefined();
+      expect(typeof provider.chat).toBe("function");
+    });
+
     it("should throw for unknown provider type", async () => {
       // @ts-expect-error Testing invalid provider type
       await expect(ProviderExports.createProvider("unknown")).rejects.toThrow(
@@ -201,7 +210,7 @@ describe("Providers module exports", () => {
 
     it("should return list of providers", () => {
       const providers = ProviderExports.listProviders();
-      expect(providers).toHaveLength(14);
+      expect(providers).toHaveLength(15);
       expect(providers.map((p) => p.id)).toEqual([
         "anthropic",
         "openai",
@@ -215,6 +224,7 @@ describe("Providers module exports", () => {
         "deepseek",
         "together",
         "huggingface",
+        "qwen",
         "lmstudio",
         "ollama",
       ]);

@@ -105,7 +105,8 @@ export type ProviderType =
   | "mistral"
   | "deepseek"
   | "together"
-  | "huggingface";
+  | "huggingface"
+  | "qwen";
 
 /**
  * Create a provider by type
@@ -198,6 +199,13 @@ export async function createProvider(
       mergedConfig.baseUrl = mergedConfig.baseUrl ?? "https://api-inference.huggingface.co/v1";
       break;
 
+    case "qwen":
+      // Alibaba DashScope — OpenAI-compatible endpoint
+      provider = new OpenAIProvider("qwen", "Alibaba Qwen");
+      mergedConfig.baseUrl =
+        mergedConfig.baseUrl ?? "https://dashscope.aliyuncs.com/compatible-mode/v1";
+      break;
+
     default:
       throw new ProviderError(`Unknown provider type: ${type}`, {
         provider: type,
@@ -242,6 +250,7 @@ export function listProviders(): Array<{
     { id: "deepseek", name: "DeepSeek", configured: !!getApiKey("deepseek") },
     { id: "together", name: "Together AI", configured: !!getApiKey("together") },
     { id: "huggingface", name: "HuggingFace Inference", configured: !!getApiKey("huggingface") },
+    { id: "qwen", name: "Alibaba Qwen (DashScope)", configured: !!getApiKey("qwen") },
     { id: "lmstudio", name: "LM Studio (Local)", configured: true },
     { id: "ollama", name: "Ollama (Local)", configured: true },
   ];

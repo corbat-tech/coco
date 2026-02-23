@@ -64,7 +64,8 @@ export type ProviderType =
   | "mistral"
   | "deepseek"
   | "together"
-  | "huggingface";
+  | "huggingface"
+  | "qwen";
 
 /**
  * Get API key for a provider
@@ -102,6 +103,8 @@ export function getApiKey(provider: ProviderType): string | undefined {
       return process.env["TOGETHER_API_KEY"];
     case "huggingface":
       return process.env["HF_TOKEN"] ?? process.env["HUGGINGFACE_API_KEY"];
+    case "qwen":
+      return process.env["DASHSCOPE_API_KEY"] ?? process.env["QWEN_API_KEY"];
     default:
       return undefined;
   }
@@ -138,6 +141,10 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
       return process.env["TOGETHER_BASE_URL"] ?? "https://api.together.xyz/v1";
     case "huggingface":
       return process.env["HF_BASE_URL"] ?? "https://api-inference.huggingface.co/v1";
+    case "qwen":
+      return (
+        process.env["DASHSCOPE_BASE_URL"] ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      );
     default:
       return undefined;
   }
@@ -180,6 +187,8 @@ export function getDefaultModel(provider: ProviderType): string {
       return process.env["TOGETHER_MODEL"] ?? "Qwen/Qwen2.5-Coder-32B-Instruct";
     case "huggingface":
       return process.env["HF_MODEL"] ?? "Qwen/Qwen2.5-Coder-32B-Instruct";
+    case "qwen":
+      return process.env["QWEN_MODEL"] ?? "qwen-coder-plus";
     default:
       return "gpt-5.3-codex";
   }
@@ -201,6 +210,7 @@ const VALID_PROVIDERS: ProviderType[] = [
   "deepseek",
   "together",
   "huggingface",
+  "qwen",
 ];
 
 /**

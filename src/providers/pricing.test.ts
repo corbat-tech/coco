@@ -51,6 +51,7 @@ describe("DEFAULT_PRICING", () => {
     expect(DEFAULT_PRICING.openai).toBeDefined();
     expect(DEFAULT_PRICING.gemini).toBeDefined();
     expect(DEFAULT_PRICING.kimi).toBeDefined();
+    expect(DEFAULT_PRICING.qwen).toBeDefined();
   });
 });
 

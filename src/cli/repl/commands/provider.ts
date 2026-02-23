@@ -52,7 +52,6 @@ async function selectProviderInteractively(
 
     const clearPrevious = () => {
       if (lastTotalLines === 0) return;
-      process.stdout.write("\x1b[2K\r");
       for (let i = 0; i < lastTotalLines; i++) {
         process.stdout.write("\x1b[1A\x1b[2K");
       }

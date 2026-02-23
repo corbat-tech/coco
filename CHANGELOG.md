@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.0] - 2026-02-23
+
+### Added
+
+- **Alibaba Qwen provider** (`/provider` → Qwen) — DashScope OpenAI-compatible API; supports `qwen-coder-plus` (recommended), `qwen-max`, `qwen-plus`, `qwen-turbo`, `qwen2.5-coder-32b-instruct`, and `qwq-plus`; configure via `DASHSCOPE_API_KEY` (or `QWEN_API_KEY` as fallback)
+
+### Fixed
+
+- **Provider selector duplication** — moving the cursor or pressing Esc/Cancel left the first provider line (`anthropic`) duplicated on screen; fixed an off-by-one in `clearPrevious()` that skipped clearing the top line of the menu
+
+---
+
 ## [2.3.0] - 2026-02-23
 
 ### Added
@@ -608,6 +620,7 @@ Future versions will include upgrade guides here.
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
 [Unreleased]: https://github.com/corbat-tech/coco/compare/v2.3.0...HEAD
+[2.4.0]: https://github.com/corbat-tech/coco/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/corbat-tech/coco/compare/v2.2.5...v2.3.0
 [2.2.5]: https://github.com/corbat-tech/coco/compare/v2.1.0...v2.2.5
 [2.1.0]: https://github.com/corbat-tech/coco/compare/v2.0.0...v2.1.0

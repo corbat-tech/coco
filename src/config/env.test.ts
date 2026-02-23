@@ -73,6 +73,23 @@ describe("getApiKey", () => {
     expect(key).toBe("test-moonshot-key");
   });
 
+  it("should return DASHSCOPE_API_KEY for qwen provider", () => {
+    process.env.DASHSCOPE_API_KEY = "test-dashscope-key";
+
+    const key = getApiKey("qwen");
+
+    expect(key).toBe("test-dashscope-key");
+  });
+
+  it("should fall back to QWEN_API_KEY for qwen provider", () => {
+    delete process.env.DASHSCOPE_API_KEY;
+    process.env.QWEN_API_KEY = "test-qwen-key";
+
+    const key = getApiKey("qwen");
+
+    expect(key).toBe("test-qwen-key");
+  });
+
   it("should return undefined for unknown provider", () => {
     const key = getApiKey("unknown" as ProviderType);
 
@@ -135,6 +152,22 @@ describe("getBaseUrl", () => {
     const url = getBaseUrl("gemini");
 
     expect(url).toBeUndefined();
+  });
+
+  it("should return DASHSCOPE_BASE_URL for qwen provider", () => {
+    process.env.DASHSCOPE_BASE_URL = "https://custom-dashscope.com/v1";
+
+    const url = getBaseUrl("qwen");
+
+    expect(url).toBe("https://custom-dashscope.com/v1");
+  });
+
+  it("should return default dashscope URL when DASHSCOPE_BASE_URL is not set", () => {
+    delete process.env.DASHSCOPE_BASE_URL;
+
+    const url = getBaseUrl("qwen");
+
+    expect(url).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
   });
 
   it("should return undefined for unknown provider", () => {
@@ -217,6 +250,22 @@ describe("getDefaultModel", () => {
     const model = getDefaultModel("kimi");
 
     expect(model).toBe("kimi-k2.5");
+  });
+
+  it("should return custom QWEN_MODEL if set", () => {
+    process.env.QWEN_MODEL = "qwen-max";
+
+    const model = getDefaultModel("qwen");
+
+    expect(model).toBe("qwen-max");
+  });
+
+  it("should return default qwen model", () => {
+    delete process.env.QWEN_MODEL;
+
+    const model = getDefaultModel("qwen");
+
+    expect(model).toBe("qwen-coder-plus");
   });
 
   it("should return default for unknown provider", () => {
