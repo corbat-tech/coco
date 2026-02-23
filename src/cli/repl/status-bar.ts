@@ -4,13 +4,13 @@
  * Displays at the bottom of the terminal:
  * - Project path (abbreviated)
  * - Provider/model
- * - COCO mode status
+ * - Quality loop status
  * - Full-access mode status (if enabled)
  */
 
 import chalk from "chalk";
 import path from "node:path";
-import { isCocoMode } from "./coco-mode.js";
+import { isQualityLoop } from "./quality-loop.js";
 import { isFullAccessMode } from "./full-access-mode.js";
 import type { ReplConfig } from "./types.js";
 import { type GitContext, formatGitShort } from "./git-context.js";
@@ -34,9 +34,9 @@ export function formatStatusBar(
   const modelName = config.provider.model || "default";
   parts.push(chalk.dim(`${providerName}/`) + chalk.cyan(modelName));
 
-  // COCO mode indicator
-  if (isCocoMode()) {
-    parts.push(chalk.green("🔄 coco"));
+  // Quality loop indicator
+  if (isQualityLoop()) {
+    parts.push(chalk.green("🔄 quality loop"));
   }
 
   // Full-access mode indicator

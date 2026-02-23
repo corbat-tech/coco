@@ -24,7 +24,7 @@ export const helpCommand: SlashCommand = {
         title: "Quality Mode",
         commands: [
           {
-            cmd: "/coco [on|off]",
+            cmd: "/quality [on|off]",
             desc: "Auto-test, self-review, iterate until quality ≥ 85/100",
             highlight: true,
           },

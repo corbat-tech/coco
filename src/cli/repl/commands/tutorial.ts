@@ -28,7 +28,7 @@ export const tutorialCommand: SlashCommand = {
       {
         step: "3",
         title: "Enable quality mode",
-        desc: "Type /coco to enable auto-iteration: test → analyze → fix → repeat until score ≥ 85",
+        desc: "Type /quality to enable auto-iteration: test → analyze → fix → repeat until score ≥ 85",
       },
       {
         step: "4",
@@ -50,7 +50,7 @@ export const tutorialCommand: SlashCommand = {
 
     console.log(chalk.bold("Useful commands:"));
     console.log(
-      `  ${chalk.yellow("/coco")}       ${chalk.dim("Toggle quality mode (auto-iteration)")}`,
+      `  ${chalk.yellow("/quality")}    ${chalk.dim("Toggle quality mode (auto-iteration)")}`,
     );
     console.log(`  ${chalk.yellow("/init")}       ${chalk.dim("Initialize a new project")}`);
     console.log(`  ${chalk.yellow("/help")}       ${chalk.dim("See all available commands")}`);

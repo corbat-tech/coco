@@ -36,7 +36,7 @@ import { updateCommand } from "./update.js";
 import { copyCommand } from "./copy.js";
 import { allowPathCommand } from "./allow-path.js";
 import { permissionsCommand } from "./permissions.js";
-import { cocoCommand } from "./coco.js";
+import { qualityCommand } from "./quality.js";
 import { fullAccessCommand } from "./full-access.js";
 import { updateCocoCommand } from "./update-coco.js";
 import { imageCommand } from "./image.js";
@@ -78,7 +78,7 @@ const commands: SlashCommand[] = [
   copyCommand,
   allowPathCommand,
   permissionsCommand,
-  cocoCommand,
+  qualityCommand,
   fullAccessCommand,
   updateCocoCommand,
   imageCommand,
