@@ -346,9 +346,36 @@ export async function startRepl(
     let agentMessage: string | MessageContent | null = null;
 
     if (input && isSlashCommand(input)) {
+      const prevProviderType = session.config.provider.type;
+      const prevProviderModel = session.config.provider.model;
+
       const { command, args } = parseSlashCommand(input);
       const commandResult = await executeSlashCommand(command, args, session);
       if (commandResult.shouldExit) break;
+
+      // Re-initialize provider if /provider or /model changed it
+      if (
+        session.config.provider.type !== prevProviderType ||
+        session.config.provider.model !== prevProviderModel
+      ) {
+        try {
+          const newInternalId = getInternalProviderId(session.config.provider.type);
+          provider = await createProvider(newInternalId, {
+            model: session.config.provider.model || undefined,
+            maxTokens: session.config.provider.maxTokens,
+          });
+          setAgentProvider(provider);
+          initializeContextManager(session, provider);
+        } catch (err) {
+          // Provider re-init failed — revert session config to previous values so
+          // session.config stays consistent with the active provider object
+          session.config.provider.type = prevProviderType;
+          session.config.provider.model = prevProviderModel;
+          renderError(
+            `Failed to switch provider: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
 
       // If the skill returned a forkPrompt, inject it as the next agent message
       if (commandResult.forkPrompt) {

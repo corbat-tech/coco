@@ -77,11 +77,6 @@ async function selectProviderInteractively(
           line += chalk.bgBlue.white(truncate(provider.description, descWidth, "…"));
           process.stdout.write(line + "\n");
           totalLines++;
-          // Show full description on a second line if it was truncated
-          if (provider.description.length > descWidth) {
-            process.stdout.write(chalk.bgBlue.white(`    ${provider.description}`) + "\n");
-            totalLines++;
-          }
         } else {
           const marker = isCurrent ? chalk.green(" ● ") : chalk.dim(" ○ ");
           const status = provider.isConfigured ? chalk.green("✓") : chalk.dim("○");

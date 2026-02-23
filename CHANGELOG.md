@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.1] - 2026-02-23
+
+### Fixed
+
+- **Qwen provider connection failure for international users** — the default API endpoint now points to `dashscope-intl.aliyuncs.com` (the international DashScope endpoint used by `modelstudio.console.alibabacloud.com`); China domestic users can override with `DASHSCOPE_BASE_URL`
+  - Updated across `env.ts`, `providers/index.ts`, and `providers-config.ts` for full consistency
+  - Connection error hint now explains the two endpoints and the override path
+- **Kimi For Coding 403 error** — requests to the `kimi-for-coding` model now include `User-Agent: claude-code`; the Kimi API requires this header to accept connections from coding agents
+- **Provider switch not taking effect mid-session** — using `/provider` or `/model` to switch while the REPL is running now re-initialises the active provider object immediately; previously the old provider (e.g. `kimi-code`) remained active for the rest of the session even after switching, causing API errors on every subsequent turn
+  - If re-initialisation fails, `session.config` is reverted to the previous provider so the session state stays consistent
+- **Provider selector rendering corruption** — scrolling through the provider list when `kimi-code` was highlighted caused the `anthropic` row to appear duplicated multiple times; the selected-item second-line expansion was not accounted for in the line-counter used by `clearPrevious()`, leaving ghost lines that accumulated on each keystroke
+
+---
+
 ## [2.4.0] - 2026-02-23
 
 ### Added
@@ -624,6 +638,7 @@ Future versions will include upgrade guides here.
 [2.3.0]: https://github.com/corbat-tech/coco/compare/v2.2.5...v2.3.0
 [2.2.5]: https://github.com/corbat-tech/coco/compare/v2.1.0...v2.2.5
 [2.1.0]: https://github.com/corbat-tech/coco/compare/v2.0.0...v2.1.0
+[2.4.1]: https://github.com/corbat-tech/coco/compare/v2.4.0...v2.4.1
 [2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.6.0...v1.7.0
