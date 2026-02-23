@@ -136,12 +136,28 @@ export const RECOMMENDED_PROJECT: string[] = [
   "bash:npm:test",
   "bash:npm:ci",
   "bash:pnpm:install",
+  "bash:pnpm:i",
   "bash:pnpm:run",
   "bash:pnpm:test",
+  "bash:pnpm:typecheck",
+  "bash:pnpm:lint",
+  "bash:pnpm:build",
+  "bash:pnpm:check",
+  "bash:pnpm:format",
+  "bash:pnpm:dev",
+  "bash:pnpm:add",
+  "bash:pnpm:remove",
+  "bash:pnpm:update",
+  "bash:pnpm:exec",
+  "bash:pnpm:rebuild",
   "bash:yarn:install",
   "bash:yarn:run",
   "bash:yarn:test",
   "bash:node",
+  "bash:vitest",
+  "bash:tsc",
+  "bash:tsx",
+  "bash:oxlint",
 
   // ── Bash: JVM toolchain ──
   "bash:java",
@@ -291,6 +307,7 @@ export const RECOMMENDED_DENY: string[] = [
   // ── Package publishing ──
   "bash:npm:publish",
   "bash:yarn:publish",
+  "bash:pnpm:publish",
   "bash:cargo:publish",
 
   // ── Disk / low-level destructive ──
