@@ -24,15 +24,10 @@ export type {
 } from "./types.js";
 
 // Anthropic provider
-export { AnthropicProvider, createAnthropicProvider } from "./anthropic.js";
+export { AnthropicProvider, createAnthropicProvider, createKimiCodeProvider } from "./anthropic.js";
 
 // OpenAI provider
-export {
-  OpenAIProvider,
-  createOpenAIProvider,
-  createKimiProvider,
-  createKimiCodeProvider,
-} from "./openai.js";
+export { OpenAIProvider, createOpenAIProvider, createKimiProvider } from "./openai.js";
 
 // Codex provider (ChatGPT Plus/Pro via OAuth)
 export { CodexProvider, createCodexProvider } from "./codex.js";
@@ -81,8 +76,8 @@ export {
 
 // Provider registry
 import type { LLMProvider, ProviderConfig } from "./types.js";
-import { AnthropicProvider } from "./anthropic.js";
-import { OpenAIProvider, createKimiProvider, createKimiCodeProvider } from "./openai.js";
+import { AnthropicProvider, createKimiCodeProvider } from "./anthropic.js";
+import { OpenAIProvider, createKimiProvider } from "./openai.js";
 import { GeminiProvider } from "./gemini.js";
 import { CodexProvider } from "./codex.js";
 import { ProviderError } from "../utils/errors.js";

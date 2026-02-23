@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.2] - 2026-02-23
+
+### Fixed
+
+- **Kimi For Coding 403 error (properly fixed)** — migrated `kimi-code` from the OpenAI-compatible endpoint to Kimi's official Anthropic-compatible endpoint (`https://api.kimi.com/coding`); the previous workaround (`User-Agent: claude-code` on the OpenAI endpoint) did not resolve the 403; the Anthropic SDK now talks directly to the Anthropic-protocol endpoint that Kimi officially supports for Claude Code and other Anthropic-SDK-based agents
+
+---
+
 ## [2.4.1] - 2026-02-23
 
 ### Fixed
@@ -638,6 +646,7 @@ Future versions will include upgrade guides here.
 [2.3.0]: https://github.com/corbat-tech/coco/compare/v2.2.5...v2.3.0
 [2.2.5]: https://github.com/corbat-tech/coco/compare/v2.1.0...v2.2.5
 [2.1.0]: https://github.com/corbat-tech/coco/compare/v2.0.0...v2.1.0
+[2.4.2]: https://github.com/corbat-tech/coco/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/corbat-tech/coco/compare/v2.4.0...v2.4.1
 [2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0
