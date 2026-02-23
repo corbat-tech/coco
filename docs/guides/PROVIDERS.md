@@ -130,7 +130,7 @@ export KIMI_API_KEY="..."  # or MOONSHOT_API_KEY
 **IMPORTANT:** If using Kimi, **disable COCO mode** or expect poor results:
 ```bash
 coco  # Start REPL
-/coco off  # Disable COCO mode
+/quality off  # Disable COCO mode
 ```
 
 ## New Providers (v2.0.0)
@@ -384,7 +384,7 @@ curl http://localhost:1234/v1/models
 
 **Fix:**
 1. Switch to Claude Sonnet/Opus
-2. Disable COCO mode: `/coco off`
+2. Disable COCO mode: `/quality off`
 3. Manually verify results
 
 ## Cost Considerations

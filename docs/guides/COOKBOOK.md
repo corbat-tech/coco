@@ -449,8 +449,8 @@ Don't iterate — just give me a working draft."
 Or toggle globally:
 
 ```
-/coco off    # disable convergence mode
-/coco on     # re-enable
+/quality off    # disable convergence mode
+/quality on     # re-enable
 ```
 
 ### Focus on a specific dimension
