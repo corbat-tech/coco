@@ -6,9 +6,12 @@
  */
 
 import type { LLMProvider } from "../providers/types.js";
+import type { TaskComplexity } from "../types/task.js";
 import type { AgentConfigMap } from "./agents/config.js";
 import type { SwarmGate } from "./agents/types.js";
 import type { SwarmSpec, SwarmFeature } from "./spec-parser.js";
+import { classifyFeatureComplexity, AGENT_ROSTERS } from "./complexity-classifier.js";
+import type { ComplexityResult } from "./complexity-classifier.js";
 import type { SwarmTask } from "./task-board.js";
 import {
   createBoard,
@@ -22,6 +25,14 @@ import { clarify } from "./clarifier.js";
 import { appendSwarmEvent, createEventId } from "./events.js";
 import { appendKnowledge } from "./knowledge.js";
 import { AGENT_DEFINITIONS } from "./agents/prompts.js";
+
+/** Numeric rank for each complexity level — used to compare against complexityThreshold */
+const COMPLEXITY_RANK: Record<TaskComplexity, number> = {
+  trivial: 0,
+  simple: 1,
+  moderate: 2,
+  complex: 3,
+};
 
 /**
  * States in the swarm execution state machine
@@ -59,6 +70,18 @@ export interface SwarmLifecycleOptions {
   maxIterations: number;
   noQuestions: boolean;
   onProgress?: (state: SwarmState, message: string) => void;
+  /**
+   * Minimum complexity level that triggers the full-roster check.
+   * Features at or above this level always use the full roster.
+   * Defaults to "trivial" (all features are classified).
+   */
+  complexityThreshold?: TaskComplexity;
+  /**
+   * When true, skip complexity classification entirely and run the full agent
+   * roster for every feature. Useful as a debugging escape hatch.
+   * Defaults to false.
+   */
+  skipComplexityCheck?: boolean;
 }
 
 /**
@@ -386,20 +409,58 @@ async function processFeature(ctx: LifecycleContext, feature: SwarmFeature): Pro
       continue;
     }
 
-    // PARALLEL REVIEW: arch + security + qa
+    // Classify feature complexity to determine the minimal agent roster
+    const classified: ComplexityResult = ctx.options.skipComplexityCheck
+      ? {
+          score: 10,
+          level: "complex",
+          agents: AGENT_ROSTERS.complex,
+          reasoning: "skipComplexityCheck=true",
+        }
+      : await classifyFeatureComplexity(feature, provider);
+
+    // Apply threshold override: if feature meets or exceeds the configured threshold,
+    // always use the full roster regardless of the classified level.
+    const threshold = ctx.options.complexityThreshold;
+    const roster: ComplexityResult =
+      threshold !== undefined &&
+      COMPLEXITY_RANK[classified.level] >= COMPLEXITY_RANK[threshold]
+        ? {
+            score: 10,
+            level: "complex",
+            agents: AGENT_ROSTERS.complex,
+            reasoning: `complexityThreshold=${threshold} (feature classified as ${classified.level})`,
+          }
+        : classified;
+
+    progress(
+      ctx.options,
+      "feature_loop",
+      `Feature: ${feature.name} — complexity=${roster.level} (score=${roster.score}) roster=[${roster.agents.join(",")}]`,
+    );
+
+    // PARALLEL REVIEW: run only the agents selected by the roster
     const [archReview, secReview, qaReview] = await Promise.all([
-      runArchReview(feature, provider, agentConfig.architect),
-      runSecurityAudit(feature, provider, agentConfig["security-auditor"]),
-      runQAReview(feature, provider, agentConfig.qa),
+      roster.agents.includes("architect")
+        ? runArchReview(feature, provider, agentConfig.architect)
+        : Promise.resolve(undefined),
+      roster.agents.includes("security-auditor")
+        ? runSecurityAudit(feature, provider, agentConfig["security-auditor"])
+        : Promise.resolve(undefined),
+      roster.agents.includes("qa")
+        ? runQAReview(feature, provider, agentConfig.qa)
+        : Promise.resolve(undefined),
     ]);
 
-    // EXTERNAL REVIEWER synthesizes
-    const extReview = await runExternalReviewer(
-      feature,
-      { arch: archReview, security: secReview, qa: qaReview },
-      provider,
-      agentConfig["external-reviewer"],
-    );
+    // Synthesize reviews: use external-reviewer agent if in roster, otherwise merge locally
+    const extReview = roster.agents.includes("external-reviewer")
+      ? await runExternalReviewer(
+          feature,
+          { arch: archReview, security: secReview, qa: qaReview },
+          provider,
+          agentConfig["external-reviewer"],
+        )
+      : synthesizeLocalReviews({ arch: archReview, security: secReview, qa: qaReview });
 
     lastReviewScore = extReview.score;
     await emitGate(
@@ -734,7 +795,8 @@ Return JSON with: { "summary": "...", "allTestsPassing": boolean, "coverage": nu
   }
 }
 
-interface ReviewResult {
+/** Review result from a single review agent */
+export interface ReviewResult {
   score: number;
   issues: string[];
   summary: string;
@@ -812,7 +874,8 @@ Return JSON with: { "score": number, "issues": ["..."], "summary": "..." }`;
   }
 }
 
-interface ExternalReviewResult {
+/** Synthesized review result from the external reviewer agent or local merge */
+export interface ExternalReviewResult {
   verdict: "APPROVE" | "REQUEST_CHANGES" | "REJECT";
   score: number;
   blockers: string[];
@@ -821,18 +884,26 @@ interface ExternalReviewResult {
 
 async function runExternalReviewer(
   feature: SwarmFeature,
-  reviews: { arch: ReviewResult; security: ReviewResult; qa: ReviewResult },
+  reviews: { arch?: ReviewResult; security?: ReviewResult; qa?: ReviewResult },
   provider: LLMProvider,
   _config: AgentConfigMap["external-reviewer"],
 ): Promise<ExternalReviewResult> {
   const prompt = AGENT_DEFINITIONS["external-reviewer"].systemPrompt;
+  const reviewLines = [
+    reviews.arch ? `Architecture review: ${JSON.stringify(reviews.arch)}` : null,
+    reviews.security ? `Security audit: ${JSON.stringify(reviews.security)}` : null,
+    reviews.qa ? `QA review: ${JSON.stringify(reviews.qa)}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const userMessage = `Synthesize these reviews for feature: ${feature.name}
 
-Architecture review: ${JSON.stringify(reviews.arch)}
-Security audit: ${JSON.stringify(reviews.security)}
-QA review: ${JSON.stringify(reviews.qa)}
+${reviewLines}
 
 Return JSON with: { "verdict": "APPROVE|REQUEST_CHANGES|REJECT", "score": number, "blockers": ["..."], "summary": "..." }`;
+
+  const fallback = synthesizeLocalReviews(reviews);
 
   try {
     const response = await provider.chat([{ role: "user", content: userMessage }], {
@@ -841,28 +912,36 @@ Return JSON with: { "verdict": "APPROVE|REQUEST_CHANGES|REJECT", "score": number
       temperature: 0.4,
     });
     const json = extractJson<ExternalReviewResult>(response.content);
-    const avgScore = Math.round(
-      (reviews.arch.score + reviews.security.score + reviews.qa.score) / 3,
-    );
-    return (
-      json ?? {
-        verdict: avgScore >= 85 ? "APPROVE" : "REQUEST_CHANGES",
-        score: avgScore,
-        blockers: [],
-        summary: `Synthesized review score: ${avgScore}`,
-      }
-    );
+    return json ?? fallback;
   } catch {
-    const avgScore = Math.round(
-      (reviews.arch.score + reviews.security.score + reviews.qa.score) / 3,
-    );
-    return {
-      verdict: avgScore >= 85 ? "APPROVE" : "REQUEST_CHANGES",
-      score: avgScore,
-      blockers: [],
-      summary: `External review score: ${avgScore}`,
-    };
+    return fallback;
   }
+}
+
+/**
+ * Synthesize available reviews into an ExternalReviewResult without calling
+ * the LLM. Used when the "external-reviewer" agent is not in the roster.
+ *
+ * Computes the average score of all non-undefined reviews and derives a
+ * verdict from that score.
+ */
+export function synthesizeLocalReviews(reviews: {
+  arch?: ReviewResult;
+  security?: ReviewResult;
+  qa?: ReviewResult;
+}): ExternalReviewResult {
+  const scores = [reviews.arch?.score, reviews.security?.score, reviews.qa?.score].filter(
+    (s): s is number => s !== undefined,
+  );
+  const avgScore =
+    scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 85;
+  const reviewCount = scores.length;
+  return {
+    verdict: avgScore >= 85 ? "APPROVE" : "REQUEST_CHANGES",
+    score: avgScore,
+    blockers: [],
+    summary: `Local synthesis (${reviewCount} review${reviewCount !== 1 ? "s" : ""}): score ${avgScore}`,
+  };
 }
 
 interface IntegratorResult {
