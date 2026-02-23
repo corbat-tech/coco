@@ -511,7 +511,7 @@ In CI or when you trust the task fully:
 /full-access on
 ```
 
-Coco auto-approves safe tool calls (file writes, test runs, git operations) without asking each time. Security-sensitive operations (pushing to remote, installing packages) still prompt.
+Coco auto-approves safe tool calls (file writes, test runs, git staging, package installs) without asking each time. Git commits still prompt by default — use `/permissions allow-commits` to opt a project into auto-commit. Security-sensitive operations (push, merge, destructive filesystem ops) always prompt.
 
 ### Context management for long sessions
 

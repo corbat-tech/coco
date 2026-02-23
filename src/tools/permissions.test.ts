@@ -28,6 +28,9 @@ describe("getRiskLevel", () => {
     expect(getRiskLevel("bash:rm")).toBe("medium");
     expect(getRiskLevel("bash:docker:exec")).toBe("medium");
     expect(getRiskLevel("bash:aws:s3")).toBe("medium");
+    // git commit always asks by default; opt in per-project with /permissions allow-commits
+    expect(getRiskLevel("git_commit")).toBe("medium");
+    expect(getRiskLevel("bash:git:commit")).toBe("medium");
   });
 
   it("should return 'low' for GLOBAL (read-only) patterns", () => {
@@ -42,7 +45,6 @@ describe("getRiskLevel", () => {
     expect(getRiskLevel("write_file")).toBe("low");
     expect(getRiskLevel("edit_file")).toBe("low");
     expect(getRiskLevel("bash:npm:install")).toBe("low");
-    expect(getRiskLevel("bash:git:commit")).toBe("low");
   });
 
   it("should return 'unknown' for unrecognized patterns", () => {

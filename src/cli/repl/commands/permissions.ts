@@ -4,17 +4,19 @@
  * Manage tool permissions and recommended allowlist.
  *
  * Usage:
- *   /permissions          Show current trust status
- *   /permissions apply    Apply recommended permissions template
- *   /permissions view     View the recommended template details
- *   /permissions reset    Reset all tool permissions (with confirmation)
+ *   /permissions                Show current trust status
+ *   /permissions apply          Apply recommended permissions template
+ *   /permissions view           View the recommended template details
+ *   /permissions reset          Reset all tool permissions (with confirmation)
+ *   /permissions allow-commits  Auto-approve git commit for this project
+ *   /permissions revoke-commits Require confirmation for git commit again
  */
 
 import * as p from "@clack/prompts";
 import chalk from "chalk";
 import fs from "node:fs/promises";
 import type { SlashCommand, ReplSession } from "../types.js";
-import { getAllTrustedTools } from "../session.js";
+import { getAllTrustedTools, saveTrustedTool, removeTrustedTool } from "../session.js";
 import { CONFIG_PATHS } from "../../../config/paths.js";
 import {
   applyRecommendedPermissions,
@@ -30,7 +32,7 @@ export const permissionsCommand: SlashCommand = {
   name: "permissions",
   aliases: ["perms"],
   description: "Manage tool permissions and recommended allowlist",
-  usage: "/permissions [apply|view|reset]",
+  usage: "/permissions [apply|view|reset|allow-commits|revoke-commits]",
 
   async execute(args: string[], session: ReplSession): Promise<boolean> {
     const subcommand = args[0]?.toLowerCase() ?? "status";
@@ -44,6 +46,12 @@ export const permissionsCommand: SlashCommand = {
         return false;
       case "reset":
         await resetPermissions(session);
+        return false;
+      case "allow-commits":
+        await allowCommits(session);
+        return false;
+      case "revoke-commits":
+        await revokeCommits(session);
         return false;
       case "status":
       default:
@@ -101,9 +109,11 @@ async function showStatus(session: ReplSession): Promise<void> {
   }
 
   console.log();
-  console.log(chalk.dim("  /permissions apply  — Apply recommended permissions"));
-  console.log(chalk.dim("  /permissions view   — View recommended template"));
-  console.log(chalk.dim("  /permissions reset  — Reset to empty"));
+  console.log(chalk.dim("  /permissions apply          — Apply recommended permissions"));
+  console.log(chalk.dim("  /permissions view           — View recommended template"));
+  console.log(chalk.dim("  /permissions reset          — Reset to empty"));
+  console.log(chalk.dim("  /permissions allow-commits  — Auto-approve git commit for this project"));
+  console.log(chalk.dim("  /permissions revoke-commits — Require confirmation for git commit again"));
   console.log();
 }
 
@@ -123,6 +133,36 @@ async function applyRecommended(session: ReplSession): Promise<void> {
 
   console.log(chalk.green("  ✓ Recommended permissions applied!"));
   console.log(chalk.dim("  Use /permissions to review."));
+}
+
+/**
+ * Opt this project into auto-approving git commits.
+ * By default git commit always asks — this is the explicit per-project opt-in.
+ */
+async function allowCommits(session: ReplSession): Promise<void> {
+  const commitTools = ["git_commit", "bash:git:commit"];
+  for (const tool of commitTools) {
+    session.trustedTools.add(tool);
+    await saveTrustedTool(tool, session.projectPath, false);
+  }
+  console.log(chalk.green("  ✓ git commit will be auto-approved for this project"));
+  console.log(chalk.dim("  Use /permissions revoke-commits to require confirmation again."));
+}
+
+/**
+ * Revert the per-project auto-commit opt-in, restoring the default ask behaviour.
+ * Removes from both project-level and global trust so the change is reliable
+ * regardless of how commits were originally trusted (prompt 't', '!', or allow-commits).
+ */
+async function revokeCommits(session: ReplSession): Promise<void> {
+  const commitTools = ["git_commit", "bash:git:commit"];
+  for (const tool of commitTools) {
+    session.trustedTools.delete(tool);
+    await removeTrustedTool(tool, session.projectPath, false); // remove project-level trust
+    await removeTrustedTool(tool, session.projectPath, true); // remove global trust if present
+  }
+  console.log(chalk.yellow("  ○ git commit will now require confirmation for this project"));
+  console.log(chalk.dim("  Use /permissions allow-commits to enable auto-approve again."));
 }
 
 /**
