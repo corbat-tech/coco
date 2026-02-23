@@ -88,6 +88,7 @@ export const DEFAULT_PRICING: Record<ProviderType, ModelPricing> = {
   deepseek: { inputPerMillion: 0.14, outputPerMillion: 0.28, contextWindow: 128000 }, // Very cheap
   together: { inputPerMillion: 0.2, outputPerMillion: 0.2, contextWindow: 32768 },
   huggingface: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 32768 }, // Free tier
+  qwen: { inputPerMillion: 0.3, outputPerMillion: 1.2, contextWindow: 131072 }, // qwen-coder-plus pricing
 };
 
 /**

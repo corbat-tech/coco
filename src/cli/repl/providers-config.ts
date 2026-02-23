@@ -62,11 +62,12 @@
  * - src/cli/repl/providers-config.ts (this file)
  *
  * SECONDARY (sync DEFAULT_MODEL and CONTEXT_WINDOWS):
+ * - src/providers/index.ts (ProviderType union, createProvider() switch, listProviders())
  * - src/providers/anthropic.ts
  * - src/providers/openai.ts
  * - src/providers/gemini.ts
  * - src/providers/codex.ts
- * - src/config/env.ts (getDefaultModel function)
+ * - src/config/env.ts (ProviderType union, getApiKey, getBaseUrl, getDefaultModel, VALID_PROVIDERS)
  * - src/providers/pricing.ts (MODEL_PRICING for new models)
  *
  * CONSUMERS (no changes needed, they read from this file):
@@ -82,13 +83,14 @@
  * - src/auth/flow.ts (getProviderDisplayInfo)
  *
  * ============================================================================
- * Last updated: February 10, 2026
+ * Last updated: February 23, 2026
  *
  * CURRENT MODELS (verified from official docs):
  * - Anthropic: claude-opus-4-6-20260115 (latest), claude-sonnet-4-5, claude-haiku-4-5
  * - OpenAI: gpt-5.3-codex (latest), gpt-5.2-codex, gpt-4.1, o4-mini
  * - Gemini: gemini-3-flash-preview, gemini-3-pro-preview, gemini-2.5-pro, gemini-2.5-flash
  * - Kimi: kimi-k2.5, kimi-k2-thinking
+ * - Qwen: qwen-coder-plus (recommended), qwen-max, qwen-plus, qwen-turbo, qwq-plus
  * - LM Studio: qwen3-coder series (best local option)
  * - Ollama: qwen2.5-coder:14b (recommended), qwen3-coder:30b
  * ============================================================================
@@ -914,6 +916,71 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         description: "Mistral MoE — fast & capable (32K context)",
         contextWindow: 32768,
         maxOutputTokens: 4096,
+      },
+    ],
+  },
+
+  // Alibaba Qwen - DashScope API (OpenAI-compatible)
+  qwen: {
+    id: "qwen",
+    name: "Alibaba Qwen",
+    emoji: "🟦",
+    description: "Qwen models via Alibaba DashScope — strong coding at low cost",
+    envVar: "DASHSCOPE_API_KEY",
+    apiKeyUrl: "https://dashscope.aliyuncs.com",
+    docsUrl: "https://help.aliyun.com/zh/model-studio/developer-reference/",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "api",
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: true,
+    },
+    models: [
+      {
+        id: "qwen-coder-plus",
+        name: "Qwen Coder Plus",
+        description: "Best coding model — Qwen3 based, 131K context",
+        contextWindow: 131072,
+        maxOutputTokens: 8192,
+        recommended: true,
+      },
+      {
+        id: "qwen-max",
+        name: "Qwen Max",
+        description: "Most capable general model — 32K context",
+        contextWindow: 32768,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "qwen-plus",
+        name: "Qwen Plus",
+        description: "Good balance of speed and quality — 131K context",
+        contextWindow: 131072,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "qwen-turbo",
+        name: "Qwen Turbo",
+        description: "Fastest and cheapest — 1M context",
+        contextWindow: 1000000,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "qwen2.5-coder-32b-instruct",
+        name: "Qwen 2.5 Coder 32B",
+        description: "Open weights coding model — 32K context",
+        contextWindow: 32768,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "qwq-plus",
+        name: "QwQ Plus",
+        description: "Reasoning model — chain-of-thought, 131K context",
+        contextWindow: 131072,
+        maxOutputTokens: 8192,
       },
     ],
   },
