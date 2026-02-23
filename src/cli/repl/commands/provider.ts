@@ -235,6 +235,7 @@ async function switchProvider(
   const userFacingProviderId = initialProvider.id; // What user sees (e.g., "openai")
   let internalProviderId = initialProvider.id; // What we use internally (e.g., "codex" for OAuth)
   let selectedAuthMethod: AuthMethod = "apikey"; // Default to API key
+  let newApiKeyForSaving: string | null = null; // Track new API key entered, to persist it
 
   // Local providers use special setup flow (auto-detect models, no API key)
   if (newProvider.id === "lmstudio" || newProvider.id === "ollama") {
@@ -427,6 +428,7 @@ async function switchProvider(
 
           process.env[newProvider.envVar] = key;
           selectedAuthMethod = "apikey";
+          newApiKeyForSaving = key;
         }
       }
       // Handle remove credentials
@@ -499,6 +501,7 @@ async function switchProvider(
 
       process.env[newProvider.envVar] = key;
       selectedAuthMethod = "apikey";
+      newApiKeyForSaving = key;
     }
   }
 
@@ -529,12 +532,22 @@ async function switchProvider(
     session.config.provider.type = userFacingProviderId as ProviderType;
     session.config.provider.model = newModel;
 
-    // Save preferences with auth method
-    await saveProviderPreference(
-      userFacingProviderId as ProviderType,
-      newModel,
-      selectedAuthMethod,
-    );
+    // Save preferences and persist API key if a new one was entered
+    if (newApiKeyForSaving) {
+      // New API key entered: offer to persist it to ~/.coco/.env (same as onboarding)
+      await saveConfiguration({
+        type: userFacingProviderId as ProviderType,
+        model: newModel,
+        apiKey: newApiKeyForSaving,
+      });
+    } else {
+      // Using existing credentials (OAuth or pre-existing API key): just save provider/model
+      await saveProviderPreference(
+        userFacingProviderId as ProviderType,
+        newModel,
+        selectedAuthMethod,
+      );
+    }
 
     console.log(chalk.green(`\n✓ Switched to ${newProvider.emoji} ${newProvider.name}`));
     console.log(chalk.dim(`  Model: ${newModel}`));
