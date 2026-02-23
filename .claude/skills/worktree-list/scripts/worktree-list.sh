@@ -17,7 +17,7 @@ PROJECT_DIR="${1:-$(pwd)}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 WORKTREES_DIR="${PROJECT_DIR}/.worktrees"
 
-if [ ! -d "$PROJECT_DIR/.git" ]; then
+if [ ! -e "$PROJECT_DIR/.git" ]; then
   echo "Error: $PROJECT_DIR is not a git repository"
   exit 1
 fi
@@ -35,7 +35,7 @@ echo ""
 
 COUNT=0
 for WORKTREE_PATH in "$WORKTREES_DIR"/*/; do
-  [ -d "$WORKTREE_PATH/.git" ] || continue
+  [ -e "$WORKTREE_PATH/.git" ] || continue
 
   FEATURE_NAME=$(basename "$WORKTREE_PATH")
   BRANCH=$(git -C "$WORKTREE_PATH" branch --show-current 2>/dev/null || echo "detached")

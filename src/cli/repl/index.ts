@@ -52,16 +52,16 @@ import {
   showPermissionSuggestion,
 } from "./recommended-permissions.js";
 import {
-  isCocoMode,
-  loadCocoModePreference,
+  isQualityLoop,
+  loadQualityLoopPreference,
   looksLikeFeatureRequest,
   wasHintShown,
   markHintShown,
-  formatCocoHint,
+  formatQualityLoopHint,
   formatQualityResult,
-  getCocoModeSystemPrompt,
-  parseCocoQualityReport,
-} from "./coco-mode.js";
+  getQualityLoopSystemPrompt,
+  parseQualityLoopReport,
+} from "./quality-loop.js";
 import { getGitContext, formatGitLine, type GitContext } from "./git-context.js";
 import { renderStatusBar } from "./status-bar.js";
 import {
@@ -160,13 +160,13 @@ export async function startRepl(
     }
   }
 
-  // Load COCO mode, full-access mode, and full-power-risk mode preferences in
+  // Load quality loop, full-access mode, and full-power-risk mode preferences in
   // parallel — all read different keys from the same config file and write to
   // separate module-level variables with no shared state between them.
   const { loadFullAccessPreference } = await import("./full-access-mode.js");
   const { loadFullPowerRiskPreference } = await import("./full-power-risk-mode.js");
   await Promise.all([
-    loadCocoModePreference(),
+    loadQualityLoopPreference(),
     loadFullAccessPreference(),
     loadFullPowerRiskPreference(),
   ]);
@@ -530,24 +530,24 @@ export async function startRepl(
     let originalSystemPrompt: string | undefined;
 
     try {
-      // Show contextual hint for first feature-like prompt when COCO mode is off
+      // Show contextual hint for first feature-like prompt when quality loop is off
       if (
         typeof agentMessage === "string" &&
-        !isCocoMode() &&
+        !isQualityLoop() &&
         !wasHintShown() &&
         looksLikeFeatureRequest(agentMessage)
       ) {
         markHintShown();
-        console.log(formatCocoHint());
+        console.log(formatQualityLoopHint());
       }
 
       console.log(); // Blank line before response
 
-      // If COCO mode is active, route through the coco-fix-iterate skill (if available)
+      // If quality loop is active, route through the coco-fix-iterate skill (if available)
       // or fall back to text protocol injection
       let cocoForkPrompt: string | undefined;
 
-      if (isCocoMode()) {
+      if (isQualityLoop()) {
         const skillId = "coco-fix-iterate";
         const skillAvailable = session.skillRegistry?.has(skillId);
 
@@ -565,7 +565,7 @@ export async function startRepl(
           // Fallback: text protocol injection (when skill not discovered)
           originalSystemPrompt = session.config.agent.systemPrompt;
           session.config.agent.systemPrompt =
-            originalSystemPrompt + "\n" + getCocoModeSystemPrompt();
+            originalSystemPrompt + "\n" + getQualityLoopSystemPrompt();
         }
       }
 
@@ -676,8 +676,8 @@ export async function startRepl(
           renderToolStart(result.name, result.input);
           renderToolEnd(result);
           // Show waiting spinner while LLM processes the result
-          // In COCO mode, add hint that quality checks may follow
-          if (isCocoMode()) {
+          // In quality loop mode, add hint that quality checks may follow
+          if (isQualityLoop()) {
             setSpinner("Processing results & checking quality...");
           } else {
             setSpinner("Processing...");
@@ -695,8 +695,8 @@ export async function startRepl(
             const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
             if (elapsed < 4) return;
 
-            // Show COCO mode feedback if active
-            if (isCocoMode()) {
+            // Show quality loop feedback if active
+            if (isQualityLoop()) {
               if (elapsed < 8) setSpinner("Analyzing request...");
               else if (elapsed < 15) setSpinner("Running quality checks...");
               else if (elapsed < 25) setSpinner("Iterating for quality...");
@@ -812,9 +812,9 @@ export async function startRepl(
 
       console.log(); // Blank line after response
 
-      // Parse and display quality report if COCO mode produced one
-      if (isCocoMode() && result.content) {
-        const qualityResult = parseCocoQualityReport(result.content);
+      // Parse and display quality report if quality loop produced one
+      if (isQualityLoop() && result.content) {
+        const qualityResult = parseQualityLoopReport(result.content);
         if (qualityResult) {
           console.log(formatQualityResult(qualityResult));
         }
@@ -905,7 +905,7 @@ export async function startRepl(
       // Always clean up spinner and resume input handler after agent turn
       clearSpinner();
       inputHandler.resume();
-      // COCO mode: always restore original system prompt after every turn
+      // Quality loop: always restore original system prompt after every turn
       if (originalSystemPrompt !== undefined) {
         session.config.agent.systemPrompt = originalSystemPrompt;
       }
@@ -1024,12 +1024,12 @@ async function printWelcome(
   if (gitCtx) {
     console.log(`  ${formatGitLine(gitCtx)}`);
   }
-  // Show COCO mode status
-  const cocoStatus = isCocoMode()
+  // Show quality loop status
+  const cocoStatus = isQualityLoop()
     ? chalk.magenta("  \u{1F504} quality mode: ") +
       chalk.green.bold("on") +
-      chalk.dim(" — iterates until quality \u2265 85. /coco to disable")
-    : chalk.dim("  \u{1F4A1} /coco on — enable auto-test & quality iteration");
+      chalk.dim(" — iterates until quality \u2265 85. /quality to disable")
+    : chalk.dim("  \u{1F4A1} /quality on — enable auto-test & quality iteration");
   console.log(cocoStatus);
 
   // Show skills and MCP status summary (only when something is active)

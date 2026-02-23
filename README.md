@@ -8,7 +8,7 @@
 [![Node](https://img.shields.io/badge/Node.js-22+-22c55e?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-5290_passing-22c55e?style=flat-square)](https://github.com/corbat-tech/coco/actions)
+[![Tests](https://img.shields.io/badge/tests-5604_passing-22c55e?style=flat-square)](https://github.com/corbat-tech/coco/actions)
 
 <br/>
 
@@ -231,12 +231,14 @@ Type `/help` inside the REPL to see everything. The most useful ones day-to-day:
 
 | Command | What it does |
 |---------|--------------|
-| `/coco [on\|off]` | Toggle quality convergence mode (default: on) |
+| `/quality [on\|off]` | Toggle quality convergence mode (default: on) |
 | `/check` | Run typecheck + lint + tests inline |
 | `/review` | Code review with severity-rated findings |
 | `/diff` | Visual diff with syntax highlighting |
 | `/ship` | Full release: review → test → lint → branch → PR → merge |
 | `/full-access [on\|off]` | Auto-approve safe tool calls |
+| `/permissions` | Show trust status and manage tool allowlist |
+| `/permissions allow-commits` | Auto-approve git commits for this project |
 | `/status` | Project status, git info, session stats |
 | `/compact` | Compress context when the conversation grows long |
 
@@ -412,7 +414,7 @@ pnpm install
 
 pnpm dev          # run with tsx (hot reload)
 pnpm check        # typecheck + lint + test
-pnpm test         # 5290 tests
+pnpm test         # 5604 tests
 pnpm format:fix   # fix formatting
 ```
 

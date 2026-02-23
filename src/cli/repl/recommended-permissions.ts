@@ -96,13 +96,17 @@ export const RECOMMENDED_GLOBAL: string[] = [
 ];
 
 /**
- * ALLOW (write + build) — Tools that modify files, create commits, run builds.
+ * ALLOW (write + build) — Tools that modify files, stage changes, run builds.
  * Applied globally (same as RECOMMENDED_GLOBAL). Separated for readability.
  *
  * Includes:
- * - Coco native write tools (write_file, edit_file, git_add, git_commit, etc.)
+ * - Coco native write tools (write_file, edit_file, git_add, etc.)
  * - Bash filesystem write (mkdir, touch, cp, mv)
  * - Bash build/compile commands (npm/pnpm/yarn, node, java, gradle, mvn, tsc)
+ *
+ * Note: git_commit and bash:git:commit are intentionally excluded.
+ * Commits are in ALWAYS_ASK so users review before coco writes git history.
+ * Use `/permissions allow-commits` to opt a specific project into auto-commit.
  */
 export const RECOMMENDED_PROJECT: string[] = [
   // ── Coco native tools (write, local) ──
@@ -111,7 +115,6 @@ export const RECOMMENDED_PROJECT: string[] = [
   "copy_file",
   "move_file",
   "git_add",
-  "git_commit",
   "run_tests",
   "run_test_file",
   "run_script",
@@ -133,12 +136,28 @@ export const RECOMMENDED_PROJECT: string[] = [
   "bash:npm:test",
   "bash:npm:ci",
   "bash:pnpm:install",
+  "bash:pnpm:i",
   "bash:pnpm:run",
   "bash:pnpm:test",
+  "bash:pnpm:typecheck",
+  "bash:pnpm:lint",
+  "bash:pnpm:build",
+  "bash:pnpm:check",
+  "bash:pnpm:format",
+  "bash:pnpm:dev",
+  "bash:pnpm:add",
+  "bash:pnpm:remove",
+  "bash:pnpm:update",
+  "bash:pnpm:exec",
+  "bash:pnpm:rebuild",
   "bash:yarn:install",
   "bash:yarn:run",
   "bash:yarn:test",
   "bash:node",
+  "bash:vitest",
+  "bash:tsc",
+  "bash:tsx",
+  "bash:oxlint",
 
   // ── Bash: JVM toolchain ──
   "bash:java",
@@ -169,9 +188,8 @@ export const RECOMMENDED_PROJECT: string[] = [
   "bash:go:vet",
   "bash:pip:install",
 
-  // ── Bash: git local (staging only — push is in ASK) ──
+  // ── Bash: git local (staging only — commit and push are in ASK) ──
   "bash:git:add",
-  "bash:git:commit",
 ];
 
 /**
@@ -179,6 +197,7 @@ export const RECOMMENDED_PROJECT: string[] = [
  * User decides per-invocation. Not denied, but never auto-approved.
  *
  * Includes:
+ * - Git commit (local but writes history — opt in per-project with /permissions allow-commits)
  * - Network access (curl, wget, http tools)
  * - Destructive file ops (rm, delete_file)
  * - Git remote + history-rewriting (push, pull, stash, checkout, switch)
@@ -187,6 +206,10 @@ export const RECOMMENDED_PROJECT: string[] = [
  * - Environment access
  */
 export const ALWAYS_ASK: string[] = [
+  // ── Git commit — always ask by default; use /permissions allow-commits to opt in ──
+  "git_commit",
+  "bash:git:commit",
+
   // ── Coco native (risky) ──
   "delete_file",
   "git_push",
@@ -284,6 +307,7 @@ export const RECOMMENDED_DENY: string[] = [
   // ── Package publishing ──
   "bash:npm:publish",
   "bash:yarn:publish",
+  "bash:pnpm:publish",
   "bash:cargo:publish",
 
   // ── Disk / low-level destructive ──
@@ -387,8 +411,10 @@ export async function showPermissionSuggestion(): Promise<void> {
   console.log(chalk.magenta.bold("  📋 Recommended Permissions"));
   console.log();
   console.log(chalk.dim("  Coco has a curated set of tool permissions for developers:"));
-  console.log(chalk.dim("  • Allow: file read/write, search, git (local), build, tests..."));
-  console.log(chalk.dim("  • Ask each time: curl, rm, git pull, docker exec, cloud..."));
+  console.log(chalk.dim("  • Allow: file read/write, search, git staging, build, tests..."));
+  console.log(
+    chalk.dim("  • Ask each time: git commit, curl, rm, git pull, docker exec, cloud..."),
+  );
   console.log(chalk.dim("  • Deny: sudo, git push, git rebase, docker push, k8s apply..."));
   console.log();
   console.log(chalk.dim("  Stored in ~/.coco/trusted-tools.json — edit manually or let"));
