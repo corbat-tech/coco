@@ -26,6 +26,14 @@ import { appendSwarmEvent, createEventId } from "./events.js";
 import { appendKnowledge } from "./knowledge.js";
 import { AGENT_DEFINITIONS } from "./agents/prompts.js";
 
+/** Numeric rank for each complexity level — used to compare against complexityThreshold */
+const COMPLEXITY_RANK: Record<TaskComplexity, number> = {
+  trivial: 0,
+  simple: 1,
+  moderate: 2,
+  complex: 3,
+};
+
 /**
  * States in the swarm execution state machine
  */
@@ -402,7 +410,7 @@ async function processFeature(ctx: LifecycleContext, feature: SwarmFeature): Pro
     }
 
     // Classify feature complexity to determine the minimal agent roster
-    const roster: ComplexityResult = ctx.options.skipComplexityCheck
+    const classified: ComplexityResult = ctx.options.skipComplexityCheck
       ? {
           score: 10,
           level: "complex",
@@ -410,6 +418,20 @@ async function processFeature(ctx: LifecycleContext, feature: SwarmFeature): Pro
           reasoning: "skipComplexityCheck=true",
         }
       : await classifyFeatureComplexity(feature, provider);
+
+    // Apply threshold override: if feature meets or exceeds the configured threshold,
+    // always use the full roster regardless of the classified level.
+    const threshold = ctx.options.complexityThreshold;
+    const roster: ComplexityResult =
+      threshold !== undefined &&
+      COMPLEXITY_RANK[classified.level] >= COMPLEXITY_RANK[threshold]
+        ? {
+            score: 10,
+            level: "complex",
+            agents: AGENT_ROSTERS.complex,
+            reasoning: `complexityThreshold=${threshold} (feature classified as ${classified.level})`,
+          }
+        : classified;
 
     progress(
       ctx.options,

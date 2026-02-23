@@ -405,4 +405,112 @@ describe("processFeature roster selection", () => {
     expect(systemPromptsUsed).toContain("QA_PROMPT");
     expect(systemPromptsUsed).toContain("REVIEWER_PROMPT");
   });
+
+  it("complexityThreshold=moderate: feature classified as simple uses simple roster (below threshold)", async () => {
+    mockClassify.mockResolvedValue({
+      score: 4,
+      level: "simple",
+      agents: ["tdd-developer", "qa"],
+      reasoning: "simple heuristic",
+    });
+
+    const { runSwarmLifecycle } = await import("./lifecycle.js");
+
+    await runSwarmLifecycle({
+      spec: makeSpec([
+        {
+          id: "f-1",
+          name: "Simple feature",
+          description: "Update button label",
+          acceptanceCriteria: [],
+          dependencies: [],
+          priority: "low",
+        },
+      ]),
+      projectPath: "/tmp/test-project",
+      outputPath: "/tmp/test-project/output",
+      provider: mockProvider,
+      agentConfig: DEFAULT_AGENT_CONFIG,
+      minScore: 85,
+      maxIterations: 1,
+      noQuestions: true,
+      complexityThreshold: "moderate",
+    });
+
+    // simple < moderate → threshold not reached → simple roster used (no security/reviewer)
+    expect(systemPromptsUsed).not.toContain("SECURITY_PROMPT");
+    expect(systemPromptsUsed).not.toContain("REVIEWER_PROMPT");
+  });
+
+  it("complexityThreshold=moderate: feature classified as moderate uses full roster (meets threshold)", async () => {
+    mockClassify.mockResolvedValue({
+      score: 6,
+      level: "moderate",
+      agents: ["tdd-developer", "qa", "architect"],
+      reasoning: "moderate heuristic",
+    });
+
+    const { runSwarmLifecycle } = await import("./lifecycle.js");
+
+    await runSwarmLifecycle({
+      spec: makeSpec([
+        {
+          id: "f-1",
+          name: "Moderate feature",
+          description: "Refactor data layer",
+          acceptanceCriteria: [],
+          dependencies: [],
+          priority: "medium",
+        },
+      ]),
+      projectPath: "/tmp/test-project",
+      outputPath: "/tmp/test-project/output",
+      provider: mockProvider,
+      agentConfig: DEFAULT_AGENT_CONFIG,
+      minScore: 85,
+      maxIterations: 1,
+      noQuestions: true,
+      complexityThreshold: "moderate",
+    });
+
+    // moderate >= moderate → threshold reached → full complex roster used
+    expect(systemPromptsUsed).toContain("SECURITY_PROMPT");
+    expect(systemPromptsUsed).toContain("REVIEWER_PROMPT");
+  });
+
+  it("complexityThreshold=simple: feature classified as moderate uses full roster (above threshold)", async () => {
+    mockClassify.mockResolvedValue({
+      score: 6,
+      level: "moderate",
+      agents: ["tdd-developer", "qa", "architect"],
+      reasoning: "moderate heuristic",
+    });
+
+    const { runSwarmLifecycle } = await import("./lifecycle.js");
+
+    await runSwarmLifecycle({
+      spec: makeSpec([
+        {
+          id: "f-1",
+          name: "Moderate feature",
+          description: "Add new API endpoint",
+          acceptanceCriteria: [],
+          dependencies: [],
+          priority: "medium",
+        },
+      ]),
+      projectPath: "/tmp/test-project",
+      outputPath: "/tmp/test-project/output",
+      provider: mockProvider,
+      agentConfig: DEFAULT_AGENT_CONFIG,
+      minScore: 85,
+      maxIterations: 1,
+      noQuestions: true,
+      complexityThreshold: "simple",
+    });
+
+    // moderate > simple → threshold exceeded → full complex roster used
+    expect(systemPromptsUsed).toContain("SECURITY_PROMPT");
+    expect(systemPromptsUsed).toContain("REVIEWER_PROMPT");
+  });
 });
