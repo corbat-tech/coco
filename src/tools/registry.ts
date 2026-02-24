@@ -6,6 +6,7 @@
 import { z } from "zod";
 // ToolError reserved for future error handling
 import { getLogger } from "../utils/logger.js";
+import { humanizeError } from "../utils/error-humanizer.js";
 
 /**
  * Tool definition
@@ -196,7 +197,19 @@ export class ToolRegistry {
       };
     } catch (error) {
       const duration = performance.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      let errorMessage: string;
+
+      if (error instanceof z.ZodError) {
+        // Format Zod validation errors into a readable message instead of raw JSON
+        const fields = error.issues.map((issue) => {
+          const field = issue.path.join(".") || "input";
+          return `${field} (${issue.message.toLowerCase()})`;
+        });
+        errorMessage = `Invalid tool input — ${fields.join(", ")}`;
+      } else {
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        errorMessage = humanizeError(rawMessage, name);
+      }
 
       this.logger.error(`Tool '${name}' failed`, { error: errorMessage, duration });
 

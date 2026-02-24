@@ -48,9 +48,9 @@ interface MenuOption {
 }
 
 const MENU_OPTIONS: MenuOption[] = [
-  { key: "1", label: "Modificar", icon: "\u26A1", action: InterruptionAction.Modify },
-  { key: "2", label: "Encolar", icon: "\uD83D\uDCCB", action: InterruptionAction.Queue },
-  { key: "3", label: "Abortar", icon: "\u23F9", action: InterruptionAction.Abort },
+  { key: "1", label: "Modify", icon: "\u26A1", action: InterruptionAction.Modify },
+  { key: "2", label: "Queue", icon: "\uD83D\uDCCB", action: InterruptionAction.Queue },
+  { key: "3", label: "Abort", icon: "\u23F9", action: InterruptionAction.Abort },
 ];
 
 /** Number of lines the menu occupies */

@@ -116,6 +116,14 @@ export async function executeAgentTurn(
   let iteration = 0;
   const maxIterations = session.config.agent.maxToolIterations;
 
+  // Repeated-error loop detection:
+  // key = "toolName:errorPrefix" → consecutive failure count.
+  // When the same tool fails with the same error ≥ MAX_CONSECUTIVE_TOOL_ERRORS times in a
+  // row, we inject a guidance message and break so the LLM can explain the issue instead
+  // of retrying indefinitely.
+  const toolErrorCounts = new Map<string, number>();
+  const MAX_CONSECUTIVE_TOOL_ERRORS = 3;
+
   while (iteration < maxIterations) {
     iteration++;
 
@@ -440,6 +448,44 @@ export async function executeAgentTurn(
       }
     }
 
+    // Detect repeated identical tool errors (loop protection).
+    // Update consecutive failure counts; if any tool hits the threshold, augment
+    // the last result so the LLM understands it must stop retrying, then break.
+    let stuckInErrorLoop = false;
+    for (const executedCall of executedTools) {
+      if (!executedCall.result.success && executedCall.result.error) {
+        // Normalise: tool name + first 120 chars of error (enough to distinguish messages)
+        const errorKey = `${executedCall.name}:${executedCall.result.error.slice(0, 120).toLowerCase()}`;
+        const count = (toolErrorCounts.get(errorKey) ?? 0) + 1;
+        toolErrorCounts.set(errorKey, count);
+
+        if (count >= MAX_CONSECUTIVE_TOOL_ERRORS) {
+          stuckInErrorLoop = true;
+          // Replace the content of this tool result with a directive that tells the LLM
+          // to stop retrying and explain the problem to the user instead.
+          const idx = toolResults.findIndex((r) => r.tool_use_id === executedCall.id);
+          if (idx >= 0) {
+            toolResults[idx] = {
+              ...toolResults[idx]!,
+              content: [
+                executedCall.result.error,
+                "",
+                `⚠️ This tool has now failed ${count} consecutive times with the same error.`,
+                "Do NOT retry with the same parameters.",
+                "Explain to the user what is missing or wrong, and ask for clarification if needed.",
+              ].join("\n"),
+              is_error: true,
+            };
+          }
+        }
+      } else {
+        // Successful tool call — reset its error streak
+        for (const key of toolErrorCounts.keys()) {
+          if (key.startsWith(`${executedCall.name}:`)) toolErrorCounts.delete(key);
+        }
+      }
+    }
+
     // Add assistant message with tool uses
     const assistantContent = response.content
       ? [{ type: "text" as const, text: response.content }, ...toolUses]
@@ -455,6 +501,12 @@ export async function executeAgentTurn(
       role: "user",
       content: toolResults,
     });
+
+    // Break out of the loop so the LLM can respond with the guidance message above.
+    // The next user prompt will start a fresh turn.
+    if (stuckInErrorLoop) {
+      break;
+    }
   }
 
   // Signal completion
