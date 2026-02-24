@@ -271,15 +271,13 @@ describe("humanizeWithLLM", () => {
         ? vi.fn().mockRejectedValue(new Error("provider error"))
         : response === null
           ? vi.fn().mockResolvedValue(null)
-          : vi
-              .fn()
-              .mockResolvedValue({
-                content: response,
-                id: "1",
-                stopReason: "end_turn",
-                usage: { inputTokens: 10, outputTokens: 20 },
-                model: "test",
-              }),
+          : vi.fn().mockResolvedValue({
+              content: response,
+              id: "1",
+              stopReason: "end_turn",
+              usage: { inputTokens: 10, outputTokens: 20 },
+              model: "test",
+            }),
       chatWithTools: vi.fn(),
       stream: vi.fn(),
       streamWithTools: vi.fn(),
