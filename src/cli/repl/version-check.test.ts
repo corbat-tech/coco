@@ -83,7 +83,7 @@ describe("version-check", () => {
     it("should return update info when newer version is available", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "2.0.0" } }),
+        json: async () => ({ version: "2.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -99,7 +99,7 @@ describe("version-check", () => {
     it("should return null when current version is latest", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "1.0.0" } }),
+        json: async () => ({ version: "1.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -112,7 +112,7 @@ describe("version-check", () => {
     it("should return null when current version is newer than registry", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "0.9.0" } }),
+        json: async () => ({ version: "0.9.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -166,7 +166,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "2.0.0" } }),
+        json: async () => ({ version: "2.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -201,7 +201,7 @@ describe("version-check", () => {
       expect(result).toBeNull();
     });
 
-    it("should return null when registry response lacks dist-tags", async () => {
+    it("should return null when registry response lacks version field", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({}),
@@ -219,7 +219,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "2.0.0" } }),
+        json: async () => ({ version: "2.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -235,7 +235,7 @@ describe("version-check", () => {
     it("should write cache file after successful fetch", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "1.0.0" } }),
+        json: async () => ({ version: "1.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -256,7 +256,7 @@ describe("version-check", () => {
       // Drive via checkForUpdates which internally calls getCachedVersion
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "2.0.0" } }),
+        json: async () => ({ version: "2.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -285,7 +285,7 @@ describe("version-check", () => {
     it("setCachedVersion creates ~/.coco/ directory and writes the cache file", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "3.0.0" } }),
+        json: async () => ({ version: "3.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -310,7 +310,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "2.0.0" } }),
+        json: async () => ({ version: "2.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -329,7 +329,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "3.0.0" } }),
+        json: async () => ({ version: "3.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -369,7 +369,7 @@ describe("version-check", () => {
     it("should call callback with update when update is available", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "5.0.0" } }),
+        json: async () => ({ version: "5.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -392,7 +392,7 @@ describe("version-check", () => {
     it("should call callback even when no update is available", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "1.0.0" } }),
+        json: async () => ({ version: "1.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -427,7 +427,7 @@ describe("version-check", () => {
     it("should call callback via catch path when printUpdateBanner throws", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "9.0.0" } }),
+        json: async () => ({ version: "9.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -451,7 +451,7 @@ describe("version-check", () => {
     it("should work without a callback", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "2.0.0" } }),
+        json: async () => ({ version: "2.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -475,7 +475,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "9.0.0" } }),
+        json: async () => ({ version: "9.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -492,7 +492,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "9.0.0" } }),
+        json: async () => ({ version: "9.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -509,7 +509,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "9.0.0" } }),
+        json: async () => ({ version: "9.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -527,7 +527,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "9.0.0" } }),
+        json: async () => ({ version: "9.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -544,7 +544,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "9.0.0" } }),
+        json: async () => ({ version: "9.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -561,7 +561,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "9.0.0" } }),
+        json: async () => ({ version: "9.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -579,7 +579,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "9.0.0" } }),
+        json: async () => ({ version: "9.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -597,7 +597,7 @@ describe("version-check", () => {
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "9.0.0" } }),
+        json: async () => ({ version: "9.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -615,7 +615,7 @@ describe("version-check", () => {
     function mockFetchWithUpdate() {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "2.0.0" } }),
+        json: async () => ({ version: "2.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
     }
@@ -624,7 +624,7 @@ describe("version-check", () => {
       // checkForUpdates returns null (latest == current)
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "1.0.0" } }),
+        json: async () => ({ version: "1.0.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -809,7 +809,7 @@ describe("version-check", () => {
     it("should detect minor version update", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "1.1.0" } }),
+        json: async () => ({ version: "1.1.0" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -823,7 +823,7 @@ describe("version-check", () => {
     it("should detect patch version update", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "1.0.1" } }),
+        json: async () => ({ version: "1.0.1" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -839,7 +839,7 @@ describe("version-check", () => {
       // After stripping pre-release both become "1.0.0" → equal → no update shown.
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "1.0.0-rc.1" } }),
+        json: async () => ({ version: "1.0.0-rc.1" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -855,7 +855,7 @@ describe("version-check", () => {
       // After stripping: 2.0.0 > 1.0.0 → update available.
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "2.0.0-rc.1" } }),
+        json: async () => ({ version: "2.0.0-rc.1" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -890,7 +890,7 @@ describe("version-check", () => {
       // NaN > number is always false, so no update must be reported and null is returned.
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ "dist-tags": { latest: "not-a-version" } }),
+        json: async () => ({ version: "not-a-version" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 

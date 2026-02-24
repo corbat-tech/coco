@@ -19,19 +19,17 @@ const DEFAULT_TIMEOUT_MS = 120000;
 const MAX_OUTPUT_SIZE = 1024 * 1024;
 
 /**
- * Dangerous commands that should be blocked or warned
+ * Dangerous patterns that apply to the full command string.
+ * These look for structural operations (destructive, privilege escalation, etc.)
+ * that cannot appear as false positives inside heredoc content.
  */
-const DANGEROUS_PATTERNS = [
+const DANGEROUS_PATTERNS_FULL = [
   /\brm\s+-rf\s+\/(?!\w)/, // rm -rf / (root)
   /\bsudo\s+rm\s+-rf/, // sudo rm -rf
   /\b:?\(\)\s*\{.*\}/, // Fork bomb pattern
   /\bdd\s+if=.*of=\/dev\//, // dd to device
   /\bmkfs\./, // Format filesystem
   /\bformat\s+/, // Windows format
-  /`[^`]+`/, // Backtick command substitution
-  /\$\([^)]+\)/, // $() command substitution
-  /\beval\s+/, // eval command
-  /\bsource\s+/, // source command (can execute arbitrary scripts)
   />\s*\/etc\//, // Write to /etc
   />\s*\/root\//, // Write to /root
   /\bchmod\s+777/, // Overly permissive chmod
@@ -39,6 +37,44 @@ const DANGEROUS_PATTERNS = [
   /\bcurl\s+.*\|\s*(ba)?sh/, // curl | sh pattern
   /\bwget\s+.*\|\s*(ba)?sh/, // wget | sh pattern
 ];
+
+/**
+ * Patterns that are only checked against the shell command part (not heredoc body).
+ *
+ * These are legitimate bash constructs but also appear harmlessly inside code
+ * content written via heredocs — e.g. $() in jQuery, `backtick` in Markdown,
+ * "source of truth" in comments, eval() in JS.
+ * When a heredoc is present we check only the command header line to avoid
+ * false positives from file content.
+ */
+const DANGEROUS_PATTERNS_SHELL_ONLY = [
+  /`[^`]+`/, // Backtick command substitution
+  /\$\([^)]+\)/, // $() command substitution
+  /\beval\s+/, // eval command (shell eval, not JS eval())
+  /\bsource\s+/, // source command (can execute arbitrary scripts)
+];
+
+/**
+ * Extract only the shell command part of a command string, stripping heredoc body.
+ *
+ * When a heredoc (`<< 'EOF'`) is present the shell does not execute the body —
+ * it is treated as literal input data.  Safety patterns that are meaningful in
+ * shell context (e.g. `$()`, backticks) must therefore be checked only against
+ * the first line (the command header), not the body text, to avoid false positives
+ * from file content such as jQuery selectors, Markdown code blocks, or comments.
+ *
+ * Single-quoted delimiters (`<< 'EOF'`) completely suppress expansion, and
+ * double-quoted / unquoted delimiters also do not execute the body as shell.
+ */
+function getShellCommandPart(command: string): string {
+  const firstNewline = command.indexOf("\n");
+  if (firstNewline === -1) return command;
+  const firstLine = command.slice(0, firstNewline);
+  if (/<<-?\s*['"]?\w/.test(firstLine)) {
+    return firstLine;
+  }
+  return command;
+}
 
 /**
  * Environment variables safe to expose (whitelist)
@@ -130,9 +166,21 @@ Examples:
     env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
   }),
   async execute({ command, cwd, timeout, env }) {
-    // Check for dangerous commands
-    for (const pattern of DANGEROUS_PATTERNS) {
+    // Check for dangerous commands.
+    // DANGEROUS_PATTERNS_FULL are checked against the whole command string.
+    // DANGEROUS_PATTERNS_SHELL_ONLY are checked only against the shell command
+    // header (first line) to avoid false positives from heredoc body content
+    // (e.g. jQuery $(), backticks in Markdown, "source of truth" comments).
+    const shellPart = getShellCommandPart(command);
+    for (const pattern of DANGEROUS_PATTERNS_FULL) {
       if (pattern.test(command)) {
+        throw new ToolError(`Potentially dangerous command blocked: ${command.slice(0, 100)}`, {
+          tool: "bash_exec",
+        });
+      }
+    }
+    for (const pattern of DANGEROUS_PATTERNS_SHELL_ONLY) {
+      if (pattern.test(shellPart)) {
         throw new ToolError(`Potentially dangerous command blocked: ${command.slice(0, 100)}`, {
           tool: "bash_exec",
         });
@@ -247,9 +295,17 @@ Examples:
     env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
   }),
   async execute({ command, cwd, env }) {
-    // Check for dangerous commands
-    for (const pattern of DANGEROUS_PATTERNS) {
+    // Check for dangerous commands (same two-pass logic as bashExecTool).
+    const shellPart = getShellCommandPart(command);
+    for (const pattern of DANGEROUS_PATTERNS_FULL) {
       if (pattern.test(command)) {
+        throw new ToolError(`Potentially dangerous command blocked: ${command.slice(0, 100)}`, {
+          tool: "bash_background",
+        });
+      }
+    }
+    for (const pattern of DANGEROUS_PATTERNS_SHELL_ONLY) {
+      if (pattern.test(shellPart)) {
         throw new ToolError(`Potentially dangerous command blocked: ${command.slice(0, 100)}`, {
           tool: "bash_background",
         });

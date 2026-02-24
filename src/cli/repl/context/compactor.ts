@@ -85,9 +85,32 @@ export class ContextCompactor {
       };
     }
 
-    // Split messages: older ones to summarize, recent ones to preserve
-    const messagesToSummarize = conversationMessages.slice(0, -this.config.preserveLastN);
-    const messagesToPreserve = conversationMessages.slice(-this.config.preserveLastN);
+    // Split messages: older ones to summarize, recent ones to preserve.
+    // IMPORTANT: The boundary must never fall between an assistant message that
+    // has tool_calls and the user message that holds its tool_results.  If we
+    // summarise the tool_call side but preserve the tool_result side, the API
+    // will reject the request (tool_result without a matching tool_call).
+    //
+    // Strategy: start at the nominal boundary (-preserveLastN) and walk
+    // backward until we find a message that is NOT a tool_result response.
+    // That guarantees we never start the preserved window mid-pair.
+    let preserveStart = conversationMessages.length - this.config.preserveLastN;
+    if (preserveStart > 0) {
+      while (preserveStart > 0) {
+        const first = conversationMessages[preserveStart];
+        if (!first) break;
+        const isToolResult =
+          Array.isArray(first.content) &&
+          first.content.length > 0 &&
+          (first.content[0] as { type?: string })?.type === "tool_result";
+        if (!isToolResult) break;
+        // This message is a tool_result — include the preceding assistant
+        // message (with tool_calls) in the preserved window too.
+        preserveStart--;
+      }
+    }
+    const messagesToSummarize = conversationMessages.slice(0, preserveStart);
+    const messagesToPreserve = conversationMessages.slice(preserveStart);
 
     // If nothing to summarize, return as-is
     if (messagesToSummarize.length === 0) {

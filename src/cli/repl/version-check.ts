@@ -9,10 +9,12 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import chalk from "chalk";
 import { VERSION } from "../../version.js";
 
-const NPM_REGISTRY_URL = "https://registry.npmjs.org/@corbat-tech/coco";
+// Use /latest endpoint instead of the full manifest (~100KB) to avoid download timeouts.
+// The /latest endpoint returns only the metadata for the latest release (~10KB).
+const NPM_REGISTRY_URL = "https://registry.npmjs.org/@corbat-tech/coco/latest";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const FETCH_TIMEOUT_MS = 2000;
-const STARTUP_TIMEOUT_MS = 2500; // hard cap so offline users aren't blocked at startup
+const FETCH_TIMEOUT_MS = 5000; // generous — the /latest payload is small so this rarely fires
+const STARTUP_TIMEOUT_MS = 5500; // hard cap so offline users aren't blocked at startup
 const CACHE_DIR = path.join(os.homedir(), ".coco");
 const CACHE_FILE = path.join(CACHE_DIR, "version-check-cache.json");
 
@@ -22,9 +24,8 @@ interface VersionCache {
 }
 
 interface NpmPackageInfo {
-  "dist-tags"?: {
-    latest?: string;
-  };
+  /** The version field on the /latest endpoint response */
+  version?: string;
 }
 
 /**
@@ -108,7 +109,7 @@ async function fetchLatestVersion(): Promise<string | null> {
       }
 
       const data = (await response.json()) as NpmPackageInfo;
-      return data["dist-tags"]?.latest ?? null;
+      return data.version ?? null;
     } finally {
       clearTimeout(timeout);
     }
@@ -234,11 +235,16 @@ export function printUpdateBanner(updateInfo: {
  * Returns true to continue starting coco, or exits the process if the user chooses to update.
  */
 export async function checkForUpdatesInteractive(): Promise<void> {
-  // Race against a hard timeout so offline/local-LLM users are never blocked at startup
+  // Race against a hard timeout so offline/local-LLM users are never blocked at startup.
+  // The timer is cancelled when checkForUpdates() resolves first to avoid a stale timer leak.
+  let startupTimerId: NodeJS.Timeout | undefined;
   const updateInfo = await Promise.race([
     checkForUpdates(),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), STARTUP_TIMEOUT_MS)),
+    new Promise<null>((resolve) => {
+      startupTimerId = setTimeout(() => resolve(null), STARTUP_TIMEOUT_MS);
+    }),
   ]);
+  clearTimeout(startupTimerId);
   if (!updateInfo) return;
 
   const p = await import("@clack/prompts");

@@ -74,6 +74,7 @@ import {
   killOrphanedTestProcesses,
 } from "../../utils/subprocess-registry.js";
 import { looksLikeTechnicalJargon, humanizeWithLLM } from "../../utils/error-humanizer.js";
+import type { HookRegistryInterface, HookExecutor } from "./hooks/index.js";
 
 // stringWidth (from 'string-width') is the industry-standard way to measure
 // visual terminal width of strings.  It correctly handles ANSI codes, emoji
@@ -258,6 +259,27 @@ export async function startRepl(
     );
   }
 
+  // Load lifecycle hooks from .coco/hooks.json (non-fatal — REPL starts even if hooks fail)
+  let hookRegistry: HookRegistryInterface | undefined;
+  let hookExecutor: HookExecutor | undefined;
+  try {
+    const hooksConfigPath = `${projectPath}/.coco/hooks.json`;
+    const { createHookRegistry, createHookExecutor } = await import("./hooks/index.js");
+    const registry = createHookRegistry();
+    await registry.loadFromFile(hooksConfigPath);
+    if (registry.size > 0) {
+      hookRegistry = registry;
+      hookExecutor = createHookExecutor();
+      logger.info(`[Hooks] Loaded ${registry.size} hook(s) from ${hooksConfigPath}`);
+    }
+  } catch (hookError) {
+    // File not found is expected (no hooks configured) — only warn on unexpected errors
+    const msg = hookError instanceof Error ? hookError.message : String(hookError);
+    if (!msg.includes("ENOENT")) {
+      logger.warn(`[Hooks] Failed to load hooks: ${msg}`);
+    }
+  }
+
   // Create input handler
   const inputHandler = createInputHandler(session);
 
@@ -347,6 +369,13 @@ export async function startRepl(
 
     // Skip empty input -- but not if Ctrl+V set a pending image
     if (!input && !hasPendingImage()) continue;
+
+    // Handle bare exit keywords (without the leading slash)
+    // Users often type "exit" or "quit" instead of "/exit" — treat them the same.
+    if (input && ["exit", "quit", "q"].includes(input.trim().toLowerCase())) {
+      console.log(chalk.dim("\nGoodbye!"));
+      break;
+    }
 
     // Handle slash commands
     let agentMessage: string | MessageContent | null = null;
@@ -673,6 +702,9 @@ export async function startRepl(
 
       // Track if we've cleared the spinner for this turn's streaming phase
       let streamStarted = false;
+      // Track LLM call count and last tool category for contextual spinner messages
+      let llmCallCount = 0;
+      let lastToolGroup: string | null = null;
 
       const result = await executeAgentTurn(session, effectiveMessage, provider, toolRegistry, {
         onStream: (chunk) => {
@@ -710,6 +742,8 @@ export async function startRepl(
           }
           renderToolStart(result.name, result.input);
           renderToolEnd(result);
+          // Track tool category for contextual thinking spinner messages
+          lastToolGroup = getToolGroup(result.name);
           // Fire async LLM explanation for errors that look technically opaque
           if (
             !result.result.success &&
@@ -720,7 +754,9 @@ export async function startRepl(
           }
           // Show waiting spinner while LLM processes the result
           // In quality loop mode, add hint that quality checks may follow
-          if (isQualityLoop()) {
+          if (isQualityLoop() && llmCallCount > 0) {
+            setSpinner(`Processing results (iter. ${llmCallCount})...`);
+          } else if (isQualityLoop()) {
             setSpinner("Processing results & checking quality...");
           } else {
             setSpinner("Processing...");
@@ -731,20 +767,25 @@ export async function startRepl(
           console.log(chalk.yellow(`\u2298 Skipped ${tc.name}: ${reason}`));
         },
         onThinkingStart: () => {
-          setSpinner("Thinking...");
+          llmCallCount++;
+          // Build contextual initial message using iteration count + last tool context
+          const iterPrefix = isQualityLoop() && llmCallCount > 1 ? `Iter. ${llmCallCount} · ` : "";
+          const afterText = lastToolGroup ? `after ${lastToolGroup} · ` : "";
+          setSpinner(`${iterPrefix}${afterText}Thinking...`);
           thinkingStartTime = Date.now();
           thinkingInterval = setInterval(() => {
             if (!thinkingStartTime) return;
             const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
             if (elapsed < 4) return;
 
-            // Show quality loop feedback if active
+            // Show quality loop feedback if active, with iteration context
+            const prefix = isQualityLoop() && llmCallCount > 1 ? `Iter. ${llmCallCount} · ` : "";
             if (isQualityLoop()) {
-              if (elapsed < 8) setSpinner("Analyzing request...");
-              else if (elapsed < 15) setSpinner("Running quality checks...");
-              else if (elapsed < 25) setSpinner("Iterating for quality...");
-              else if (elapsed < 40) setSpinner("Verifying implementation...");
-              else setSpinner(`Quality iteration in progress... (${elapsed}s)`);
+              if (elapsed < 8) setSpinner(`${prefix}Analyzing results...`);
+              else if (elapsed < 15) setSpinner(`${prefix}Running quality checks...`);
+              else if (elapsed < 25) setSpinner(`${prefix}Iterating for quality...`);
+              else if (elapsed < 40) setSpinner(`${prefix}Verifying implementation...`);
+              else setSpinner(`${prefix}Still working... (${elapsed}s)`);
             } else {
               if (elapsed < 8) setSpinner("Analyzing request...");
               else if (elapsed < 12) setSpinner("Planning approach...");
@@ -772,6 +813,9 @@ export async function startRepl(
           inputEcho.resume();
         },
         signal: abortController.signal,
+        // Wire lifecycle hooks (PreToolUse/PostToolUse) if configured in .coco/hooks.json
+        hookRegistry,
+        hookExecutor,
       });
 
       // Remove SIGINT handler and clean up thinking interval after agent turn
@@ -1190,10 +1234,41 @@ async function checkProjectTrust(projectPath: string): Promise<boolean> {
 }
 
 /**
- * Get a human-readable description for the "preparing" phase of a tool call.
- * This phase occurs while the LLM is still streaming the tool arguments —
- * the input is not available yet, so we can only use the tool name.
+ * Return a human-readable category label for a tool name.
+ * Used in the thinking-phase spinner to give context like "after running tests".
  */
+function getToolGroup(toolName: string): string {
+  switch (toolName) {
+    case "run_tests":
+      return "running tests";
+    case "bash_exec":
+      return "running command";
+    case "web_search":
+    case "web_fetch":
+      return "web search";
+    case "read_file":
+    case "list_directory":
+    case "glob_files":
+    case "tree":
+      return "reading files";
+    case "grep_search":
+    case "semantic_search":
+    case "codebase_map":
+      return "searching code";
+    case "write_file":
+      return "writing file";
+    case "edit_file":
+      return "editing file";
+    case "git_status":
+    case "git_diff":
+    case "git_commit":
+    case "git_log":
+      return "git";
+    default:
+      return toolName.replace(/_/g, " ");
+  }
+}
+
 function getToolPreparingDescription(toolName: string): string {
   switch (toolName) {
     case "write_file":

@@ -322,6 +322,155 @@ describe("ParallelToolExecutor", () => {
   });
 });
 
+describe("ParallelToolExecutor hooks integration", () => {
+  // Regression tests for: when hookRegistry + hookExecutor are provided, the
+  // executor must use executeSingleToolWithHooks so that PreToolUse/PostToolUse
+  // hooks actually fire.  Previously, hooks were configured but never triggered.
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  function makeMockHooks(shouldContinue = true) {
+    const hookResult = { shouldContinue };
+    const hookRegistry = { size: 1 } as unknown as import("./hooks/index.js").HookRegistryInterface;
+    const hookExecutor = {
+      executeHooks: vi.fn().mockResolvedValue(hookResult),
+    } as unknown as import("./hooks/index.js").HookExecutor;
+    return { hookRegistry, hookExecutor };
+  }
+
+  it("should call PreToolUse and PostToolUse hooks for each tool", async () => {
+    const { ParallelToolExecutor } = await import("./parallel-executor.js");
+
+    mockExecute.mockResolvedValue({
+      success: true,
+      data: { result: "ok" },
+      duration: 10,
+    } as import("../../tools/registry.js").ToolResult);
+
+    const { hookRegistry, hookExecutor } = makeMockHooks(true);
+
+    const executor = new ParallelToolExecutor();
+    const toolCalls: import("../../providers/types.js").ToolCall[] = [
+      { id: "call-1", name: "test_tool", input: { param: "value" } },
+    ];
+
+    const result = await executor.executeParallel(toolCalls, mockRegistry, {
+      hookRegistry,
+      hookExecutor,
+      sessionId: "test-session",
+      projectPath: "/test/project",
+    });
+
+    expect(result.executed).toHaveLength(1);
+    expect(result.executed[0]?.name).toBe("test_tool");
+
+    // Both PreToolUse and PostToolUse should have fired
+    expect(hookExecutor.executeHooks).toHaveBeenCalledTimes(2);
+    expect(hookExecutor.executeHooks).toHaveBeenCalledWith(
+      hookRegistry,
+      expect.objectContaining({ event: "PreToolUse", toolName: "test_tool" }),
+    );
+    expect(hookExecutor.executeHooks).toHaveBeenCalledWith(
+      hookRegistry,
+      expect.objectContaining({ event: "PostToolUse", toolName: "test_tool" }),
+    );
+  });
+
+  it("should skip tool execution when PreToolUse hook blocks it", async () => {
+    const { ParallelToolExecutor } = await import("./parallel-executor.js");
+
+    const { hookRegistry, hookExecutor } = makeMockHooks(false); // shouldContinue = false
+
+    const onToolSkipped = vi.fn();
+    const executor = new ParallelToolExecutor();
+    const toolCalls: import("../../providers/types.js").ToolCall[] = [
+      { id: "call-1", name: "dangerous_tool", input: {} },
+    ];
+
+    const result = await executor.executeParallel(toolCalls, mockRegistry, {
+      hookRegistry,
+      hookExecutor,
+      onToolSkipped,
+    });
+
+    expect(result.executed).toHaveLength(0);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]?.reason).toContain("hook");
+    // The tool registry must NOT have been called
+    expect(mockExecute).not.toHaveBeenCalled();
+    expect(onToolSkipped).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "dangerous_tool" }),
+      expect.stringContaining("hook"),
+    );
+  });
+
+  it("should apply modified input from PreToolUse hook", async () => {
+    const { ParallelToolExecutor } = await import("./parallel-executor.js");
+
+    mockExecute.mockResolvedValue({
+      success: true,
+      data: {},
+      duration: 10,
+    } as import("../../tools/registry.js").ToolResult);
+
+    // Hook modifies the input
+    const hookRegistry = { size: 1 } as unknown as import("./hooks/index.js").HookRegistryInterface;
+    const hookExecutor = {
+      executeHooks: vi.fn().mockImplementation((_registry: unknown, ctx: { event: string }) => {
+        if (ctx.event === "PreToolUse") {
+          return Promise.resolve({
+            shouldContinue: true,
+            modifiedInput: { path: "/modified/path.ts" },
+          });
+        }
+        return Promise.resolve({ shouldContinue: true });
+      }),
+    } as unknown as import("./hooks/index.js").HookExecutor;
+
+    const executor = new ParallelToolExecutor();
+    const toolCalls: import("../../providers/types.js").ToolCall[] = [
+      { id: "call-1", name: "read_file", input: { path: "/original/path.ts" } },
+    ];
+
+    const result = await executor.executeParallel(toolCalls, mockRegistry, {
+      hookRegistry,
+      hookExecutor,
+    });
+
+    expect(result.executed).toHaveLength(1);
+    // The tool was called with the modified input, not the original
+    expect(mockExecute).toHaveBeenCalledWith(
+      "read_file",
+      { path: "/modified/path.ts" },
+      expect.anything(),
+    );
+  });
+
+  it("should use simple executor path (no hooks) when hooks not configured", async () => {
+    const { ParallelToolExecutor } = await import("./parallel-executor.js");
+
+    mockExecute.mockResolvedValue({
+      success: true,
+      data: {},
+      duration: 10,
+    } as import("../../tools/registry.js").ToolResult);
+
+    const executor = new ParallelToolExecutor();
+    const toolCalls: import("../../providers/types.js").ToolCall[] = [
+      { id: "call-1", name: "test_tool", input: {} },
+    ];
+
+    // No hookRegistry / hookExecutor provided
+    const result = await executor.executeParallel(toolCalls, mockRegistry);
+
+    expect(result.executed).toHaveLength(1);
+    expect(mockExecute).toHaveBeenCalledOnce();
+  });
+});
+
 describe("createParallelExecutor", () => {
   it("should create a new executor instance", async () => {
     const { createParallelExecutor, ParallelToolExecutor } = await import("./parallel-executor.js");

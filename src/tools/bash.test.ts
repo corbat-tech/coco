@@ -318,6 +318,41 @@ describe("Security - Dangerous command patterns", () => {
   });
 });
 
+describe("Security - Heredoc false-positive prevention", () => {
+  it("should allow cat heredoc writing a JS file with jQuery $() inside", async () => {
+    const { bashExecTool } = await import("./bash.js");
+    // This was a real false positive: jQuery selectors in heredoc body
+    // matched the $() command substitution pattern.
+    const command = "cat > /tmp/test.js << 'EOF'\nconst el = $('#my-element');\nEOF";
+    await expect(bashExecTool.execute({ command })).resolves.toBeDefined();
+  });
+
+  it("should allow cat heredoc writing a file with backticks in Markdown", async () => {
+    const { bashExecTool } = await import("./bash.js");
+    const command = "cat > /tmp/README.md << 'EOF'\nUse `npm install` to set up.\nEOF";
+    await expect(bashExecTool.execute({ command })).resolves.toBeDefined();
+  });
+
+  it("should allow cat heredoc writing a file with 'source of truth' comment", async () => {
+    const { bashExecTool } = await import("./bash.js");
+    const command = "cat > /tmp/notes.txt << 'EOF'\n// source of truth for config\nEOF";
+    await expect(bashExecTool.execute({ command })).resolves.toBeDefined();
+  });
+
+  it("should allow cat heredoc writing a file with eval() JS call", async () => {
+    const { bashExecTool } = await import("./bash.js");
+    const command = "cat > /tmp/test.js << 'EOF'\nconst result = eval('1 + 1');\nEOF";
+    await expect(bashExecTool.execute({ command })).resolves.toBeDefined();
+  });
+
+  it("should still block $() on the command header line even with heredoc", async () => {
+    const { bashExecTool } = await import("./bash.js");
+    // $() on the header line (before EOF) is still genuine substitution
+    const command = "cat > /tmp/$(whoami).txt << 'EOF'\nsome content\nEOF";
+    await expect(bashExecTool.execute({ command })).rejects.toThrow(/dangerous command/i);
+  });
+});
+
 describe("bashTools", () => {
   it("should export all bash tools", async () => {
     const { bashTools } = await import("./bash.js");

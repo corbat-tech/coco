@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.3] - 2026-02-24
+
+### Added
+
+- **Lifecycle hooks** — coco now loads `.coco/hooks.json` at startup and fires `PreToolUse` / `PostToolUse` hooks around every tool execution; hooks can inspect, modify, or block tool calls; startup is non-fatal if the file is absent
+
+### Improved
+
+- **Contextual spinner during agent turns** — the spinner now shows which quality-loop iteration is running and what tool category was just used (e.g. "Iter. 3 · after running tests · Analyzing results…"); previously it showed a generic time-based message with no context
+- **`exit` / `quit` / `q` as bare keywords** — typing these without a leading `/` now exits the REPL immediately, matching user intuition
+
+### Fixed
+
+- **API Error 400 on context compaction** — the compactor could split a `tool_use` / `tool_result` pair across the summarise/preserve boundary, causing the next request to be rejected by the API; the boundary now always starts at or before the matching `tool_use` message
+- **API Error 400 on missing tool results** — if a tool call was streamed but its execution result was dropped (e.g. internal ID mismatch), the next LLM request would be rejected; a placeholder `tool_result` with `is_error: true` is now injected automatically and a warning is logged
+- **Tool argument data-bleed in Anthropic streams** — when a `content_block_stop` event was missing between two consecutive tool calls in the stream, the second tool's argument JSON would be appended to the first tool's input; the provider now detects the unclosed block and finalises it before starting the next tool
+- **OpenAI-compatible providers losing tool calls on early stream exit** — tool calls were only finalised after the full stream loop, so any provider that closes the connection before sending all events (or omits `finish_reason`) would silently drop them; tool calls are now also finalised inline when `finish_reason` is received, with a fallback pass after the loop
+- **OpenAI provider rejecting providers that omit the tool-call `index`** — some OpenAI-compatible endpoints (e.g. custom local inference servers) do not include the `index` field in streaming tool-call deltas; the provider now falls back to the current map size so each new tool call gets a unique slot
+- **npm update check silently failing on slow connections** — the update check was fetching the full package manifest (~100 KB) with a 2 s timeout; slow connections would silently time out and no update notification would appear; the check now fetches only the `/latest` endpoint (~10 KB) and uses a 5 s timeout
+- **Timer leak in update check** — the startup-timeout promise in `checkForUpdatesInteractive` was leaving a dangling `setTimeout` when the network call resolved first; it is now cancelled with `clearTimeout`
+- **Bash heredoc false positives** — commands that write files via heredoc (`cat > /tmp/test.js << 'EOF' … EOF`) were incorrectly blocked as dangerous because JavaScript code inside the heredoc body (jQuery `$()`, backticks, `eval()`, "source of truth" comments) matched shell injection patterns; safety patterns that are sensitive to code content are now checked only against the shell command header, not the heredoc body
+
+---
+
 ## [2.5.1] - 2026-02-24
 
 ### Fixed
@@ -685,6 +709,8 @@ Future versions will include upgrade guides here.
 [1.7.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.4.0...v1.5.0
+[2.5.3]: https://github.com/corbat-tech/corbat-coco/compare/v2.5.2...v2.5.3
+[2.5.2]: https://github.com/corbat-tech/corbat-coco/compare/v2.5.1...v2.5.2
 [2.5.1]: https://github.com/corbat-tech/corbat-coco/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/corbat-tech/corbat-coco/compare/v2.4.2...v2.5.0
 [1.4.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.3.0...v1.4.0
