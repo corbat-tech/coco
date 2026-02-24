@@ -8,7 +8,7 @@ import {
   getIntentRecognizer,
   DEFAULT_INTENT_CONFIG,
 } from "./recognizer.js";
-import type { IntentConfig } from "./types.js";
+import type { IntentConfig, Intent, IntentType } from "./types.js";
 
 describe("Intent Recognizer", () => {
   describe("createIntentRecognizer", () => {
@@ -39,77 +39,51 @@ describe("Intent Recognizer", () => {
       recognizer = createIntentRecognizer();
     });
 
-    describe("plan intent", () => {
-      it('should recognize "create a plan"', async () => {
+    // Phase commands (plan, build, task, init, output, ship) are intentionally
+    // excluded from pattern matching to prevent false positives on natural language.
+    // They fall through to "chat" so the LLM handles them via its registered tools.
+    describe("phase commands fall through to chat", () => {
+      it('"create a plan" → chat (handled by LLM)', async () => {
         const intent = await recognizer.recognize("create a plan");
-        expect(intent.type).toBe("plan");
-        expect(intent.confidence).toBeGreaterThan(0.6);
+        expect(intent.type).toBe("chat");
       });
 
-      it('should recognize "design the architecture"', async () => {
-        const intent = await recognizer.recognize("design the architecture");
-        expect(intent.type).toBe("plan");
-        expect(intent.confidence).toBeGreaterThan(0.6);
-      });
-
-      it('should recognize Spanish "haz un plan"', async () => {
-        const intent = await recognizer.recognize("haz un plan");
-        expect(intent.type).toBe("plan");
-        expect(intent.confidence).toBeGreaterThan(0.6);
-      });
-    });
-
-    describe("build intent", () => {
-      it('should recognize "build the project"', async () => {
+      it('"build the project" → chat (handled by LLM)', async () => {
         const intent = await recognizer.recognize("build the project");
-        expect(intent.type).toBe("build");
-        expect(intent.confidence).toBeGreaterThan(0.6);
+        expect(intent.type).toBe("chat");
       });
 
-      it('should recognize "let\'s build"', async () => {
-        const intent = await recognizer.recognize("let's build");
-        expect(intent.type).toBe("build");
-        expect(intent.confidence).toBeGreaterThan(0.6);
-      });
-
-      it('should recognize Spanish "construye el proyecto"', async () => {
-        const intent = await recognizer.recognize("construye el proyecto");
-        expect(intent.type).toBe("build");
-        expect(intent.confidence).toBeGreaterThan(0.6);
-      });
-    });
-
-    describe("init intent", () => {
-      it('should recognize "init a new project"', async () => {
+      it('"init a new project" → chat (handled by LLM)', async () => {
         const intent = await recognizer.recognize("init a new project");
-        expect(intent.type).toBe("init");
-        expect(intent.confidence).toBeGreaterThan(0.6);
+        expect(intent.type).toBe("chat");
       });
 
-      it('should recognize "create a new api"', async () => {
-        const intent = await recognizer.recognize("create a new api");
-        expect(intent.type).toBe("init");
-        expect(intent.confidence).toBeGreaterThan(0.6);
+      it('"task 3" → chat (handled by LLM)', async () => {
+        const intent = await recognizer.recognize("task 3");
+        expect(intent.type).toBe("chat");
       });
 
-      it('should recognize Spanish "nuevo proyecto"', async () => {
-        const intent = await recognizer.recognize("nuevo proyecto");
-        expect(intent.type).toBe("init");
-        expect(intent.confidence).toBeGreaterThan(0.6);
-      });
-    });
-
-    describe("task intent", () => {
-      it('should recognize "do the task"', async () => {
-        const intent = await recognizer.recognize("do the task");
-        expect(intent.type).toBe("task");
-        expect(intent.confidence).toBeGreaterThan(0.6);
+      it('"ship it" → chat (handled by LLM)', async () => {
+        const intent = await recognizer.recognize("ship it");
+        expect(intent.type).toBe("chat");
       });
 
-      it('should recognize "work on the task"', async () => {
-        const intent = await recognizer.recognize("work on the task");
-        expect(intent.type).toBe("task");
-        expect(intent.confidence).toBeGreaterThan(0.6);
+      // Regression: natural language that previously false-matched /task
+      it('"implementa la tarea de instructions.md" → chat', async () => {
+        const intent = await recognizer.recognize(
+          "implementa la tarea de instructions.md y ten en cuenta resumen.md",
+        );
+        expect(intent.type).toBe("chat");
+      });
+
+      it('"construye el proyecto" → chat', async () => {
+        const intent = await recognizer.recognize("construye el proyecto");
+        expect(intent.type).toBe("chat");
+      });
+
+      it('"haz un plan" → chat', async () => {
+        const intent = await recognizer.recognize("haz un plan");
+        expect(intent.type).toBe("chat");
       });
     });
 
@@ -181,7 +155,7 @@ describe("Intent Recognizer", () => {
       recognizer = createIntentRecognizer();
     });
 
-    it("should extract sprint number", async () => {
+    it("should extract sprint number (entities still extracted for chat fallback)", async () => {
       const intent = await recognizer.recognize("build sprint 5");
       expect(intent.entities.sprint).toBe(5);
     });
@@ -214,64 +188,83 @@ describe("Intent Recognizer", () => {
       recognizer = createIntentRecognizer();
     });
 
-    it("should convert plan intent to command", async () => {
-      const intent = await recognizer.recognize("create a plan --dry-run");
-      const cmd = recognizer.intentToCommand(intent);
+    // intentToCommand is a pure converter — tested directly with constructed intents
+    function makeIntent(type: IntentType, entities: Intent["entities"] = {}): Intent {
+      return { type, confidence: 0.9, entities, raw: "" };
+    }
+
+    it("should convert plan intent to command", () => {
+      const cmd = recognizer.intentToCommand(makeIntent("plan", { flags: ["dry-run"] }));
       expect(cmd).toEqual({ command: "plan", args: ["--dry-run"] });
     });
 
-    it("should convert build intent with sprint", async () => {
-      const intent = await recognizer.recognize("build sprint 3");
-      const cmd = recognizer.intentToCommand(intent);
+    it("should convert build intent with sprint", () => {
+      const cmd = recognizer.intentToCommand(makeIntent("build", { sprint: 3 }));
       expect(cmd).toEqual({ command: "build", args: ["--sprint=3"] });
     });
 
-    it("should convert init intent with project name", async () => {
-      const intent = await recognizer.recognize("init a new project my-app --yes");
-      const cmd = recognizer.intentToCommand(intent);
+    it("should convert init intent with project name and flag", () => {
+      const cmd = recognizer.intentToCommand(
+        makeIntent("init", { projectName: "my-app", flags: ["yes"] }),
+      );
       expect(cmd?.command).toBe("init");
+      expect(cmd?.args).toContain("my-app");
       expect(cmd?.args).toContain("--yes");
     });
 
-    it("should return null for chat intent", async () => {
-      const intent = await recognizer.recognize("hello there");
-      const cmd = recognizer.intentToCommand(intent);
+    it("should convert status intent", () => {
+      const cmd = recognizer.intentToCommand(makeIntent("status"));
+      expect(cmd).toEqual({ command: "status", args: [] });
+    });
+
+    it("should convert exit intent", () => {
+      const cmd = recognizer.intentToCommand(makeIntent("exit"));
+      expect(cmd).toEqual({ command: "exit", args: [] });
+    });
+
+    it("should return null for chat intent", () => {
+      const cmd = recognizer.intentToCommand(makeIntent("chat"));
       expect(cmd).toBeNull();
     });
   });
 
   describe("shouldAutoExecute", () => {
-    it("should auto-execute high confidence intents when enabled", async () => {
+    it("should NOT auto-execute status (in alwaysConfirm)", async () => {
       const recognizer = createIntentRecognizer({
         autoExecute: true,
         autoExecuteThreshold: 0.8,
       });
-
       const intent = await recognizer.recognize("status");
-      // Status is always in alwaysConfirm list so should not auto-execute
       expect(recognizer.shouldAutoExecute(intent)).toBe(false);
+    });
+
+    it("should auto-execute exit immediately (no confirmation needed)", async () => {
+      const recognizer = createIntentRecognizer();
+      // autoExecute is false by default but exit has autoExecutePreferences: true
+      const intent = await recognizer.recognize("exit");
+      expect(recognizer.shouldAutoExecute(intent)).toBe(true);
+    });
+
+    it("should auto-execute quit immediately", async () => {
+      const recognizer = createIntentRecognizer();
+      const intent = await recognizer.recognize("quit");
+      expect(recognizer.shouldAutoExecute(intent)).toBe(true);
     });
 
     it("should respect alwaysConfirm list", async () => {
       const recognizer = createIntentRecognizer({
         autoExecute: true,
-        alwaysConfirm: ["init"],
+        alwaysConfirm: ["help"],
       });
-
-      const intent = await recognizer.recognize("init new project");
+      const intent = await recognizer.recognize("help");
       expect(recognizer.shouldAutoExecute(intent)).toBe(false);
     });
 
-    it("should respect user preferences", async () => {
-      const recognizer = createIntentRecognizer({
-        autoExecute: false,
-      });
-
-      recognizer.setAutoExecutePreference("status", true);
-
-      const intent = await recognizer.recognize("status");
-      // Even with preference, status is in alwaysConfirm
-      expect(recognizer.shouldAutoExecute(intent)).toBe(false);
+    it("should respect user preference overriding global autoExecute=false", async () => {
+      const recognizer = createIntentRecognizer({ autoExecute: false });
+      recognizer.setAutoExecutePreference("help", true);
+      const intent = await recognizer.recognize("help");
+      expect(recognizer.shouldAutoExecute(intent)).toBe(true);
     });
   });
 
@@ -288,10 +281,18 @@ describe("Intent Recognizer", () => {
       expect(resolution.execute).toBe(false);
     });
 
-    it("should suggest command for valid intent", async () => {
-      const intent = await recognizer.recognize("create a plan");
+    it("should resolve status to command (not auto-execute)", async () => {
+      const intent = await recognizer.recognize("status");
       const resolution = await recognizer.resolve(intent);
-      expect(resolution.command).toBe("plan");
+      expect(resolution.command).toBe("status");
+      expect(resolution.execute).toBe(false);
+    });
+
+    it("should auto-execute exit without confirmation", async () => {
+      const intent = await recognizer.recognize("exit");
+      const resolution = await recognizer.resolve(intent);
+      expect(resolution.execute).toBe(true);
+      expect(resolution.command).toBe("exit");
     });
   });
 

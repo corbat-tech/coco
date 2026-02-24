@@ -38,7 +38,8 @@ export const DEFAULT_INTENT_CONFIG: IntentConfig = {
   autoExecute: false,
   autoExecuteThreshold: CONFIDENCE["HIGH"] ?? 0.9,
   alwaysConfirm: ["init", "build", "output", "status"],
-  autoExecutePreferences: {},
+  // exit always runs immediately — no confirmation dialog
+  autoExecutePreferences: { exit: true },
 };
 
 /**
@@ -158,23 +159,13 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
       };
     }
 
-    // Try to match against all intent types except chat (fallback) and open.
-    // "open" is intentionally excluded: its patterns are too broad and would
-    // intercept general natural-language requests (e.g. "execute the instructions
-    // in instructions.md") before the LLM has a chance to reason about them.
-    // The LLM handles file-open/exec requests via the open_file tool directly.
-    const intentTypes: IntentType[] = [
-      "plan",
-      "build",
-      "task",
-      "init",
-      "output",
-      "status",
-      "trust",
-      "ship",
-      "help",
-      "exit",
-    ];
+    // Only match unambiguous control-flow intents via regex.
+    // Phase commands (plan, build, task, init, output, ship) and file operations
+    // (open) are intentionally excluded: their patterns overlap with everyday
+    // natural language and produce false positives (e.g. "implementa la tarea
+    // de instructions.md" matching /task). The LLM handles those requests
+    // naturally through its registered tools and slash commands.
+    const intentTypes: IntentType[] = ["status", "trust", "help", "exit"];
 
     let bestMatch: Intent | null = null;
 

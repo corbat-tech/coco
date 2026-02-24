@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.1] - 2026-02-24
+
+### Fixed
+
+- **Intent recognizer false positives** — natural language messages like "implementa la tarea de instructions.md" or "construye el proyecto según el plan" were incorrectly intercepted as COCO phase commands (`/task`, `/build`) with high confidence. Phase commands (`plan`, `build`, `task`, `init`, `output`, `ship`) are now excluded from the regex recognizer entirely; the LLM handles them naturally through its registered tools and slash-command routing. Only unambiguous control-flow keywords (`status`, `trust`, `help`, `exit`) remain in the pattern recognizer.
+- **Exit prompt removed** — typing `exit` or `quit` now terminates the REPL immediately without asking for confirmation; previously it would show an interactive prompt before acting.
+
+---
+
 ## [2.5.0] - 2026-02-24
 
 ### Added
@@ -676,6 +685,7 @@ Future versions will include upgrade guides here.
 [1.7.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.4.0...v1.5.0
+[2.5.1]: https://github.com/corbat-tech/corbat-coco/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/corbat-tech/corbat-coco/compare/v2.4.2...v2.5.0
 [1.4.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.3...v1.3.0
