@@ -158,7 +158,11 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
       };
     }
 
-    // Try to match against all intent types except chat (fallback)
+    // Try to match against all intent types except chat (fallback) and open.
+    // "open" is intentionally excluded: its patterns are too broad and would
+    // intercept general natural-language requests (e.g. "execute the instructions
+    // in instructions.md") before the LLM has a chance to reason about them.
+    // The LLM handles file-open/exec requests via the open_file tool directly.
     const intentTypes: IntentType[] = [
       "plan",
       "build",
@@ -168,7 +172,6 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
       "status",
       "trust",
       "ship",
-      "open",
       "help",
       "exit",
     ];
@@ -319,9 +322,15 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
         return { command: "ship", args };
 
       case "open":
-        if (intent.entities.args?.[0]) {
-          args.push(intent.entities.args[0]);
+        // NOTE: "open" is intentionally excluded from intentTypes (see line ~161), so this
+        // branch is currently unreachable. It is kept here so that if "open" is ever re-added
+        // to the recognizer, intentToCommand continues to handle it correctly.
+        // Require an explicit file path arg — without it /open would fail immediately.
+        // If no path was extracted, return null so the message falls through to the LLM.
+        if (!intent.entities.args?.[0]) {
+          return null;
         }
+        args.push(intent.entities.args[0]);
         if (intent.entities.flags?.includes("exec")) {
           args.push("--exec");
         }

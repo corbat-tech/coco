@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.0] - 2026-02-24
+
+### Added
+
+- **Error humanizer** — technical error messages are now translated into plain English before being shown to the user; covers 20+ patterns across network errors (`ECONNREFUSED`, `ENOTFOUND`, SSL), filesystem (`ENOENT` with path extraction, `EACCES`, `EISDIR`), git (`not a git repository`, merge conflicts, push rejected), JSON parse failures, missing modules, command not found, and API auth errors (401/403/429/503)
+- **LLM-powered error hints** — when an error doesn't match a known rule and still looks technically opaque (stack traces, Node.js `ERR_` codes, `TypeError`, etc.), an async LLM call fires non-blocking after the tool run; the plain-language explanation is printed as a dim `💡` hint once the agent turn completes, without blocking any output
+
+### Fixed
+
+- **Infinite loop on repeated tool errors** — when the same tool fails with the same error 3 or more consecutive times (e.g. `write_file` called with missing `path`/`content`), the agent now injects a directive telling the LLM to stop retrying and explain the issue to the user instead; previously the agent would loop up to 25 times silently
+- **Zod validation errors shown as raw JSON** — tool parameter validation failures were displayed as unreadable JSON arrays; they now produce a readable message: `Invalid tool input — path (expected string), content (expected string)`
+- **Input echo and action menu in Spanish** — the secondary input placeholder ("Escribe para modificar o añadir tareas…") and interruption menu labels ("Modificar", "Encolar", "Abortar") were in Spanish; all UI text is now English
+- **`[Anthropic]` hardcoded in error messages** — a `console.warn` in the Anthropic provider included a `[Anthropic]` prefix that appeared even when using other providers (e.g. `kimi-code`); removed and replaced with the structured logger
+- **Slow startup without internet** — the npm version check at startup could block for several seconds when offline or using a local LLM; a 2.5 s hard timeout now ensures coco always starts quickly regardless of network availability
+- **Update prompt default was "No"** — pressing Enter at the "Exit now to update?" prompt now confirms the update (default changed to Yes)
+
+### Improved
+
+- **Spinner feedback during tool execution** — spinner messages are now descriptive per tool: "Generating file content…" (write_file), "Planning edits…" (edit_file), `Running: npm test…` (bash_exec with actual command), "Composing commit…" (git_commit), etc.; previously all tools showed a generic "Preparing: tool_name…" message
+- **Dead code annotated** — the unreachable `case "open"` branch in `intentToCommand` is now clearly documented so future maintainers know it is kept intentionally for forward-compatibility
+
+---
+
 ## [2.4.2] - 2026-02-23
 
 ### Fixed
@@ -653,6 +676,7 @@ Future versions will include upgrade guides here.
 [1.7.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.4.0...v1.5.0
+[2.5.0]: https://github.com/corbat-tech/corbat-coco/compare/v2.4.2...v2.5.0
 [1.4.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/corbat-tech/corbat-coco/compare/v1.2.2...v1.2.3

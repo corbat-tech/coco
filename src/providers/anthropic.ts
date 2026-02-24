@@ -22,6 +22,7 @@ import type {
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
 import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import { getLogger } from "../utils/logger.js";
 
 /**
  * Default model - Updated February 2026
@@ -262,8 +263,8 @@ export class AnthropicProvider implements LLMProvider {
             try {
               currentToolCall.input = currentToolInputJson ? JSON.parse(currentToolInputJson) : {};
             } catch {
-              console.warn(
-                `[Anthropic] Failed to parse tool call arguments: ${currentToolInputJson?.slice(0, 100)}`,
+              getLogger().warn(
+                `Failed to parse tool call arguments: ${currentToolInputJson?.slice(0, 100)}`,
               );
               currentToolCall.input = {};
             }

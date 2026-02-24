@@ -11,7 +11,8 @@ import { VERSION } from "../../version.js";
 
 const NPM_REGISTRY_URL = "https://registry.npmjs.org/@corbat-tech/coco";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const FETCH_TIMEOUT_MS = 3000;
+const FETCH_TIMEOUT_MS = 2000;
+const STARTUP_TIMEOUT_MS = 2500; // hard cap so offline users aren't blocked at startup
 const CACHE_DIR = path.join(os.homedir(), ".coco");
 const CACHE_FILE = path.join(CACHE_DIR, "version-check-cache.json");
 
@@ -233,7 +234,11 @@ export function printUpdateBanner(updateInfo: {
  * Returns true to continue starting coco, or exits the process if the user chooses to update.
  */
 export async function checkForUpdatesInteractive(): Promise<void> {
-  const updateInfo = await checkForUpdates();
+  // Race against a hard timeout so offline/local-LLM users are never blocked at startup
+  const updateInfo = await Promise.race([
+    checkForUpdates(),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), STARTUP_TIMEOUT_MS)),
+  ]);
   if (!updateInfo) return;
 
   const p = await import("@clack/prompts");
@@ -242,7 +247,7 @@ export async function checkForUpdatesInteractive(): Promise<void> {
 
   const answer = await p.confirm({
     message: "Exit now to update?",
-    initialValue: false,
+    initialValue: true,
   });
 
   if (!p.isCancel(answer) && answer) {

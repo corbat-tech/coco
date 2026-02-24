@@ -37,7 +37,12 @@ import {
   consumePendingImage,
   isIntentRecognitionEnabled,
 } from "./commands/index.js";
-import type { MessageContent, ImageContent, TextContent } from "../../providers/types.js";
+import type {
+  MessageContent,
+  ImageContent,
+  TextContent,
+  LLMProvider,
+} from "../../providers/types.js";
 import type { ReplConfig } from "./types.js";
 import type { MCPServerManager, ServerConnection } from "../../mcp/lifecycle.js";
 import { VERSION } from "../../version.js";
@@ -68,6 +73,7 @@ import {
   registerGlobalCleanup,
   killOrphanedTestProcesses,
 } from "../../utils/subprocess-registry.js";
+import { looksLikeTechnicalJargon, humanizeWithLLM } from "../../utils/error-humanizer.js";
 
 // stringWidth (from 'string-width') is the industry-standard way to measure
 // visual terminal width of strings.  It correctly handles ANSI codes, emoji
@@ -115,7 +121,7 @@ export async function startRepl(
   // Initialize provider
   // Use internal provider ID (e.g., "codex" for "openai" with OAuth)
   const internalProviderId = getInternalProviderId(session.config.provider.type);
-  let provider;
+  let provider: LLMProvider;
   try {
     provider = await createProvider(internalProviderId, {
       model: session.config.provider.model || undefined,
@@ -608,6 +614,8 @@ export async function startRepl(
       const turnQueuedMessages: string[] = [];
       // Track pending LLM classification promises so we can await them after agent completes
       const pendingClassifications: Promise<void>[] = [];
+      // Track async LLM error-explanation promises (fire-and-forget, printed as hints)
+      const pendingExplanations: Array<Promise<string | null>> = [];
 
       concurrentCapture.reset();
       inputEcho.reset();
@@ -702,6 +710,14 @@ export async function startRepl(
           }
           renderToolStart(result.name, result.input);
           renderToolEnd(result);
+          // Fire async LLM explanation for errors that look technically opaque
+          if (
+            !result.result.success &&
+            result.result.error &&
+            looksLikeTechnicalJargon(result.result.error)
+          ) {
+            pendingExplanations.push(humanizeWithLLM(result.result.error, result.name, provider));
+          }
           // Show waiting spinner while LLM processes the result
           // In quality loop mode, add hint that quality checks may follow
           if (isQualityLoop()) {
@@ -742,7 +758,7 @@ export async function startRepl(
           clearSpinner();
         },
         onToolPreparing: (toolName) => {
-          setSpinner(`Preparing: ${toolName}\u2026`);
+          setSpinner(getToolPreparingDescription(toolName));
         },
         onBeforeConfirmation: () => {
           // Clear spinner/echo and suspend concurrent capture before confirmation dialog
@@ -838,6 +854,22 @@ export async function startRepl(
       }
 
       console.log(); // Blank line after response
+
+      // Print any LLM-powered error hints that resolved during the agent turn.
+      // We race against a short timeout so we never block output here.
+      if (pendingExplanations.length > 0) {
+        const settled = await Promise.race([
+          Promise.allSettled(pendingExplanations),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+        ]);
+        if (settled) {
+          for (const r of settled) {
+            if (r.status === "fulfilled" && r.value) {
+              console.log(chalk.dim(`   \u{1F4A1} ${r.value}`));
+            }
+          }
+        }
+      }
 
       // Parse and display quality report if quality loop produced one
       if (isQualityLoop() && result.content) {
@@ -1158,6 +1190,35 @@ async function checkProjectTrust(projectPath: string): Promise<boolean> {
 }
 
 /**
+ * Get a human-readable description for the "preparing" phase of a tool call.
+ * This phase occurs while the LLM is still streaming the tool arguments —
+ * the input is not available yet, so we can only use the tool name.
+ */
+function getToolPreparingDescription(toolName: string): string {
+  switch (toolName) {
+    case "write_file":
+      return "Generating file content\u2026";
+    case "edit_file":
+      return "Planning edits\u2026";
+    case "bash_exec":
+      return "Building command\u2026";
+    case "web_search":
+      return "Building search query\u2026";
+    case "web_fetch":
+      return "Preparing request\u2026";
+    case "run_tests":
+      return "Setting up test run\u2026";
+    case "git_commit":
+      return "Composing commit\u2026";
+    case "semantic_search":
+    case "grep_search":
+      return "Building search\u2026";
+    default:
+      return `Preparing ${toolName}\u2026`;
+  }
+}
+
+/**
  * Get a human-readable description of what a tool is doing.
  * Used for spinner messages during tool execution to give the user
  * meaningful feedback instead of generic "Running tool_name..." messages.
@@ -1188,8 +1249,12 @@ function getToolRunningDescription(name: string, input: Record<string, unknown>)
     }
     case "list_directory":
       return "Listing directory\u2026";
-    case "bash_exec":
-      return "Running command\u2026";
+    case "bash_exec": {
+      const cmd = typeof input.command === "string" ? input.command.trim() : "";
+      // Show first meaningful segment of the command (strip leading env vars / flags)
+      const displayCmd = cmd.replace(/^[\w=]+=\S+\s+/, "").slice(0, 55);
+      return displayCmd ? `Running: ${displayCmd}\u2026` : "Running command\u2026";
+    }
     case "run_tests":
       return "Running tests\u2026";
     case "git_status":

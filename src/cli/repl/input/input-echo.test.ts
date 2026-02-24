@@ -57,7 +57,7 @@ describe("createInputEcho", () => {
     expect(calls.length).toBe(2);
     // Second call should include the placeholder line
     expect(calls[1]?.[0]).toContain("Thinking...");
-    expect(calls[1]?.[0]).toContain("Escribe para modificar");
+    expect(calls[1]?.[0]).toContain("Type to modify");
   });
 
   it("does nothing when spinner is null", () => {

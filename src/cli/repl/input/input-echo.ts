@@ -29,7 +29,7 @@ export interface InputEchoConfig {
 const DEFAULT_CONFIG: InputEchoConfig = {
   maxVisibleChars: 60,
   prompt: "\u203A ",
-  placeholder: "Escribe para modificar o a\u00F1adir tareas\u2026",
+  placeholder: "Type to modify or add tasks\u2026",
 };
 
 /**
