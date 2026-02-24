@@ -159,24 +159,36 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
       };
     }
 
-    // Only match unambiguous control-flow intents via regex.
-    // Phase commands (plan, build, task, init, output, ship) and file operations
-    // (open) are intentionally excluded: their patterns overlap with everyday
-    // natural language and produce false positives (e.g. "implementa la tarea
-    // de instructions.md" matching /task). The LLM handles those requests
-    // naturally through its registered tools and slash commands.
+    // Only intent-detect explicit slash commands (e.g. /status, /help, /exit).
+    // ALL natural-language input goes straight to the LLM agent — regex pattern
+    // matching on natural language produces false positives (e.g. "qué pasó no
+    // hiciste nada" matching /status). The agent's tools handle natural language
+    // better than any regex heuristic.
+    if (!trimmedInput.startsWith("/")) {
+      return {
+        type: "chat",
+        confidence: 1,
+        entities: {},
+        raw: input,
+      };
+    }
+
+    // Strip the leading '/' before pattern matching against stored patterns.
+    // e.g. "/status" → "status", "/help" → "help"
+    const commandPart = trimmedInput.slice(1);
+
     const intentTypes: IntentType[] = ["status", "trust", "help", "exit"];
 
     let bestMatch: Intent | null = null;
 
     for (const type of intentTypes) {
-      const match = matchIntent(trimmedInput, type);
+      const match = matchIntent(commandPart, type);
 
       if (match.matched && match.confidence > (bestMatch?.confidence || 0)) {
         bestMatch = {
           type,
           confidence: match.confidence,
-          entities: extractEntities(trimmedInput),
+          entities: extractEntities(commandPart),
           raw: input,
           matchedPattern: match.pattern,
         };
@@ -185,7 +197,7 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
 
     // If regex confidence is low and LLM provider is available, try LLM classification
     if ((!bestMatch || bestMatch.confidence < LLM_FALLBACK_THRESHOLD) && hasLLMProvider()) {
-      const llmResult = await getLLMClassifier().classify(trimmedInput);
+      const llmResult = await getLLMClassifier().classify(commandPart);
 
       if (llmResult) {
         // Combine regex and LLM scores if regex had a match
@@ -198,7 +210,7 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
           return {
             type: llmResult.intent,
             confidence: combinedConfidence,
-            entities: extractEntities(trimmedInput),
+            entities: extractEntities(commandPart),
             raw: input,
             matchedPattern: bestMatch.matchedPattern,
           };
@@ -207,7 +219,7 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
           return {
             type: llmResult.intent,
             confidence: llmResult.confidence,
-            entities: extractEntities(trimmedInput),
+            entities: extractEntities(commandPart),
             raw: input,
           };
         }
@@ -219,7 +231,7 @@ export function createIntentRecognizer(config: Partial<IntentConfig> = {}) {
       return {
         type: "chat",
         confidence: bestMatch?.confidence || 0.3,
-        entities: extractEntities(trimmedInput),
+        entities: extractEntities(commandPart),
         raw: input,
       };
     }

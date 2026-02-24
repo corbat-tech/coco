@@ -88,44 +88,58 @@ describe("Intent Recognizer", () => {
     });
 
     describe("status intent", () => {
-      it('should recognize "status"', async () => {
-        const intent = await recognizer.recognize("status");
+      it('should recognize "/status"', async () => {
+        const intent = await recognizer.recognize("/status");
         expect(intent.type).toBe("status");
         expect(intent.confidence).toBeGreaterThan(0.6);
       });
 
-      it('should recognize "what\'s the status"', async () => {
+      // Natural language no longer triggers commands — goes to LLM agent instead
+      it('"status" without slash → chat (handled by LLM)', async () => {
+        const intent = await recognizer.recognize("status");
+        expect(intent.type).toBe("chat");
+      });
+
+      it('"what\'s the status" → chat (handled by LLM)', async () => {
         const intent = await recognizer.recognize("what's the status");
-        expect(intent.type).toBe("status");
-        expect(intent.confidence).toBeGreaterThan(0.6);
+        expect(intent.type).toBe("chat");
+      });
+
+      it('"qué pasó no hiciste nada" → chat (regression: must not match /status)', async () => {
+        const intent = await recognizer.recognize("qué pasó no hiciste nada");
+        expect(intent.type).toBe("chat");
       });
     });
 
     describe("help intent", () => {
-      it('should recognize "help"', async () => {
-        const intent = await recognizer.recognize("help");
+      it('should recognize "/help"', async () => {
+        const intent = await recognizer.recognize("/help");
         expect(intent.type).toBe("help");
         expect(intent.confidence).toBeGreaterThan(0.6);
       });
 
-      it('should recognize "?"', async () => {
-        const intent = await recognizer.recognize("?");
-        expect(intent.type).toBe("help");
-        expect(intent.confidence).toBeGreaterThan(0.6);
+      it('"help" without slash → chat (handled by LLM)', async () => {
+        const intent = await recognizer.recognize("help");
+        expect(intent.type).toBe("chat");
       });
     });
 
     describe("exit intent", () => {
-      it('should recognize "exit"', async () => {
-        const intent = await recognizer.recognize("exit");
+      it('should recognize "/exit"', async () => {
+        const intent = await recognizer.recognize("/exit");
         expect(intent.type).toBe("exit");
         expect(intent.confidence).toBeGreaterThan(0.6);
       });
 
-      it('should recognize "quit"', async () => {
-        const intent = await recognizer.recognize("quit");
+      it('should recognize "/quit"', async () => {
+        const intent = await recognizer.recognize("/quit");
         expect(intent.type).toBe("exit");
         expect(intent.confidence).toBeGreaterThan(0.6);
+      });
+
+      it('"exit" without slash → chat (handled by LLM)', async () => {
+        const intent = await recognizer.recognize("exit");
+        expect(intent.type).toBe("chat");
       });
     });
 
@@ -155,28 +169,25 @@ describe("Intent Recognizer", () => {
       recognizer = createIntentRecognizer();
     });
 
-    it("should extract sprint number (entities still extracted for chat fallback)", async () => {
-      const intent = await recognizer.recognize("build sprint 5");
+    // Entity extraction only runs for slash commands (non-slash inputs return chat with empty entities)
+    it("should extract sprint number from /build command", async () => {
+      const intent = await recognizer.recognize("/build sprint 5");
       expect(intent.entities.sprint).toBe(5);
     });
 
-    it("should extract project name", async () => {
-      const intent = await recognizer.recognize("init project my-app");
-      expect(intent.entities.projectName).toBe("my-app");
-    });
-
-    it("should extract flags", async () => {
-      const intent = await recognizer.recognize("plan --dry-run");
+    it("should extract flags from /plan command", async () => {
+      const intent = await recognizer.recognize("/plan --dry-run");
       expect(intent.entities.flags).toContain("dry-run");
     });
 
-    it("should extract tech stack", async () => {
+    it("should return empty entities for natural language (chat fallback)", async () => {
       const intent = await recognizer.recognize("init a new project with react and docker");
-      expect(intent.entities.techStack?.length).toBeGreaterThan(0);
+      expect(intent.type).toBe("chat");
+      expect(intent.entities).toEqual({});
     });
 
-    it("should extract quoted args", async () => {
-      const intent = await recognizer.recognize('init "my awesome project"');
+    it("should extract quoted args from slash command", async () => {
+      const intent = await recognizer.recognize('/init "my awesome project"');
       expect(intent.entities.args).toContain("my awesome project");
     });
   });
@@ -229,25 +240,25 @@ describe("Intent Recognizer", () => {
   });
 
   describe("shouldAutoExecute", () => {
-    it("should NOT auto-execute status (in alwaysConfirm)", async () => {
+    it("should NOT auto-execute /status (in alwaysConfirm)", async () => {
       const recognizer = createIntentRecognizer({
         autoExecute: true,
         autoExecuteThreshold: 0.8,
       });
-      const intent = await recognizer.recognize("status");
+      const intent = await recognizer.recognize("/status");
       expect(recognizer.shouldAutoExecute(intent)).toBe(false);
     });
 
-    it("should auto-execute exit immediately (no confirmation needed)", async () => {
+    it("should auto-execute /exit immediately (no confirmation needed)", async () => {
       const recognizer = createIntentRecognizer();
       // autoExecute is false by default but exit has autoExecutePreferences: true
-      const intent = await recognizer.recognize("exit");
+      const intent = await recognizer.recognize("/exit");
       expect(recognizer.shouldAutoExecute(intent)).toBe(true);
     });
 
-    it("should auto-execute quit immediately", async () => {
+    it("should auto-execute /quit immediately", async () => {
       const recognizer = createIntentRecognizer();
-      const intent = await recognizer.recognize("quit");
+      const intent = await recognizer.recognize("/quit");
       expect(recognizer.shouldAutoExecute(intent)).toBe(true);
     });
 
@@ -256,14 +267,14 @@ describe("Intent Recognizer", () => {
         autoExecute: true,
         alwaysConfirm: ["help"],
       });
-      const intent = await recognizer.recognize("help");
+      const intent = await recognizer.recognize("/help");
       expect(recognizer.shouldAutoExecute(intent)).toBe(false);
     });
 
     it("should respect user preference overriding global autoExecute=false", async () => {
       const recognizer = createIntentRecognizer({ autoExecute: false });
       recognizer.setAutoExecutePreference("help", true);
-      const intent = await recognizer.recognize("help");
+      const intent = await recognizer.recognize("/help");
       expect(recognizer.shouldAutoExecute(intent)).toBe(true);
     });
   });
@@ -281,15 +292,15 @@ describe("Intent Recognizer", () => {
       expect(resolution.execute).toBe(false);
     });
 
-    it("should resolve status to command (not auto-execute)", async () => {
-      const intent = await recognizer.recognize("status");
+    it("should resolve /status to command (not auto-execute)", async () => {
+      const intent = await recognizer.recognize("/status");
       const resolution = await recognizer.resolve(intent);
       expect(resolution.command).toBe("status");
       expect(resolution.execute).toBe(false);
     });
 
-    it("should auto-execute exit without confirmation", async () => {
-      const intent = await recognizer.recognize("exit");
+    it("should auto-execute /exit without confirmation", async () => {
+      const intent = await recognizer.recognize("/exit");
       const resolution = await recognizer.resolve(intent);
       expect(resolution.execute).toBe(true);
       expect(resolution.command).toBe("exit");

@@ -482,9 +482,9 @@ export class OpenAIProvider implements LLMProvider {
           try {
             input = builder.arguments ? JSON.parse(builder.arguments) : {};
           } catch (error) {
-            // QUICK WIN: Try to repair malformed JSON automatically
+            // Try to repair malformed JSON automatically
             console.warn(
-              `[${this.name}] Failed to parse tool call arguments for ${builder.name}: ${builder.arguments?.slice(0, 100)}`,
+              `[${this.name}] Failed to parse tool call arguments for ${builder.name}: ${builder.arguments?.slice(0, 300)}`,
             );
             try {
               if (builder.arguments) {

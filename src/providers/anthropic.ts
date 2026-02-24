@@ -3,6 +3,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { jsonrepair } from "jsonrepair";
 import type {
   LLMProvider,
   ProviderConfig,
@@ -263,10 +264,23 @@ export class AnthropicProvider implements LLMProvider {
             try {
               currentToolCall.input = currentToolInputJson ? JSON.parse(currentToolInputJson) : {};
             } catch {
-              getLogger().warn(
-                `Failed to parse tool call arguments: ${currentToolInputJson?.slice(0, 100)}`,
-              );
-              currentToolCall.input = {};
+              // Try to repair malformed JSON (e.g. unescaped newlines/quotes in content)
+              let repaired = false;
+              if (currentToolInputJson) {
+                try {
+                  currentToolCall.input = JSON.parse(jsonrepair(currentToolInputJson));
+                  repaired = true;
+                  getLogger().debug(`Repaired JSON for tool ${currentToolCall.name}`);
+                } catch {
+                  // repair also failed — fall through
+                }
+              }
+              if (!repaired) {
+                getLogger().warn(
+                  `Failed to parse tool call arguments for ${currentToolCall.name}: ${currentToolInputJson?.slice(0, 300)}`,
+                );
+                currentToolCall.input = {};
+              }
             }
             yield {
               type: "tool_use_end",

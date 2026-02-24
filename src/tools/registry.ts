@@ -206,6 +206,15 @@ export class ToolRegistry {
           return `${field} (${issue.message.toLowerCase()})`;
         });
         errorMessage = `Invalid tool input — ${fields.join(", ")}`;
+        // When every required field is undefined, the JSON likely failed to parse on
+        // our side (not an LLM mistake). Tell the model to retry unchanged.
+        const allUndefined = error.issues.every((i) =>
+          i.message.toLowerCase().includes("received undefined"),
+        );
+        if (allUndefined && error.issues.length > 1) {
+          errorMessage +=
+            ". All parameters are missing — this is likely a JSON serialization error on our side. Please retry with the same arguments.";
+        }
       } else {
         const rawMessage = error instanceof Error ? error.message : String(error);
         errorMessage = humanizeError(rawMessage, name);
