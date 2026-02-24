@@ -413,6 +413,38 @@ export class OpenAIProvider implements LLMProvider {
       // Set up periodic timeout check
       const timeoutInterval = setInterval(checkTimeout, 5000);
 
+      // Helper: parse accumulated JSON arguments with jsonrepair fallback.
+      // Captured as a local const to avoid `this` capture issues inside the loop.
+      const providerName = this.name;
+      const parseArguments = (builder: {
+        id: string;
+        name: string;
+        arguments: string;
+      }): Record<string, unknown> => {
+        let input: Record<string, unknown> = {};
+        try {
+          input = builder.arguments ? JSON.parse(builder.arguments) : {};
+        } catch (error) {
+          // Try to repair malformed JSON automatically
+          console.warn(
+            `[${providerName}] Failed to parse tool call arguments for ${builder.name}: ${builder.arguments?.slice(0, 300)}`,
+          );
+          try {
+            if (builder.arguments) {
+              const repaired = jsonrepair(builder.arguments);
+              input = JSON.parse(repaired);
+              console.log(`[${providerName}] ✓ Successfully repaired JSON for ${builder.name}`);
+            }
+          } catch {
+            console.error(
+              `[${providerName}] Cannot repair JSON for ${builder.name}, using empty object`,
+            );
+            console.error(`[${providerName}] Original error:`, error);
+          }
+        }
+        return input;
+      };
+
       try {
         for await (const chunk of stream) {
           const delta = chunk.choices[0]?.delta;
@@ -430,7 +462,10 @@ export class OpenAIProvider implements LLMProvider {
           // Handle tool calls
           if (delta?.tool_calls) {
             for (const toolCallDelta of delta.tool_calls) {
-              const index = toolCallDelta.index;
+              // index is guaranteed by the OpenAI spec but some compatible
+              // providers (e.g. custom endpoints) may omit it.  Fall back to
+              // the current map size so each new tool call gets a unique slot.
+              const index = toolCallDelta.index ?? toolCallBuilders.size;
 
               if (!toolCallBuilders.has(index)) {
                 // New tool call starting
@@ -474,38 +509,36 @@ export class OpenAIProvider implements LLMProvider {
               }
             }
           }
+
+          // Finalize tool calls inline when finish_reason is received.
+          // This ensures tool_use_end events are yielded to the consumer
+          // while still inside the for-await loop — so they are never lost
+          // if the consumer breaks out of the generator early (e.g. on abort).
+          const finishReason = chunk.choices[0]?.finish_reason;
+          if (finishReason && toolCallBuilders.size > 0) {
+            for (const [, builder] of toolCallBuilders) {
+              yield {
+                type: "tool_use_end",
+                toolCall: {
+                  id: builder.id,
+                  name: builder.name,
+                  input: parseArguments(builder),
+                },
+              };
+            }
+            toolCallBuilders.clear();
+          }
         }
 
-        // Finalize all tool calls
+        // Fallback: finalize any remaining tool calls not yet emitted.
+        // Handles providers that omit finish_reason in the last chunk.
         for (const [, builder] of toolCallBuilders) {
-          let input: Record<string, unknown> = {};
-          try {
-            input = builder.arguments ? JSON.parse(builder.arguments) : {};
-          } catch (error) {
-            // Try to repair malformed JSON automatically
-            console.warn(
-              `[${this.name}] Failed to parse tool call arguments for ${builder.name}: ${builder.arguments?.slice(0, 300)}`,
-            );
-            try {
-              if (builder.arguments) {
-                const repaired = jsonrepair(builder.arguments);
-                input = JSON.parse(repaired);
-                console.log(`[${this.name}] ✓ Successfully repaired JSON for ${builder.name}`);
-              }
-            } catch {
-              console.error(
-                `[${this.name}] Cannot repair JSON for ${builder.name}, using empty object`,
-              );
-              console.error(`[${this.name}] Original error:`, error);
-            }
-          }
-
           yield {
             type: "tool_use_end",
             toolCall: {
               id: builder.id,
               name: builder.name,
-              input,
+              input: parseArguments(builder),
             },
           };
         }
@@ -731,8 +764,12 @@ export class OpenAIProvider implements LLMProvider {
         result.push({ role: "system", content: this.contentToString(msg.content) });
       } else if (msg.role === "user") {
         // Check if this is a tool result message
-        if (Array.isArray(msg.content) && msg.content[0]?.type === "tool_result") {
-          // Convert tool results to OpenAI format
+        if (Array.isArray(msg.content) && msg.content.some((b) => b.type === "tool_result")) {
+          // Convert tool results to OpenAI format.
+          // OpenAI requires one 'tool' role message per tool_call_id.
+          // Any text blocks in the same user message (unusual but valid in Anthropic format)
+          // are emitted as a separate user message after the tool messages.
+          const textParts: string[] = [];
           for (const block of msg.content) {
             if (block.type === "tool_result") {
               const toolResult = block as ToolResultContent;
@@ -741,7 +778,15 @@ export class OpenAIProvider implements LLMProvider {
                 tool_call_id: toolResult.tool_use_id,
                 content: toolResult.content,
               });
+            } else if (block.type === "text") {
+              textParts.push(block.text);
             }
+          }
+          if (textParts.length > 0) {
+            console.warn(
+              `[${this.name}] User message has mixed tool_result and text blocks — text emitted as a separate user message.`,
+            );
+            result.push({ role: "user", content: textParts.join("") });
           }
         } else if (Array.isArray(msg.content) && msg.content.some((b) => b.type === "image")) {
           // Build OpenAI vision-format content parts for messages with images
@@ -794,6 +839,13 @@ export class OpenAIProvider implements LLMProvider {
                   arguments: JSON.stringify(block.input),
                 },
               });
+            } else {
+              // tool_result blocks belong in user messages, not assistant messages.
+              // Any other unexpected type is also silently dropped here — log a
+              // warning so message-format bugs are visible in the console.
+              console.warn(
+                `[${this.name}] Unexpected block type '${(block as { type?: string }).type}' in assistant message — dropping. This may indicate a message history corruption.`,
+              );
             }
           }
 

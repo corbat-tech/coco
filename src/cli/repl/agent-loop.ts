@@ -356,6 +356,12 @@ export async function executeAgentTurn(
           options.onAfterConfirmation?.();
           return result;
         },
+        // Pass hooks through so PreToolUse/PostToolUse hooks fire during execution
+        hookRegistry: options.hookRegistry,
+        hookExecutor: options.hookExecutor,
+        sessionId: session.id,
+        projectPath: session.projectPath,
+        onHookExecuted: options.onHookExecuted,
       });
 
       // Collect executed tools and apply side-effects
@@ -444,6 +450,21 @@ export async function executeAgentTurn(
           tool_use_id: toolCall.id,
           content: executedCall.result.output,
           is_error: !executedCall.result.success,
+        });
+      } else {
+        // Safety net: every tool_use in the assistant message MUST have a
+        // matching tool_result, or the API will reject the request (Error 400).
+        // This can happen if a tool call was streamed but its execution was
+        // dropped (e.g. ID mismatch, stream interruption). Log a warning and
+        // inject a placeholder so the history stays valid.
+        console.warn(
+          `[AgentLoop] No result found for tool call ${toolCall.name}:${toolCall.id} — injecting error placeholder to keep history valid`,
+        );
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: toolCall.id,
+          content: "Tool execution result unavailable (internal error)",
+          is_error: true,
         });
       }
     }

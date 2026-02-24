@@ -168,27 +168,59 @@ export class ParallelToolExecutor {
         nextTaskIndex++;
         activeCount++;
 
-        // Start execution
-        const taskPromise = this.executeSingleTool(
-          task.toolCall,
-          task.index,
-          total,
-          registry,
-          onToolStart,
-          onToolEnd,
-          signal,
-          onPathAccessDenied,
-        ).then((result) => {
-          task.result = result;
-          task.completed = true;
-          results[task.index - 1] = result;
-          activeCount--;
+        // Choose execution path: use hooks-aware executor when hooks are
+        // configured so that PreToolUse/PostToolUse hooks actually run.
+        // Fall back to the simple executor when no hooks are present.
+        // Always decrement activeCount when the task settles so the semaphore
+        // never leaks.
+        const execPromise: Promise<ExecutedToolCall | null> =
+          options.hookRegistry && options.hookExecutor
+            ? this.executeSingleToolWithHooks(
+                task.toolCall,
+                task.index,
+                total,
+                registry,
+                options,
+              ).then(({ executed, skipped: wasSkipped, reason }) => {
+                if (wasSkipped) {
+                  const skipReason = reason ?? "Blocked by hook";
+                  skipped.push({ toolCall: task.toolCall, reason: skipReason });
+                  onToolSkipped?.(task.toolCall, skipReason);
+                }
+                return executed ?? null;
+              })
+            : this.executeSingleTool(
+                task.toolCall,
+                task.index,
+                total,
+                registry,
+                onToolStart,
+                onToolEnd,
+                signal,
+                onPathAccessDenied,
+              );
 
-          // Try to start another task
-          startNextTask();
+        const taskPromise = execPromise.then(
+          (result) => {
+            task.result = result;
+            task.completed = true;
+            results[task.index - 1] = result;
+            activeCount--;
 
-          return result;
-        });
+            // Try to start another task
+            startNextTask();
+
+            return result;
+          },
+          (err) => {
+            // Unexpected rejection — decrement so the semaphore stays correct,
+            // then re-throw so Promise.all propagates the error.
+            task.completed = true;
+            activeCount--;
+            startNextTask();
+            throw err;
+          },
+        );
 
         task.promise = taskPromise;
         processingPromises.push(taskPromise);
@@ -238,11 +270,19 @@ export class ParallelToolExecutor {
     const startTime = performance.now();
     let result: ToolResult = await registry.execute(toolCall.name, toolCall.input, { signal });
 
-    // If tool failed due to path access, offer to authorize and retry
+    // If tool failed due to path access, offer to authorize and retry.
+    // The try/catch wraps ONLY the callback so that a thrown prompt (e.g. user
+    // cancels) doesn't crash the batch.  The retry execute() is intentionally
+    // outside the catch so that retry errors propagate normally.
     if (!result.success && result.error && onPathAccessDenied) {
       const dirPath = extractDeniedPath(result.error);
       if (dirPath) {
-        const authorized = await onPathAccessDenied(dirPath);
+        let authorized = false;
+        try {
+          authorized = await onPathAccessDenied(dirPath);
+        } catch {
+          // Authorization prompt failed or was cancelled — treat as not authorized
+        }
         if (authorized) {
           // Retry the tool now that the path is authorized
           result = await registry.execute(toolCall.name, toolCall.input, { signal });

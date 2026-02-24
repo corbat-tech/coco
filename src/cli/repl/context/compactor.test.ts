@@ -166,6 +166,68 @@ describe("ContextCompactor", () => {
       expect(result.messages[0].content).toBe("System prompt");
     });
 
+    it("should not split tool_call/tool_result pair at compaction boundary (regression: API 400)", async () => {
+      // Scenario: preserveLastN=3 makes the nominal preserveStart land on the
+      // user message that holds the tool_result.  Without the fix, the assistant
+      // message with tool_use would be summarised while the tool_result would be
+      // preserved — the API rejects that as an orphaned tool_result (Error 400).
+      // The fix walks preserveStart back until the first preserved message is not
+      // a tool_result, keeping the tool_call/tool_result pair together.
+      const { ContextCompactor } = await import("./compactor.js");
+
+      const compactor = new ContextCompactor({ preserveLastN: 3 });
+
+      // Five messages; nominal boundary = 5 - 3 = 2 (messages[2] = tool_result)
+      const messages: Message[] = [
+        { role: "user", content: "Use a tool" }, // [0] → gets summarised
+        {
+          // [1] → fix walks boundary back to here (assistant with tool_use)
+          role: "assistant",
+          content: [
+            { type: "text", text: "Let me read that file" },
+            {
+              type: "tool_use",
+              id: "tool-1",
+              name: "read_file",
+              input: { path: "/test.txt" },
+            },
+          ],
+        },
+        {
+          // [2] → nominal preserveStart (tool_result — triggers walk-back)
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "tool-1", content: "file contents" }],
+        },
+        { role: "user", content: "Recent message" }, // [3]
+        { role: "assistant", content: "Recent response" }, // [4]
+      ];
+
+      const mockProvider = createMockProvider("Summary of prior context");
+      const result = await compactor.compact(messages, mockProvider);
+
+      expect(result.wasCompacted).toBe(true);
+
+      // The preserved window starts at [1] (assistant with tool_use), not [2].
+      // result.messages layout: [summary, assistant(tool_use)[1], user(tool_result)[2], user[3], assistant[4]]
+      const summaryMsg = result.messages[0];
+      expect(summaryMsg?.content).toContain("Previous conversation summary");
+
+      // First preserved message must be the assistant with the tool_use block —
+      // confirming the boundary was pushed back past the tool_result.
+      const firstPreserved = result.messages[1];
+      expect(firstPreserved?.role).toBe("assistant");
+      const blocks = firstPreserved?.content as Array<{ type: string }>;
+      expect(Array.isArray(blocks)).toBe(true);
+      expect(blocks.some((b) => b.type === "tool_use")).toBe(true);
+
+      // The tool_result immediately follows (pair kept together)
+      const secondPreserved = result.messages[2];
+      expect(secondPreserved?.role).toBe("user");
+      const resultBlocks = secondPreserved?.content as Array<{ type: string }>;
+      expect(Array.isArray(resultBlocks)).toBe(true);
+      expect(resultBlocks[0]?.type).toBe("tool_result");
+    });
+
     it("should handle tool_use content blocks", async () => {
       const { ContextCompactor } = await import("./compactor.js");
 

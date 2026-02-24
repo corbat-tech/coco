@@ -230,6 +230,24 @@ export class AnthropicProvider implements LLMProvider {
             name?: string;
           };
           if (contentBlock.type === "tool_use") {
+            // Guard: if a previous tool call was never closed (missing content_block_stop),
+            // finalize it now to prevent argument data bleeding into the next tool call.
+            if (currentToolCall) {
+              getLogger().warn(
+                `[Anthropic] content_block_stop missing for tool '${currentToolCall.name}' — finalizing early to prevent data bleed.`,
+              );
+              try {
+                currentToolCall.input = currentToolInputJson
+                  ? JSON.parse(currentToolInputJson)
+                  : {};
+              } catch {
+                currentToolCall.input = {};
+              }
+              yield {
+                type: "tool_use_end",
+                toolCall: { ...currentToolCall } as ToolCall,
+              };
+            }
             currentToolCall = {
               id: contentBlock.id,
               name: contentBlock.name,

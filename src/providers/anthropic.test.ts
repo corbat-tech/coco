@@ -756,6 +756,118 @@ describe("createAnthropicProvider", () => {
   });
 });
 
+describe("streamWithTools: content_block_stop guard (regression: data-bleed fix)", () => {
+  // Regression test for: when two consecutive tool_use content_block_start events
+  // arrive without a content_block_stop between them (a malformed stream), the
+  // second tool_use would bleed its argument data into the first tool call's input.
+  // The fix detects the unclosed tool call and finalises it before starting the next.
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should emit both tool calls when content_block_stop is missing between them", async () => {
+    // Stream: tool_use A starts and receives args, but content_block_stop never
+    // arrives.  Then tool_use B starts — this triggers the guard.
+    mockMessagesStream.mockReturnValueOnce({
+      async *[Symbol.asyncIterator]() {
+        // Tool A starts
+        yield {
+          type: "content_block_start",
+          content_block: { type: "tool_use", id: "tool-a", name: "read_file" },
+        };
+        yield {
+          type: "content_block_delta",
+          delta: { type: "input_json_delta", partial_json: '{"path":"/a.ts"}' },
+        };
+        // ← content_block_stop for tool-A is intentionally MISSING
+
+        // Tool B starts — guard must finalise tool-A first
+        yield {
+          type: "content_block_start",
+          content_block: { type: "tool_use", id: "tool-b", name: "write_file" },
+        };
+        yield {
+          type: "content_block_delta",
+          delta: { type: "input_json_delta", partial_json: '{"path":"/b.ts","content":"hi"}' },
+        };
+        yield { type: "content_block_stop" };
+      },
+    });
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const chunks: Array<{
+      type: string;
+      toolCall?: { id?: string; name?: string; input?: unknown };
+    }> = [];
+    for await (const chunk of provider.streamWithTools([{ role: "user", content: "do stuff" }], {
+      tools: [
+        {
+          name: "read_file",
+          description: "Read",
+          input_schema: { type: "object", properties: {}, required: [] },
+        },
+        {
+          name: "write_file",
+          description: "Write",
+          input_schema: { type: "object", properties: {}, required: [] },
+        },
+      ],
+    })) {
+      chunks.push(chunk as (typeof chunks)[0]);
+    }
+
+    const toolEnds = chunks.filter((c) => c.type === "tool_use_end");
+    // Both tool calls must be emitted — tool-A finalised by the guard, tool-B normally
+    expect(toolEnds).toHaveLength(2);
+    expect(toolEnds[0]?.toolCall?.name).toBe("read_file");
+    expect(toolEnds[0]?.toolCall?.id).toBe("tool-a");
+    expect(toolEnds[0]?.toolCall?.input).toEqual({ path: "/a.ts" });
+    expect(toolEnds[1]?.toolCall?.name).toBe("write_file");
+    expect(toolEnds[1]?.toolCall?.id).toBe("tool-b");
+    expect(toolEnds[1]?.toolCall?.input).toEqual({ path: "/b.ts", content: "hi" });
+  });
+
+  it("should not affect normal streams where content_block_stop is present", async () => {
+    mockMessagesStream.mockReturnValueOnce({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: "content_block_start",
+          content_block: { type: "tool_use", id: "tool-1", name: "read_file" },
+        };
+        yield {
+          type: "content_block_delta",
+          delta: { type: "input_json_delta", partial_json: '{"path":"/test.ts"}' },
+        };
+        yield { type: "content_block_stop" }; // present — no guard needed
+      },
+    });
+
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key" });
+
+    const chunks: Array<{ type: string }> = [];
+    for await (const chunk of provider.streamWithTools([{ role: "user", content: "read file" }], {
+      tools: [
+        {
+          name: "read_file",
+          description: "Read",
+          input_schema: { type: "object", properties: {}, required: [] },
+        },
+      ],
+    })) {
+      chunks.push(chunk as (typeof chunks)[0]);
+    }
+
+    const toolEnds = chunks.filter((c) => c.type === "tool_use_end");
+    expect(toolEnds).toHaveLength(1);
+  });
+});
+
 describe("system prompt extraction (regression: bug fix)", () => {
   // Regression test for: system prompt was silently dropped from all API calls.
   // The messages array always contains a { role: "system" } entry from

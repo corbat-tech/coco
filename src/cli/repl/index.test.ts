@@ -565,6 +565,58 @@ describe("REPL index", () => {
       expect(mockInputHandler.close).toHaveBeenCalled();
     });
 
+    it.each(["exit", "quit", "q", "EXIT", "  Quit  "])(
+      'should exit REPL when user types bare keyword "%s" (no leading slash)',
+      async (keyword) => {
+        // Regression test for: typing "exit" (without /) used to be sent to the
+        // LLM as a regular message.  The fix checks for bare exit keywords before
+        // the slash-command handler and breaks the loop immediately.
+        const { createProvider } = await import("../../providers/index.js");
+        const { createSession } = await import("./session.js");
+        const { createInputHandler } = await import("./input/handler.js");
+        const { executeAgentTurn } = await import("./agent-loop.js");
+        const { isSlashCommand } = await import("./commands/index.js");
+
+        const mockProvider: Partial<LLMProvider> = {
+          isAvailable: vi.fn().mockResolvedValue(true),
+          chat: vi.fn(),
+          chatWithTools: vi.fn(),
+        };
+
+        vi.mocked(createProvider).mockResolvedValue(mockProvider as LLMProvider);
+        vi.mocked(createSession).mockReturnValue({
+          projectPath: "/test",
+          config: {
+            provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
+            autoConfirm: false,
+            trustedTools: new Set<string>(),
+            maxIterations: 10,
+          },
+          messages: [],
+          startTime: new Date(),
+          tokenUsage: { input: 0, output: 0 },
+        });
+
+        const mockInputHandler = {
+          prompt: vi.fn().mockResolvedValueOnce(keyword), // bare keyword (no slash)
+          close: vi.fn(),
+          resume: vi.fn(),
+          pause: vi.fn(),
+        };
+        vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
+        // isSlashCommand returns false for "exit" (no leading slash)
+        vi.mocked(isSlashCommand).mockReturnValue(false);
+
+        const { startRepl } = await import("./index.js");
+        await startRepl();
+
+        // REPL must exit cleanly — close must be called
+        expect(mockInputHandler.close).toHaveBeenCalled();
+        // The agent must NOT be invoked with the raw "exit" keyword
+        expect(executeAgentTurn).not.toHaveBeenCalled();
+      },
+    );
+
     it("should execute agent turn for regular input", async () => {
       const { createProvider } = await import("../../providers/index.js");
       const { createSession } = await import("./session.js");

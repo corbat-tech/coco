@@ -677,6 +677,108 @@ describe("executeAgentTurn", () => {
   });
 });
 
+describe("Safety net: placeholder injection for missing tool results", () => {
+  // Regression test for: if a tool_use block is in the assistant message but
+  // parallel execution drops the result (e.g. ID mismatch, internal error), the
+  // API would reject the next request with Error 400 because tool_result is absent.
+  // The fix injects a placeholder tool_result with is_error=true and logs a warning.
+
+  let mockProvider: LLMProvider;
+  let mockToolRegistry: ToolRegistry;
+  let mockSession: ReplSession;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    mockProvider = {
+      id: "mock",
+      name: "Mock Provider",
+      initialize: vi.fn(),
+      chat: vi.fn(),
+      chatWithTools: vi.fn(),
+      stream: vi.fn(),
+      streamWithTools: vi.fn().mockImplementation(createTextStreamMock("Done.")),
+      countTokens: vi.fn(() => 10),
+      getContextWindow: vi.fn(() => 100000),
+      isAvailable: vi.fn().mockResolvedValue(true),
+    };
+
+    mockToolRegistry = {
+      getToolDefinitionsForLLM: vi.fn(() => []),
+      execute: vi.fn(),
+      register: vi.fn(),
+      unregister: vi.fn(),
+      get: vi.fn(),
+      has: vi.fn(),
+      getAll: vi.fn(),
+      getByCategory: vi.fn(),
+    } as unknown as ToolRegistry;
+
+    mockSession = {
+      id: "test-session-safety",
+      startedAt: new Date(),
+      messages: [],
+      projectPath: "/test/project",
+      config: {
+        provider: { type: "anthropic", model: "claude-sonnet-4-20250514", maxTokens: 8192 },
+        ui: { theme: "auto" as const, showTimestamps: false, maxHistorySize: 100 },
+        agent: {
+          systemPrompt: "You are a helpful assistant",
+          maxToolIterations: 25,
+          confirmDestructive: false,
+        },
+      },
+      trustedTools: new Set<string>(),
+    };
+
+    const { getConversationContext } = await import("./session.js");
+    (getConversationContext as Mock).mockReturnValue([
+      { role: "system", content: "System prompt" },
+    ]);
+
+    const { requiresConfirmation } = await import("./confirmation.js");
+    (requiresConfirmation as Mock).mockReturnValue(false);
+  });
+
+  it("should inject is_error placeholder when parallel executor returns no result for a streamed tool call", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+    const { ParallelToolExecutor } = await import("./parallel-executor.js");
+
+    const toolCall: ToolCall = { id: "tool-missing", name: "read_file", input: { path: "/x.ts" } };
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("", [toolCall])();
+      }
+      return createTextStreamMock("Recovered.")();
+    });
+
+    // Force the parallel executor to return no results (simulates a dropped execution)
+    vi.spyOn(ParallelToolExecutor.prototype, "executeParallel").mockResolvedValueOnce({
+      executed: [],
+      skipped: [],
+      aborted: false,
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Should not throw — safety net must handle the missing result gracefully
+    const result = await executeAgentTurn(mockSession, "Read file", mockProvider, mockToolRegistry);
+
+    expect(result.aborted).toBe(false);
+
+    // The safety net must have emitted a warning
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[AgentLoop] No result found for tool call"),
+    );
+
+    // The LLM must have been called a second time (the placeholder allowed the loop to continue)
+    expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("formatAbortSummary", () => {
   it("should return null for empty tool list", async () => {
     const { formatAbortSummary } = await import("./agent-loop.js");
