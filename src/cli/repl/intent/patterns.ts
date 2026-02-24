@@ -54,18 +54,21 @@ export const INTENT_PATTERNS: Record<IntentType, RegExp[]> = {
   ],
 
   // Task
+  // NOTE: patterns must require an explicit task ID (number or code like "AUTH-001")
+  // to avoid false-positive matches on natural language like "implementa la tarea de X".
+  // Generic phrases like "do the task" or "haz la tarea" intentionally omitted.
   task: [
-    // Spanish
-    /^(haz|implementa|crea)\s+(la\s+)?tarea/i,
-    /^(trabaja\s+en|work\s+on)/i,
-    /^(ejecuta|execute)\s+(la\s+)?tarea/i,
-    /completa\s+(la\s+)?tarea/i,
+    // Spanish — ID required
+    /^(haz|ejecuta|completa)\s+(la\s+)?tarea\s+#?[a-zA-Z0-9][a-zA-Z0-9_-]*/i,
+    /^(trabaja\s+en)\s+(la\s+)?tarea\s+#?[a-zA-Z0-9][a-zA-Z0-9_-]*/i,
     /marcar\s+tarea\s+como\s+(hecha|completada)/i,
-    // English
-    /^(do|complete|finish)\s+(the\s+)?task/i,
-    /work\s+on\s+(the\s+)?task/i,
+    // English — ID required
+    /^(do|complete|finish|run)\s+(the\s+)?task\s+#?[a-zA-Z0-9][a-zA-Z0-9_-]*/i,
+    /^work\s+on\s+(the\s+)?task\s+#?[a-zA-Z0-9][a-zA-Z0-9_-]*/i,
     /mark\s+task\s+as\s+(done|complete)/i,
-    /start\s+(the\s+)?task/i,
+    // Explicit task reference with ID (e.g. "task 3", "task AUTH-001")
+    /^task\s+#?[a-zA-Z0-9][a-zA-Z0-9_-]*/i,
+    /^tarea\s+#?[a-zA-Z0-9][a-zA-Z0-9_-]*/i,
   ],
 
   // Init
@@ -193,8 +196,8 @@ export const ENTITY_PATTERNS = {
   /** Extract sprint number */
   sprint: /(?:sprint|s)\s*(?:number|num|n)?\s*[:#]?\s*(\d+)/i,
 
-  /** Extract task ID */
-  taskId: /(?:task|tarea)\s*(?:id)?\s*[:#]?\s*([a-zA-Z0-9_-]+)/i,
+  /** Extract task ID — requires at least 2 chars to avoid grabbing prepositions like "de" */
+  taskId: /(?:task|tarea)\s*(?:id|#)?\s*:?\s*(\d+|[a-zA-Z][a-zA-Z0-9_-]{1,})/i,
 
   /** Extract project name */
   projectName: /(?:project|proyecto)\s*(?:name|nombre)?\s*[:\s]+([a-zA-Z0-9_-]+)/i,
@@ -225,12 +228,9 @@ export function calculateConfidenceBoost(input: string): number {
     boost += 0.1;
   }
 
-  // Input starting with action verbs
-  if (
-    /^(haz|crea|genera|construye|implementa|ejecuta|inicializa|abre|create|make|build|run|start|open|exec)/i.test(
-      input,
-    )
-  ) {
+  // Input starting with COCO-specific action verbs (NOT generic programming verbs like
+  // "implementa" or "crea" which are too common in natural language instructions)
+  if (/^(haz|genera|construye|ejecuta|inicializa|build|run|start|open|exec)\b/i.test(input)) {
     boost += 0.15;
   }
 
