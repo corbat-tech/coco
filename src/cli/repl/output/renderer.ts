@@ -28,6 +28,8 @@ let rawMarkdownBuffer = "";
 let inCodeBlock = false;
 let codeBlockLang = "";
 let codeBlockLines: string[] = [];
+/** Track nested code blocks inside an outer block (e.g. ```python inside ```markdown) */
+let inNestedCodeBlock = false;
 
 /** Streaming indicator state */
 let streamingIndicatorActive = false;
@@ -101,6 +103,7 @@ export function flushLineBuffer(): void {
 export function resetLineBuffer(): void {
   lineBuffer = "";
   inCodeBlock = false;
+  inNestedCodeBlock = false;
   codeBlockLang = "";
   codeBlockLines = [];
   stopStreamingIndicator();
@@ -136,24 +139,37 @@ export function renderStreamChunk(chunk: StreamChunk): void {
 }
 
 function processAndOutputLine(line: string): void {
-  // Check for code block start/end
+  // Check for code block delimiters: ```lang (open) or ``` (close)
   const codeBlockMatch = line.match(/^```(\w*)$/);
 
   if (codeBlockMatch) {
+    const lang = codeBlockMatch[1] || "";
+
     if (!inCodeBlock) {
-      // Starting a code block
+      // Starting an outer code block
       inCodeBlock = true;
-      codeBlockLang = codeBlockMatch[1] || "";
+      inNestedCodeBlock = false;
+      codeBlockLang = lang;
       codeBlockLines = [];
-      // Start streaming indicator for markdown blocks
       if (codeBlockLang === "markdown" || codeBlockLang === "md") {
         startStreamingIndicator();
       }
+    } else if (inNestedCodeBlock) {
+      // A bare ``` closes the nested block — keep the delimiter in content so
+      // renderMarkdownBlock can reconstruct the inner fence properly.
+      inNestedCodeBlock = false;
+      codeBlockLines.push(line);
+    } else if (lang) {
+      // ```language inside an outer block → opens a nested block.
+      // Accumulate the line as content (renderMarkdownBlock parses it).
+      inNestedCodeBlock = true;
+      codeBlockLines.push(line);
     } else {
-      // Ending a code block - stop indicator and render
+      // Bare ``` and not inside a nested block → closes the outer block.
       stopStreamingIndicator();
       renderCodeBlock(codeBlockLang, codeBlockLines);
       inCodeBlock = false;
+      inNestedCodeBlock = false;
       codeBlockLang = "";
       codeBlockLines = [];
     }
@@ -289,42 +305,70 @@ function renderNestedTable(lines: string[], parentWidth: number): void {
 
   if (rows.length === 0) return;
 
-  // Calculate total table width and adjust if needed
-  const minCellPadding = 2;
-  let totalWidth =
-    columnWidths.reduce((sum, w) => sum + w + minCellPadding, 0) + columnWidths.length + 1;
-
-  // If table is too wide, shrink columns proportionally
+  // Cap each column to a max width so the table fits; content wraps rather than truncates.
+  // Available space: parentWidth minus outer box indent (2) and table borders/padding.
+  const numCols = columnWidths.length || 1;
   const maxTableWidth = parentWidth - 4;
-  if (totalWidth > maxTableWidth) {
-    const scale = maxTableWidth / totalWidth;
-    columnWidths = columnWidths.map((w) => Math.max(3, Math.floor(w * scale)));
+  // Each column contributes: width + 2 (padding) + 1 (│), plus 1 for the final │
+  const naturalWidth =
+    columnWidths.reduce((sum, w) => sum + w + 2, 0) + columnWidths.length + 1;
+  if (naturalWidth > maxTableWidth) {
+    const scale = maxTableWidth / naturalWidth;
+    columnWidths = columnWidths.map((w) => Math.max(6, Math.floor(w * scale)));
   }
+  // Hard cap per column so very few wide columns don't overflow either
+  const hardCap = Math.max(10, Math.floor(maxTableWidth / numCols) - 3);
+  columnWidths = columnWidths.map((w) => Math.min(w, hardCap));
 
-  // Render table top border
+  // Render table borders
   const tableTop = "╭" + columnWidths.map((w) => "─".repeat(w + 2)).join("┬") + "╮";
   const tableMid = "├" + columnWidths.map((w) => "─".repeat(w + 2)).join("┼") + "┤";
   const tableBot = "╰" + columnWidths.map((w) => "─".repeat(w + 2)).join("┴") + "╯";
 
-  // Helper to render a row
-  const renderRow = (cells: string[], isHeader: boolean) => {
-    const formatted = cells.map((cell, idx) => {
-      const width = columnWidths[idx] || 10;
-      const truncated = cell.length > width ? cell.slice(0, width - 1) + "…" : cell;
-      const padded = truncated.padEnd(width);
-      return isHeader ? chalk.bold(padded) : padded;
-    });
-    return "│ " + formatted.join(" │ ") + " │";
+  /** Wrap cell text into multiple lines at word boundaries. */
+  const wrapCell = (text: string, width: number): string[] => {
+    if (text.length <= width) return [text];
+    const result: string[] = [];
+    let remaining = text;
+    while (remaining.length > width) {
+      let breakAt = width;
+      const lastSpace = remaining.lastIndexOf(" ", width);
+      if (lastSpace > 0) breakAt = lastSpace;
+      result.push(remaining.slice(0, breakAt));
+      remaining = remaining.slice(breakAt).trimStart();
+    }
+    if (remaining) result.push(remaining);
+    return result;
   };
 
-  // Output table inside the markdown box (no outer right border for markdown)
+  /**
+   * Render a row, expanding to multiple terminal lines when a cell wraps.
+   * Returns an array of formatted row strings (one per visual line).
+   */
+  const renderRow = (cells: string[], isHeader: boolean): string[] => {
+    const wrappedCells = cells.map((cell, idx) => wrapCell(cell, columnWidths[idx] || 10));
+    const maxLines = Math.max(...wrappedCells.map((c) => c.length));
+    const rowLines: string[] = [];
+    for (let li = 0; li < maxLines; li++) {
+      const parts = wrappedCells.map((cellLines, colIdx) => {
+        const width = columnWidths[colIdx] || 10;
+        const text = cellLines[li] ?? "";
+        const padded = text.padEnd(width);
+        return isHeader ? chalk.bold(padded) : padded;
+      });
+      rowLines.push("│ " + parts.join(" │ ") + " │");
+    }
+    return rowLines;
+  };
+
+  // Output table inside the markdown box
   const outputTableLine = (tableLine: string) => {
     console.log(chalk.magenta("│") + "  " + chalk.cyan(tableLine));
   };
 
   outputTableLine(tableTop);
   rows.forEach((row, idx) => {
-    outputTableLine(renderRow(row, idx === 0));
+    renderRow(row, idx === 0).forEach((l) => outputTableLine(l));
     if (idx === 0 && rows.length > 1) {
       outputTableLine(tableMid);
     }
