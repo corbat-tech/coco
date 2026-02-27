@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.0] - 2026-02-27
+
+### Added
+
+- **Context usage indicator** — a live token-usage bar is now shown in the REPL status line; a warning fires at 90 % and 95 % context capacity so you can compact or start a new session before the window overflows
+- **Tool output visibility and intent narration** — tool calls now display their category and a short plain-English description of what the agent is about to do; tool results show a compact, readable summary instead of raw JSON; long outputs are truncated with a "show more" hint
+- **Word-wrap in input** — long input lines now wrap at word boundaries within the terminal width, so multi-line prompts stay readable and the cursor stays in sync with what the terminal renders
+- **Up/down arrows jump to line boundary before navigating history** — pressing ↑ while the cursor is in the middle of a multi-line input first moves to the start of the first line; pressing ↓ first moves to the end of the last line; only a second press navigates history, matching standard shell behaviour
+
+### Fixed
+
+- **Wrapped input eating terminal log lines** — when a long input wrapped across terminal columns and the cursor was moved, `countVisualRows` double-counted rows where a space landed at exactly column N (terminal auto-wrap + explicit `\n`), causing `cursorUp` to overshoot the separator and erase log lines on every keypress
+- **ASCII art rendering outside markdown box** — ASCII diagrams generated inside a `~~~markdown` outer block used bare `~~~` as inner fence openers; since bare `~~~` closes the outer block, the diagram content leaked as plain text; inner blocks now use backtick fences (`` ```ascii ``, `` ```bash ``) which are structurally incapable of closing a tilde outer fence
+- **Nested code block collision and table truncation** — a renderer state-machine bug caused `inNestedCodeBlock` to not reset correctly after a nested code block inside a markdown wrapper, which prevented the outer block from closing and corrupted table rendering; the state is now restored on both the open and close paths
+- **Double Ctrl+C required to exit** — pressing Ctrl+C once now clears the current input line; a second press exits the REPL, matching the behaviour users expect from interactive shells
+- **Spinner echo and permanent log cleanup** — the input echo was printed after the spinner started on the same line, causing leftover text in the log; the echo is now cleared before `spinner.stop()`, and trailing ellipsis characters are stripped from permanent log entries
+- **ANSI wrap bleed across renderer segments** — bold/colour escape sequences started in one renderer segment could leak into the next line if the terminal wrapped mid-sequence; reset codes are now emitted at every line boundary
+
+---
+
 ## [2.5.3] - 2026-02-24
 
 ### Added
