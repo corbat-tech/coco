@@ -829,16 +829,66 @@ export function renderToolStart(
   const icon = getToolIcon(toolName, { ...input, wouldCreate: metadata?.isCreate });
   const summary = formatToolSummary(toolName, input);
 
-  let label = toolName;
   if (toolName === "write_file") {
-    label = metadata?.isCreate
+    const label = metadata?.isCreate
       ? chalk.green.bold("CREATE") + " " + chalk.cyan(String(input.path || ""))
       : chalk.yellow.bold("MODIFY") + " " + chalk.cyan(String(input.path || ""));
     console.log(`\n${icon} ${label}`);
+    const preview = renderContentPreview(String(input.content || ""), 3);
+    if (preview) console.log(preview);
+    return;
+  }
+
+  if (toolName === "edit_file") {
+    console.log(`\n${icon} ${chalk.yellow.bold("EDIT")} ${chalk.cyan(String(input.path || ""))}`);
+    const editPreview = renderEditPreview(
+      String(input.old_string || ""),
+      String(input.new_string || ""),
+    );
+    if (editPreview) console.log(editPreview);
     return;
   }
 
   console.log(`\n${icon} ${chalk.cyan.bold(toolName)} ${chalk.dim(summary)}`);
+}
+
+/** Show first N non-empty lines of file content, indented and dimmed */
+function renderContentPreview(content: string, maxLines: number): string {
+  const maxWidth = Math.max(getTerminalWidth() - 6, 40);
+  const lines = content.split("\n");
+  const preview: string[] = [];
+
+  for (const line of lines) {
+    if (preview.length >= maxLines) break;
+    const trimmed = line.trimEnd();
+    // Skip leading blank lines
+    if (trimmed.length === 0 && preview.length === 0) continue;
+    const truncated = trimmed.length > maxWidth ? trimmed.slice(0, maxWidth - 1) + "…" : trimmed;
+    preview.push(`   ${truncated}`);
+  }
+
+  if (preview.length === 0) return "";
+
+  const totalNonEmpty = lines.filter((l) => l.trim().length > 0).length;
+  const more = totalNonEmpty > maxLines ? chalk.dim(` … +${totalNonEmpty - maxLines} lines`) : "";
+  return chalk.dim(preview.join("\n")) + more;
+}
+
+/** Show first line of old → new for edit_file */
+function renderEditPreview(oldStr: string, newStr: string): string {
+  const maxWidth = Math.max(getTerminalWidth() - 8, 30);
+
+  const firstOld = oldStr.split("\n").find((l) => l.trim().length > 0) ?? "";
+  const firstNew = newStr.split("\n").find((l) => l.trim().length > 0) ?? "";
+
+  if (!firstOld && !firstNew) return "";
+
+  const truncate = (s: string) => (s.length > maxWidth ? s.slice(0, maxWidth - 1) + "…" : s);
+
+  const lines: string[] = [];
+  if (firstOld) lines.push(chalk.dim("   ") + chalk.red(`- ${truncate(firstOld.trim())}`));
+  if (firstNew) lines.push(chalk.dim("   ") + chalk.green(`+ ${truncate(firstNew.trim())}`));
+  return lines.join("\n");
 }
 
 export function renderToolEnd(result: ExecutedToolCall): void {
@@ -850,6 +900,10 @@ export function renderToolEnd(result: ExecutedToolCall): void {
   if (!result.result.success && result.result.error) {
     console.log(chalk.red(`  └─ ${result.result.error}`));
   }
+
+  // Show result details (match lines, stdout snippets) when meaningful
+  const details = formatResultDetails(result);
+  if (details) console.log(details);
 }
 
 function formatToolSummary(toolName: string, input: Record<string, unknown>): string {
@@ -861,6 +915,7 @@ function formatToolSummary(toolName: string, input: Record<string, unknown>): st
       return String(input.path || "");
     case "list_directory":
       return String(input.path || ".");
+    case "grep":
     case "search_files": {
       const pattern = String(input.pattern || "");
       const path = input.path ? ` in ${input.path}` : "";
@@ -868,7 +923,8 @@ function formatToolSummary(toolName: string, input: Record<string, unknown>): st
     }
     case "bash_exec": {
       const cmd = String(input.command || "");
-      return cmd.length > 50 ? cmd.slice(0, 47) + "..." : cmd;
+      const max = Math.max(getTerminalWidth() - 20, 50);
+      return cmd.length > max ? cmd.slice(0, max - 1) + "…" : cmd;
     }
     default:
       return formatToolInput(input);
@@ -896,20 +952,73 @@ function formatResultPreview(result: ExecutedToolCall): string {
           return chalk.dim(`(${files} files, ${dirs} dirs)`);
         }
         break;
+      case "grep":
       case "search_files":
         if (Array.isArray(data.matches)) {
-          return chalk.dim(`(${data.matches.length} matches)`);
+          const n = data.matches.length;
+          return n === 0 ? chalk.yellow("· no matches") : chalk.dim(`· ${n} match${n === 1 ? "" : "es"}`);
         }
         break;
       case "bash_exec":
-        if (data.exitCode === 0) {
-          const lines = String(data.stdout || "").split("\n").length;
-          return chalk.dim(`(${lines} lines)`);
+        if (data.exitCode !== undefined && data.exitCode !== 0) {
+          return chalk.red(`(exit ${data.exitCode})`);
         }
         break;
       case "write_file":
       case "edit_file":
         return chalk.dim("(saved)");
+    }
+  } catch {
+    // Ignore parse errors
+  }
+
+  return "";
+}
+
+/** Render extra detail lines below the status line for grep matches and bash output */
+function formatResultDetails(result: ExecutedToolCall): string {
+  if (!result.result.success) return "";
+
+  const { name, result: toolResult } = result;
+  const maxWidth = Math.max(getTerminalWidth() - 8, 40);
+
+  try {
+    const data = JSON.parse(toolResult.output);
+
+    if ((name === "grep" || name === "search_files") && Array.isArray(data.matches)) {
+      const matches: Array<{ file: string; line: number; content: string }> = data.matches;
+      if (matches.length === 0) return "";
+
+      const MAX_SHOWN = 3;
+      const shown = matches.slice(0, MAX_SHOWN);
+      const lines = shown.map(({ file, line, content }) => {
+        const location = chalk.cyan(`${file}:${line}`);
+        const snippet = content.trim();
+        const truncated = snippet.length > maxWidth ? snippet.slice(0, maxWidth - 1) + "…" : snippet;
+        return `  ${chalk.dim("│")} ${location} ${chalk.dim(truncated)}`;
+      });
+
+      if (matches.length > MAX_SHOWN) {
+        lines.push(`  ${chalk.dim(`│ … +${matches.length - MAX_SHOWN} more`)}`);
+      }
+      return lines.join("\n");
+    }
+
+    if (name === "bash_exec" && data.exitCode === 0) {
+      const stdout = String(data.stdout || "").trimEnd();
+      if (!stdout) return "";
+      const outputLines = stdout.split("\n").filter((l: string) => l.trim());
+      // Only show inline preview if output is short enough to be meaningful
+      if (outputLines.length > 6) return "";
+      const shown = outputLines.slice(0, 4);
+      const lines = shown.map((l: string) => {
+        const truncated = l.length > maxWidth ? l.slice(0, maxWidth - 1) + "…" : l;
+        return `  ${chalk.dim("│")} ${chalk.dim(truncated)}`;
+      });
+      if (outputLines.length > 4) {
+        lines.push(`  ${chalk.dim(`│ … +${outputLines.length - 4} more`)}`);
+      }
+      return lines.join("\n");
     }
   } catch {
     // Ignore parse errors
