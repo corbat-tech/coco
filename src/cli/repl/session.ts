@@ -236,7 +236,7 @@ If a file tool fails with "outside project directory", the system will automatic
    └── utils.ts
    ~~~
 
-   **Never use backtick fences (```) inside a markdown block — they will break the outer block.**
+   **Never use backtick fences (\`\`\`) inside a markdown block — they will break the outer block.**
 
 4. **Include all content in ONE block**: headers, lists, tables, quotes, code, commands, diagrams.
 
