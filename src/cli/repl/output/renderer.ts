@@ -28,6 +28,10 @@ let rawMarkdownBuffer = "";
 let inCodeBlock = false;
 let codeBlockLang = "";
 let codeBlockLines: string[] = [];
+/** Track nested code blocks inside an outer block (e.g. ```python inside ```markdown).
+ *  A nested opener (```lang) is accumulated as content; its closing ``` does NOT
+ *  close the outer block — only a bare ``` outside a nested block does. */
+let inNestedCodeBlock = false;
 
 /** Streaming indicator state */
 let streamingIndicatorActive = false;
@@ -101,6 +105,7 @@ export function flushLineBuffer(): void {
 export function resetLineBuffer(): void {
   lineBuffer = "";
   inCodeBlock = false;
+  inNestedCodeBlock = false;
   codeBlockLang = "";
   codeBlockLines = [];
   stopStreamingIndicator();
@@ -144,20 +149,31 @@ function processAndOutputLine(line: string): void {
   const codeBlockMatch = line.match(/^```(\w*)$/);
 
   if (codeBlockMatch) {
+    const lang = codeBlockMatch[1] || "";
+
     if (!inCodeBlock) {
-      // Starting a code block
+      // Opening the outer block
       inCodeBlock = true;
-      codeBlockLang = codeBlockMatch[1] || "";
+      inNestedCodeBlock = false;
+      codeBlockLang = lang;
       codeBlockLines = [];
-      // Start streaming indicator for markdown blocks
       if (codeBlockLang === "markdown" || codeBlockLang === "md") {
         startStreamingIndicator();
       }
+    } else if (inNestedCodeBlock) {
+      // Bare ``` closes the nested block — accumulate so renderMarkdownBlock sees it
+      inNestedCodeBlock = false;
+      codeBlockLines.push(line);
+    } else if (lang) {
+      // ```lang inside outer block → nested block opens, accumulate as content
+      inNestedCodeBlock = true;
+      codeBlockLines.push(line);
     } else {
-      // Ending a code block - stop indicator and render
+      // Bare ``` outside any nested block → closes the outer block
       stopStreamingIndicator();
       renderCodeBlock(codeBlockLang, codeBlockLines);
       inCodeBlock = false;
+      inNestedCodeBlock = false;
       codeBlockLang = "";
       codeBlockLines = [];
     }
