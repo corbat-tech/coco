@@ -214,12 +214,31 @@ If a file tool fails with "outside project directory", the system will automatic
 
 2. **CRITICAL: Never close the markdown block prematurely** - The closing \`\`\` must ONLY appear at the very end.
 
-3. **For code examples inside markdown**, use TILDES (~~~) instead of backticks:
-   ~~~javascript
-   function example() { return "hello"; }
+3. **CRITICAL — ALL inner blocks must use TILDES (~~~), never backticks:**
+   - Code: ~~~javascript / ~~~typescript / ~~~python / ~~~bash / ~~~sh / etc.
+   - Shell commands: ~~~bash
+   - ASCII diagrams: ~~~ascii
+   - Tree structures / file paths: ~~~text
+   - Any other fenced content: ~~~<lang>
+
+   Examples:
+   ~~~bash
+   ollama pull llama3.1:8b-instruct
+   ~~~
+   ~~~ascii
+   ┌─────────┐
+   │ Client  │
+   └─────────┘
+   ~~~
+   ~~~text
+   src/
+   ├── index.ts
+   └── utils.ts
    ~~~
 
-4. **Include all content in ONE block**: headers, lists, tables, quotes, code examples.
+   **Never use backtick fences (```) inside a markdown block — they will break the outer block.**
+
+4. **Include all content in ONE block**: headers, lists, tables, quotes, code, commands, diagrams.
 
 **When to use markdown block:**
 - User asks for documentation, summary, tutorial, guide
