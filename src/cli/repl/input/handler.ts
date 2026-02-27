@@ -133,7 +133,10 @@ function countVisualRows(text: string, startCol: number, termCols: number): numb
   let col = startCol;
   for (const char of text) {
     if (char === "\n") {
-      rows++;
+      // Only increment rows if col > 0. When col is already 0, the terminal
+      // just wrapped (col>=termCols path above), and the injected "\n" from
+      // computeWordWrap is redundant — counting it again overshoots by 1.
+      if (col > 0) rows++;
       col = 0;
     } else {
       col++;
@@ -160,7 +163,9 @@ function getCursorVisualPos(
   let col = promptLen;
   for (let i = 0; i < cursorPos; i++) {
     if (text[i] === "\n") {
-      row++;
+      // Same rule as countVisualRows: skip row increment when col is already 0
+      // (terminal already wrapped; the injected "\n" is redundant).
+      if (col > 0) row++;
       col = 0;
     } else {
       col++;
@@ -248,10 +253,12 @@ function computeWordWrap(
       }
       i = wordEnd;
     } else {
-      // Space — emit it, then look ahead: if next word won't fit, inject newline
+      // Space — emit it, then look ahead: if next word won't fit, inject newline.
+      // If the space itself reaches col=termCols the terminal auto-wraps; no
+      // explicit "\n" is needed (adding one would double-count in countVisualRows).
       emitChar(" ", i++);
       if (col >= termCols) {
-        injectNewline();
+        col = 0;
       } else {
         // Look ahead at next word length
         let nextWordEnd = i;
