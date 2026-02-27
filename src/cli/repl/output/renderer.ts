@@ -180,8 +180,13 @@ function processAndOutputLine(line: string): void {
     // Accumulate code block content
     codeBlockLines.push(line);
   } else {
-    // Render as formatted markdown line
-    console.log(formatMarkdownLine(line));
+    // Render as formatted markdown line, word-wrapping at terminal width
+    const formatted = formatMarkdownLine(line);
+    const termWidth = getTerminalWidth();
+    const wrapped = wrapText(formatted, termWidth);
+    for (const wl of wrapped) {
+      console.log(wl);
+    }
   }
 }
 
