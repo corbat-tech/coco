@@ -99,7 +99,11 @@ export function createSpinner(message: string): Spinner {
         const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
         const elapsedStr = elapsed > 0 ? chalk.dim(` (${elapsed}s)`) : "";
         const toolCountStr = formatToolCount();
-        spinner.succeed(`${finalMessage || currentMessage}${toolCountStr}${elapsedStr}`);
+        // Strip trailing "…" or "..." from permanent log entries — they look like
+        // truncation artifacts once the action is done and the ✓ checkmark is shown.
+        const rawMsg = finalMessage || currentMessage;
+        const cleanMsg = rawMsg.replace(/\u2026$|\.\.\.$/, "").trimEnd();
+        spinner.succeed(`${cleanMsg}${toolCountStr}${elapsedStr}`);
         spinner = null;
       }
       startTime = null;

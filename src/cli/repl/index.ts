@@ -737,7 +737,9 @@ export async function startRepl(
               ? activeSpinner.getElapsed()
               : 0;
           if (elapsed >= 3) {
-            // Show completion with elapsed time — any non-trivial operation
+            // Show completion with elapsed time — any non-trivial operation.
+            // Clear echo first so the placeholder line isn't baked into the permanent log.
+            inputEcho.clear();
             activeSpinner?.stop();
             activeSpinner = null;
             turnActiveSpinner = null;
@@ -804,6 +806,8 @@ export async function startRepl(
           // user can see how long each reasoning step took.
           const thinkingElapsed = activeSpinner?.getElapsed() ?? 0;
           if (thinkingElapsed >= 2) {
+            // Clear echo first so the placeholder line isn't baked into the permanent log.
+            inputEcho.clear();
             activeSpinner?.stop();
             activeSpinner = null;
             turnActiveSpinner = null;
