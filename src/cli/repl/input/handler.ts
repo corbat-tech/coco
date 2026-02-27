@@ -125,6 +125,198 @@ function findNextWordBoundary(line: string, pos: number): number {
 }
 
 /**
+ * Count visual terminal rows occupied by text, given the starting column.
+ * Handles both \n line breaks and terminal wrapping.
+ */
+function countVisualRows(text: string, startCol: number, termCols: number): number {
+  let rows = 1;
+  let col = startCol;
+  for (const char of text) {
+    if (char === "\n") {
+      rows++;
+      col = 0;
+    } else {
+      col++;
+      if (col >= termCols) {
+        rows++;
+        col = 0;
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * Get the visual (row, col) position of the cursor for multi-line text.
+ * row is 0-indexed relative to the prompt line.
+ */
+function getCursorVisualPos(
+  text: string,
+  cursorPos: number,
+  promptLen: number,
+  termCols: number,
+): { row: number; col: number } {
+  let row = 0;
+  let col = promptLen;
+  for (let i = 0; i < cursorPos; i++) {
+    if (text[i] === "\n") {
+      row++;
+      col = 0;
+    } else {
+      col++;
+      if (col >= termCols) {
+        row++;
+        col = 0;
+      }
+    }
+  }
+  return { row, col };
+}
+
+/**
+ * Compute word-wrapped display text and position mappings.
+ * Inserts '\n' before words that would exceed the terminal width, preventing
+ * mid-word character wrapping by the terminal. The original text is never
+ * modified — word-wrap is display-only.
+ */
+function computeWordWrap(
+  text: string,
+  startCol: number,
+  termCols: number,
+): {
+  display: string;
+  /** Map a position in the original text to the corresponding display position. */
+  toDisplayPos: (origPos: number) => number;
+  /** Map a display position back to the closest position in the original text. */
+  toOrigPos: (displayPos: number) => number;
+} {
+  const passthrough = {
+    display: text,
+    toDisplayPos: (p: number) => p,
+    toOrigPos: (p: number) => p,
+  };
+  if (!text || termCols <= 1) return passthrough;
+
+  // origToDisp[i] = position in display string where text[i] was written
+  const origToDisp = new Int32Array(text.length + 1);
+  // dispToOrig[j] = orig index for display[j], or -1 for injected '\n'
+  const dispToOrig: number[] = [];
+  let display = "";
+  let col = startCol;
+
+  function emitChar(ch: string, origIdx: number): void {
+    origToDisp[origIdx] = display.length;
+    dispToOrig.push(origIdx);
+    display += ch;
+    col = ch === "\n" ? 0 : col + 1;
+  }
+
+  function injectNewline(): void {
+    dispToOrig.push(-1);
+    display += "\n";
+    col = 0;
+  }
+
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i]!;
+
+    if (ch === "\n") {
+      emitChar("\n", i++);
+      continue;
+    }
+
+    if (ch !== " ") {
+      // Find end of this word
+      let wordEnd = i;
+      while (wordEnd < text.length && text[wordEnd] !== " " && text[wordEnd] !== "\n") {
+        wordEnd++;
+      }
+      const wordLen = wordEnd - i;
+
+      // Inject newline before word if it doesn't fit and we're not at col 0
+      if (col > 0 && col + wordLen > termCols) {
+        injectNewline();
+      }
+
+      // Emit word characters; break mid-word only for words wider than terminal
+      for (let k = i; k < wordEnd; k++) {
+        emitChar(text[k]!, k);
+        if (col >= termCols && k + 1 < wordEnd) {
+          injectNewline();
+        }
+      }
+      i = wordEnd;
+    } else {
+      // Space — emit it, then look ahead: if next word won't fit, inject newline
+      emitChar(" ", i++);
+      if (col >= termCols) {
+        injectNewline();
+      } else {
+        // Look ahead at next word length
+        let nextWordEnd = i;
+        while (nextWordEnd < text.length && text[nextWordEnd] !== " " && text[nextWordEnd] !== "\n") {
+          nextWordEnd++;
+        }
+        const nextWordLen = nextWordEnd - i;
+        if (nextWordLen > 0 && col + nextWordLen > termCols) {
+          injectNewline();
+        }
+      }
+    }
+  }
+
+  origToDisp[text.length] = display.length;
+
+  return {
+    display,
+    toDisplayPos: (origPos: number) =>
+      origToDisp[Math.min(origPos, text.length)] ?? display.length,
+    toOrigPos: (displayPos: number) => {
+      const dp = Math.max(0, Math.min(displayPos, dispToOrig.length - 1));
+      for (let d = dp; d >= 0; d--) {
+        const orig = dispToOrig[d];
+        if (orig !== undefined && orig >= 0) return orig;
+      }
+      return 0;
+    },
+  };
+}
+
+/**
+ * Given a target visual (row, col), find the position in the display string.
+ * Used by up/down arrow navigation to move cursor between visual lines.
+ */
+function getDisplayPosForVisualPos(
+  display: string,
+  targetRow: number,
+  targetCol: number,
+  promptLen: number,
+  termCols: number,
+): number {
+  let row = 0;
+  let col = promptLen;
+  for (let i = 0; i <= display.length; i++) {
+    if (row === targetRow && col === targetCol) return i;
+    if (i === display.length) break;
+    const ch = display[i]!;
+    if (ch === "\n") {
+      if (row === targetRow) return i; // end of this visual row
+      row++;
+      col = 0;
+    } else {
+      col++;
+      if (col >= termCols) {
+        if (row === targetRow) return i; // at terminal-wrap boundary of this row
+        row++;
+        col = 0;
+      }
+    }
+  }
+  return display.length;
+}
+
+/**
  * Create readline-based input handler with ghost-text completion and dropdown
  */
 export function createInputHandler(_session: ReplSession): InputHandler {
@@ -209,8 +401,12 @@ export function createInputHandler(_session: ReplSession): InputHandler {
     const separator = chalk.dim("\u2500".repeat(termCols));
     let output = separator + "\n";
 
-    // Write prompt + current line
-    output += prompt.str + currentLine;
+    // Compute word-wrapped display (display-only, currentLine is never modified)
+    const ww = computeWordWrap(currentLine, prompt.visualLen, termCols);
+    const displayLine = ww.display;
+
+    // Write prompt + word-wrapped display line
+    output += prompt.str + displayLine;
 
     // Update completions
     completions = findCompletions(currentLine);
@@ -228,16 +424,31 @@ export function createInputHandler(_session: ReplSession): InputHandler {
       }
     }
 
-    // Calculate how many visual rows the content (prompt + full text) occupies.
-    // This determines where to place the bottom separator.
-    const totalContentLen = prompt.visualLen + currentLine.length;
-    const contentRows = totalContentLen === 0 ? 1 : Math.ceil(totalContentLen / termCols);
+    // Calculate how many visual rows the word-wrapped content occupies.
+    const hasWrapped = displayLine.includes("\n");
+    const contentRows = hasWrapped
+      ? countVisualRows(displayLine, prompt.visualLen, termCols)
+      : (() => {
+          const len = prompt.visualLen + displayLine.length;
+          return len === 0 ? 1 : Math.ceil(len / termCols);
+        })();
 
-    // When content exactly fills a row (totalContentLen is a multiple of termCols),
-    // the terminal auto-wraps the cursor to col 0 of the next row. In that case
-    // we must NOT emit an extra "\n" before the bottom separator, because the
-    // cursor is already on the next row. Emitting "\n" would create a blank line.
-    const contentExactFill = totalContentLen > 0 && totalContentLen % termCols === 0;
+    // When content exactly fills a terminal row, the cursor auto-wraps to the next row.
+    // Detect this so we don't emit an extra "\n" before the bottom separator.
+    const contentExactFill = hasWrapped
+      ? (() => {
+          const { col } = getCursorVisualPos(
+            displayLine,
+            displayLine.length,
+            prompt.visualLen,
+            termCols,
+          );
+          return col === 0 && displayLine.length > 0;
+        })()
+      : (() => {
+          const len = prompt.visualLen + displayLine.length;
+          return len > 0 && len % termCols === 0;
+        })();
 
     // Bottom separator — always drawn below the input content
     output += (contentExactFill ? "" : "\n") + separator;
@@ -329,16 +540,25 @@ export function createInputHandler(_session: ReplSession): InputHandler {
     // We're now on the top separator. Move down 1 to the prompt line.
     output += ansiEscapes.cursorDown(1);
 
-    // Position cursor correctly within the input, accounting for wrapping.
-    // When cursorAbsolutePos is an exact multiple of termCols, the terminal
-    // auto-wraps to col 0 of the next row. We treat this as staying on the
-    // last content row to prevent the "extra line" bug on next re-render.
-    const cursorAbsolutePos = prompt.visualLen + cursorPos;
-    const onExactBoundary = cursorAbsolutePos > 0 && cursorAbsolutePos % termCols === 0;
-    const finalLine = onExactBoundary
-      ? cursorAbsolutePos / termCols - 1
-      : Math.floor(cursorAbsolutePos / termCols);
-    const finalCol = onExactBoundary ? 0 : cursorAbsolutePos % termCols;
+    // Position cursor correctly within the word-wrapped display.
+    // Always use getCursorVisualPos on the display string via the word-wrap mapping.
+    // For non-wrapped single-line content, preserve the exact-boundary logic to prevent
+    // the "extra line" bug caused by terminal pending-wrap state.
+    const displayCursorPos = ww.toDisplayPos(cursorPos);
+    let finalLine: number;
+    let finalCol: number;
+    if (hasWrapped) {
+      const pos = getCursorVisualPos(displayLine, displayCursorPos, prompt.visualLen, termCols);
+      finalLine = pos.row;
+      finalCol = pos.col;
+    } else {
+      const cursorAbsolutePos = prompt.visualLen + cursorPos;
+      const onExactBoundary = cursorAbsolutePos > 0 && cursorAbsolutePos % termCols === 0;
+      finalLine = onExactBoundary
+        ? cursorAbsolutePos / termCols - 1
+        : Math.floor(cursorAbsolutePos / termCols);
+      finalCol = onExactBoundary ? 0 : cursorAbsolutePos % termCols;
+    }
 
     output += "\r";
     if (finalLine > 0) {
@@ -381,10 +601,10 @@ export function createInputHandler(_session: ReplSession): InputHandler {
    * Strips non-printable control characters.
    */
   function insertTextAtCursor(text: string): void {
-    // Replace newlines/carriage returns with spaces (single-line input)
-    const cleaned = text.replace(/[\r\n]+/g, " ");
-    // Filter out non-printable control characters (keep space and above, including Unicode)
-    const printable = cleaned.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g, "");
+    // Normalize line endings: \r\n and lone \r → \n (preserve multi-line from paste)
+    const cleaned = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    // Filter out non-printable control characters (keep \n, space and above, Unicode)
+    const printable = cleaned.replace(/[^\n\x20-\x7E\u00A0-\uFFFF]/g, "");
 
     if (printable.length === 0) return;
 
@@ -657,7 +877,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
             return;
           }
 
-          // Up arrow - navigate completions vertically or history
+          // Up arrow - navigate completions vertically, move cursor up visual line, or history
           if (key === "\x1b[A") {
             if (completions.length > 1) {
               // Navigate completions vertically (move up one row)
@@ -675,8 +895,26 @@ export function createInputHandler(_session: ReplSession): InputHandler {
                 selectedCompletion = Math.min(targetIndex, completions.length - 1);
               }
               render();
-            } else if (sessionHistory.length > 0 && completions.length === 0) {
-              // Navigate history only if no completions
+            } else if (currentLine.length > 0) {
+              // Move cursor up one visual line within the word-wrapped text
+              const termCols = process.stdout.columns || 80;
+              const prompt = getPrompt();
+              const ww = computeWordWrap(currentLine, prompt.visualLen, termCols);
+              const displayCursorPos = ww.toDisplayPos(cursorPos);
+              const pos = getCursorVisualPos(ww.display, displayCursorPos, prompt.visualLen, termCols);
+              if (pos.row > 0) {
+                const newDisplayPos = getDisplayPosForVisualPos(
+                  ww.display,
+                  pos.row - 1,
+                  pos.col,
+                  prompt.visualLen,
+                  termCols,
+                );
+                cursorPos = ww.toOrigPos(newDisplayPos);
+                render();
+              }
+            } else if (sessionHistory.length > 0) {
+              // Navigate history only when input is empty
               if (historyIndex === -1) {
                 tempLine = currentLine;
                 historyIndex = sessionHistory.length - 1;
@@ -690,7 +928,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
             return;
           }
 
-          // Down arrow - navigate completions vertically or history
+          // Down arrow - navigate completions vertically, move cursor down visual line, or history
           if (key === "\x1b[B") {
             if (completions.length > 1) {
               // Navigate completions vertically (move down one row)
@@ -708,8 +946,28 @@ export function createInputHandler(_session: ReplSession): InputHandler {
                 selectedCompletion = currentCol;
               }
               render();
-            } else if (historyIndex !== -1 && completions.length === 0) {
-              // Navigate history only if no completions
+            } else if (currentLine.length > 0) {
+              // Move cursor down one visual line within the word-wrapped text
+              const termCols = process.stdout.columns || 80;
+              const prompt = getPrompt();
+              const ww = computeWordWrap(currentLine, prompt.visualLen, termCols);
+              const displayCursorPos = ww.toDisplayPos(cursorPos);
+              const pos = getCursorVisualPos(ww.display, displayCursorPos, prompt.visualLen, termCols);
+              const lastDisplayPos = ww.toDisplayPos(currentLine.length);
+              const lastPos = getCursorVisualPos(ww.display, lastDisplayPos, prompt.visualLen, termCols);
+              if (pos.row < lastPos.row) {
+                const newDisplayPos = getDisplayPosForVisualPos(
+                  ww.display,
+                  pos.row + 1,
+                  pos.col,
+                  prompt.visualLen,
+                  termCols,
+                );
+                cursorPos = ww.toOrigPos(newDisplayPos);
+                render();
+              }
+            } else if (historyIndex !== -1) {
+              // Navigate history only when input is empty
               if (historyIndex < sessionHistory.length - 1) {
                 historyIndex++;
                 currentLine = sessionHistory[historyIndex] ?? "";
