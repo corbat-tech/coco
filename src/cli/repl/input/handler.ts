@@ -678,7 +678,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
               render();
               return;
             }
-            // Empty line — require a second Ctrl+C within 2 s to exit
+            // Empty line — require a second Ctrl+C within 800 ms to exit
             const now = Date.now();
             if (now - lastCtrlCTime < 800) {
               cleanup();

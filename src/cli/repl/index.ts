@@ -331,8 +331,9 @@ export async function startRepl(
   };
   process.once("SIGTERM", sigtermHandler);
 
-  // Track whether the 75% context warning has been shown (reset after compaction)
+  // Track whether the 75%/90% context warnings have been shown (reset after compaction)
   let warned75 = false;
+  let warned90 = false;
 
   // Main loop
   while (true) {
@@ -965,8 +966,9 @@ export async function startRepl(
               `Context compacted (${usageBefore.toFixed(0)}% -> ${usageForDisplay.toFixed(0)}%)`,
             ),
           );
-          // Always reset after compaction so the warning re-evaluates at the new level
+          // Always reset after compaction so the warnings re-evaluate at the new level
           warned75 = false;
+          warned90 = false;
         }
       } catch {
         // Silently ignore compaction errors - not critical
@@ -976,7 +978,8 @@ export async function startRepl(
       renderStatusBar(session.projectPath, session.config, gitContext, usageForDisplay);
 
       // Context usage warnings
-      if (usageForDisplay >= 90) {
+      if (usageForDisplay >= 90 && !warned90) {
+        warned90 = true;
         console.log(
           chalk.red("  ✗ Context critical (" + usageForDisplay.toFixed(0) + "%) — use /clear to start fresh"),
         );

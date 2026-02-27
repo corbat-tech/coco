@@ -733,12 +733,14 @@ function wrapText(text: string, maxWidth: number): string[] {
   const lines: string[] = [];
   let remaining = text;
 
-  while (stripAnsi(remaining).length > maxWidth) {
+  while (true) {
     const plain = stripAnsi(remaining);
+    if (plain.length <= maxWidth) break;
 
     // Find break point on plain text
     let breakPoint = maxWidth;
     const lastSpace = plain.lastIndexOf(" ", maxWidth);
+    // Only break at a word boundary if it keeps at least half the line width
     if (lastSpace > maxWidth * 0.5) {
       breakPoint = lastSpace;
     }
@@ -775,8 +777,9 @@ function wrapText(text: string, maxWidth: number): string[] {
       ansiIdx++;
     }
 
-    lines.push(remaining.slice(0, rawPos));
-    remaining = remaining.slice(rawPos).trimStart();
+    // Reset ANSI color state at the break so active colors don't bleed into the next line
+    lines.push(remaining.slice(0, rawPos) + "\x1b[0m");
+    remaining = "\x1b[0m" + remaining.slice(rawPos).trimStart();
   }
 
   if (remaining) {

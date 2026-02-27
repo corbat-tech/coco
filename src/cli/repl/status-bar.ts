@@ -82,10 +82,3 @@ export function renderStatusBar(
   console.log(statusLine);
 }
 
-/**
- * Clear the status bar from terminal (if needed for redraws)
- */
-export function clearStatusBar(): void {
-  // Move cursor up one line and clear it
-  process.stdout.write("\x1b[1A\x1b[2K");
-}
