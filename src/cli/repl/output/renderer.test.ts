@@ -184,7 +184,7 @@ describe("renderToolStart", () => {
     });
 
     const output = consoleLogSpy.mock.calls[0][0];
-    expect(output).toContain("...");
+    expect(output).toContain("…");
     expect(output.length).toBeLessThan(200);
   });
 
@@ -481,8 +481,15 @@ describe("renderToolEnd with formatResultPreview edge cases", () => {
 
     renderToolEnd(result);
 
-    const output = consoleLogSpy.mock.calls[0][0];
-    expect(output).toContain("lines");
+    // Status line: ✓ duration (no line count — output shown as inline detail instead)
+    const statusLine = consoleLogSpy.mock.calls[0][0];
+    expect(statusLine).toContain("✓");
+    expect(statusLine).not.toContain("lines");
+
+    // Inline detail lines show actual stdout content
+    const detailOutput = consoleLogSpy.mock.calls[1][0];
+    expect(detailOutput).toContain("file1.txt");
+    expect(detailOutput).toContain("│");
   });
 
   it("should not show line count for bash_exec with non-zero exit code", () => {

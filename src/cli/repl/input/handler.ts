@@ -334,6 +334,8 @@ export function createInputHandler(_session: ReplSession): InputHandler {
   let lastCursorRow = 0; // Track cursor row from previous render for accurate clearing
   let lastContentRows = 1; // Track content rows so clearMenu can preserve the bottom separator
   let isFirstRender = true;
+  // Timestamp of last Ctrl+C on an empty line — used for double-press-to-exit logic
+  let lastCtrlCTime = 0;
 
   // Bracketed paste mode state
   let isPasting = false;
@@ -696,12 +698,31 @@ export function createInputHandler(_session: ReplSession): InputHandler {
           }
           // --- End bracketed paste handling ---
 
-          // Ctrl+C - exit
+          // Ctrl+C
           if (key === "\x03") {
+            if (currentLine.length > 0) {
+              // Clear current line (like bash ^C — cancels input without exiting)
+              currentLine = "";
+              cursorPos = 0;
+              selectedCompletion = 0;
+              historyIndex = -1;
+              lastCtrlCTime = 0;
+              render();
+              return;
+            }
+            // Empty line — require a second Ctrl+C within 2 s to exit
+            const now = Date.now();
+            if (now - lastCtrlCTime < 800) {
+              cleanup();
+              console.log("\n\u{1F44B} Goodbye!");
+              saveHistory(sessionHistory);
+              process.exit(0);
+            }
+            lastCtrlCTime = now;
             cleanup();
-            console.log("\n\u{1F44B} Goodbye!");
-            saveHistory(sessionHistory);
-            process.exit(0);
+            console.log(chalk.dim("(Press Ctrl+C again to exit)"));
+            resolve("");
+            return;
           }
 
           // Ctrl+D - exit if line is empty, else delete char at cursor

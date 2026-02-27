@@ -16,12 +16,23 @@ import type { ReplConfig } from "./types.js";
 import { type GitContext, formatGitShort } from "./git-context.js";
 
 /**
+ * Format context usage as a colored string based on usage level.
+ */
+function formatContextUsage(percent: number): string {
+  const label = `ctx ${percent.toFixed(0)}%`;
+  if (percent >= 90) return chalk.red(label);
+  if (percent >= 75) return chalk.yellow(label);
+  return chalk.dim(label);
+}
+
+/**
  * Format the status bar line
  */
 export function formatStatusBar(
   projectPath: string,
   config: ReplConfig,
   gitCtx?: GitContext | null,
+  contextUsagePercent?: number,
 ): string {
   const parts: string[] = [];
 
@@ -49,6 +60,11 @@ export function formatStatusBar(
     parts.push(formatGitShort(gitCtx));
   }
 
+  // Context usage — only shown once there is real data (0 means not yet initialized)
+  if (contextUsagePercent !== undefined && contextUsagePercent > 0) {
+    parts.push(formatContextUsage(contextUsagePercent));
+  }
+
   return "  " + parts.join(chalk.dim(" • "));
 }
 
@@ -59,8 +75,9 @@ export function renderStatusBar(
   projectPath: string,
   config: ReplConfig,
   gitCtx?: GitContext | null,
+  contextUsagePercent?: number,
 ): void {
-  const statusLine = formatStatusBar(projectPath, config, gitCtx);
+  const statusLine = formatStatusBar(projectPath, config, gitCtx, contextUsagePercent);
   console.log();
   console.log(statusLine);
 }
