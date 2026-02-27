@@ -4,7 +4,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import crypto from "node:crypto";
+import { createHash } from "node:crypto";
 import { FileSystemError } from "./errors.js";
 
 /**
@@ -130,7 +130,7 @@ export async function removeFile(filePath: string): Promise<void> {
 export async function getFileHash(filePath: string): Promise<string> {
   try {
     const content = await fs.readFile(filePath);
-    return crypto.createHash("sha256").update(content).digest("hex");
+    return createHash("sha256").update(content).digest("hex");
   } catch (error) {
     throw new FileSystemError(`Failed to hash file: ${filePath}`, {
       path: filePath,
@@ -144,7 +144,7 @@ export async function getFileHash(filePath: string): Promise<string> {
  * Get string hash (SHA-256)
  */
 export function getStringHash(content: string): string {
-  return crypto.createHash("sha256").update(content).digest("hex");
+  return createHash("sha256").update(content).digest("hex");
 }
 
 /**

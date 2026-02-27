@@ -32,6 +32,8 @@ let codeBlockLines: string[] = [];
  *  A nested opener (```lang) is accumulated as content; its closing ``` does NOT
  *  close the outer block — only a bare ``` outside a nested block does. */
 let inNestedCodeBlock = false;
+/** Fence character that opened the current outer code block: "```" or "~~~". */
+let codeBlockFenceChar = "";
 
 /** Streaming indicator state */
 let streamingIndicatorActive = false;
@@ -97,6 +99,7 @@ export function flushLineBuffer(): void {
       stopStreamingIndicator();
     }
     inCodeBlock = false;
+    codeBlockFenceChar = "";
     codeBlockLang = "";
     codeBlockLines = [];
   }
@@ -106,6 +109,7 @@ export function resetLineBuffer(): void {
   lineBuffer = "";
   inCodeBlock = false;
   inNestedCodeBlock = false;
+  codeBlockFenceChar = "";
   codeBlockLang = "";
   codeBlockLines = [];
   stopStreamingIndicator();
@@ -145,37 +149,114 @@ function processAndOutputLine(line: string): void {
   // (BOM U+FEFF, zero-width space U+200B, etc.) — these break startsWith() matching.
   line = line.replace(/^[\u200B\uFEFF\u200C\u200D\u2060\u00AD]+/, "");
 
-  // Check for code block start/end
-  const codeBlockMatch = line.match(/^```(\w*)$/);
+  // ── Tilde fence detection (~~~lang opens a block; bare ~~~ closes or is text) ──
+  const tildeFenceMatch = line.match(/^~~~(\w*)$/);
 
-  if (codeBlockMatch) {
-    const lang = codeBlockMatch[1] || "";
+  if (tildeFenceMatch) {
+    const lang = tildeFenceMatch[1] || "";
 
     if (!inCodeBlock) {
-      // Opening the outer block
+      if (lang) {
+        // ~~~lang at top level → open outer tilde block (bare ~~~ stays as plain text)
+        inCodeBlock = true;
+        inNestedCodeBlock = false;
+        codeBlockFenceChar = "~~~";
+        codeBlockLang = lang;
+        codeBlockLines = [];
+        if (codeBlockLang === "markdown" || codeBlockLang === "md") {
+          startStreamingIndicator();
+        }
+      } else {
+        // Bare ~~~ at top level → regular text
+        const formatted = formatMarkdownLine(line);
+        const termWidth = getTerminalWidth();
+        const wrapped = wrapText(formatted, termWidth);
+        for (const wl of wrapped) {
+          console.log(wl);
+        }
+      }
+    } else if (codeBlockFenceChar === "~~~") {
+      // Inside a tilde outer block
+      if (lang && !inNestedCodeBlock) {
+        // ~~~lang → open nested tilde block, accumulate
+        inNestedCodeBlock = true;
+        codeBlockLines.push(line);
+      } else if (!lang && inNestedCodeBlock) {
+        // bare ~~~ → close nested tilde block, accumulate
+        inNestedCodeBlock = false;
+        codeBlockLines.push(line);
+      } else if (!lang && !inNestedCodeBlock) {
+        // bare ~~~ outside any nested block → close the outer tilde block
+        stopStreamingIndicator();
+        renderCodeBlock(codeBlockLang, codeBlockLines);
+        inCodeBlock = false;
+        inNestedCodeBlock = false;
+        codeBlockFenceChar = "";
+        codeBlockLang = "";
+        codeBlockLines = [];
+      } else {
+        // ~~~lang inside already-nested → accumulate as content
+        codeBlockLines.push(line);
+      }
+    } else {
+      // Inside a backtick outer block (codeBlockFenceChar === "```")
+      if (lang && !inNestedCodeBlock) {
+        // ~~~lang → cross-char nested open, accumulate
+        inNestedCodeBlock = true;
+        codeBlockLines.push(line);
+      } else if (!lang && inNestedCodeBlock) {
+        // bare ~~~ → close cross-char nested block, accumulate
+        inNestedCodeBlock = false;
+        codeBlockLines.push(line);
+      } else {
+        // bare ~~~ with no nested block, or ~~~lang inside already-nested → content
+        codeBlockLines.push(line);
+      }
+    }
+    return;
+  }
+
+  // ── Backtick fence detection (```lang / ``` or ````lang / ````) ──────────
+  // Matches exactly 3 or 4 backticks followed by optional word chars.
+  // A 4-backtick outer block (````markdown) can only be closed by ````.
+  // A bare ``` (3bt) can NEVER close a ```` (4bt) outer → eliminates the
+  // "premature close" ambiguity when the LLM uses ``` for inner blocks.
+  const codeBlockMatch = line.match(/^(`{3,4})(\w*)$/);
+
+  if (codeBlockMatch) {
+    const fenceChars = codeBlockMatch[1]!; // "```" or "````"
+    const lang = codeBlockMatch[2] || "";
+
+    if (!inCodeBlock) {
+      // Opening the outer block (3bt or 4bt)
       inCodeBlock = true;
       inNestedCodeBlock = false;
+      codeBlockFenceChar = fenceChars;
       codeBlockLang = lang;
       codeBlockLines = [];
       if (codeBlockLang === "markdown" || codeBlockLang === "md") {
         startStreamingIndicator();
       }
-    } else if (inNestedCodeBlock) {
-      // Bare ``` closes the nested block — accumulate so renderMarkdownBlock sees it
+    } else if (!lang && inNestedCodeBlock && fenceChars === "```") {
+      // Bare ``` closes a backtick-opened nested block — accumulate
       inNestedCodeBlock = false;
       codeBlockLines.push(line);
-    } else if (lang) {
-      // ```lang inside outer block → nested block opens, accumulate as content
+    } else if (!inNestedCodeBlock && lang && fenceChars === "```") {
+      // ```lang inside outer block → open nested block, accumulate
       inNestedCodeBlock = true;
       codeBlockLines.push(line);
-    } else {
-      // Bare ``` outside any nested block → closes the outer block
+    } else if (!lang && !inNestedCodeBlock && codeBlockFenceChar === fenceChars) {
+      // Bare fence whose length matches the outer → close the outer block
       stopStreamingIndicator();
       renderCodeBlock(codeBlockLang, codeBlockLines);
       inCodeBlock = false;
       inNestedCodeBlock = false;
+      codeBlockFenceChar = "";
       codeBlockLang = "";
       codeBlockLines = [];
+    } else {
+      // Anything else (wrong fence length, nested-inside-nested, etc.) → content
+      codeBlockLines.push(line);
     }
     return;
   }

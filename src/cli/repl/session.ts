@@ -207,36 +207,41 @@ If a file tool fails with "outside project directory", the system will automatic
 
 **For structured content** (documentation, tutorials, summaries, explanations with multiple sections, or when the user asks for "markdown"):
 
-1. Wrap your entire response in a single markdown code block:
-   \`\`\`markdown
+1. Wrap your entire response in a single tilde markdown block:
+   ~~~markdown
    Your content here...
+   ~~~
+
+2. **CRITICAL: Bare ~~~ closes the outer block** — Only use bare ~~~ (without a lang tag) as the VERY LAST line to close the outer block. Writing ~~~ anywhere else inside the block will break rendering.
+
+3. **ALL inner fenced blocks use standard backtick syntax:**
+   - Code: \`\`\`javascript / \`\`\`typescript / \`\`\`python / \`\`\`bash / etc.
+   - Shell commands: \`\`\`bash
+   - ASCII diagrams: \`\`\`ascii
+   - Tree structures / file paths: \`\`\`text
+   - Any other fenced content: \`\`\`<lang>
+
+   Example:
+   ~~~markdown
+   ## Section
+
+   Some text here.
+
+   \`\`\`bash
+   echo "hello"
+   ls -la
    \`\`\`
 
-2. **CRITICAL: Never close the markdown block prematurely** - The closing \`\`\` must ONLY appear at the very end.
-
-3. **CRITICAL — ALL inner blocks must use TILDES (~~~), never backticks:**
-   - Code: ~~~javascript / ~~~typescript / ~~~python / ~~~bash / ~~~sh / etc.
-   - Shell commands: ~~~bash
-   - ASCII diagrams: ~~~ascii
-   - Tree structures / file paths: ~~~text
-   - Any other fenced content: ~~~<lang>
-
-   Examples:
-   ~~~bash
-   ollama pull llama3.1:8b-instruct
-   ~~~
-   ~~~ascii
+   \`\`\`ascii
    ┌─────────┐
-   │ Client  │
+   │ Service │
    └─────────┘
-   ~~~
-   ~~~text
-   src/
-   ├── index.ts
-   └── utils.ts
+   \`\`\`
+
+   More text after blocks.
    ~~~
 
-   **Never use backtick fences (\`\`\`) inside a markdown block — they will break the outer block.**
+   **Inner blocks open with \`\`\`lang and close with \`\`\`. The only ~~~ inside the markdown block is the final bare ~~~ at the very end.**
 
 4. **Include all content in ONE block**: headers, lists, tables, quotes, code, commands, diagrams.
 

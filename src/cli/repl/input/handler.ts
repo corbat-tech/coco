@@ -514,7 +514,11 @@ export function createInputHandler(_session: ReplSession): InputHandler {
     // Always use getCursorVisualPos on the display string via the word-wrap mapping.
     // For non-wrapped single-line content, preserve the exact-boundary logic to prevent
     // the "extra line" bug caused by terminal pending-wrap state.
-    const displayCursorPos = ww.toDisplayPos(cursorPos);
+    // When cursorPos is 0, use display pos 0 directly. word-wrap may inject a '\n'
+    // at display index 0 (before a long first word), making toDisplayPos(0)=1 and
+    // causing getCursorVisualPos to return row=1 → lastCursorRow=1 → linesToGoUp
+    // overshoots by 1 on the next render, eating a line of terminal output above.
+    const displayCursorPos = cursorPos === 0 ? 0 : ww.toDisplayPos(cursorPos);
     let finalLine: number;
     let finalCol: number;
     if (hasWrapped) {
@@ -866,7 +870,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
             return;
           }
 
-          // Up arrow - navigate completions vertically, move cursor to start, or history
+          // Up arrow - navigate completions vertically or history
           if (key === "\x1b[A") {
             if (completions.length > 1) {
               // Navigate completions vertically (move up one row)
@@ -885,11 +889,10 @@ export function createInputHandler(_session: ReplSession): InputHandler {
               }
               render();
             } else if (cursorPos > 0) {
-              // Move cursor to beginning of text
               cursorPos = 0;
               render();
             } else if (sessionHistory.length > 0) {
-              // Cursor already at start — navigate to previous history item
+              // Navigate to previous history item
               if (historyIndex === -1) {
                 tempLine = currentLine;
                 historyIndex = sessionHistory.length - 1;
@@ -903,7 +906,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
             return;
           }
 
-          // Down arrow - navigate completions vertically, move cursor to end, or history
+          // Down arrow - navigate completions vertically or history
           if (key === "\x1b[B") {
             if (completions.length > 1) {
               // Navigate completions vertically (move down one row)
@@ -922,11 +925,10 @@ export function createInputHandler(_session: ReplSession): InputHandler {
               }
               render();
             } else if (cursorPos < currentLine.length) {
-              // Move cursor to end of text
               cursorPos = currentLine.length;
               render();
             } else if (historyIndex !== -1) {
-              // Cursor already at end — navigate to next history item
+              // Navigate to next history item
               if (historyIndex < sessionHistory.length - 1) {
                 historyIndex++;
                 currentLine = sessionHistory[historyIndex] ?? "";
