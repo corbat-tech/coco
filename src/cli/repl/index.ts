@@ -331,6 +331,9 @@ export async function startRepl(
   };
   process.once("SIGTERM", sigtermHandler);
 
+  // Track whether the 75% context warning has been shown (reset after compaction)
+  let warned75 = false;
+
   // Main loop
   while (true) {
     // Auto-submit queued messages from concurrent capture (skip prompt)
@@ -725,15 +728,15 @@ export async function startRepl(
           setSpinner(msg);
         },
         onToolEnd: (result) => {
-          // For long-running tools (>30s), show a "Done" checkmark so the user
+          // For tools taking >3s, show a "Done" checkmark so the user
           // gets clear feedback that the operation completed successfully.
-          // For short tools, just clear the spinner silently.
+          // For very fast tools, just clear the spinner silently.
           const elapsed =
             activeSpinner && typeof activeSpinner.getElapsed === "function"
               ? activeSpinner.getElapsed()
               : 0;
-          if (elapsed >= 30) {
-            // Show completion with elapsed time — critical for long builds/tests
+          if (elapsed >= 3) {
+            // Show completion with elapsed time — any non-trivial operation
             activeSpinner?.stop();
             activeSpinner = null;
             turnActiveSpinner = null;
@@ -796,7 +799,16 @@ export async function startRepl(
         },
         onThinkingEnd: () => {
           clearThinkingInterval();
-          clearSpinner();
+          // If the LLM took >2s to think, leave a visible ✓ checkmark so the
+          // user can see how long each reasoning step took.
+          const thinkingElapsed = activeSpinner?.getElapsed() ?? 0;
+          if (thinkingElapsed >= 2) {
+            activeSpinner?.stop();
+            activeSpinner = null;
+            turnActiveSpinner = null;
+          } else {
+            clearSpinner();
+          }
         },
         onToolPreparing: (toolName) => {
           setSpinner(getToolPreparingDescription(toolName));
@@ -940,23 +952,39 @@ export async function startRepl(
         })
         .catch(() => {});
 
-      // Render status bar with current git context
-      renderStatusBar(session.projectPath, session.config, gitContext);
-
-      // Check and perform context compaction if needed
+      // Compact context if needed — do this before rendering the status bar so the
+      // bar always shows the post-compaction percentage (never a stale pre-compaction value).
+      const usageBefore = getContextUsagePercent(session);
+      let usageForDisplay = usageBefore;
       try {
-        const usageBefore = getContextUsagePercent(session);
         const compactionResult = await checkAndCompactContext(session, provider);
         if (compactionResult?.wasCompacted) {
-          const usageAfter = getContextUsagePercent(session);
+          usageForDisplay = getContextUsagePercent(session);
           console.log(
             chalk.dim(
-              `Context compacted (${usageBefore.toFixed(0)}% -> ${usageAfter.toFixed(0)}%)`,
+              `Context compacted (${usageBefore.toFixed(0)}% -> ${usageForDisplay.toFixed(0)}%)`,
             ),
           );
+          // Always reset after compaction so the warning re-evaluates at the new level
+          warned75 = false;
         }
       } catch {
         // Silently ignore compaction errors - not critical
+      }
+
+      // Render status bar with post-compaction context usage
+      renderStatusBar(session.projectPath, session.config, gitContext, usageForDisplay);
+
+      // Context usage warnings
+      if (usageForDisplay >= 90) {
+        console.log(
+          chalk.red("  ✗ Context critical (" + usageForDisplay.toFixed(0) + "%) — use /clear to start fresh"),
+        );
+      } else if (usageForDisplay >= 75 && !warned75) {
+        warned75 = true;
+        console.log(
+          chalk.yellow("  ⚠  Context at " + usageForDisplay.toFixed(0) + "% — use /clear to start fresh or /compact to summarize"),
+        );
       }
 
       console.log(); // Extra spacing
