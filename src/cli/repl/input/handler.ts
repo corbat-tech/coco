@@ -283,38 +283,6 @@ function computeWordWrap(
   };
 }
 
-/**
- * Given a target visual (row, col), find the position in the display string.
- * Used by up/down arrow navigation to move cursor between visual lines.
- */
-function getDisplayPosForVisualPos(
-  display: string,
-  targetRow: number,
-  targetCol: number,
-  promptLen: number,
-  termCols: number,
-): number {
-  let row = 0;
-  let col = promptLen;
-  for (let i = 0; i <= display.length; i++) {
-    if (row === targetRow && col === targetCol) return i;
-    if (i === display.length) break;
-    const ch = display[i]!;
-    if (ch === "\n") {
-      if (row === targetRow) return i; // end of this visual row
-      row++;
-      col = 0;
-    } else {
-      col++;
-      if (col >= termCols) {
-        if (row === targetRow) return i; // at terminal-wrap boundary of this row
-        row++;
-        col = 0;
-      }
-    }
-  }
-  return display.length;
-}
 
 /**
  * Create readline-based input handler with ghost-text completion and dropdown
@@ -898,7 +866,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
             return;
           }
 
-          // Up arrow - navigate completions vertically, move cursor up visual line, or history
+          // Up arrow - navigate completions vertically, move cursor to start, or history
           if (key === "\x1b[A") {
             if (completions.length > 1) {
               // Navigate completions vertically (move up one row)
@@ -916,26 +884,12 @@ export function createInputHandler(_session: ReplSession): InputHandler {
                 selectedCompletion = Math.min(targetIndex, completions.length - 1);
               }
               render();
-            } else if (currentLine.length > 0) {
-              // Move cursor up one visual line within the word-wrapped text
-              const termCols = process.stdout.columns || 80;
-              const prompt = getPrompt();
-              const ww = computeWordWrap(currentLine, prompt.visualLen, termCols);
-              const displayCursorPos = ww.toDisplayPos(cursorPos);
-              const pos = getCursorVisualPos(ww.display, displayCursorPos, prompt.visualLen, termCols);
-              if (pos.row > 0) {
-                const newDisplayPos = getDisplayPosForVisualPos(
-                  ww.display,
-                  pos.row - 1,
-                  pos.col,
-                  prompt.visualLen,
-                  termCols,
-                );
-                cursorPos = ww.toOrigPos(newDisplayPos);
-                render();
-              }
+            } else if (cursorPos > 0) {
+              // Move cursor to beginning of text
+              cursorPos = 0;
+              render();
             } else if (sessionHistory.length > 0) {
-              // Navigate history only when input is empty
+              // Cursor already at start — navigate to previous history item
               if (historyIndex === -1) {
                 tempLine = currentLine;
                 historyIndex = sessionHistory.length - 1;
@@ -949,7 +903,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
             return;
           }
 
-          // Down arrow - navigate completions vertically, move cursor down visual line, or history
+          // Down arrow - navigate completions vertically, move cursor to end, or history
           if (key === "\x1b[B") {
             if (completions.length > 1) {
               // Navigate completions vertically (move down one row)
@@ -967,28 +921,12 @@ export function createInputHandler(_session: ReplSession): InputHandler {
                 selectedCompletion = currentCol;
               }
               render();
-            } else if (currentLine.length > 0) {
-              // Move cursor down one visual line within the word-wrapped text
-              const termCols = process.stdout.columns || 80;
-              const prompt = getPrompt();
-              const ww = computeWordWrap(currentLine, prompt.visualLen, termCols);
-              const displayCursorPos = ww.toDisplayPos(cursorPos);
-              const pos = getCursorVisualPos(ww.display, displayCursorPos, prompt.visualLen, termCols);
-              const lastDisplayPos = ww.toDisplayPos(currentLine.length);
-              const lastPos = getCursorVisualPos(ww.display, lastDisplayPos, prompt.visualLen, termCols);
-              if (pos.row < lastPos.row) {
-                const newDisplayPos = getDisplayPosForVisualPos(
-                  ww.display,
-                  pos.row + 1,
-                  pos.col,
-                  prompt.visualLen,
-                  termCols,
-                );
-                cursorPos = ww.toOrigPos(newDisplayPos);
-                render();
-              }
+            } else if (cursorPos < currentLine.length) {
+              // Move cursor to end of text
+              cursorPos = currentLine.length;
+              render();
             } else if (historyIndex !== -1) {
-              // Navigate history only when input is empty
+              // Cursor already at end — navigate to next history item
               if (historyIndex < sessionHistory.length - 1) {
                 historyIndex++;
                 currentLine = sessionHistory[historyIndex] ?? "";
