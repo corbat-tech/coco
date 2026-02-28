@@ -1021,7 +1021,9 @@ function formatResultPreview(result: ExecutedToolCall): string {
       case "search_files":
         if (Array.isArray(data.matches)) {
           const n = data.matches.length;
-          return n === 0 ? chalk.yellow("· no matches") : chalk.dim(`· ${n} match${n === 1 ? "" : "es"}`);
+          return n === 0
+            ? chalk.yellow("· no matches")
+            : chalk.dim(`· ${n} match${n === 1 ? "" : "es"}`);
         }
         break;
       case "bash_exec":
@@ -1059,7 +1061,8 @@ function formatResultDetails(result: ExecutedToolCall): string {
       const lines = shown.map(({ file, line, content }) => {
         const location = chalk.cyan(`${file}:${line}`);
         const snippet = content.trim();
-        const truncated = snippet.length > maxWidth ? snippet.slice(0, maxWidth - 1) + "…" : snippet;
+        const truncated =
+          snippet.length > maxWidth ? snippet.slice(0, maxWidth - 1) + "…" : snippet;
         return `  ${chalk.dim("│")} ${location} ${chalk.dim(truncated)}`;
       });
 

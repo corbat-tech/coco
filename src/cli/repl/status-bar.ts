@@ -81,4 +81,3 @@ export function renderStatusBar(
   console.log();
   console.log(statusLine);
 }
-

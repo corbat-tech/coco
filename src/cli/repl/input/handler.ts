@@ -262,7 +262,11 @@ function computeWordWrap(
       } else {
         // Look ahead at next word length
         let nextWordEnd = i;
-        while (nextWordEnd < text.length && text[nextWordEnd] !== " " && text[nextWordEnd] !== "\n") {
+        while (
+          nextWordEnd < text.length &&
+          text[nextWordEnd] !== " " &&
+          text[nextWordEnd] !== "\n"
+        ) {
           nextWordEnd++;
         }
         const nextWordLen = nextWordEnd - i;
@@ -277,8 +281,7 @@ function computeWordWrap(
 
   return {
     display,
-    toDisplayPos: (origPos: number) =>
-      origToDisp[Math.min(origPos, text.length)] ?? display.length,
+    toDisplayPos: (origPos: number) => origToDisp[Math.min(origPos, text.length)] ?? display.length,
     toOrigPos: (displayPos: number) => {
       const dp = Math.max(0, Math.min(displayPos, dispToOrig.length - 1));
       for (let d = dp; d >= 0; d--) {
@@ -289,7 +292,6 @@ function computeWordWrap(
     },
   };
 }
-
 
 /**
  * Create readline-based input handler with ghost-text completion and dropdown

@@ -118,8 +118,12 @@ describe("extractBashPattern", () => {
 
     it("should extract aws subcommands", () => {
       expect(extractBashPattern("aws s3 ls")).toBe("bash:aws:s3:ls");
-      expect(extractBashPattern("aws ec2 describe-instances")).toBe("bash:aws:ec2:describe-instances");
-      expect(extractBashPattern("aws sts get-caller-identity")).toBe("bash:aws:sts:get-caller-identity");
+      expect(extractBashPattern("aws ec2 describe-instances")).toBe(
+        "bash:aws:ec2:describe-instances",
+      );
+      expect(extractBashPattern("aws sts get-caller-identity")).toBe(
+        "bash:aws:sts:get-caller-identity",
+      );
       expect(extractBashPattern("aws cloudformation describe-stacks")).toBe(
         "bash:aws:cloudformation:describe-stacks",
       );
@@ -159,7 +163,7 @@ describe("extractBashPattern", () => {
     });
 
     it("should capture node -e/--eval as distinct pattern", () => {
-      expect(extractBashPattern("node -e 'require(\"child_process\").exec(\"...\")'")).toBe(
+      expect(extractBashPattern('node -e \'require("child_process").exec("...")\'')).toBe(
         "bash:node:-e",
       );
       expect(extractBashPattern("node --eval 'code'")).toBe("bash:node:--eval");
@@ -227,9 +231,15 @@ describe("extractBashPattern", () => {
     it("should extract 2 subcommand levels for aws", () => {
       expect(extractBashPattern("aws s3 ls")).toBe("bash:aws:s3:ls");
       expect(extractBashPattern("aws s3 rm s3://bucket")).toBe("bash:aws:s3:rm");
-      expect(extractBashPattern("aws ec2 describe-instances")).toBe("bash:aws:ec2:describe-instances");
-      expect(extractBashPattern("aws sts get-caller-identity")).toBe("bash:aws:sts:get-caller-identity");
-      expect(extractBashPattern("aws cloudformation describe-stacks")).toBe("bash:aws:cloudformation:describe-stacks");
+      expect(extractBashPattern("aws ec2 describe-instances")).toBe(
+        "bash:aws:ec2:describe-instances",
+      );
+      expect(extractBashPattern("aws sts get-caller-identity")).toBe(
+        "bash:aws:sts:get-caller-identity",
+      );
+      expect(extractBashPattern("aws cloudformation describe-stacks")).toBe(
+        "bash:aws:cloudformation:describe-stacks",
+      );
     });
 
     it("should handle single subcommand for deep tools", () => {

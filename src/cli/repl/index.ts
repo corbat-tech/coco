@@ -985,12 +985,20 @@ export async function startRepl(
       if (usageForDisplay >= 90 && !warned90) {
         warned90 = true;
         console.log(
-          chalk.red("  ✗ Context critical (" + usageForDisplay.toFixed(0) + "%) — use /clear to start fresh"),
+          chalk.red(
+            "  ✗ Context critical (" +
+              usageForDisplay.toFixed(0) +
+              "%) — use /clear to start fresh",
+          ),
         );
       } else if (usageForDisplay >= 75 && !warned75) {
         warned75 = true;
         console.log(
-          chalk.yellow("  ⚠  Context at " + usageForDisplay.toFixed(0) + "% — use /clear to start fresh or /compact to summarize"),
+          chalk.yellow(
+            "  ⚠  Context at " +
+              usageForDisplay.toFixed(0) +
+              "% — use /clear to start fresh or /compact to summarize",
+          ),
         );
       }
 

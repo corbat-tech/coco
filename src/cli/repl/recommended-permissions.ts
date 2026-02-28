@@ -294,13 +294,20 @@ export const ALWAYS_ASK: string[] = [
 
   // ── Bash: cloud read-only (still needs auth awareness) ──
   "bash:aws:sts:get-caller-identity",
-  "bash:aws:s3:ls", "bash:aws:s3:cp",
-  "bash:aws:logs:describe-log-groups", "bash:aws:logs:get-log-events",
-  "bash:aws:cloudformation:describe-stacks", "bash:aws:cloudformation:list-stacks",
-  "bash:aws:ec2:describe-instances", "bash:aws:ec2:describe-vpcs",
-  "bash:aws:rds:describe-db-instances", "bash:aws:rds:describe-db-clusters",
-  "bash:aws:ecr:describe-repositories", "bash:aws:ecr:list-images",
-  "bash:aws:iam:list-roles", "bash:aws:iam:get-role",
+  "bash:aws:s3:ls",
+  "bash:aws:s3:cp",
+  "bash:aws:logs:describe-log-groups",
+  "bash:aws:logs:get-log-events",
+  "bash:aws:cloudformation:describe-stacks",
+  "bash:aws:cloudformation:list-stacks",
+  "bash:aws:ec2:describe-instances",
+  "bash:aws:ec2:describe-vpcs",
+  "bash:aws:rds:describe-db-instances",
+  "bash:aws:rds:describe-db-clusters",
+  "bash:aws:ecr:describe-repositories",
+  "bash:aws:ecr:list-images",
+  "bash:aws:iam:list-roles",
+  "bash:aws:iam:get-role",
 
   // ── Bash: process management ──
   "bash:pkill",
@@ -368,20 +375,37 @@ export const RECOMMENDED_DENY: string[] = [
   "bash:git:config",
 
   // ── GitHub CLI: mutating ──
-  "bash:gh:pr:create", "bash:gh:pr:edit", "bash:gh:pr:close",
-  "bash:gh:pr:merge", "bash:gh:pr:reopen", "bash:gh:pr:ready",
-  "bash:gh:issue:create", "bash:gh:issue:edit", "bash:gh:issue:close",
-  "bash:gh:release:create", "bash:gh:release:delete", "bash:gh:release:edit",
-  "bash:gh:repo:create", "bash:gh:repo:delete", "bash:gh:repo:fork",
-  "bash:gh:repo:rename", "bash:gh:repo:archive",
+  "bash:gh:pr:create",
+  "bash:gh:pr:edit",
+  "bash:gh:pr:close",
+  "bash:gh:pr:merge",
+  "bash:gh:pr:reopen",
+  "bash:gh:pr:ready",
+  "bash:gh:issue:create",
+  "bash:gh:issue:edit",
+  "bash:gh:issue:close",
+  "bash:gh:release:create",
+  "bash:gh:release:delete",
+  "bash:gh:release:edit",
+  "bash:gh:repo:create",
+  "bash:gh:repo:delete",
+  "bash:gh:repo:fork",
+  "bash:gh:repo:rename",
+  "bash:gh:repo:archive",
 
   // ── AWS destructive ──
-  "bash:aws:s3:rm", "bash:aws:s3:rb",
-  "bash:aws:s3api:delete-object", "bash:aws:s3api:delete-bucket",
-  "bash:aws:ec2:terminate-instances", "bash:aws:ec2:stop-instances",
-  "bash:aws:rds:delete-db-instance", "bash:aws:rds:delete-db-cluster",
-  "bash:aws:cloudformation:delete-stack", "bash:aws:cloudformation:update-stack",
-  "bash:aws:iam:delete-role", "bash:aws:iam:delete-policy",
+  "bash:aws:s3:rm",
+  "bash:aws:s3:rb",
+  "bash:aws:s3api:delete-object",
+  "bash:aws:s3api:delete-bucket",
+  "bash:aws:ec2:terminate-instances",
+  "bash:aws:ec2:stop-instances",
+  "bash:aws:rds:delete-db-instance",
+  "bash:aws:rds:delete-db-cluster",
+  "bash:aws:cloudformation:delete-stack",
+  "bash:aws:cloudformation:update-stack",
+  "bash:aws:iam:delete-role",
+  "bash:aws:iam:delete-policy",
   "bash:aws:lambda:delete-function",
   "bash:aws:ecr:batch-delete-image",
 
@@ -513,11 +537,7 @@ export async function showPermissionSuggestion(): Promise<void> {
   console.log(
     chalk.dim("  • Ask each time: git commit, curl, rm, git pull, docker exec, cloud..."),
   );
-  console.log(
-    chalk.dim(
-      "  • Deny: sudo, git push, docker push, inline code exec, DNS exfil...",
-    ),
-  );
+  console.log(chalk.dim("  • Deny: sudo, git push, docker push, inline code exec, DNS exfil..."));
   console.log();
   console.log(chalk.dim("  Stored in ~/.coco/trusted-tools.json — edit manually or let"));
   console.log(chalk.dim("  Coco manage it when you approve actions from the prompt."));
