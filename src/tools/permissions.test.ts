@@ -27,7 +27,7 @@ describe("getRiskLevel", () => {
     expect(getRiskLevel("bash:curl")).toBe("medium");
     expect(getRiskLevel("bash:rm")).toBe("medium");
     expect(getRiskLevel("bash:docker:exec")).toBe("medium");
-    expect(getRiskLevel("bash:aws:s3")).toBe("medium");
+    expect(getRiskLevel("bash:aws:s3:ls")).toBe("medium");
     // git commit always asks by default; opt in per-project with /permissions allow-commits
     expect(getRiskLevel("git_commit")).toBe("medium");
     expect(getRiskLevel("bash:git:commit")).toBe("medium");

@@ -22,9 +22,13 @@ const SUBCOMMAND_TOOLS = new Set([
   "pnpm",
   "yarn",
   "pip",
+  "pip3",
   "brew",
   "apt",
   "apt-get",
+  // JS/TS runtimes with subcommands
+  "bun",
+  "deno",
   // Build tools
   "docker",
   "docker-compose",
@@ -38,6 +42,27 @@ const SUBCOMMAND_TOOLS = new Set([
   "kubectl",
   "aws",
 ]);
+
+/** Commands where 2 subcommand levels are meaningful (noun + verb structure) */
+const DEEP_SUBCOMMAND_TOOLS = new Set(["gh", "aws"]);
+
+/**
+ * Interpreter commands where specific flags enable inline code execution.
+ * These flags are security-sensitive because a prompt injection can use them
+ * to run arbitrary code (e.g., `python -c "import os; os.system('curl ...')"`)
+ *
+ * When detected, the flag is captured in the pattern:
+ *   "python -c 'code'" → "bash:python:-c"
+ *   "node -e 'code'"   → "bash:node:-e"
+ */
+const INTERPRETER_DANGEROUS_FLAGS: Record<string, Set<string>> = {
+  python: new Set(["-c"]),
+  python3: new Set(["-c"]),
+  node: new Set(["-e", "--eval", "-p", "--print"]),
+  ruby: new Set(["-e"]),
+  perl: new Set(["-e"]),
+  bun: new Set(["-e", "--eval"]),
+};
 
 /**
  * Extract a trust pattern from a bash command string.
@@ -69,12 +94,30 @@ export function extractBashPattern(command: string): string {
   parts.push(baseCmd);
   idx++;
 
-  // Check for subcommand (only for known tools)
-  if (SUBCOMMAND_TOOLS.has(baseCmd) && idx < tokens.length) {
-    const subcmd = tokens[idx];
-    // Only treat as subcommand if it doesn't start with - (that's a flag)
-    if (subcmd && !subcmd.startsWith("-")) {
-      parts.push(subcmd.toLowerCase());
+  // Check for subcommand or dangerous execution flag
+  if (SUBCOMMAND_TOOLS.has(baseCmd)) {
+    const maxDepth = DEEP_SUBCOMMAND_TOOLS.has(baseCmd) ? 2 : 1;
+    let depth = 0;
+    while (idx < tokens.length && depth < maxDepth) {
+      const nextToken = tokens[idx];
+      if (!nextToken || nextToken.startsWith("-")) break;
+      parts.push(nextToken.toLowerCase());
+      idx++;
+      depth++;
+    }
+    // Fallback: if no subcommand was captured (e.g., "bun -e"), check for dangerous flags
+    if (depth === 0 && idx < tokens.length) {
+      const nextToken = tokens[idx];
+      if (nextToken && INTERPRETER_DANGEROUS_FLAGS[baseCmd]?.has(nextToken)) {
+        parts.push(nextToken.toLowerCase());
+      }
+    }
+  } else if (idx < tokens.length) {
+    const nextToken = tokens[idx];
+    if (nextToken && INTERPRETER_DANGEROUS_FLAGS[baseCmd]?.has(nextToken)) {
+      // Dangerous execution flag for interpreters (e.g., python -c, node -e)
+      // Captured separately so "bash:python" (safe) ≠ "bash:python:-c" (risky)
+      parts.push(nextToken.toLowerCase());
     }
   }
 

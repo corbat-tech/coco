@@ -138,8 +138,26 @@ const DANGEROUS_BASH_PATTERNS = [
   /\brsync\b/i,
   /\bnc\b/i,
   /\bnetcat\b/i,
+  /\bncat\b/i,
+  /\bsocat\b/i,
   /\btelnet\b/i,
   /\bftp\b/i,
+  /\bnmap\b/i,
+  // DNS exfiltration (CVE-2025-55284: data exfil via DNS subdomain encoding)
+  /\bping\b/i,
+  /\bnslookup\b/i,
+  /\bdig\b/i,
+  /\bhost\s/i,
+  // Inline code execution (prompt injection vector — attacker can run arbitrary code)
+  /\bpython3?\s+-c\b/i,
+  /\bnode\s+(-e|--eval)\b/i,
+  /\bperl\s+-e\b/i,
+  /\bruby\s+-e\b/i,
+  /\bbun\s+-e\b/i,
+  /\bdeno\s+eval\b/i,
+  // SSRF / cloud metadata (credential theft in cloud environments)
+  /169\.254\.169\.254/,
+  /metadata\.google\.internal/,
   // Destructive file operations
   /\brm\b/i,
   /\brmdir\b/i,
@@ -151,15 +169,24 @@ const DANGEROUS_BASH_PATTERNS = [
   /\bchmod\b/i,
   /\bchown\b/i,
   /\bchgrp\b/i,
-  // Package installation
+  // Package installation (supply chain risk)
   /\bnpm\s+(install|i|add|ci)\b/i,
   /\bpnpm\s+(install|i|add)\b/i,
   /\byarn\s+(add|install)\b/i,
-  /\bpip\s+install\b/i,
+  /\bpip3?\s+install\b/i,
+  /\buv\s+(pip\s+install|add)\b/i,
+  /\bbun\s+(install|add)\b/i,
+  /\bdeno\s+install\b/i,
   /\bapt(-get)?\s+(install|remove|purge)\b/i,
   /\bbrew\s+(install|uninstall|remove)\b/i,
   // Git write operations
   /\bgit\s+(push|commit|merge|rebase|reset|checkout|pull|clone)\b/i,
+  // Git force push (data destruction)
+  /\bgit\s+push\s+.*--force\b/i,
+  /\bgit\s+push\s+-f\b/i,
+  // Docker dangerous options
+  /\bdocker\s+run\s+.*--privileged\b/i,
+  /docker\.sock/i,
   // Process control
   /\bkill\b/i,
   /\bpkill\b/i,

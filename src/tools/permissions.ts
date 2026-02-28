@@ -124,6 +124,7 @@ Pattern format:
 - Coco tools: "write_file", "edit_file", "git_push", "delete_file"
 - Bash commands: "bash:curl", "bash:rm", "bash:wget"
 - Bash subcommands: "bash:git:push", "bash:npm:install", "bash:docker:run"
+- Bash deep subcommands: "bash:gh:pr:list", "bash:aws:s3:ls"
 
 Examples:
 - Block git push for this project: { "action": "deny", "patterns": ["bash:git:push"], "scope": "project" }

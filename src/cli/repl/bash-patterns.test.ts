@@ -111,18 +111,73 @@ describe("extractBashPattern", () => {
     });
 
     it("should extract gh subcommands", () => {
-      expect(extractBashPattern("gh pr list")).toBe("bash:gh:pr");
-      expect(extractBashPattern("gh issue view 123")).toBe("bash:gh:issue");
-      expect(extractBashPattern("gh release create")).toBe("bash:gh:release");
+      expect(extractBashPattern("gh pr list")).toBe("bash:gh:pr:list");
+      expect(extractBashPattern("gh issue view 123")).toBe("bash:gh:issue:view");
+      expect(extractBashPattern("gh release create")).toBe("bash:gh:release:create");
     });
 
     it("should extract aws subcommands", () => {
-      expect(extractBashPattern("aws s3 ls")).toBe("bash:aws:s3");
-      expect(extractBashPattern("aws ec2 describe-instances")).toBe("bash:aws:ec2");
-      expect(extractBashPattern("aws sts get-caller-identity")).toBe("bash:aws:sts");
+      expect(extractBashPattern("aws s3 ls")).toBe("bash:aws:s3:ls");
+      expect(extractBashPattern("aws ec2 describe-instances")).toBe("bash:aws:ec2:describe-instances");
+      expect(extractBashPattern("aws sts get-caller-identity")).toBe("bash:aws:sts:get-caller-identity");
       expect(extractBashPattern("aws cloudformation describe-stacks")).toBe(
-        "bash:aws:cloudformation",
+        "bash:aws:cloudformation:describe-stacks",
       );
+    });
+  });
+
+  describe("bun/deno subcommands", () => {
+    it("should extract bun subcommands", () => {
+      expect(extractBashPattern("bun run script.ts")).toBe("bash:bun:run");
+      expect(extractBashPattern("bun install")).toBe("bash:bun:install");
+      expect(extractBashPattern("bun add zod")).toBe("bash:bun:add");
+      expect(extractBashPattern("bun test")).toBe("bash:bun:test");
+      expect(extractBashPattern("bun build")).toBe("bash:bun:build");
+    });
+
+    it("should extract deno subcommands", () => {
+      expect(extractBashPattern("deno run script.ts")).toBe("bash:deno:run");
+      expect(extractBashPattern("deno eval 'console.log(1)'")).toBe("bash:deno:eval");
+      expect(extractBashPattern("deno test")).toBe("bash:deno:test");
+      expect(extractBashPattern("deno install")).toBe("bash:deno:install");
+      expect(extractBashPattern("deno check mod.ts")).toBe("bash:deno:check");
+    });
+  });
+
+  describe("interpreter dangerous flags (anti-prompt-injection)", () => {
+    it("should capture python -c as distinct pattern", () => {
+      expect(extractBashPattern("python -c 'import os; os.system(\"curl ...\")'")).toBe(
+        "bash:python:-c",
+      );
+      expect(extractBashPattern("python3 -c 'evil code'")).toBe("bash:python3:-c");
+    });
+
+    it("should NOT capture python with safe usage", () => {
+      expect(extractBashPattern("python script.py")).toBe("bash:python");
+      expect(extractBashPattern("python3 manage.py")).toBe("bash:python3");
+      expect(extractBashPattern("python --version")).toBe("bash:python");
+    });
+
+    it("should capture node -e/--eval as distinct pattern", () => {
+      expect(extractBashPattern("node -e 'require(\"child_process\").exec(\"...\")'")).toBe(
+        "bash:node:-e",
+      );
+      expect(extractBashPattern("node --eval 'code'")).toBe("bash:node:--eval");
+    });
+
+    it("should NOT capture node with safe usage", () => {
+      expect(extractBashPattern("node script.js")).toBe("bash:node");
+      expect(extractBashPattern("node --version")).toBe("bash:node");
+    });
+
+    it("should capture perl/ruby -e as distinct pattern", () => {
+      expect(extractBashPattern("perl -e 'use Socket;...'")).toBe("bash:perl:-e");
+      expect(extractBashPattern("ruby -e 'system(\"curl ...\")'")).toBe("bash:ruby:-e");
+    });
+
+    it("should capture bun -e while still supporting subcommands", () => {
+      expect(extractBashPattern("bun -e 'evil'")).toBe("bash:bun:-e");
+      expect(extractBashPattern("bun run script.ts")).toBe("bash:bun:run");
     });
   });
 
@@ -155,6 +210,50 @@ describe("extractBashPattern", () => {
     it("should be case-insensitive for base command", () => {
       expect(extractBashPattern("GIT commit")).toBe("bash:git:commit");
       expect(extractBashPattern("NPM install")).toBe("bash:npm:install");
+    });
+  });
+
+  describe("deep subcommand tools (gh, aws)", () => {
+    it("should extract 2 subcommand levels for gh", () => {
+      expect(extractBashPattern("gh pr list")).toBe("bash:gh:pr:list");
+      expect(extractBashPattern("gh pr view 123")).toBe("bash:gh:pr:view");
+      expect(extractBashPattern("gh pr create --title 'x'")).toBe("bash:gh:pr:create");
+      expect(extractBashPattern("gh issue view 456")).toBe("bash:gh:issue:view");
+      expect(extractBashPattern("gh release create v1.0")).toBe("bash:gh:release:create");
+      expect(extractBashPattern("gh auth login")).toBe("bash:gh:auth:login");
+      expect(extractBashPattern("gh run view 789")).toBe("bash:gh:run:view");
+    });
+
+    it("should extract 2 subcommand levels for aws", () => {
+      expect(extractBashPattern("aws s3 ls")).toBe("bash:aws:s3:ls");
+      expect(extractBashPattern("aws s3 rm s3://bucket")).toBe("bash:aws:s3:rm");
+      expect(extractBashPattern("aws ec2 describe-instances")).toBe("bash:aws:ec2:describe-instances");
+      expect(extractBashPattern("aws sts get-caller-identity")).toBe("bash:aws:sts:get-caller-identity");
+      expect(extractBashPattern("aws cloudformation describe-stacks")).toBe("bash:aws:cloudformation:describe-stacks");
+    });
+
+    it("should handle single subcommand for deep tools", () => {
+      expect(extractBashPattern("aws configure")).toBe("bash:aws:configure");
+      expect(extractBashPattern("gh auth")).toBe("bash:gh:auth");
+    });
+
+    it("should NOT capture flags as subcommands at depth 2", () => {
+      expect(extractBashPattern("gh pr --help")).toBe("bash:gh:pr");
+      expect(extractBashPattern("aws s3 --region us-east-1")).toBe("bash:aws:s3");
+      expect(extractBashPattern("gh --version")).toBe("bash:gh");
+      expect(extractBashPattern("aws --version")).toBe("bash:aws");
+    });
+
+    it("should keep depth 1 for non-deep tools", () => {
+      expect(extractBashPattern("docker compose up")).toBe("bash:docker:compose");
+      expect(extractBashPattern("git commit -m 'x'")).toBe("bash:git:commit");
+      expect(extractBashPattern("npm install lodash")).toBe("bash:npm:install");
+      expect(extractBashPattern("kubectl get pods")).toBe("bash:kubectl:get");
+    });
+
+    it("should handle sudo + deep subcommand", () => {
+      expect(extractBashPattern("sudo aws s3 rm s3://bucket")).toBe("bash:sudo:aws:s3:rm");
+      expect(extractBashPattern("sudo gh pr merge 123")).toBe("bash:sudo:gh:pr:merge");
     });
   });
 });
