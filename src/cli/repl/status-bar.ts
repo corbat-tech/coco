@@ -38,7 +38,7 @@ export function formatStatusBar(
 
   // Project name (last directory component)
   const projectName = path.basename(projectPath);
-  parts.push(chalk.dim("📁") + chalk.magenta(projectName));
+  parts.push(chalk.dim("📁 ") + chalk.magenta(projectName));
 
   // Provider/model
   const providerName = config.provider.type;
