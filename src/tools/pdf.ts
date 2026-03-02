@@ -189,8 +189,9 @@ Examples:
         });
       }
 
+      const msg = error instanceof Error ? error.message : String(error);
       throw new ToolError(
-        `Failed to parse PDF: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to parse PDF: ${msg}. The file may be encrypted, password-protected, or corrupted. Try opening it locally to verify.`,
         { tool: "read_pdf", cause: error instanceof Error ? error : undefined },
       );
     }

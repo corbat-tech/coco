@@ -38,6 +38,20 @@ export function humanizeError(message: string, toolName?: string): string {
   const msg = message.trim();
   if (!msg) return msg;
 
+  // --- Pass through messages that already contain recovery hints ---
+  // List explicit tool names (not `git_\b` — `_` is a word char so `\b` never fires after it)
+  if (
+    /Use (glob|list_dir|read_file|git_init|git_status|git_add|git_commit|git_log|git_branch|git_checkout|git_push|git_pull|web_search|inspect_schema|list_checkpoints|command_exists|edit_file|run_linter|run_tests|run_script|bash_exec)\b/.test(
+      msg,
+    )
+  ) {
+    return msg;
+  }
+  // Also pass through "run git_init" phrasing (used by checkpoint.ts)
+  if (/run git_init\b/.test(msg)) {
+    return msg;
+  }
+
   // --- Network errors ---
   if (/ECONNREFUSED/i.test(msg)) {
     return "Connection refused — the server may not be running";
@@ -64,6 +78,16 @@ export function humanizeError(message: string, toolName?: string): string {
   // --- Filesystem errors (with path extraction) ---
   // Node.js error format: "ECODE: human message, operation '/path/to/file'"
   // We extract the first single- or double-quoted path segment when present.
+  // Pass through already-enriched messages (from file/web tool suggestions)
+  if (/File not found:/.test(msg) && /Did you mean/.test(msg)) {
+    return msg;
+  }
+  if (/Directory not found:/.test(msg) && /Did you mean/.test(msg)) {
+    return msg;
+  }
+  if (/^HTTP \d{3}:/.test(msg) && /Try/.test(msg)) {
+    return msg;
+  }
   if (/ENOENT/i.test(msg)) {
     const path = extractQuotedPath(msg);
     return path ? `File or directory not found: ${path}` : "File or directory not found";
@@ -164,6 +188,16 @@ export function humanizeError(message: string, toolName?: string): string {
   }
   if (/invalid.*api.?key|api.?key.*invalid|api.?key.*not.*found/i.test(msg)) {
     return "Invalid or missing API key — check your provider credentials";
+  }
+
+  // --- TypeScript errors ---
+  if (/TS\d{4}:/.test(msg)) {
+    return `TypeScript error — check the referenced file and line number. ${msg}`;
+  }
+
+  // --- Database errors ---
+  if (/SQLITE_ERROR/i.test(msg)) {
+    return `Database error — use inspect_schema to verify the table structure. ${msg}`;
   }
 
   // No rule matched — return original

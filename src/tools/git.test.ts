@@ -501,12 +501,14 @@ describe("gitPullTool", () => {
 });
 
 describe("gitStatusTool error handling", () => {
-  it("should throw ToolError on status failure", async () => {
+  it("should enrich 'not a git repository' with hint", async () => {
     mockStatus.mockRejectedValueOnce(new Error("not a git repository"));
 
     const { gitStatusTool } = await import("./git.js");
 
-    await expect(gitStatusTool.execute({ cwd: "/invalid" })).rejects.toThrow("Git status failed");
+    await expect(gitStatusTool.execute({ cwd: "/invalid" })).rejects.toThrow(
+      "Not a git repository. Run git_init first",
+    );
   });
 
   it("should handle non-Error exceptions", async () => {
@@ -549,12 +551,14 @@ describe("gitLogTool with file filter", () => {
     expect(mockLog).toHaveBeenCalledWith(expect.objectContaining({ file: "src/index.ts" }));
   });
 
-  it("should handle log errors", async () => {
-    mockLog.mockRejectedValueOnce(new Error("invalid revision"));
+  it("should enrich 'unknown revision' log errors with hint", async () => {
+    mockLog.mockRejectedValueOnce(new Error("unknown revision xyz"));
 
     const { gitLogTool } = await import("./git.js");
 
-    await expect(gitLogTool.execute({ cwd: "/project" })).rejects.toThrow("Git log failed");
+    await expect(gitLogTool.execute({ cwd: "/project" })).rejects.toThrow(
+      "Git reference not found",
+    );
   });
 });
 
@@ -672,6 +676,80 @@ describe("gitInitTool error handling", () => {
     const { gitInitTool } = await import("./git.js");
 
     await expect(gitInitTool.execute({ cwd: "/restricted" })).rejects.toThrow("Git init failed");
+  });
+});
+
+describe("enriched git error patterns", () => {
+  it("should enrich 'nothing to commit' with hint", async () => {
+    mockCommit.mockRejectedValueOnce(new Error("nothing to commit, working tree clean"));
+
+    const { gitCommitTool } = await import("./git.js");
+
+    await expect(
+      gitCommitTool.execute({ cwd: "/project", message: "test" }),
+    ).rejects.toThrow("Nothing to commit");
+  });
+
+  it("should enrich merge conflict with hint", async () => {
+    mockPull.mockRejectedValueOnce(new Error("CONFLICT (content): Merge conflict in file.ts"));
+
+    const { gitPullTool } = await import("./git.js");
+
+    await expect(gitPullTool.execute({ cwd: "/project" })).rejects.toThrow(
+      "Merge conflict detected",
+    );
+  });
+
+  it("should enrich non-fast-forward push with hint", async () => {
+    mockPush.mockRejectedValueOnce(
+      new Error("! [rejected] main -> main (non-fast-forward)"),
+    );
+
+    const { gitPushTool } = await import("./git.js");
+
+    await expect(gitPushTool.execute({ cwd: "/project" })).rejects.toThrow(
+      "Push rejected — remote has new commits",
+    );
+  });
+
+  it("should enrich authentication failure with hint", async () => {
+    mockPush.mockRejectedValueOnce(new Error("authentication failed for remote"));
+
+    const { gitPushTool } = await import("./git.js");
+
+    await expect(gitPushTool.execute({ cwd: "/project" })).rejects.toThrow(
+      "Git authentication failed",
+    );
+  });
+
+  it("should enrich 'branch already exists' with hint", async () => {
+    mockCheckoutLocalBranch.mockRejectedValueOnce(new Error("branch 'foo' already exists"));
+
+    const { gitCheckoutTool } = await import("./git.js");
+
+    await expect(
+      gitCheckoutTool.execute({ cwd: "/project", branch: "foo", create: true }),
+    ).rejects.toThrow("Branch already exists");
+  });
+
+  it("should enrich 'pathspec did not match' with hint", async () => {
+    mockAdd.mockRejectedValueOnce(new Error("pathspec 'foo.ts' did not match any files"));
+
+    const { gitAddTool } = await import("./git.js");
+
+    await expect(
+      gitAddTool.execute({ cwd: "/project", files: ["foo.ts"] }),
+    ).rejects.toThrow("File not tracked by git");
+  });
+
+  it("should fall back to generic message for unknown errors", async () => {
+    mockDiff.mockRejectedValueOnce(new Error("something unexpected happened"));
+
+    const { gitDiffTool } = await import("./git.js");
+
+    await expect(gitDiffTool.execute({ cwd: "/project" })).rejects.toThrow(
+      "Git diff failed: something unexpected happened",
+    );
   });
 });
 

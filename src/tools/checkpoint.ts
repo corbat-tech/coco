@@ -76,10 +76,11 @@ async function execGit(args: string[]): Promise<string> {
     });
     return result.stdout;
   } catch (error) {
-    throw new ToolError(
-      `Git command failed: git ${args.join(" ")}: ${error instanceof Error ? error.message : String(error)}`,
-      { tool: "checkpoint" },
-    );
+    const msg = error instanceof Error ? error.message : String(error);
+    let hint = `Git command failed (${args[0] ?? "unknown"}): ${msg}`;
+    if (/not a git repository/i.test(msg))
+      hint = "Not a git repository. Checkpoints require a git repo — run git_init first.";
+    throw new ToolError(hint, { tool: "checkpoint" });
   }
 }
 
@@ -252,8 +253,9 @@ Examples:
         message: `Restored checkpoint '${checkpoint.description}' (${checkpoint.fileCount} files)`,
       };
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       throw new ToolError(
-        `Failed to restore checkpoint: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to restore checkpoint: ${msg}. Use list_checkpoints to see available checkpoints.`,
         { tool: "restore_checkpoint" },
       );
     }

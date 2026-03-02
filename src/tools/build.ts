@@ -35,6 +35,28 @@ export interface BuildResult {
   exitCode: number;
   duration: number;
   packageManager?: PackageManager;
+  hint?: string;
+}
+
+/**
+ * Generate actionable hint from build stderr output
+ */
+function getBuildHint(stderr: string, tool: string): string {
+  if (/MODULE_NOT_FOUND|Cannot find module/i.test(stderr))
+    return "A dependency is missing. Run install_deps first.";
+  if (/ENOENT|no such file/i.test(stderr))
+    return "A file or directory was not found. Use glob or list_dir to verify paths.";
+  if (/EACCES|permission denied/i.test(stderr))
+    return "Permission denied. Check file permissions.";
+  if (/SyntaxError|Unexpected token/i.test(stderr))
+    return "Syntax error in the code. Use read_file to check the problematic file.";
+  if (/TS\d{4}:/i.test(stderr))
+    return "TypeScript compilation error. Read the error details above and use edit_file to fix.";
+  if (/ERR!/i.test(stderr) && tool === "install_deps")
+    return "Package install failed. Check if the package name is correct or if there are network issues.";
+  if (/No Makefile/i.test(stderr) || /No rule to make target/i.test(stderr))
+    return "Makefile target not found. Check available targets with 'make -n' or list_dir.";
+  return `${tool} failed. Check stderr output above for details.`;
 }
 
 /**
@@ -170,7 +192,7 @@ Examples:
 
       const result = await subprocess;
 
-      return {
+      const buildResult: BuildResult = {
         success: result.exitCode === 0,
         stdout: truncateOutput(stdoutBuffer),
         stderr: truncateOutput(stderrBuffer),
@@ -178,6 +200,10 @@ Examples:
         duration: performance.now() - startTime,
         packageManager: pm,
       };
+      if (!buildResult.success) {
+        buildResult.hint = getBuildHint(stderrBuffer || stdoutBuffer, "run_script");
+      }
+      return buildResult;
     } catch (error) {
       if ((error as { timedOut?: boolean }).timedOut) {
         throw new TimeoutError(`Script '${script}' timed out after ${timeoutMs}ms`, {
@@ -324,7 +350,7 @@ Examples:
 
       const result = await subprocess;
 
-      return {
+      const buildResult: BuildResult = {
         success: result.exitCode === 0,
         stdout: truncateOutput(stdoutBuffer),
         stderr: truncateOutput(stderrBuffer),
@@ -332,6 +358,10 @@ Examples:
         duration: performance.now() - startTime,
         packageManager: pm,
       };
+      if (!buildResult.success) {
+        buildResult.hint = getBuildHint(stderrBuffer || stdoutBuffer, "install_deps");
+      }
+      return buildResult;
     } catch (error) {
       if ((error as { timedOut?: boolean }).timedOut) {
         throw new TimeoutError(`Install timed out after ${timeoutMs}ms`, {
@@ -452,13 +482,17 @@ Examples:
 
       const result = await subprocess;
 
-      return {
+      const buildResult: BuildResult = {
         success: result.exitCode === 0,
         stdout: truncateOutput(stdoutBuffer),
         stderr: truncateOutput(stderrBuffer),
         exitCode: result.exitCode ?? 0,
         duration: performance.now() - startTime,
       };
+      if (!buildResult.success) {
+        buildResult.hint = getBuildHint(stderrBuffer || stdoutBuffer, "make");
+      }
+      return buildResult;
     } catch (error) {
       if (error instanceof ToolError) throw error;
 
@@ -581,13 +615,17 @@ Examples:
 
       const result = await subprocess;
 
-      return {
+      const buildResult: BuildResult = {
         success: result.exitCode === 0,
         stdout: truncateOutput(stdoutBuffer),
         stderr: truncateOutput(stderrBuffer),
         exitCode: result.exitCode ?? 0,
         duration: performance.now() - startTime,
       };
+      if (!buildResult.success) {
+        buildResult.hint = getBuildHint(stderrBuffer || stdoutBuffer, "tsc");
+      }
+      return buildResult;
     } catch (error) {
       if ((error as { timedOut?: boolean }).timedOut) {
         throw new TimeoutError(`TypeScript compile timed out after ${timeoutMs}ms`, {

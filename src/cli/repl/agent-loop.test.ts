@@ -677,6 +677,119 @@ describe("executeAgentTurn", () => {
   });
 });
 
+describe("Error loop recovery: final LLM turn", () => {
+  let mockProvider: LLMProvider;
+  let mockToolRegistry: ToolRegistry;
+  let mockSession: ReplSession;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    mockProvider = {
+      id: "mock",
+      name: "Mock Provider",
+      initialize: vi.fn(),
+      chat: vi.fn(),
+      chatWithTools: vi.fn(),
+      stream: vi.fn(),
+      streamWithTools: vi.fn(),
+      countTokens: vi.fn(() => 10),
+      getContextWindow: vi.fn(() => 100000),
+      isAvailable: vi.fn().mockResolvedValue(true),
+    };
+
+    mockToolRegistry = {
+      getToolDefinitionsForLLM: vi.fn(() => [
+        { name: "read_file", description: "Read a file", input_schema: { type: "object" } },
+      ]),
+      execute: vi.fn(),
+      register: vi.fn(),
+      unregister: vi.fn(),
+      get: vi.fn(),
+      has: vi.fn(),
+      getAll: vi.fn(),
+      getByCategory: vi.fn(),
+    } as unknown as ToolRegistry;
+
+    mockSession = {
+      id: "test-session-error-loop",
+      startedAt: new Date(),
+      messages: [],
+      projectPath: "/test/project",
+      config: {
+        provider: { type: "anthropic", model: "claude-sonnet-4-20250514", maxTokens: 8192 },
+        ui: { theme: "auto" as const, showTimestamps: false, maxHistorySize: 100 },
+        agent: {
+          systemPrompt: "You are a helpful assistant",
+          maxToolIterations: 25,
+          confirmDestructive: false,
+        },
+      },
+      trustedTools: new Set<string>(),
+    };
+
+    const { getConversationContext } = await import("./session.js");
+    (getConversationContext as Mock).mockReturnValue([
+      { role: "system", content: "System prompt" },
+    ]);
+
+    const { requiresConfirmation } = await import("./confirmation.js");
+    (requiresConfirmation as Mock).mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should give the LLM a final text-only turn after 3 consecutive identical errors", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    const toolCall: ToolCall = { id: "tool-1", name: "read_file", input: { path: "/missing.ts" } };
+
+    // Track call count to detect the final text-only call
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation((_messages: unknown, opts: { tools: unknown[] }) => {
+      callCount++;
+      // After error loop detection, the agent-loop calls with tools=[] for the final explanation turn.
+      // The normal tool definitions have length > 0 (we mocked 1 tool above).
+      if (Array.isArray(opts?.tools) && opts.tools.length === 0) {
+        return createTextStreamMock("I was unable to find the file. Let me explain...")();
+      }
+      // Normal calls: always return a tool call with unique ID
+      return createToolStreamMock("", [{ ...toolCall, id: `tool-${callCount}` }])();
+    });
+
+    // Tool always fails with the same error
+    (mockToolRegistry.execute as Mock).mockResolvedValue({
+      success: false,
+      error: "File not found: /missing.ts",
+      data: undefined,
+      duration: 5,
+    });
+
+    const onStream = vi.fn();
+    const result = await executeAgentTurn(
+      mockSession,
+      "Read missing file",
+      mockProvider,
+      mockToolRegistry,
+      { onStream },
+    );
+
+    // The LLM should have been called 3 times:
+    // 2 tool iterations (each failing, but error counter accumulates over all executedTools
+    // per iteration — so after 2 iterations the count reaches 3) + 1 final text-only turn
+    expect(callCount).toBe(3);
+
+    // The final content should include the explanation
+    expect(result.content).toContain("I was unable to find the file");
+
+    // The final call should have been made with empty tools array
+    const lastCallArgs = (mockProvider.streamWithTools as Mock).mock.calls.at(-1);
+    expect(lastCallArgs?.[1]?.tools).toEqual([]);
+  });
+});
+
 describe("Safety net: placeholder injection for missing tool results", () => {
   // Regression test for: if a tool_use block is in the assistant message but
   // parallel execution drops the result (e.g. ID mismatch, internal error), the

@@ -20,7 +20,9 @@ export interface LintResult {
   warnings: number;
   fixable: number;
   issues: LintIssue[];
-  score: number; // 0-100
+  score: number | null; // 0-100, null when no data available
+  linter?: string;
+  message?: string;
 }
 
 /**
@@ -119,13 +121,15 @@ Examples:
     const detectedLinter = linter ?? (await detectLinter(projectDir));
 
     if (!detectedLinter) {
-      // Return empty result if no linter found
       return {
         errors: 0,
         warnings: 0,
         fixable: 0,
         issues: [],
-        score: 100,
+        score: null,
+        linter: "none",
+        message:
+          "No linter detected (looked for: eslint, oxlint, biome). Install one or use bash_exec to run a custom linter.",
       };
     }
 
@@ -312,8 +316,9 @@ Examples:
         files: fileResults,
       };
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       throw new ToolError(
-        `Complexity analysis failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Complexity analysis failed: ${msg}. Try read_file to inspect the code manually.`,
         { tool: "analyze_complexity", cause: error instanceof Error ? error : undefined },
       );
     }
@@ -436,8 +441,9 @@ Examples:
       // Return QualityScores format
       return evaluation.scores;
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       throw new ToolError(
-        `Quality calculation failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Quality calculation failed: ${msg}. Run run_linter and run_tests separately for partial results.`,
         { tool: "calculate_quality", cause: error instanceof Error ? error : undefined },
       );
     }

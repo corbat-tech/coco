@@ -170,10 +170,20 @@ Examples:
         );
       }
 
-      throw new ToolError(
-        `SQL query failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "sql_query", cause: error instanceof Error ? error : undefined },
-      );
+      const msg = error instanceof Error ? error.message : String(error);
+      let hint = `SQL query failed: ${msg}`;
+      if (/no such table/i.test(msg))
+        hint = `Table not found: ${msg}. Use inspect_schema to see available tables.`;
+      else if (/syntax error|near "/i.test(msg))
+        hint = `SQL syntax error: ${msg}. Check your query syntax.`;
+      else if (/SQLITE_BUSY|database is locked/i.test(msg))
+        hint = `Database is locked by another process. Wait and retry, or close other connections.`;
+      else if (/unable to open database/i.test(msg))
+        hint = `Cannot open database file. Use glob to verify the file path exists.`;
+      throw new ToolError(hint, {
+        tool: "sql_query",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });
@@ -272,10 +282,16 @@ Examples:
         );
       }
 
-      throw new ToolError(
-        `Schema inspection failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "inspect_schema", cause: error instanceof Error ? error : undefined },
-      );
+      const msg = error instanceof Error ? error.message : String(error);
+      let hint = `Schema inspection failed: ${msg}`;
+      if (/unable to open database/i.test(msg))
+        hint = `Cannot open database file. Use glob to verify the file path exists.`;
+      else if (/no such table/i.test(msg))
+        hint = `Table '${table ?? ""}' not found. Run inspect_schema without a table name to list all tables.`;
+      throw new ToolError(hint, {
+        tool: "inspect_schema",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });

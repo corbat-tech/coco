@@ -76,3 +76,11 @@ export {
 
 // Platform detection
 export { isWSL } from "./platform.js";
+
+// File suggestions
+export {
+  suggestSimilarFiles,
+  suggestSimilarPaths,
+  formatSuggestions,
+  type FileSuggestion,
+} from "./file-suggestions.js";

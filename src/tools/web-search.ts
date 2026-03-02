@@ -210,9 +210,10 @@ async function searchDuckDuckGo(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      throw new ToolError(`DuckDuckGo search failed with status ${response.status}`, {
-        tool: "web_search",
-      });
+      throw new ToolError(
+        `DuckDuckGo search failed with status ${response.status}. Try a different search engine (brave, serpapi) or simplify the query.`,
+        { tool: "web_search" },
+      );
     }
 
     const html = await response.text();
@@ -257,9 +258,10 @@ async function searchBrave(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      throw new ToolError(`Brave search failed with status ${response.status}`, {
-        tool: "web_search",
-      });
+      throw new ToolError(
+        `Brave search failed with status ${response.status}. Try a different search engine (duckduckgo, serpapi) or check your BRAVE_SEARCH_API_KEY.`,
+        { tool: "web_search" },
+      );
     }
 
     const data = (await response.json()) as {
@@ -316,9 +318,10 @@ async function searchSerpApi(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      throw new ToolError(`SerpAPI search failed with status ${response.status}`, {
-        tool: "web_search",
-      });
+      throw new ToolError(
+        `SerpAPI search failed with status ${response.status}. Try a different search engine (duckduckgo, brave) or check your SERPAPI_KEY.`,
+        { tool: "web_search" },
+      );
     }
 
     const data = (await response.json()) as {
