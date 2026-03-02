@@ -384,9 +384,7 @@ Examples:
         );
       }
       if (skippedFiles > 0) {
-        warnings.push(
-          `${skippedFiles} file(s) could not be read (binary or permission issues).`,
-        );
+        warnings.push(`${skippedFiles} file(s) could not be read (binary or permission issues).`);
       }
       if (indexSaveWarning) {
         warnings.push(indexSaveWarning);

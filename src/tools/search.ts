@@ -256,10 +256,9 @@ Examples:
       return { matches, count: matches.length };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new ToolError(
-          `File not found: ${file}. Use glob to find the correct path.`,
-          { tool: "find_in_file" },
-        );
+        throw new ToolError(`File not found: ${file}. Use glob to find the correct path.`, {
+          tool: "find_in_file",
+        });
       }
       throw new ToolError(
         `Find in file failed: ${error instanceof Error ? error.message : String(error)}`,

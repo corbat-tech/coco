@@ -81,9 +81,7 @@ export async function suggestSimilarPaths(
 
   try {
     const entries = await fs.readdir(grandparent, { withFileTypes: true });
-    const dirs = entries
-      .filter((e) => e.isDirectory())
-      .slice(0, MAX_DIR_ENTRIES);
+    const dirs = entries.filter((e) => e.isDirectory()).slice(0, MAX_DIR_ENTRIES);
 
     const scored: FileSuggestion[] = dirs
       .map((d) => ({

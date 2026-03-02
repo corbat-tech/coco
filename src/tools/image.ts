@@ -249,10 +249,9 @@ Examples:
           gemini: "@google/generative-ai",
         };
         const pkg = pkgMap[selectedProvider] ?? selectedProvider;
-        throw new ToolError(
-          `Provider SDK not installed. Run: pnpm add ${pkg}`,
-          { tool: "read_image" },
-        );
+        throw new ToolError(`Provider SDK not installed. Run: pnpm add ${pkg}`, {
+          tool: "read_image",
+        });
       }
 
       throw new ToolError(

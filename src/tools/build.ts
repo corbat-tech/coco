@@ -46,8 +46,7 @@ function getBuildHint(stderr: string, tool: string): string {
     return "A dependency is missing. Run install_deps first.";
   if (/ENOENT|no such file/i.test(stderr))
     return "A file or directory was not found. Use glob or list_dir to verify paths.";
-  if (/EACCES|permission denied/i.test(stderr))
-    return "Permission denied. Check file permissions.";
+  if (/EACCES|permission denied/i.test(stderr)) return "Permission denied. Check file permissions.";
   if (/SyntaxError|Unexpected token/i.test(stderr))
     return "Syntax error in the code. Use read_file to check the problematic file.";
   if (/TS\d{4}:/i.test(stderr))

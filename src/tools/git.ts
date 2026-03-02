@@ -30,8 +30,7 @@ function enrichGitError(operation: string, error: unknown): string {
     return `Git reference not found. Use git_branch to list available branches, or git_log to find the correct commit.`;
   if (/pathspec.*did not match/i.test(msg))
     return `File not tracked by git. Use glob to verify the file exists, then git_add it first.`;
-  if (/already up to date/i.test(msg))
-    return `Already up to date — no changes to pull.`;
+  if (/already up to date/i.test(msg)) return `Already up to date — no changes to pull.`;
 
   return `Git ${operation} failed: ${msg}`;
 }

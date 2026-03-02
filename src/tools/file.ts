@@ -10,7 +10,11 @@ import { glob } from "glob";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { FileSystemError, ToolError } from "../utils/errors.js";
 import { isWithinAllowedPath } from "./allowed-paths.js";
-import { suggestSimilarFiles, suggestSimilarPaths, formatSuggestions } from "../utils/file-suggestions.js";
+import {
+  suggestSimilarFiles,
+  suggestSimilarPaths,
+  formatSuggestions,
+} from "../utils/file-suggestions.js";
 import { levenshtein } from "../skills/matcher.js";
 
 /**
@@ -215,7 +219,10 @@ async function enrichENOENT(filePath: string, operation: string): Promise<string
   const absPath = path.resolve(filePath);
   const suggestions = await suggestSimilarFiles(absPath);
   const hint = formatSuggestions(suggestions, path.dirname(absPath));
-  const action = operation === "read" ? "Use glob or list_dir to find the correct path." : "Check that the parent directory exists.";
+  const action =
+    operation === "read"
+      ? "Use glob or list_dir to find the correct path."
+      : "Check that the parent directory exists.";
   return `File not found: ${filePath}${hint}\n${action}`;
 }
 

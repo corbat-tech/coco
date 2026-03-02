@@ -432,10 +432,9 @@ Examples:
 
       if (!response.ok) {
         const hint = getHttpErrorHint(response.status);
-        throw new ToolError(
-          `HTTP ${response.status}: ${response.statusText} — ${url}${hint}`,
-          { tool: "web_fetch" },
-        );
+        throw new ToolError(`HTTP ${response.status}: ${response.statusText} — ${url}${hint}`, {
+          tool: "web_fetch",
+        });
       }
 
       const contentType = response.headers.get("content-type") ?? "text/plain";

@@ -215,8 +215,7 @@ describe("humanizeError", () => {
 
   // Pass-through for already-enriched messages with recovery hints
   it("passes through messages containing tool recovery hints", () => {
-    const enriched =
-      "Not a git repository. Use list_dir to verify you're in the right directory.";
+    const enriched = "Not a git repository. Use list_dir to verify you're in the right directory.";
     expect(humanizeError(enriched)).toBe(enriched);
   });
 
@@ -227,8 +226,7 @@ describe("humanizeError", () => {
   });
 
   it("passes through enriched git_init hint from checkpoint tool", () => {
-    const enriched =
-      "Not a git repository. Checkpoints require a git repo — run git_init first.";
+    const enriched = "Not a git repository. Checkpoints require a git repo — run git_init first.";
     expect(humanizeError(enriched)).toBe(enriched);
   });
 

@@ -748,16 +748,18 @@ describe("Error loop recovery: final LLM turn", () => {
 
     // Track call count to detect the final text-only call
     let callCount = 0;
-    (mockProvider.streamWithTools as Mock).mockImplementation((_messages: unknown, opts: { tools: unknown[] }) => {
-      callCount++;
-      // After error loop detection, the agent-loop calls with tools=[] for the final explanation turn.
-      // The normal tool definitions have length > 0 (we mocked 1 tool above).
-      if (Array.isArray(opts?.tools) && opts.tools.length === 0) {
-        return createTextStreamMock("I was unable to find the file. Let me explain...")();
-      }
-      // Normal calls: always return a tool call with unique ID
-      return createToolStreamMock("", [{ ...toolCall, id: `tool-${callCount}` }])();
-    });
+    (mockProvider.streamWithTools as Mock).mockImplementation(
+      (_messages: unknown, opts: { tools: unknown[] }) => {
+        callCount++;
+        // After error loop detection, the agent-loop calls with tools=[] for the final explanation turn.
+        // The normal tool definitions have length > 0 (we mocked 1 tool above).
+        if (Array.isArray(opts?.tools) && opts.tools.length === 0) {
+          return createTextStreamMock("I was unable to find the file. Let me explain...")();
+        }
+        // Normal calls: always return a tool call with unique ID
+        return createToolStreamMock("", [{ ...toolCall, id: `tool-${callCount}` }])();
+      },
+    );
 
     // Tool always fails with the same error
     (mockToolRegistry.execute as Mock).mockResolvedValue({

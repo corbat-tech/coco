@@ -685,9 +685,9 @@ describe("enriched git error patterns", () => {
 
     const { gitCommitTool } = await import("./git.js");
 
-    await expect(
-      gitCommitTool.execute({ cwd: "/project", message: "test" }),
-    ).rejects.toThrow("Nothing to commit");
+    await expect(gitCommitTool.execute({ cwd: "/project", message: "test" })).rejects.toThrow(
+      "Nothing to commit",
+    );
   });
 
   it("should enrich merge conflict with hint", async () => {
@@ -701,9 +701,7 @@ describe("enriched git error patterns", () => {
   });
 
   it("should enrich non-fast-forward push with hint", async () => {
-    mockPush.mockRejectedValueOnce(
-      new Error("! [rejected] main -> main (non-fast-forward)"),
-    );
+    mockPush.mockRejectedValueOnce(new Error("! [rejected] main -> main (non-fast-forward)"));
 
     const { gitPushTool } = await import("./git.js");
 
@@ -737,9 +735,9 @@ describe("enriched git error patterns", () => {
 
     const { gitAddTool } = await import("./git.js");
 
-    await expect(
-      gitAddTool.execute({ cwd: "/project", files: ["foo.ts"] }),
-    ).rejects.toThrow("File not tracked by git");
+    await expect(gitAddTool.execute({ cwd: "/project", files: ["foo.ts"] })).rejects.toThrow(
+      "File not tracked by git",
+    );
   });
 
   it("should fall back to generic message for unknown errors", async () => {
