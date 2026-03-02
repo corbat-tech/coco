@@ -56,6 +56,7 @@ export interface ReviewResult {
   suggestions: ReviewFinding[];
   maturity: MaturityLevel;
   diff: ParsedDiff;
+  warnings?: string[];
 }
 
 // ============================================================================
@@ -160,8 +161,9 @@ async function getDiff(
   git: SimpleGit,
   baseBranch: string,
   includeUncommitted: boolean,
-): Promise<string> {
+): Promise<{ raw: string; warnings: string[] }> {
   const diffs: string[] = [];
+  const warnings: string[] = [];
 
   // Get committed changes vs base branch
   try {
@@ -173,7 +175,7 @@ async function getDiff(
       const directDiff = await git.diff([baseBranch]);
       if (directDiff) diffs.push(directDiff);
     } catch {
-      // No base branch available, fall through to uncommitted
+      warnings.push(`Could not diff against base branch '${baseBranch}' — it may not exist.`);
     }
   }
 
@@ -183,17 +185,17 @@ async function getDiff(
       const uncommitted = await git.diff();
       if (uncommitted) diffs.push(uncommitted);
     } catch {
-      // ignore
+      warnings.push("Could not read unstaged changes.");
     }
     try {
       const staged = await git.diff(["--staged"]);
       if (staged) diffs.push(staged);
     } catch {
-      // ignore
+      warnings.push("Could not read staged changes.");
     }
   }
 
-  return diffs.join("\n");
+  return { raw: diffs.join("\n"), warnings };
 }
 
 /**
@@ -494,11 +496,15 @@ Examples:
       const currentBranch = status.current ?? "HEAD";
 
       // Get diff
-      const rawDiff = await getDiff(git, baseBranch!, includeUncommitted!);
+      const { raw: rawDiff, warnings: diffWarnings } = await getDiff(
+        git,
+        baseBranch!,
+        includeUncommitted!,
+      );
       const diff = parseDiff(rawDiff);
 
       if (diff.files.length === 0) {
-        return {
+        const emptyResult: ReviewResult = {
           summary: {
             branch: currentBranch,
             baseBranch: baseBranch!,
@@ -512,6 +518,10 @@ Examples:
           maturity: "new",
           diff,
         };
+        if (diffWarnings.length > 0) {
+          emptyResult.warnings = diffWarnings;
+        }
+        return emptyResult;
       }
 
       // Detect maturity
@@ -547,7 +557,7 @@ Examples:
             }
           }
         } catch {
-          // Linter not available, skip
+          diffWarnings.push("Linter not available — code style was not checked.");
         }
       }
 
@@ -574,7 +584,7 @@ Examples:
           ? "needs_work"
           : "approved";
 
-      return {
+      const result: ReviewResult = {
         summary: {
           branch: currentBranch,
           baseBranch: baseBranch!,
@@ -588,6 +598,10 @@ Examples:
         maturity,
         diff,
       };
+      if (diffWarnings.length > 0) {
+        result.warnings = diffWarnings;
+      }
+      return result;
     } catch (error) {
       throw new ToolError(
         `Code review failed: ${error instanceof Error ? error.message : String(error)}`,

@@ -523,9 +523,25 @@ export async function executeAgentTurn(
       content: toolResults,
     });
 
-    // Break out of the loop so the LLM can respond with the guidance message above.
-    // The next user prompt will start a fresh turn.
+    // Give the LLM one final text-only turn to explain the error to the user.
+    // We call streamWithTools with tools=[] so the LLM can only produce text.
     if (stuckInErrorLoop) {
+      try {
+        const finalMessages = getConversationContext(session, toolRegistry);
+        for await (const chunk of provider.streamWithTools(finalMessages, {
+          tools: [],
+          maxTokens: session.config.provider.maxTokens,
+        })) {
+          if (options.signal?.aborted) break;
+          if (chunk.type === "text" && chunk.text) {
+            finalContent += chunk.text;
+            options.onStream?.(chunk);
+          }
+          if (chunk.type === "done") break;
+        }
+      } catch {
+        // If the final explanation call fails, still break gracefully
+      }
       break;
     }
   }

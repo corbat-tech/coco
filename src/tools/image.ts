@@ -243,10 +243,15 @@ Examples:
         (error as Error).message?.includes("Cannot find module") ||
         (error as Error).message?.includes("MODULE_NOT_FOUND")
       ) {
-        throw new ToolError(
-          `Provider SDK not installed for '${selectedProvider}'. Check your dependencies.`,
-          { tool: "read_image" },
-        );
+        const pkgMap: Record<string, string> = {
+          anthropic: "@anthropic-ai/sdk",
+          openai: "openai",
+          gemini: "@google/generative-ai",
+        };
+        const pkg = pkgMap[selectedProvider] ?? selectedProvider;
+        throw new ToolError(`Provider SDK not installed. Run: pnpm add ${pkg}`, {
+          tool: "read_image",
+        });
       }
 
       throw new ToolError(

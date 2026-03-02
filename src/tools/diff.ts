@@ -114,10 +114,16 @@ Examples:
         rendered: true,
       };
     } catch (error) {
-      throw new ToolError(
-        `Diff failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "show_diff", cause: error instanceof Error ? error : undefined },
-      );
+      const msg = error instanceof Error ? error.message : String(error);
+      let hint = `Diff failed: ${msg}`;
+      if (/not a git repository/i.test(msg))
+        hint = "Not a git repository. Use list_dir to verify you're in the right directory.";
+      else if (/unknown revision|bad revision/i.test(msg))
+        hint = `Reference not found: ${msg}. Use git_log or git_branch to find valid refs.`;
+      throw new ToolError(hint, {
+        tool: "show_diff",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });

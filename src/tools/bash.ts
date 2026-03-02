@@ -23,19 +23,19 @@ const MAX_OUTPUT_SIZE = 1024 * 1024;
  * These look for structural operations (destructive, privilege escalation, etc.)
  * that cannot appear as false positives inside heredoc content.
  */
-const DANGEROUS_PATTERNS_FULL = [
-  /\brm\s+-rf\s+\/(?!\w)/, // rm -rf / (root)
-  /\bsudo\s+rm\s+-rf/, // sudo rm -rf
-  /\b:?\(\)\s*\{.*\}/, // Fork bomb pattern
-  /\bdd\s+if=.*of=\/dev\//, // dd to device
-  /\bmkfs\./, // Format filesystem
-  /\bformat\s+/, // Windows format
-  />\s*\/etc\//, // Write to /etc
-  />\s*\/root\//, // Write to /root
-  /\bchmod\s+777/, // Overly permissive chmod
-  /\bchown\s+root/, // chown to root
-  /\bcurl\s+.*\|\s*(ba)?sh/, // curl | sh pattern
-  /\bwget\s+.*\|\s*(ba)?sh/, // wget | sh pattern
+const DANGEROUS_PATTERNS_FULL: Array<{ pattern: RegExp; rule: string }> = [
+  { pattern: /\brm\s+-rf\s+\/(?!\w)/, rule: "rm -rf on root filesystem" },
+  { pattern: /\bsudo\s+rm\s+-rf/, rule: "sudo rm -rf (destructive with elevated privileges)" },
+  { pattern: /\b:?\(\)\s*\{.*\}/, rule: "fork bomb pattern" },
+  { pattern: /\bdd\s+if=.*of=\/dev\//, rule: "dd write to device" },
+  { pattern: /\bmkfs\./, rule: "filesystem format command" },
+  { pattern: /\bformat\s+/, rule: "format command" },
+  { pattern: />\s*\/etc\//, rule: "write redirect to /etc/" },
+  { pattern: />\s*\/root\//, rule: "write redirect to /root/" },
+  { pattern: /\bchmod\s+777/, rule: "overly permissive chmod 777" },
+  { pattern: /\bchown\s+root/, rule: "chown to root" },
+  { pattern: /\bcurl\s+.*\|\s*(ba)?sh/, rule: "curl pipe to shell (untrusted code execution)" },
+  { pattern: /\bwget\s+.*\|\s*(ba)?sh/, rule: "wget pipe to shell (untrusted code execution)" },
 ];
 
 /**
@@ -47,11 +47,11 @@ const DANGEROUS_PATTERNS_FULL = [
  * When a heredoc is present we check only the command header line to avoid
  * false positives from file content.
  */
-const DANGEROUS_PATTERNS_SHELL_ONLY = [
-  /`[^`]+`/, // Backtick command substitution
-  /\$\([^)]+\)/, // $() command substitution
-  /\beval\s+/, // eval command (shell eval, not JS eval())
-  /\bsource\s+/, // source command (can execute arbitrary scripts)
+const DANGEROUS_PATTERNS_SHELL_ONLY: Array<{ pattern: RegExp; rule: string }> = [
+  { pattern: /`[^`]+`/, rule: "backtick command substitution" },
+  { pattern: /\$\([^)]+\)/, rule: "$() command substitution" },
+  { pattern: /\beval\s+/, rule: "eval command (arbitrary code execution)" },
+  { pattern: /\bsource\s+/, rule: "source command (can execute arbitrary scripts)" },
 ];
 
 /**
@@ -172,18 +172,20 @@ Examples:
     // header (first line) to avoid false positives from heredoc body content
     // (e.g. jQuery $(), backticks in Markdown, "source of truth" comments).
     const shellPart = getShellCommandPart(command);
-    for (const pattern of DANGEROUS_PATTERNS_FULL) {
+    for (const { pattern, rule } of DANGEROUS_PATTERNS_FULL) {
       if (pattern.test(command)) {
-        throw new ToolError(`Potentially dangerous command blocked: ${command.slice(0, 100)}`, {
-          tool: "bash_exec",
-        });
+        throw new ToolError(
+          `Command blocked by safety rule: "${rule}". Rewrite the command to avoid this pattern, or use a safer alternative.`,
+          { tool: "bash_exec" },
+        );
       }
     }
-    for (const pattern of DANGEROUS_PATTERNS_SHELL_ONLY) {
+    for (const { pattern, rule } of DANGEROUS_PATTERNS_SHELL_ONLY) {
       if (pattern.test(shellPart)) {
-        throw new ToolError(`Potentially dangerous command blocked: ${command.slice(0, 100)}`, {
-          tool: "bash_exec",
-        });
+        throw new ToolError(
+          `Command blocked by safety rule: "${rule}". Rewrite the command to avoid this pattern, or use a safer alternative.`,
+          { tool: "bash_exec" },
+        );
       }
     }
 
@@ -297,18 +299,20 @@ Examples:
   async execute({ command, cwd, env }) {
     // Check for dangerous commands (same two-pass logic as bashExecTool).
     const shellPart = getShellCommandPart(command);
-    for (const pattern of DANGEROUS_PATTERNS_FULL) {
+    for (const { pattern, rule } of DANGEROUS_PATTERNS_FULL) {
       if (pattern.test(command)) {
-        throw new ToolError(`Potentially dangerous command blocked: ${command.slice(0, 100)}`, {
-          tool: "bash_background",
-        });
+        throw new ToolError(
+          `Command blocked by safety rule: "${rule}". Rewrite the command to avoid this pattern, or use a safer alternative.`,
+          { tool: "bash_background" },
+        );
       }
     }
-    for (const pattern of DANGEROUS_PATTERNS_SHELL_ONLY) {
+    for (const { pattern, rule } of DANGEROUS_PATTERNS_SHELL_ONLY) {
       if (pattern.test(shellPart)) {
-        throw new ToolError(`Potentially dangerous command blocked: ${command.slice(0, 100)}`, {
-          tool: "bash_background",
-        });
+        throw new ToolError(
+          `Command blocked by safety rule: "${rule}". Rewrite the command to avoid this pattern, or use a safer alternative.`,
+          { tool: "bash_background" },
+        );
       }
     }
 

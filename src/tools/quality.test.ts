@@ -149,14 +149,16 @@ describe("runLinterTool", () => {
     expect(result.score).toBeGreaterThanOrEqual(0);
   });
 
-  it("should return empty result when no linter found", async () => {
+  it("should return null score with message when no linter found", async () => {
     mockReadFile.mockResolvedValueOnce(JSON.stringify({ devDependencies: {} }));
 
     const { runLinterTool } = await import("./quality.js");
 
     const result = await runLinterTool.execute({ cwd: "/test" });
 
-    expect(result.score).toBe(100);
+    expect(result.score).toBeNull();
+    expect(result.linter).toBe("none");
+    expect(result.message).toContain("No linter detected");
     expect(result.issues).toEqual([]);
   });
 });

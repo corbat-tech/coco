@@ -145,7 +145,9 @@ describe("E2E: Tool Execution", () => {
   it("should block dangerous commands", async () => {
     const { bashExecTool } = await import("../../src/tools/bash.js");
 
-    await expect(bashExecTool.execute({ command: "rm -rf /" })).rejects.toThrow(/dangerous/i);
+    await expect(bashExecTool.execute({ command: "rm -rf /" })).rejects.toThrow(
+      /blocked by safety rule/i,
+    );
   });
 });
 

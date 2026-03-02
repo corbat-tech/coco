@@ -9,6 +9,33 @@ import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
 
 /**
+ * Enrich git errors with actionable recovery hints.
+ */
+function enrichGitError(operation: string, error: unknown): string {
+  const msg = error instanceof Error ? error.message : String(error);
+
+  if (/not a git repository/i.test(msg))
+    return `Not a git repository. Run git_init first or verify you're in the correct directory.`;
+  if (/nothing to commit/i.test(msg))
+    return `Nothing to commit — working tree is clean. Use git_status to verify your changes were saved.`;
+  if (/CONFLICT|merge conflict/i.test(msg))
+    return `Merge conflict detected. Use read_file to see the conflicting file, resolve manually with edit_file, then git_add and git_commit.`;
+  if (/non-fast-forward|\[rejected\]/i.test(msg))
+    return `Push rejected — remote has new commits. Run git_pull first, resolve any conflicts, then retry git_push.`;
+  if (/authentication failed/i.test(msg))
+    return `Git authentication failed. Check your credentials, SSH key, or access token.`;
+  if (/branch.*already exists/i.test(msg))
+    return `Branch already exists. Use git_checkout to switch to it, or choose a different name.`;
+  if (/does not exist|unknown revision|bad revision/i.test(msg))
+    return `Git reference not found. Use git_branch to list available branches, or git_log to find the correct commit.`;
+  if (/pathspec.*did not match/i.test(msg))
+    return `File not tracked by git. Use glob to verify the file exists, then git_add it first.`;
+  if (/already up to date/i.test(msg)) return `Already up to date — no changes to pull.`;
+
+  return `Git ${operation} failed: ${msg}`;
+}
+
+/**
  * Get git instance for a directory.
  *
  * Uses the `baseDir` option object so simple-git resolves the repo root
@@ -65,10 +92,10 @@ Examples:
         isClean: status.isClean(),
       };
     } catch (error) {
-      throw new ToolError(
-        `Git status failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "git_status", cause: error instanceof Error ? error : undefined },
-      );
+      throw new ToolError(enrichGitError("status", error), {
+        tool: "git_status",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });
@@ -114,10 +141,10 @@ Examples:
         deletions: diffStat.deletions,
       };
     } catch (error) {
-      throw new ToolError(
-        `Git diff failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "git_diff", cause: error instanceof Error ? error : undefined },
-      );
+      throw new ToolError(enrichGitError("diff", error), {
+        tool: "git_diff",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });
@@ -146,10 +173,10 @@ Examples:
 
         return { added: files };
       } catch (error) {
-        throw new ToolError(
-          `Git add failed: ${error instanceof Error ? error.message : String(error)}`,
-          { tool: "git_add", cause: error instanceof Error ? error : undefined },
-        );
+        throw new ToolError(enrichGitError("add", error), {
+          tool: "git_add",
+          cause: error instanceof Error ? error : undefined,
+        });
       }
     },
   });
@@ -191,10 +218,10 @@ Examples:
           : "No changes",
       };
     } catch (error) {
-      throw new ToolError(
-        `Git commit failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "git_commit", cause: error instanceof Error ? error : undefined },
-      );
+      throw new ToolError(enrichGitError("commit", error), {
+        tool: "git_commit",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });
@@ -248,10 +275,10 @@ Examples:
         })),
       };
     } catch (error) {
-      throw new ToolError(
-        `Git log failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "git_log", cause: error instanceof Error ? error : undefined },
-      );
+      throw new ToolError(enrichGitError("log", error), {
+        tool: "git_log",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });
@@ -303,10 +330,10 @@ Examples:
         current: status.current ?? "HEAD",
       };
     } catch (error) {
-      throw new ToolError(
-        `Git branch failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "git_branch", cause: error instanceof Error ? error : undefined },
-      );
+      throw new ToolError(enrichGitError("branch", error), {
+        tool: "git_branch",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });
@@ -342,10 +369,10 @@ Examples:
 
       return { branch };
     } catch (error) {
-      throw new ToolError(
-        `Git checkout failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "git_checkout", cause: error instanceof Error ? error : undefined },
-      );
+      throw new ToolError(enrichGitError("checkout", error), {
+        tool: "git_checkout",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });
@@ -390,10 +417,10 @@ Examples:
         branch: pushBranch,
       };
     } catch (error) {
-      throw new ToolError(
-        `Git push failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "git_push", cause: error instanceof Error ? error : undefined },
-      );
+      throw new ToolError(enrichGitError("push", error), {
+        tool: "git_push",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });
@@ -437,10 +464,10 @@ Examples:
           : "Already up to date",
       };
     } catch (error) {
-      throw new ToolError(
-        `Git pull failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "git_pull", cause: error instanceof Error ? error : undefined },
-      );
+      throw new ToolError(enrichGitError("pull", error), {
+        tool: "git_pull",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });
@@ -474,10 +501,10 @@ Examples:
         path: cwd ?? process.cwd(),
       };
     } catch (error) {
-      throw new ToolError(
-        `Git init failed: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "git_init", cause: error instanceof Error ? error : undefined },
-      );
+      throw new ToolError(enrichGitError("init", error), {
+        tool: "git_init",
+        cause: error instanceof Error ? error : undefined,
+      });
     }
   },
 });

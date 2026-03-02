@@ -168,8 +168,9 @@ Examples:
         duration,
       );
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       throw new ToolError(
-        `Test execution failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Test execution failed: ${msg}. Use command_exists to verify the test framework is installed, or run_script with a custom command.`,
         { tool: "run_tests", cause: error instanceof Error ? error : undefined },
       );
     }
@@ -352,8 +353,9 @@ Examples:
     } catch (error) {
       if (error instanceof ToolError) throw error;
 
+      const msg = error instanceof Error ? error.message : String(error);
       throw new ToolError(
-        `Failed to read coverage: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to read coverage: ${msg}. Run run_tests with coverage: true first to generate coverage data.`,
         { tool: "get_coverage", cause: error instanceof Error ? error : undefined },
       );
     }

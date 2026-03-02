@@ -113,6 +113,7 @@ export interface SemanticSearchOutput {
   totalIndexed: number;
   indexAge: string;
   duration: number;
+  warning?: string;
 }
 
 /**
@@ -215,6 +216,7 @@ function simpleEmbedding(text: string): number[] {
  * Tries @xenova/transformers first, falls back to simple TF-IDF
  */
 let embedFn: ((text: string) => Promise<number[]>) | null = null;
+let usingFallbackEmbedding = false;
 
 async function getEmbedding(text: string): Promise<number[]> {
   if (!embedFn) {
@@ -233,6 +235,7 @@ async function getEmbedding(text: string): Promise<number[]> {
     } catch {
       // Fall back to simple embedding
       embedFn = async (t: string) => simpleEmbedding(t);
+      usingFallbackEmbedding = true;
     }
   }
 
@@ -315,6 +318,7 @@ Examples:
 
     // Load or build index
     let index = reindex ? null : await loadIndex(indexDir);
+    let warnings: string[] = [];
 
     if (!index) {
       // Build index
@@ -327,6 +331,8 @@ Examples:
       });
 
       const chunks: IndexChunk[] = [];
+      let skippedFiles = 0;
+      let indexSaveWarning = "";
 
       for (const file of files) {
         if (isBinary(file)) continue;
@@ -353,7 +359,7 @@ Examples:
             });
           }
         } catch {
-          // Skip files that can't be read
+          skippedFiles++;
           continue;
         }
       }
@@ -369,7 +375,19 @@ Examples:
       try {
         await saveIndex(indexDir, index);
       } catch {
-        // Non-fatal: index not saved
+        indexSaveWarning = "Index could not be saved to disk — next search will rebuild it.";
+      }
+
+      if (usingFallbackEmbedding) {
+        warnings.push(
+          "Using basic text matching (transformer model unavailable). Results may be less accurate.",
+        );
+      }
+      if (skippedFiles > 0) {
+        warnings.push(`${skippedFiles} file(s) could not be read (binary or permission issues).`);
+      }
+      if (indexSaveWarning) {
+        warnings.push(indexSaveWarning);
       }
     }
 
@@ -408,12 +426,16 @@ Examples:
     const ageMinutes = Math.round(ageMs / 60000);
     const indexAge = ageMinutes < 60 ? `${ageMinutes}m ago` : `${Math.round(ageMinutes / 60)}h ago`;
 
-    return {
+    const output: SemanticSearchOutput = {
       results,
       totalIndexed: index.chunks.length,
       indexAge,
       duration: performance.now() - startTime,
     };
+    if (warnings.length > 0) {
+      output.warning = warnings.join(" ");
+    }
+    return output;
   },
 });
 

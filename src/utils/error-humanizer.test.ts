@@ -70,6 +70,16 @@ describe("humanizeError", () => {
     expect(humanizeError("ENOENT")).toBe("File or directory not found");
   });
 
+  it("passes through already-enriched file-not-found messages", () => {
+    const enriched = "File not found: config.ts\nDid you mean?\n  - config.json\n  - conifg.ts";
+    expect(humanizeError(enriched)).toBe(enriched);
+  });
+
+  it("passes through already-enriched directory-not-found messages", () => {
+    const enriched = "Directory not found: srx\nDid you mean?\n  - src";
+    expect(humanizeError(enriched)).toBe(enriched);
+  });
+
   it("extracts path from EACCES message", () => {
     const result = humanizeError("EACCES: permission denied, open '/etc/shadow'");
     expect(result).toContain("Permission denied");
@@ -201,6 +211,60 @@ describe("humanizeError", () => {
 
   it("humanizes invalid API key messages", () => {
     expect(humanizeError("Invalid api key provided")).toContain("API key");
+  });
+
+  // Pass-through for already-enriched messages with recovery hints
+  it("passes through messages containing tool recovery hints", () => {
+    const enriched = "Not a git repository. Use list_dir to verify you're in the right directory.";
+    expect(humanizeError(enriched)).toBe(enriched);
+  });
+
+  it("passes through enriched git_log/git_branch hint from diff tool", () => {
+    const enriched =
+      "Reference not found: bad revision 'x'. Use git_log or git_branch to find valid refs.";
+    expect(humanizeError(enriched)).toBe(enriched);
+  });
+
+  it("passes through enriched git_init hint from checkpoint tool", () => {
+    const enriched = "Not a git repository. Checkpoints require a git repo — run git_init first.";
+    expect(humanizeError(enriched)).toBe(enriched);
+  });
+
+  it("passes through enriched git_status hint", () => {
+    const enriched = "Nothing to commit. Use git_status to verify your changes were saved.";
+    expect(humanizeError(enriched)).toBe(enriched);
+  });
+
+  it("passes through messages with inspect_schema hints", () => {
+    const enriched = "Table not found. Use inspect_schema to see available tables.";
+    expect(humanizeError(enriched)).toBe(enriched);
+  });
+
+  it("passes through messages with list_checkpoints hints", () => {
+    const enriched = "Failed to restore. Use list_checkpoints to see available checkpoints.";
+    expect(humanizeError(enriched)).toBe(enriched);
+  });
+
+  // TypeScript errors
+  it("humanizes TypeScript error codes", () => {
+    const msg = "TS2345: Argument of type 'string' is not assignable to parameter";
+    const result = humanizeError(msg);
+    expect(result).toContain("TypeScript error");
+    expect(result).toContain("TS2345");
+  });
+
+  // Database errors
+  it("humanizes SQLITE_ERROR", () => {
+    const msg = "SQLITE_ERROR: no such table: users";
+    const result = humanizeError(msg);
+    expect(result).toContain("Database error");
+    expect(result).toContain("inspect_schema");
+  });
+
+  // HTTP pass-through
+  it("passes through already-enriched HTTP error messages", () => {
+    const enriched = "HTTP 404: Not Found. Try web_search to find the correct URL.";
+    expect(humanizeError(enriched)).toBe(enriched);
   });
 });
 

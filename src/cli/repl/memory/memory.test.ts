@@ -55,16 +55,22 @@ describe("types.ts", () => {
       expect(DEFAULT_FILE_PATTERNS[0]).toBe("COCO.md");
     });
 
-    it("should include CLAUDE.md as fallback pattern", async () => {
+    it("should include CLAUDE.md as second pattern", async () => {
       const { DEFAULT_FILE_PATTERNS } = await import("./types.js");
 
-      expect(DEFAULT_FILE_PATTERNS).toContain("CLAUDE.md");
+      expect(DEFAULT_FILE_PATTERNS[1]).toBe("CLAUDE.md");
     });
 
-    it("should have exactly 2 patterns", async () => {
+    it("should include AGENTS.md as universal fallback", async () => {
       const { DEFAULT_FILE_PATTERNS } = await import("./types.js");
 
-      expect(DEFAULT_FILE_PATTERNS).toHaveLength(2);
+      expect(DEFAULT_FILE_PATTERNS[2]).toBe("AGENTS.md");
+    });
+
+    it("should have exactly 3 patterns", async () => {
+      const { DEFAULT_FILE_PATTERNS } = await import("./types.js");
+
+      expect(DEFAULT_FILE_PATTERNS).toHaveLength(3);
     });
   });
 
@@ -113,7 +119,7 @@ describe("types.ts", () => {
       config.filePatterns.push("NEW.md");
 
       // Original constant should not be modified
-      expect(DEFAULT_FILE_PATTERNS).toHaveLength(2);
+      expect(DEFAULT_FILE_PATTERNS).toHaveLength(3);
     });
   });
 
@@ -296,6 +302,46 @@ describe("loader.ts", () => {
       expect(paths.project).toBe(claudePath);
     });
 
+    it("should find project-level file (AGENTS.md fallback)", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader({ includeUserLevel: false });
+
+      const agentsPath = path.join(tempDir, "AGENTS.md");
+      await fs.writeFile(agentsPath, "# Agents Memory", "utf-8");
+
+      const paths = await loader.findMemoryFiles(tempDir);
+
+      expect(paths.project).toBe(agentsPath);
+    });
+
+    it("should prefer COCO.md over AGENTS.md", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader({ includeUserLevel: false });
+
+      const cocoPath = path.join(tempDir, "COCO.md");
+      const agentsPath = path.join(tempDir, "AGENTS.md");
+      await fs.writeFile(cocoPath, "# COCO Memory", "utf-8");
+      await fs.writeFile(agentsPath, "# Agents Memory", "utf-8");
+
+      const paths = await loader.findMemoryFiles(tempDir);
+
+      expect(paths.project).toBe(cocoPath);
+    });
+
+    it("should prefer CLAUDE.md over AGENTS.md", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader({ includeUserLevel: false });
+
+      const claudePath = path.join(tempDir, "CLAUDE.md");
+      const agentsPath = path.join(tempDir, "AGENTS.md");
+      await fs.writeFile(claudePath, "# Claude Memory", "utf-8");
+      await fs.writeFile(agentsPath, "# Agents Memory", "utf-8");
+
+      const paths = await loader.findMemoryFiles(tempDir);
+
+      expect(paths.project).toBe(claudePath);
+    });
+
     it("should prefer COCO.md over CLAUDE.md", async () => {
       const { createMemoryLoader } = await import("./loader.js");
       const loader = createMemoryLoader({ includeUserLevel: false });
@@ -316,6 +362,18 @@ describe("loader.ts", () => {
 
       const localPath = path.join(tempDir, "COCO.local.md");
       await fs.writeFile(localPath, "# Local Memory", "utf-8");
+
+      const paths = await loader.findMemoryFiles(tempDir);
+
+      expect(paths.local).toBe(localPath);
+    });
+
+    it("should find local-level file (AGENTS.local.md)", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader({ includeUserLevel: false });
+
+      const localPath = path.join(tempDir, "AGENTS.local.md");
+      await fs.writeFile(localPath, "# Local Agents Memory", "utf-8");
 
       const paths = await loader.findMemoryFiles(tempDir);
 

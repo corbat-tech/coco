@@ -332,6 +332,91 @@ describe("defineTool", () => {
   });
 });
 
+describe("execute with CocoError", () => {
+  it("should surface CocoError cause message", async () => {
+    const { ToolRegistry } = await import("./registry.js");
+    const { FileSystemError } = await import("../utils/errors.js");
+
+    const registry = new ToolRegistry();
+    const causeError = new Error("ENOENT: no such file or directory, open '/test/missing.ts'");
+    const fsError = new FileSystemError("Failed to read file: missing.ts", {
+      path: "missing.ts",
+      operation: "read",
+      cause: causeError,
+    });
+
+    registry.register({
+      name: "coco_error_tool",
+      description: "Tool that throws CocoError",
+      category: "test" as const,
+      parameters: z.object({}),
+      execute: vi.fn().mockRejectedValue(fsError),
+    });
+
+    const result = await registry.execute("coco_error_tool", {});
+
+    expect(result.success).toBe(false);
+    // Should surface the cause as humanized + suggestion from FileSystemError
+    expect(result.error).toContain("not found");
+    expect(result.error).toContain("/test/missing.ts");
+    expect(result.error).toContain("Suggestion");
+  });
+
+  it("should append CocoError suggestion when present", async () => {
+    const { ToolRegistry } = await import("./registry.js");
+    const { CocoError } = await import("../utils/errors.js");
+
+    const registry = new ToolRegistry();
+    const error = new CocoError("Something failed", {
+      code: "TEST_ERROR",
+      suggestion: "Try doing X instead",
+    });
+
+    registry.register({
+      name: "suggestion_tool",
+      description: "Tool with suggestion",
+      category: "test" as const,
+      parameters: z.object({}),
+      execute: vi.fn().mockRejectedValue(error),
+    });
+
+    const result = await registry.execute("suggestion_tool", {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Something failed");
+    expect(result.error).toContain("Try doing X instead");
+  });
+
+  it("should not duplicate cause message when already in main message", async () => {
+    const { ToolRegistry } = await import("./registry.js");
+    const { FileSystemError } = await import("../utils/errors.js");
+
+    const registry = new ToolRegistry();
+    // Cause message is already included in the main message
+    const causeError = new Error("Permission denied");
+    const fsError = new FileSystemError("Failed: Permission denied", {
+      path: "test.ts",
+      operation: "read",
+      cause: causeError,
+    });
+
+    registry.register({
+      name: "no_dup_tool",
+      description: "Tool without duplicate cause",
+      category: "test" as const,
+      parameters: z.object({}),
+      execute: vi.fn().mockRejectedValue(fsError),
+    });
+
+    const result = await registry.execute("no_dup_tool", {});
+
+    expect(result.success).toBe(false);
+    // Should not have "Permission denied" twice
+    const occurrences = (result.error?.match(/Permission denied/g) ?? []).length;
+    expect(occurrences).toBeLessThanOrEqual(1);
+  });
+});
+
 describe("zodFieldToJsonSchema edge cases", () => {
   it("should handle ZodDefault fields", async () => {
     const { ToolRegistry } = await import("./registry.js");

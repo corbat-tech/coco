@@ -4,9 +4,9 @@
  */
 
 import { z } from "zod";
-// ToolError reserved for future error handling
 import { getLogger } from "../utils/logger.js";
 import { humanizeError } from "../utils/error-humanizer.js";
+import { isCocoError } from "../utils/errors.js";
 
 /**
  * Tool definition
@@ -214,6 +214,18 @@ export class ToolRegistry {
         if (allUndefined && error.issues.length > 1) {
           errorMessage +=
             ". All parameters are missing — this is likely a JSON serialization error on our side. Please retry with the same arguments.";
+        }
+      } else if (isCocoError(error)) {
+        // Surface the cause chain (e.g., ENOENT hidden inside FileSystemError)
+        const causeMsg = error.cause instanceof Error ? error.cause.message : "";
+        const combined =
+          causeMsg && !error.message.includes(causeMsg)
+            ? `${error.message} — ${causeMsg}`
+            : error.message;
+        errorMessage = humanizeError(combined, name);
+        // Append suggestion if present and not redundant
+        if (error.suggestion && !errorMessage.includes(error.suggestion)) {
+          errorMessage += `\nSuggestion: ${error.suggestion}`;
         }
       } else {
         const rawMessage = error instanceof Error ? error.message : String(error);

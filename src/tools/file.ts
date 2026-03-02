@@ -10,6 +10,12 @@ import { glob } from "glob";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { FileSystemError, ToolError } from "../utils/errors.js";
 import { isWithinAllowedPath } from "./allowed-paths.js";
+import {
+  suggestSimilarFiles,
+  suggestSimilarPaths,
+  formatSuggestions,
+} from "../utils/file-suggestions.js";
+import { levenshtein } from "../skills/matcher.js";
 
 /**
  * Sensitive file patterns that should be protected
@@ -200,6 +206,37 @@ export function validateEncoding(encoding: string): void {
 const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 /**
+ * Check if an error is ENOENT
+ */
+function isENOENT(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+/**
+ * Enrich an ENOENT error with file suggestions.
+ */
+async function enrichENOENT(filePath: string, operation: string): Promise<string> {
+  const absPath = path.resolve(filePath);
+  const suggestions = await suggestSimilarFiles(absPath);
+  const hint = formatSuggestions(suggestions, path.dirname(absPath));
+  const action =
+    operation === "read"
+      ? "Use glob or list_dir to find the correct path."
+      : "Check that the parent directory exists.";
+  return `File not found: ${filePath}${hint}\n${action}`;
+}
+
+/**
+ * Enrich an ENOENT error for directory operations.
+ */
+async function enrichDirENOENT(dirPath: string): Promise<string> {
+  const absPath = path.resolve(dirPath);
+  const suggestions = await suggestSimilarPaths(absPath);
+  const hint = formatSuggestions(suggestions, path.dirname(absPath));
+  return `Directory not found: ${dirPath}${hint}\nUse list_dir or glob to find the correct path.`;
+}
+
+/**
  * Read file tool
  */
 export const readFileTool: ToolDefinition<
@@ -250,6 +287,14 @@ Examples:
         truncated,
       };
     } catch (error) {
+      if (isENOENT(error)) {
+        const enriched = await enrichENOENT(filePath, "read");
+        throw new FileSystemError(enriched, {
+          path: filePath,
+          operation: "read",
+          cause: error instanceof Error ? error : undefined,
+        });
+      }
       throw new FileSystemError(`Failed to read file: ${filePath}`, {
         path: filePath,
         operation: "read",
@@ -325,6 +370,14 @@ Examples:
         wouldCreate,
       };
     } catch (error) {
+      if (isENOENT(error)) {
+        const enriched = await enrichENOENT(filePath, "write");
+        throw new FileSystemError(enriched, {
+          path: filePath,
+          operation: "write",
+          cause: error instanceof Error ? error : undefined,
+        });
+      }
       throw new FileSystemError(`Failed to write file: ${filePath}`, {
         path: filePath,
         operation: "write",
@@ -377,7 +430,34 @@ Examples:
       }
 
       if (replacements === 0) {
-        throw new Error(`Text not found in file: "${oldText.slice(0, 50)}..."`);
+        // Find closest matching line to provide context
+        const lines = content.split("\n");
+        const searchLine = (oldText.split("\n")[0] ?? oldText).trim().slice(0, 80);
+
+        let bestIdx = -1;
+        let bestDist = Infinity;
+        for (let i = 0; i < lines.length; i++) {
+          const dist = levenshtein(lines[i]!.trim().slice(0, 80), searchLine);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestIdx = i;
+          }
+        }
+
+        let context = "";
+        if (bestIdx >= 0 && bestDist < searchLine.length * 0.6) {
+          const start = Math.max(0, bestIdx - 2);
+          const end = Math.min(lines.length, bestIdx + 3);
+          const snippet = lines
+            .slice(start, end)
+            .map((l, i) => `  ${start + i + 1}: ${l}`)
+            .join("\n");
+          context = `\n\nClosest match near line ${bestIdx + 1}:\n${snippet}`;
+        }
+
+        throw new Error(
+          `Text not found in file: "${oldText.slice(0, 50)}..."${context}\nHint: Use read_file first to verify the exact content.`,
+        );
       }
 
       // Dry run - return preview without writing
@@ -442,6 +522,14 @@ Examples:
         count: files.length,
       };
     } catch (error) {
+      if (isENOENT(error) && cwd) {
+        const enriched = await enrichDirENOENT(cwd);
+        throw new FileSystemError(`Glob search failed — ${enriched}`, {
+          path: cwd,
+          operation: "glob",
+          cause: error instanceof Error ? error : undefined,
+        });
+      }
       throw new FileSystemError(`Glob search failed: ${pattern}`, {
         path: cwd ?? process.cwd(),
         operation: "glob",
@@ -536,6 +624,14 @@ Examples:
 
       return { entries };
     } catch (error) {
+      if (isENOENT(error)) {
+        const enriched = await enrichDirENOENT(dirPath);
+        throw new FileSystemError(enriched, {
+          path: dirPath,
+          operation: "read",
+          cause: error instanceof Error ? error : undefined,
+        });
+      }
       throw new FileSystemError(`Failed to list directory: ${dirPath}`, {
         path: dirPath,
         operation: "read",
@@ -664,6 +760,14 @@ Examples:
       };
     } catch (error) {
       if (error instanceof ToolError) throw error;
+      if (isENOENT(error)) {
+        const enriched = await enrichENOENT(source, "read");
+        throw new FileSystemError(`Failed to copy — ${enriched}`, {
+          path: source,
+          operation: "read",
+          cause: error instanceof Error ? error : undefined,
+        });
+      }
       throw new FileSystemError(`Failed to copy file: ${source} -> ${destination}`, {
         path: source,
         operation: "read",
@@ -729,6 +833,14 @@ Examples:
       };
     } catch (error) {
       if (error instanceof ToolError) throw error;
+      if (isENOENT(error)) {
+        const enriched = await enrichENOENT(source, "read");
+        throw new FileSystemError(`Failed to move — ${enriched}`, {
+          path: source,
+          operation: "write",
+          cause: error instanceof Error ? error : undefined,
+        });
+      }
       throw new FileSystemError(`Failed to move file: ${source} -> ${destination}`, {
         path: source,
         operation: "write",
@@ -815,6 +927,14 @@ Examples:
         totalDirs,
       };
     } catch (error) {
+      if (isENOENT(error)) {
+        const enriched = await enrichDirENOENT(dirPath ?? ".");
+        throw new FileSystemError(enriched, {
+          path: dirPath ?? ".",
+          operation: "read",
+          cause: error instanceof Error ? error : undefined,
+        });
+      }
       throw new FileSystemError(`Failed to generate tree: ${dirPath}`, {
         path: dirPath ?? ".",
         operation: "read",

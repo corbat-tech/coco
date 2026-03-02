@@ -60,6 +60,31 @@ export interface WebFetchOutput {
 }
 
 /**
+ * Return an actionable hint for common HTTP error status codes.
+ */
+function getHttpErrorHint(status: number): string {
+  switch (status) {
+    case 401:
+    case 403:
+      return "\nThis page requires authentication. Try using web_search to find a publicly accessible alternative.";
+    case 404:
+      return "\nPage not found. The URL may be outdated or misspelled. Try web_search to find the correct URL.";
+    case 429:
+      return "\nRate limited. Wait a moment before retrying, or try an alternative source.";
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return "\nServer error (temporary). Try again in a moment, or use web_search to find an alternative source.";
+    default:
+      if (status >= 400 && status < 500) {
+        return "\nClient error. Check the URL is correct or try web_search to find the right page.";
+      }
+      return "";
+  }
+}
+
+/**
  * Validate URL for safety
  */
 export function validateUrl(url: string): void {
@@ -406,7 +431,8 @@ Examples:
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new ToolError(`HTTP ${response.status}: ${response.statusText}`, {
+        const hint = getHttpErrorHint(response.status);
+        throw new ToolError(`HTTP ${response.status}: ${response.statusText} — ${url}${hint}`, {
           tool: "web_fetch",
         });
       }
