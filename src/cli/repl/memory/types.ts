@@ -20,7 +20,7 @@
  * Default file patterns to search for memory files.
  * Files are checked in order; the first match is used.
  */
-export const DEFAULT_FILE_PATTERNS = ["COCO.md", "CLAUDE.md"] as const;
+export const DEFAULT_FILE_PATTERNS = ["COCO.md", "CLAUDE.md", "AGENTS.md"] as const;
 
 /**
  * Suffix for local override files that should not be committed.
