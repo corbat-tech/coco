@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.0] - 2026-03-02
+
+### Added
+
+- **Comprehensive error recovery across all tools** — every tool now returns actionable recovery hints when errors occur, guiding the agent to the correct next step instead of showing raw error messages
+  - 28 tools enriched with pattern-specific error detection and human-readable suggestions
+  - Git tools detect 9 common failure patterns (merge conflicts, push rejections, missing refs, etc.)
+  - Build tools include a `hint` field when builds fail, suggesting missing dependencies, syntax fixes, or permission issues
+  - Bash safety blocks now name the specific rule violated and how to rewrite the command
+  - File-not-found errors suggest similar files via fuzzy matching (Did you mean?)
+- **AGENTS.md as universal fallback for agentic documentation** — subagents now discover and use AGENTS.md files as a documentation source
+
+### Improved
+
+- **Error humanizer expanded** — new pass-through rules prevent double-humanization of already-enriched messages; TypeScript error codes and SQLite errors now get contextual hints
+- **System prompt error recovery strategies** — per-category guidance (git, build/test, permissions, command not found, database) helps the agent self-correct without user intervention
+- **Quality tool honesty** — `run_linter` returns `score: null` with an explanatory message when no linter is detected, instead of a misleading perfect score of 100
+- **Semantic search transparency** — warns when using fallback text matching instead of transformer embeddings, and reports skipped files
+- **Code review warnings** — `review_code` now surfaces diff read failures and linter unavailability instead of silently skipping them
+
+### Fixed
+
+- **Status bar first-letter clipping** — add space after folder emoji to prevent the first character from being cut off in the terminal status line
+
+---
+
+## [2.7.0] - 2026-02-28
+
+### Added
+
+- **Multi-level subcommand support for bash permission patterns** — bash safety patterns now support matching multi-level subcommands for more granular permission control
+
+---
+
 ## [2.6.0] - 2026-02-27
 
 ### Added
@@ -717,7 +751,10 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.8.0...HEAD
+[2.8.0]: https://github.com/corbat-tech/coco/compare/v2.7.0...v2.8.0
+[2.7.0]: https://github.com/corbat-tech/coco/compare/v2.6.0...v2.7.0
+[2.6.0]: https://github.com/corbat-tech/coco/compare/v2.5.3...v2.6.0
 [2.4.0]: https://github.com/corbat-tech/coco/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/corbat-tech/coco/compare/v2.2.5...v2.3.0
 [2.2.5]: https://github.com/corbat-tech/coco/compare/v2.1.0...v2.2.5
