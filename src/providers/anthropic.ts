@@ -175,24 +175,45 @@ export class AnthropicProvider implements LLMProvider {
     this.ensureInitialized();
 
     try {
-      const stream = await this.client!.messages.stream({
-        model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-        temperature: options?.temperature ?? this.config.temperature ?? 0,
-        system: this.extractSystem(messages, options?.system),
-        messages: this.convertMessages(messages),
-      });
+      const stream = await this.client!.messages.stream(
+        {
+          model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
+          max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+          temperature: options?.temperature ?? this.config.temperature ?? 0,
+          system: this.extractSystem(messages, options?.system),
+          messages: this.convertMessages(messages),
+        },
+        { signal: options?.signal },
+      );
 
-      for await (const event of stream) {
-        if (event.type === "content_block_delta") {
-          const delta = event.delta as { type: string; text?: string };
-          if (delta.type === "text_delta" && delta.text) {
-            yield { type: "text", text: delta.text };
+      // Activity-based timeout protection (matches OpenAI provider pattern)
+      const streamTimeout = this.config.timeout ?? 120000;
+      let lastActivityTime = Date.now();
+
+      const checkTimeout = () => {
+        if (Date.now() - lastActivityTime > streamTimeout) {
+          throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
+        }
+      };
+
+      const timeoutInterval = setInterval(checkTimeout, 5000);
+
+      try {
+        for await (const event of stream) {
+          lastActivityTime = Date.now();
+
+          if (event.type === "content_block_delta") {
+            const delta = event.delta as { type: string; text?: string };
+            if (delta.type === "text_delta" && delta.text) {
+              yield { type: "text", text: delta.text };
+            }
           }
         }
-      }
 
-      yield { type: "done" };
+        yield { type: "done" };
+      } finally {
+        clearInterval(timeoutInterval);
+      }
     } catch (error) {
       throw this.handleError(error);
     }
@@ -208,109 +229,134 @@ export class AnthropicProvider implements LLMProvider {
     this.ensureInitialized();
 
     try {
-      const stream = await this.client!.messages.stream({
-        model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-        temperature: options?.temperature ?? this.config.temperature ?? 0,
-        system: this.extractSystem(messages, options?.system),
-        messages: this.convertMessages(messages),
-        tools: this.convertTools(options.tools),
-        tool_choice: options.toolChoice ? this.convertToolChoice(options.toolChoice) : undefined,
-      });
+      const stream = await this.client!.messages.stream(
+        {
+          model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
+          max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+          temperature: options?.temperature ?? this.config.temperature ?? 0,
+          system: this.extractSystem(messages, options?.system),
+          messages: this.convertMessages(messages),
+          tools: this.convertTools(options.tools),
+          tool_choice: options.toolChoice ? this.convertToolChoice(options.toolChoice) : undefined,
+        },
+        { signal: options?.signal },
+      );
 
       // Track current tool call being built
       let currentToolCall: Partial<ToolCall> | null = null;
       let currentToolInputJson = "";
 
-      for await (const event of stream) {
-        if (event.type === "content_block_start") {
-          const contentBlock = event.content_block as {
-            type: string;
-            id?: string;
-            name?: string;
-          };
-          if (contentBlock.type === "tool_use") {
-            // Guard: if a previous tool call was never closed (missing content_block_stop),
-            // finalize it now to prevent argument data bleeding into the next tool call.
+      // Activity-based timeout protection (matches OpenAI provider pattern).
+      // If no stream events arrive for `streamTimeout` ms, throw to unblock
+      // the REPL instead of hanging indefinitely.
+      const streamTimeout = this.config.timeout ?? 120000;
+      let lastActivityTime = Date.now();
+
+      const checkTimeout = () => {
+        if (Date.now() - lastActivityTime > streamTimeout) {
+          throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
+        }
+      };
+
+      const timeoutInterval = setInterval(checkTimeout, 5000);
+
+      try {
+        for await (const event of stream) {
+          lastActivityTime = Date.now();
+
+          if (event.type === "content_block_start") {
+            const contentBlock = event.content_block as {
+              type: string;
+              id?: string;
+              name?: string;
+            };
+            if (contentBlock.type === "tool_use") {
+              // Guard: if a previous tool call was never closed (missing content_block_stop),
+              // finalize it now to prevent argument data bleeding into the next tool call.
+              if (currentToolCall) {
+                getLogger().warn(
+                  `[Anthropic] content_block_stop missing for tool '${currentToolCall.name}' — finalizing early to prevent data bleed.`,
+                );
+                try {
+                  currentToolCall.input = currentToolInputJson
+                    ? JSON.parse(currentToolInputJson)
+                    : {};
+                } catch {
+                  currentToolCall.input = {};
+                }
+                yield {
+                  type: "tool_use_end",
+                  toolCall: { ...currentToolCall } as ToolCall,
+                };
+              }
+              currentToolCall = {
+                id: contentBlock.id,
+                name: contentBlock.name,
+              };
+              currentToolInputJson = "";
+              yield {
+                type: "tool_use_start",
+                toolCall: { ...currentToolCall },
+              };
+            }
+          } else if (event.type === "content_block_delta") {
+            const delta = event.delta as {
+              type: string;
+              text?: string;
+              partial_json?: string;
+            };
+            if (delta.type === "text_delta" && delta.text) {
+              yield { type: "text", text: delta.text };
+            } else if (delta.type === "input_json_delta" && delta.partial_json) {
+              currentToolInputJson += delta.partial_json;
+              yield {
+                type: "tool_use_delta",
+                toolCall: {
+                  ...currentToolCall,
+                },
+                text: delta.partial_json,
+              };
+            }
+          } else if (event.type === "content_block_stop") {
             if (currentToolCall) {
-              getLogger().warn(
-                `[Anthropic] content_block_stop missing for tool '${currentToolCall.name}' — finalizing early to prevent data bleed.`,
-              );
+              // Parse the accumulated JSON input
               try {
                 currentToolCall.input = currentToolInputJson
                   ? JSON.parse(currentToolInputJson)
                   : {};
               } catch {
-                currentToolCall.input = {};
+                // Try to repair malformed JSON (e.g. unescaped newlines/quotes in content)
+                let repaired = false;
+                if (currentToolInputJson) {
+                  try {
+                    currentToolCall.input = JSON.parse(jsonrepair(currentToolInputJson));
+                    repaired = true;
+                    getLogger().debug(`Repaired JSON for tool ${currentToolCall.name}`);
+                  } catch {
+                    // repair also failed — fall through
+                  }
+                }
+                if (!repaired) {
+                  getLogger().warn(
+                    `Failed to parse tool call arguments for ${currentToolCall.name}: ${currentToolInputJson?.slice(0, 300)}`,
+                  );
+                  currentToolCall.input = {};
+                }
               }
               yield {
                 type: "tool_use_end",
                 toolCall: { ...currentToolCall } as ToolCall,
               };
+              currentToolCall = null;
+              currentToolInputJson = "";
             }
-            currentToolCall = {
-              id: contentBlock.id,
-              name: contentBlock.name,
-            };
-            currentToolInputJson = "";
-            yield {
-              type: "tool_use_start",
-              toolCall: { ...currentToolCall },
-            };
-          }
-        } else if (event.type === "content_block_delta") {
-          const delta = event.delta as {
-            type: string;
-            text?: string;
-            partial_json?: string;
-          };
-          if (delta.type === "text_delta" && delta.text) {
-            yield { type: "text", text: delta.text };
-          } else if (delta.type === "input_json_delta" && delta.partial_json) {
-            currentToolInputJson += delta.partial_json;
-            yield {
-              type: "tool_use_delta",
-              toolCall: {
-                ...currentToolCall,
-              },
-              text: delta.partial_json,
-            };
-          }
-        } else if (event.type === "content_block_stop") {
-          if (currentToolCall) {
-            // Parse the accumulated JSON input
-            try {
-              currentToolCall.input = currentToolInputJson ? JSON.parse(currentToolInputJson) : {};
-            } catch {
-              // Try to repair malformed JSON (e.g. unescaped newlines/quotes in content)
-              let repaired = false;
-              if (currentToolInputJson) {
-                try {
-                  currentToolCall.input = JSON.parse(jsonrepair(currentToolInputJson));
-                  repaired = true;
-                  getLogger().debug(`Repaired JSON for tool ${currentToolCall.name}`);
-                } catch {
-                  // repair also failed — fall through
-                }
-              }
-              if (!repaired) {
-                getLogger().warn(
-                  `Failed to parse tool call arguments for ${currentToolCall.name}: ${currentToolInputJson?.slice(0, 300)}`,
-                );
-                currentToolCall.input = {};
-              }
-            }
-            yield {
-              type: "tool_use_end",
-              toolCall: { ...currentToolCall } as ToolCall,
-            };
-            currentToolCall = null;
-            currentToolInputJson = "";
           }
         }
-      }
 
-      yield { type: "done" };
+        yield { type: "done" };
+      } finally {
+        clearInterval(timeoutInterval);
+      }
     } catch (error) {
       throw this.handleError(error);
     }

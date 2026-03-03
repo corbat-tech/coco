@@ -331,8 +331,20 @@ export function addMessage(session: ReplSession, message: Message): void {
   // Trim history if needed (keep last N messages, but always keep system)
   const maxMessages = session.config.ui.maxHistorySize * 2;
   if (session.messages.length > maxMessages) {
-    // Keep recent messages
-    session.messages = session.messages.slice(-session.config.ui.maxHistorySize);
+    let sliceStart = session.messages.length - session.config.ui.maxHistorySize;
+    // Walk backward to avoid splitting tool_call/tool_result pairs.
+    // A tool_result message at the boundary would be orphaned from its
+    // preceding assistant message with tool_calls, causing Error 400.
+    while (sliceStart > 0 && sliceStart < session.messages.length) {
+      const msg = session.messages[sliceStart];
+      const isToolResult =
+        Array.isArray(msg?.content) &&
+        msg.content.length > 0 &&
+        (msg.content[0] as { type?: string })?.type === "tool_result";
+      if (!isToolResult) break;
+      sliceStart--;
+    }
+    session.messages = session.messages.slice(sliceStart);
   }
 }
 
@@ -812,6 +824,7 @@ export function updateContextTokens(session: ReplSession, provider: LLMProvider)
 export async function checkAndCompactContext(
   session: ReplSession,
   provider: LLMProvider,
+  signal?: AbortSignal,
 ): Promise<CompactionResult | null> {
   if (!session.contextManager) {
     initializeContextManager(session, provider);
@@ -831,7 +844,7 @@ export async function checkAndCompactContext(
     summaryMaxTokens: 1000,
   });
 
-  const result = await compactor.compact(session.messages, provider);
+  const result = await compactor.compact(session.messages, provider, signal);
 
   if (result.wasCompacted) {
     // Update session messages with compacted version
