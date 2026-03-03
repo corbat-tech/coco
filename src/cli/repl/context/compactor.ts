@@ -71,7 +71,11 @@ export class ContextCompactor {
    * @param provider - The LLM provider to use for summarization
    * @returns Compacted messages with summary replacing older messages
    */
-  async compact(messages: Message[], provider: LLMProvider): Promise<CompactionResult> {
+  async compact(
+    messages: Message[],
+    provider: LLMProvider,
+    signal?: AbortSignal,
+  ): Promise<CompactionResult> {
     // Filter out system messages - those are handled separately
     const conversationMessages = messages.filter((m) => m.role !== "system");
 
@@ -129,7 +133,7 @@ export class ContextCompactor {
     const conversationText = this.formatMessagesForSummary(messagesToSummarize);
 
     // Generate summary using the LLM
-    const summary = await this.generateSummary(conversationText, provider);
+    const summary = await this.generateSummary(conversationText, provider, signal);
 
     // Create compacted message array
     // Include system messages at the start, then summary, then preserved messages
@@ -199,17 +203,38 @@ export class ContextCompactor {
   /**
    * Generate a summary of the conversation using the LLM
    */
-  private async generateSummary(conversationText: string, provider: LLMProvider): Promise<string> {
+  private async generateSummary(
+    conversationText: string,
+    provider: LLMProvider,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (signal?.aborted) return "[Compaction cancelled]";
+
     const prompt = COMPACTION_PROMPT + conversationText;
 
     try {
-      const response = await provider.chat([{ role: "user", content: prompt }], {
+      const chatPromise = provider.chat([{ role: "user", content: prompt }], {
         maxTokens: this.config.summaryMaxTokens,
         temperature: 0.3, // Lower temperature for more consistent summaries
       });
 
+      if (signal) {
+        const abortPromise = new Promise<never>((_, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+        const response = await Promise.race([chatPromise, abortPromise]);
+        return response.content;
+      }
+
+      const response = await chatPromise;
       return response.content;
     } catch (error) {
+      // Let abort errors propagate so callers can distinguish cancellation
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
       // If summarization fails, return a minimal summary
       const errorMessage = error instanceof Error ? error.message : String(error);
       return `[Summary generation failed: ${errorMessage}. Previous conversation had ${conversationText.length} characters.]`;

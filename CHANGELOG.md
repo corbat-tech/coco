@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.1] - 2026-03-03
+
+### Fixed
+
+- **REPL freeze during Anthropic/Kimi streaming** — the Anthropic provider (used by kimi-code) had no stream-level timeout; if the LLM stalled mid-stream the REPL would hang indefinitely and Ctrl+C would kill the process. Added activity-based timeout (120s, matching the OpenAI provider) to both `stream()` and `streamWithTools()` methods
+- **Ctrl+C does not cancel Anthropic streams** — the AbortSignal from the agent loop is now passed through to the Anthropic SDK's `messages.stream()` call, so pressing Ctrl+C aborts the HTTP connection directly instead of waiting for the stuck generator to yield
+- **REPL freeze during context compaction** — the compaction LLM call had no timeout, no abort support, and no visual feedback. Added a 30-second timeout, SIGINT handler, and spinner; on abort or timeout the REPL continues silently
+- **History trimming corrupts tool_call/tool_result pairs** — `addMessage()` could slice the message history at a `tool_result` boundary, orphaning it from its preceding `tool_use` message and causing persistent API Error 400 loops. The trimming now walks back to the nearest non-tool_result boundary (same proven pattern used in the context compactor)
+
+---
+
 ## [2.8.0] - 2026-03-02
 
 ### Added
@@ -715,6 +726,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 2.8.1 | 2026-03-03 | Fix REPL freeze on Anthropic/Kimi streaming, compaction timeout+spinner, addMessage pair-safe trimming |
 | 2.1.0 | 2026-02-20 | /mcp, /intent commands, kimi-code provider, MCP+skills wired to REPL, VS Code extension, improved welcome screen |
 | 2.0.0 | 2026-02-20 | React/Java analyzers, ProjectConfig, quality bridge, report exporter, GitHub Actions generator, 6 new providers |
 | 1.9.0 | 2026-02-19 | Parallel development skills for isolated feature work |
@@ -751,7 +763,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.8.1...HEAD
+[2.8.1]: https://github.com/corbat-tech/coco/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/corbat-tech/coco/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/corbat-tech/coco/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/corbat-tech/coco/compare/v2.5.3...v2.6.0

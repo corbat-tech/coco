@@ -962,20 +962,38 @@ export async function startRepl(
       const usageBefore = getContextUsagePercent(session);
       let usageForDisplay = usageBefore;
       try {
-        const compactionResult = await checkAndCompactContext(session, provider);
-        if (compactionResult?.wasCompacted) {
-          usageForDisplay = getContextUsagePercent(session);
-          console.log(
-            chalk.dim(
-              `Context compacted (${usageBefore.toFixed(0)}% -> ${usageForDisplay.toFixed(0)}%)`,
-            ),
+        const compactAbort = new AbortController();
+        const compactTimeout = setTimeout(() => compactAbort.abort(), 30_000);
+        const compactSigint = () => compactAbort.abort();
+        process.once("SIGINT", compactSigint);
+
+        const compactSpinner = createSpinner("Compacting context");
+        compactSpinner.start();
+
+        try {
+          const compactionResult = await checkAndCompactContext(
+            session,
+            provider,
+            compactAbort.signal,
           );
-          // Always reset after compaction so the warnings re-evaluate at the new level
-          warned75 = false;
-          warned90 = false;
+          if (compactionResult?.wasCompacted) {
+            usageForDisplay = getContextUsagePercent(session);
+            compactSpinner.stop(
+              `Context compacted (${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%)`,
+            );
+            warned75 = false;
+            warned90 = false;
+          } else {
+            compactSpinner.clear();
+          }
+        } catch {
+          compactSpinner.clear(); // silently ignore compaction errors
+        } finally {
+          clearTimeout(compactTimeout);
+          process.off("SIGINT", compactSigint);
         }
       } catch {
-        // Silently ignore compaction errors - not critical
+        // Silently ignore compaction errors
       }
 
       // Render status bar with post-compaction context usage

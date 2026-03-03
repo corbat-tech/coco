@@ -152,6 +152,7 @@ export async function executeAgentTurn(
     for await (const chunk of provider.streamWithTools(messages, {
       tools,
       maxTokens: session.config.provider.maxTokens,
+      signal: options.signal,
     })) {
       // Check for abort
       if (options.signal?.aborted) {
@@ -531,6 +532,7 @@ export async function executeAgentTurn(
         for await (const chunk of provider.streamWithTools(finalMessages, {
           tools: [],
           maxTokens: session.config.provider.maxTokens,
+          signal: options.signal,
         })) {
           if (options.signal?.aborted) break;
           if (chunk.type === "text" && chunk.text) {

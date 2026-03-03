@@ -94,6 +94,8 @@ export interface ChatOptions {
   stopSequences?: string[];
   system?: string;
   timeout?: number;
+  /** Abort signal to cancel in-flight requests */
+  signal?: AbortSignal;
 }
 
 /**
