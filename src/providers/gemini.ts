@@ -225,14 +225,20 @@ export class GeminiProvider implements LLMProvider {
       const chat = model.startChat({ history });
       const result = await chat.sendMessageStream(lastMessage);
 
+      let streamStopReason: StreamChunk["stopReason"];
+
       for await (const chunk of result.stream) {
         const text = chunk.text();
         if (text) {
           yield { type: "text", text };
         }
+        const finishReason = chunk.candidates?.[0]?.finishReason;
+        if (finishReason) {
+          streamStopReason = this.mapFinishReason(finishReason);
+        }
       }
 
-      yield { type: "done" };
+      yield { type: "done", stopReason: streamStopReason };
     } catch (error) {
       throw this.handleError(error);
     }
@@ -277,12 +283,19 @@ export class GeminiProvider implements LLMProvider {
 
       // Track emitted tool calls to avoid duplicates
       const emittedToolCalls = new Set<string>();
+      let streamStopReason: StreamChunk["stopReason"];
 
       for await (const chunk of result.stream) {
         // Handle text content
         const text = chunk.text();
         if (text) {
           yield { type: "text", text };
+        }
+
+        // Track finish reason
+        const finishReason = chunk.candidates?.[0]?.finishReason;
+        if (finishReason) {
+          streamStopReason = this.mapFinishReason(finishReason);
         }
 
         // Handle function calls in the chunk
@@ -332,7 +345,7 @@ export class GeminiProvider implements LLMProvider {
         }
       }
 
-      yield { type: "done" };
+      yield { type: "done", stopReason: streamStopReason };
     } catch (error) {
       throw this.handleError(error);
     }

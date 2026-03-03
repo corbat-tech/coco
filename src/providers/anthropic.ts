@@ -199,6 +199,8 @@ export class AnthropicProvider implements LLMProvider {
       const timeoutInterval = setInterval(checkTimeout, 5000);
 
       try {
+        let streamStopReason: StreamChunk["stopReason"];
+
         for await (const event of stream) {
           lastActivityTime = Date.now();
 
@@ -207,10 +209,15 @@ export class AnthropicProvider implements LLMProvider {
             if (delta.type === "text_delta" && delta.text) {
               yield { type: "text", text: delta.text };
             }
+          } else if (event.type === "message_delta") {
+            const delta = event.delta as { stop_reason?: string };
+            if (delta.stop_reason) {
+              streamStopReason = this.mapStopReason(delta.stop_reason);
+            }
           }
         }
 
-        yield { type: "done" };
+        yield { type: "done", stopReason: streamStopReason };
       } finally {
         clearInterval(timeoutInterval);
       }
@@ -261,10 +268,17 @@ export class AnthropicProvider implements LLMProvider {
       const timeoutInterval = setInterval(checkTimeout, 5000);
 
       try {
+        let streamStopReason: StreamChunk["stopReason"];
+
         for await (const event of stream) {
           lastActivityTime = Date.now();
 
-          if (event.type === "content_block_start") {
+          if (event.type === "message_delta") {
+            const delta = event.delta as { stop_reason?: string };
+            if (delta.stop_reason) {
+              streamStopReason = this.mapStopReason(delta.stop_reason);
+            }
+          } else if (event.type === "content_block_start") {
             const contentBlock = event.content_block as {
               type: string;
               id?: string;
@@ -353,7 +367,7 @@ export class AnthropicProvider implements LLMProvider {
           }
         }
 
-        yield { type: "done" };
+        yield { type: "done", stopReason: streamStopReason };
       } finally {
         clearInterval(timeoutInterval);
       }

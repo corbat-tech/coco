@@ -344,14 +344,20 @@ export class OpenAIProvider implements LLMProvider {
         ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
       });
 
+      let streamStopReason: StreamChunk["stopReason"];
+
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
         if (delta?.content) {
           yield { type: "text", text: delta.content };
         }
+        const finishReason = chunk.choices[0]?.finish_reason;
+        if (finishReason) {
+          streamStopReason = this.mapFinishReason(finishReason);
+        }
       }
 
-      yield { type: "done" };
+      yield { type: "done", stopReason: streamStopReason };
     } catch (error) {
       throw this.handleError(error);
     }
@@ -446,6 +452,8 @@ export class OpenAIProvider implements LLMProvider {
       };
 
       try {
+        let streamStopReason: StreamChunk["stopReason"];
+
         for await (const chunk of stream) {
           const delta = chunk.choices[0]?.delta;
 
@@ -515,6 +523,9 @@ export class OpenAIProvider implements LLMProvider {
           // while still inside the for-await loop — so they are never lost
           // if the consumer breaks out of the generator early (e.g. on abort).
           const finishReason = chunk.choices[0]?.finish_reason;
+          if (finishReason) {
+            streamStopReason = this.mapFinishReason(finishReason);
+          }
           if (finishReason && toolCallBuilders.size > 0) {
             for (const [, builder] of toolCallBuilders) {
               yield {
@@ -543,7 +554,7 @@ export class OpenAIProvider implements LLMProvider {
           };
         }
 
-        yield { type: "done" };
+        yield { type: "done", stopReason: streamStopReason };
       } finally {
         clearInterval(timeoutInterval);
       }
