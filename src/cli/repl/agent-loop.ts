@@ -142,6 +142,7 @@ export async function executeAgentTurn(
     let responseContent = "";
     const collectedToolCalls: ToolCall[] = [];
     let thinkingEnded = false;
+    let lastStopReason: StreamChunk["stopReason"];
 
     // Track tool call builders for streaming
     const toolCallBuilders: Map<
@@ -217,6 +218,10 @@ export async function executeAgentTurn(
 
       // Handle done
       if (chunk.type === "done") {
+        // Capture stopReason from the done chunk
+        if (chunk.stopReason) {
+          lastStopReason = chunk.stopReason;
+        }
         // Ensure thinking ended
         if (!thinkingEnded) {
           options.onThinkingEnd?.();
@@ -245,6 +250,19 @@ export async function executeAgentTurn(
       if (options.signal?.aborted) {
         return abortReturn();
       }
+
+      // Auto-continue on max_tokens cutoff: the LLM ran out of output tokens
+      // mid-response. Save the partial text and ask it to continue.
+      if (lastStopReason === "max_tokens" && responseContent) {
+        addMessage(session, { role: "assistant", content: responseContent });
+        addMessage(session, {
+          role: "user",
+          content:
+            "[System: Your previous response was cut off due to the output token limit. Continue exactly where you left off.]",
+        });
+        continue;
+      }
+
       // No more tool calls, we're done
       addMessage(session, { role: "assistant", content: responseContent });
       break;
@@ -546,6 +564,13 @@ export async function executeAgentTurn(
       }
       break;
     }
+  }
+
+  // Notify user when the iteration limit was reached
+  if (iteration >= maxIterations) {
+    const notice = `\n\n---\n_Reached the iteration limit (${maxIterations}). The task may be incomplete. You can say "continue" to resume._`;
+    finalContent += notice;
+    options.onStream?.({ type: "text", text: notice });
   }
 
   // Signal completion

@@ -397,7 +397,7 @@ export class CodexProvider implements LLMProvider {
       }
     }
 
-    yield { type: "done" as const };
+    yield { type: "done" as const, stopReason: response.stopReason };
   }
 
   /**

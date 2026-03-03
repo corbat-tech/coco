@@ -134,6 +134,7 @@ export interface StreamChunk {
   type: "text" | "tool_use_start" | "tool_use_delta" | "tool_use_end" | "done";
   text?: string;
   toolCall?: Partial<ToolCall>;
+  stopReason?: "end_turn" | "max_tokens" | "stop_sequence" | "tool_use";
 }
 
 /**
