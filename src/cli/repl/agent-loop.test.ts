@@ -1233,9 +1233,7 @@ describe("iteration limit notice", () => {
 
     const toolCall: ToolCall = { id: "tool-1", name: "read_file", input: { path: "/file.ts" } };
 
-    (mockProvider.streamWithTools as Mock).mockImplementation(
-      createToolStreamMock("", [toolCall]),
-    );
+    (mockProvider.streamWithTools as Mock).mockImplementation(createToolStreamMock("", [toolCall]));
     (mockToolRegistry.execute as Mock).mockResolvedValue({
       success: true,
       data: "content",
@@ -1267,16 +1265,9 @@ describe("iteration limit notice", () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
     // Normal response — no tool calls, ends after 1 iteration
-    (mockProvider.streamWithTools as Mock).mockImplementation(
-      createTextStreamMock("All done!"),
-    );
+    (mockProvider.streamWithTools as Mock).mockImplementation(createTextStreamMock("All done!"));
 
-    const result = await executeAgentTurn(
-      mockSession,
-      "Hello",
-      mockProvider,
-      mockToolRegistry,
-    );
+    const result = await executeAgentTurn(mockSession, "Hello", mockProvider, mockToolRegistry);
 
     expect(result.content).toBe("All done!");
     expect(result.content).not.toContain("iteration limit");

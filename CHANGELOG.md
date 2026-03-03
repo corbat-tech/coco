@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.2] - 2026-03-03
+
+### Fixed
+
+- **Agent loop stops silently without explaining why** — when the LLM hit the output token limit (`max_tokens`), the stream ended with no tool calls and the agent broke out of the loop without any user-visible message. Now auto-continues by saving partial text and injecting a continuation prompt so the response completes naturally
+- **No notification when iteration limit is reached** — when the agent exhausted its tool iteration limit (default 25), the loop exited silently. Now displays a visible notice: _"Reached the iteration limit. You can say 'continue' to resume."_
+
+### Improved
+
+- **All providers now emit `stopReason` in stream done chunks** — Anthropic, OpenAI, Gemini, and Codex providers track the LLM's stop/finish reason during streaming and surface it to the agent loop, enabling informed decisions about why a response ended
+
+---
+
 ## [2.8.1] - 2026-03-03
 
 ### Fixed
@@ -763,7 +776,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.8.1...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.8.2...HEAD
+[2.8.2]: https://github.com/corbat-tech/coco/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/corbat-tech/coco/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/corbat-tech/coco/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/corbat-tech/coco/compare/v2.6.0...v2.7.0
