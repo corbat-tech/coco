@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.10.0] - 2026-03-04
+
+### Added
+
+- **Specialized subagent system** — five role-based agents (explore, plan, worker, reviewer, general) with per-role tool whitelists and model selection for targeted task execution
+- **Mid-task steering** — LLM classifier distinguishes STEER/MODIFY/QUEUE/ABORT intents, enabling real-time context injection between agent iterations without restarting
+- **Best-of-N parallel solutions** — run N independent solution attempts in isolated worktrees, score each with quality evaluation, and pick the best result
+- **Headless/CI mode** — new `-P` flag for non-interactive pipeline execution, enabling use in CI/CD workflows and scripts
+- **Unix composability** — stdin piping support (`git diff | coco -P "review"`) for integrating with shell pipelines
+- **Layered COCO.md configuration** — 4-level hierarchy (user/project/directory/local) for fine-grained agent behavior customization
+- **Enhanced plan mode** — read-only exploration phase with approve-then-execute flow for safer architectural changes
+- **Context compaction with focus preservation** — `/compact focus on X` retains relevant context while compressing the rest
+- **Worktree manager** — built-in git worktree lifecycle management (create/merge/cleanup) for parallel feature development
+
+### Fixed
+
+- **Path traversal containment** — prevent file operations from escaping the project directory
+- **setTimeout leak** — clean up dangling timers that could keep the process alive after exit
+- **Worktree path collision** — detect and handle name conflicts when creating worktrees
+- **Stdin timeout** — proper timeout handling for piped input in headless mode
+
+---
+
 ## [2.9.0] - 2026-03-04
 
 ### Added
@@ -799,6 +822,7 @@ Future versions will include upgrade guides here.
 [2.2.5]: https://github.com/corbat-tech/coco/compare/v2.1.0...v2.2.5
 [2.1.0]: https://github.com/corbat-tech/coco/compare/v2.0.0...v2.1.0
 [2.4.2]: https://github.com/corbat-tech/coco/compare/v2.4.1...v2.4.2
+[2.10.0]: https://github.com/corbat-tech/coco/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/corbat-tech/coco/compare/v2.8.2...v2.9.0
 [2.4.1]: https://github.com/corbat-tech/coco/compare/v2.4.0...v2.4.1
 [2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0

@@ -33,6 +33,10 @@ export interface ReplSession {
   skillRegistry?: UnifiedSkillRegistry;
   /** Last arguments passed to a skill (for $ARGUMENTS substitution) */
   lastSkillArguments?: string;
+  /** Plan mode: restricts agent to read-only tools for planning */
+  planMode?: boolean;
+  /** Pending plan text awaiting user approval */
+  pendingPlan?: string | null;
 }
 
 /**

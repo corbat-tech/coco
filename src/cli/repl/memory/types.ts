@@ -62,17 +62,25 @@ export const MEMORY_DEFAULTS = {
  * The levels form a hierarchy with increasing specificity:
  * - `user`: Global user preferences (~/.coco/COCO.md)
  * - `project`: Project-specific instructions (./COCO.md, committed to repo)
+ * - `directory`: Subdirectory-specific instructions (e.g., src/api/COCO.md)
  * - `local`: Personal overrides (./COCO.local.md, gitignored)
  *
  * Higher specificity levels override lower ones when conflicts occur.
+ * Directory-level files are collected from all directories between project root
+ * and the current working directory, with closer directories taking precedence.
  */
-export type MemoryLevel = "user" | "project" | "local";
+export type MemoryLevel = "user" | "project" | "directory" | "local";
 
 /**
  * Array of all memory levels in order of precedence (lowest to highest).
  * Used for iterating through levels in the correct order.
  */
-export const MEMORY_LEVELS: readonly MemoryLevel[] = ["user", "project", "local"] as const;
+export const MEMORY_LEVELS: readonly MemoryLevel[] = [
+  "user",
+  "project",
+  "directory",
+  "local",
+] as const;
 
 // ============================================================================
 // Memory Section

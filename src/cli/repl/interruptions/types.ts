@@ -54,6 +54,8 @@ export enum InterruptionAction {
   Queue = "queue",
   /** Abort the current execution immediately */
   Abort = "abort",
+  /** Steer the agent mid-execution — inject context between iterations without aborting */
+  Steer = "steer",
 }
 
 /**

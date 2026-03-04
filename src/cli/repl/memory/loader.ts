@@ -46,6 +46,8 @@ export interface MemoryFilePaths {
   user?: string;
   /** Project level file path (if found) */
   project?: string;
+  /** Directory level file paths (from project root to cwd, closest first) */
+  directory?: string[];
   /** Local level file path (if found) */
   local?: string;
 }
@@ -91,19 +93,51 @@ export class MemoryLoader {
   /**
    * Load all memory for a project
    * @param projectPath - Path to the project directory
+   * @param currentDir - Current working directory for directory-level resolution (defaults to process.cwd())
    * @returns Combined memory context from all levels
    */
-  async loadMemory(projectPath: string): Promise<MemoryContext> {
+  async loadMemory(projectPath: string, currentDir?: string): Promise<MemoryContext> {
     const errors: MemoryError[] = [];
     const files: MemoryFile[] = [];
 
     // Find memory files at each level
-    const filePaths = await this.findMemoryFiles(projectPath);
+    const filePaths = await this.findMemoryFiles(projectPath, currentDir);
 
-    // Load files in order: user -> project -> local
+    // Load files in order: user -> project -> directory -> local
     for (const level of MEMORY_LEVELS) {
       // Skip user level if disabled
       if (level === "user" && !this.config.includeUserLevel) {
+        continue;
+      }
+
+      // Directory level may have multiple files (one per directory)
+      if (level === "directory") {
+        const dirPaths = filePaths.directory ?? [];
+        for (const dirPath of dirPaths) {
+          try {
+            const memoryFile = await this.loadFile(dirPath, "directory");
+            files.push(memoryFile);
+
+            for (const imp of memoryFile.imports) {
+              if (!imp.resolved && imp.error) {
+                errors.push({
+                  file: dirPath,
+                  level: "directory",
+                  error: `Import failed: ${imp.originalPath} - ${imp.error}`,
+                  recoverable: true,
+                });
+              }
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            errors.push({
+              file: dirPath,
+              level: "directory",
+              error: `Failed to load memory file: ${message}`,
+              recoverable: true,
+            });
+          }
+        }
         continue;
       }
 
@@ -201,7 +235,7 @@ export class MemoryLoader {
    * @param projectPath - Path to the project directory
    * @returns Paths to found memory files at each level
    */
-  async findMemoryFiles(projectPath: string): Promise<MemoryFilePaths> {
+  async findMemoryFiles(projectPath: string, currentDir?: string): Promise<MemoryFilePaths> {
     const result: MemoryFilePaths = {};
 
     // User level: ~/.coco/COCO.md
@@ -223,6 +257,32 @@ export class MemoryLoader {
       if (await this.fileExists(projectFilePath)) {
         result.project = projectFilePath;
         break;
+      }
+    }
+
+    // Directory level: walk from project root to currentDir, checking each for COCO.md
+    // This allows subdirectory-specific instructions (e.g., src/api/COCO.md)
+    const cwd = currentDir ?? process.cwd();
+    if (cwd.startsWith(absoluteProjectPath) && cwd !== absoluteProjectPath) {
+      const relativePath = path.relative(absoluteProjectPath, cwd);
+      const parts = relativePath.split(path.sep);
+      const dirFiles: string[] = [];
+
+      // Walk from project root toward cwd (farthest to closest)
+      let currentDir = absoluteProjectPath;
+      for (const part of parts) {
+        currentDir = path.join(currentDir, part);
+        for (const pattern of this.config.filePatterns) {
+          const dirFilePath = path.join(currentDir, pattern);
+          if (await this.fileExists(dirFilePath)) {
+            dirFiles.push(dirFilePath);
+            break;
+          }
+        }
+      }
+
+      if (dirFiles.length > 0) {
+        result.directory = dirFiles;
       }
     }
 
@@ -345,7 +405,11 @@ export class MemoryLoader {
     for (const file of files) {
       if (file.exists && file.content.trim()) {
         // Add a separator comment indicating the source
-        parts.push(`<!-- Memory: ${file.level} level (${path.basename(file.path)}) -->`);
+        const label =
+          file.level === "directory"
+            ? `directory level (${path.dirname(file.path)}/${path.basename(file.path)})`
+            : `${file.level} level (${path.basename(file.path)})`;
+        parts.push(`<!-- Memory: ${label} -->`);
         parts.push(file.content);
         parts.push("");
       }
@@ -428,24 +492,44 @@ export class MemoryLoader {
   }
 
   /**
-   * Resolve an import path relative to a base directory
+   * Resolve an import path relative to a base directory.
+   * Enforces containment: resolved path must be under the base directory
+   * or the user config directory to prevent path traversal attacks.
+   *
    * @param importPath - The import path (without @)
    * @param basePath - Base directory for relative paths
    * @returns Resolved absolute path
+   * @throws Error if resolved path escapes allowed directories
    */
   private resolveImportPath(importPath: string, basePath: string): string {
-    // Handle home directory
+    let resolved: string;
+
+    // Handle home directory — only allow within ~/.coco/
     if (importPath.startsWith("~")) {
-      return path.join(os.homedir(), importPath.slice(1));
+      resolved = path.join(os.homedir(), importPath.slice(1));
+      const userConfigDir = this.resolvePath(USER_CONFIG_DIR);
+      if (!resolved.startsWith(userConfigDir + path.sep) && resolved !== userConfigDir) {
+        throw new Error(`Import path escapes user config directory: @${importPath}`);
+      }
+      return resolved;
     }
 
-    // Handle absolute paths
+    // Handle absolute paths — verify containment within basePath
     if (path.isAbsolute(importPath)) {
-      return importPath;
+      resolved = path.resolve(importPath);
+      if (!resolved.startsWith(basePath + path.sep) && resolved !== basePath) {
+        throw new Error(`Import path escapes project directory: @${importPath}`);
+      }
+      return resolved;
     }
 
-    // Relative path
-    return path.resolve(basePath, importPath);
+    // Relative path — resolve and verify containment
+    resolved = path.resolve(basePath, importPath);
+    if (!resolved.startsWith(basePath + path.sep) && resolved !== basePath) {
+      throw new Error(`Import path escapes project directory: @${importPath}`);
+    }
+
+    return resolved;
   }
 
   /**

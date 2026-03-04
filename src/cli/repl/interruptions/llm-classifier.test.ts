@@ -181,6 +181,33 @@ describe("LLM Classifier", () => {
     });
   });
 
+  describe("STEER classification", () => {
+    it("should classify STEER response correctly", async () => {
+      const provider = createMockProvider("STEER");
+      const classifier = createLLMClassifier(provider);
+
+      const result = await classifier.classify(
+        createMessage("also add a test for that"),
+        "fix the auth bug in login.ts",
+      );
+
+      expect(result.action).toBe(InterruptionAction.Steer);
+      expect(result.source).toBe("llm");
+    });
+
+    it("should prefer STEER over MODIFY when LLM says STEER", async () => {
+      const provider = createMockProvider("STEER");
+      const classifier = createLLMClassifier(provider);
+
+      const result = await classifier.classify(
+        createMessage("use camelCase"),
+        "refactor the utils module",
+      );
+
+      expect(result.action).toBe(InterruptionAction.Steer);
+    });
+  });
+
   describe("LLM call options", () => {
     it("should use low maxTokens and temperature 0", async () => {
       const provider = createMockProvider("MODIFY");
@@ -192,6 +219,7 @@ describe("LLM Classifier", () => {
       const options = callArgs[1]!;
       expect(options.maxTokens).toBe(10);
       expect(options.temperature).toBe(0);
+      expect(options.system).toContain("STEER");
       expect(options.system).toContain("MODIFY");
       expect(options.system).toContain("QUEUE");
       expect(options.system).toContain("ABORT");

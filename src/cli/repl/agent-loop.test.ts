@@ -1272,4 +1272,98 @@ describe("iteration limit notice", () => {
     expect(result.content).toBe("All done!");
     expect(result.content).not.toContain("iteration limit");
   });
+
+  it("should inject steering messages between iterations via onSteeringCheck", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+    const { addMessage } = await import("./session.js");
+
+    const toolCall: ToolCall = { id: "tool-steer-1", name: "read_file", input: { path: "/a.ts" } };
+
+    // First call returns a tool call, second call returns text (no more tools)
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("Reading file...", [toolCall])();
+      }
+      return createTextStreamMock("Done with adjustments.")();
+    });
+
+    const toolResult: ToolResult = {
+      success: true,
+      data: { content: "file content" },
+      duration: 5,
+    };
+    (mockToolRegistry.execute as Mock).mockResolvedValue(toolResult);
+
+    // Steering: return a message on first check, empty on second
+    let steerCallCount = 0;
+    const onSteeringCheck = vi.fn(() => {
+      steerCallCount++;
+      if (steerCallCount === 1) {
+        return ["use camelCase for variable names"];
+      }
+      return [];
+    });
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "Fix the code",
+      mockProvider,
+      mockToolRegistry,
+      {
+        onSteeringCheck,
+      },
+    );
+
+    // Steering check should have been called at least once (between iterations)
+    expect(onSteeringCheck).toHaveBeenCalled();
+
+    // Steering message should have been injected via addMessage
+    expect(addMessage).toHaveBeenCalledWith(
+      mockSession,
+      expect.objectContaining({
+        role: "user",
+        content: expect.stringContaining("use camelCase for variable names"),
+      }),
+    );
+
+    // Agent should NOT be aborted — steering doesn't abort
+    expect(result.aborted).toBe(false);
+  });
+
+  it("should not inject steering when onSteeringCheck returns empty", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+    const { addMessage } = await import("./session.js");
+
+    const toolCall: ToolCall = { id: "tool-steer-2", name: "read_file", input: { path: "/b.ts" } };
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("", [toolCall])();
+      }
+      return createTextStreamMock("Done.")();
+    });
+
+    const toolResult: ToolResult = { success: true, data: { content: "ok" }, duration: 5 };
+    (mockToolRegistry.execute as Mock).mockResolvedValue(toolResult);
+
+    const onSteeringCheck = vi.fn(() => []);
+
+    await executeAgentTurn(mockSession, "Do something", mockProvider, mockToolRegistry, {
+      onSteeringCheck,
+    });
+
+    // Should have been called, but no steering message injected
+    expect(onSteeringCheck).toHaveBeenCalled();
+
+    // addMessage should NOT have been called with steering content
+    const steeringCalls = (addMessage as Mock).mock.calls.filter((call: unknown[]) => {
+      const msg = call[1] as { content: string };
+      return typeof msg.content === "string" && msg.content.includes("Mid-task steering");
+    });
+    expect(steeringCalls).toHaveLength(0);
+  });
 });

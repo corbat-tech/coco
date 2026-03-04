@@ -5,8 +5,8 @@
 
 import { z } from "zod";
 import { defineTool } from "./registry.js";
-import { getAgentProvider, getAgentToolRegistry } from "../agents/provider-bridge.js";
-import { AgentExecutor, AGENT_ROLES } from "../agents/executor.js";
+import { getAgentManager } from "../agents/provider-bridge.js";
+import type { AgentType } from "../cli/repl/agents/types.js";
 
 /**
  * Agent task with priority and dependencies
@@ -275,7 +275,18 @@ export const createAgentPlanTool = defineTool({
 });
 
 /**
- * Tool: Delegate task to virtual sub-agent
+ * Legacy role → AgentType mapping for backward compatibility
+ */
+const LEGACY_ROLE_TO_TYPE: Record<string, AgentType> = {
+  researcher: "explore",
+  coder: "debug",
+  reviewer: "review",
+  tester: "test",
+  optimizer: "refactor",
+};
+
+/**
+ * Tool: Delegate task to specialized sub-agent via AgentManager
  */
 export const delegateTaskTool = defineTool({
   name: "delegateTask",
@@ -284,7 +295,27 @@ export const delegateTaskTool = defineTool({
   parameters: z.object({
     taskId: z.string(),
     task: z.string().describe("Description of the task for the agent to execute"),
-    agentRole: z.enum(["researcher", "coder", "reviewer", "tester", "optimizer"]).default("coder"),
+    agentType: z
+      .enum([
+        "explore",
+        "plan",
+        "test",
+        "debug",
+        "review",
+        "architect",
+        "security",
+        "tdd",
+        "refactor",
+        "e2e",
+        "docs",
+        "database",
+      ])
+      .optional()
+      .describe("Specialized agent type to use"),
+    agentRole: z
+      .enum(["researcher", "coder", "reviewer", "tester", "optimizer"])
+      .optional()
+      .describe("DEPRECATED: Use agentType instead"),
     context: z.string().optional(),
     maxTurns: z.number().default(10),
   }),
@@ -293,19 +324,20 @@ export const delegateTaskTool = defineTool({
     const typedInput = input as {
       taskId: string;
       task: string;
-      agentRole: string;
+      agentType?: AgentType;
+      agentRole?: string;
       context?: string;
       maxTurns: number;
     };
 
-    const provider = getAgentProvider();
-    const toolRegistry = getAgentToolRegistry();
+    const manager = getAgentManager();
 
-    if (!provider || !toolRegistry) {
+    if (!manager) {
+      const resolvedType = typedInput.agentType ?? "explore";
       return {
-        agentId: `agent-${Date.now()}-${typedInput.agentRole}`,
+        agentId: `agent-${Date.now()}-${resolvedType}`,
         taskId: typedInput.taskId,
-        role: typedInput.agentRole,
+        agentType: resolvedType,
         status: "unavailable",
         message:
           "Agent provider not initialized. Call setAgentProvider() during orchestrator startup.",
@@ -313,40 +345,31 @@ export const delegateTaskTool = defineTool({
       };
     }
 
-    const agentId = `agent-${Date.now()}-${typedInput.agentRole}`;
-    const executor = new AgentExecutor(provider, toolRegistry);
+    // Resolve type: prefer agentType, fall back to legacy agentRole mapping
+    const agentType: AgentType =
+      typedInput.agentType ??
+      (typedInput.agentRole ? (LEGACY_ROLE_TO_TYPE[typedInput.agentRole] ?? "explore") : "explore");
 
-    const roleDef = AGENT_ROLES[typedInput.agentRole];
-    if (!roleDef) {
-      return {
-        agentId,
-        taskId: typedInput.taskId,
-        role: typedInput.agentRole,
-        status: "error",
-        message: `Unknown agent role: ${typedInput.agentRole}`,
-        success: false,
-      };
-    }
+    const taskDescription = typedInput.context
+      ? `${typedInput.task}\n\nAdditional context: ${typedInput.context}`
+      : typedInput.task;
 
-    const agentDef = { ...roleDef, maxTurns: typedInput.maxTurns };
-
-    const result = await executor.execute(agentDef, {
-      id: typedInput.taskId,
-      description: typedInput.task,
-      context: typedInput.context ? { userContext: typedInput.context } : undefined,
+    const startTime = Date.now();
+    const result = await manager.spawn(agentType, taskDescription, {
+      timeout: typedInput.maxTurns * 60_000,
     });
 
+    const duration = Date.now() - startTime;
+
     return {
-      agentId,
+      agentId: result.agent.id,
       taskId: typedInput.taskId,
-      role: typedInput.agentRole,
+      agentType,
       status: result.success ? "completed" : "failed",
       output: result.output,
       success: result.success,
-      turns: result.turns,
-      toolsUsed: result.toolsUsed,
-      tokensUsed: result.tokensUsed,
-      duration: result.duration,
+      usage: result.usage,
+      duration,
     };
   },
 });
