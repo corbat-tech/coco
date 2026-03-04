@@ -97,7 +97,7 @@ export class ContextCompactor {
     const options: CompactOptions =
       signalOrOptions instanceof AbortSignal
         ? { signal: signalOrOptions }
-        : signalOrOptions ?? {};
+        : (signalOrOptions ?? {});
     const signal = options.signal;
     // Filter out system messages - those are handled separately
     const conversationMessages = messages.filter((m) => m.role !== "system");
@@ -156,7 +156,12 @@ export class ContextCompactor {
     const conversationText = this.formatMessagesForSummary(messagesToSummarize);
 
     // Generate summary using the LLM, with optional focus topic
-    const summary = await this.generateSummary(conversationText, provider, signal, options.focusTopic);
+    const summary = await this.generateSummary(
+      conversationText,
+      provider,
+      signal,
+      options.focusTopic,
+    );
 
     // Create compacted message array
     // Include system messages at the start, then summary, then preserved messages

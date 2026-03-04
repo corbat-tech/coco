@@ -9,7 +9,11 @@
 
 import { z } from "zod";
 import { defineTool } from "./registry.js";
-import { getAgentProvider, getAgentToolRegistry, getAgentManager } from "../agents/provider-bridge.js";
+import {
+  getAgentProvider,
+  getAgentToolRegistry,
+  getAgentManager,
+} from "../agents/provider-bridge.js";
 import type { AgentType } from "../cli/repl/agents/types.js";
 import { AGENT_NAMES, AGENT_DESCRIPTIONS } from "../cli/repl/agents/prompts.js";
 

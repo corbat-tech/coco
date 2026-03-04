@@ -102,9 +102,7 @@ describe("compactCommand", () => {
 
       const result = await compactCommand.execute([], mockSession);
       expect(result).toBe(false);
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Not enough messages"),
-      );
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Not enough messages"));
     });
 
     it("should return false (do not exit)", async () => {

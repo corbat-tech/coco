@@ -26,9 +26,7 @@ import { execFile } from "node:child_process";
 import { WorktreeManager, createWorktreeManager } from "./manager.js";
 
 // Helper to make execFile resolve
-function mockExecFile(
-  responses: Array<{ stdout?: string; stderr?: string; error?: Error }>,
-): void {
+function mockExecFile(responses: Array<{ stdout?: string; stderr?: string; error?: Error }>): void {
   let callIndex = 0;
   vi.mocked(execFile).mockImplementation((_cmd, _args, _opts, callback?: any) => {
     const response = responses[callIndex++] ?? { stdout: "", stderr: "" };
@@ -145,11 +143,11 @@ describe("WorktreeManager", () => {
     it("should merge via merge strategy", async () => {
       // create + merge + diff count + worktree remove + branch delete
       mockExecFile([
-        { stdout: "" },         // create worktree
-        { stdout: "" },         // git merge
+        { stdout: "" }, // create worktree
+        { stdout: "" }, // git merge
         { stdout: "file1.ts" }, // git diff --name-only
-        { stdout: "" },         // git worktree remove
-        { stdout: "" },         // git branch -D
+        { stdout: "" }, // git worktree remove
+        { stdout: "" }, // git branch -D
       ]);
 
       const manager = new WorktreeManager("/project");

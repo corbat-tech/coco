@@ -61,7 +61,9 @@ export const bestOfNCommand: SlashCommand = {
       chalk.magenta.bold(`  Best-of-${parsed.attempts}`) +
         chalk.dim(` — Running ${parsed.attempts} parallel attempts`),
     );
-    console.log(chalk.yellow.dim("  ⚠ Experimental: agent execution in worktrees is a preview feature"));
+    console.log(
+      chalk.yellow.dim("  ⚠ Experimental: agent execution in worktrees is a preview feature"),
+    );
     console.log(chalk.dim(`  Task: ${parsed.task}`));
     console.log();
 
@@ -88,7 +90,9 @@ export const bestOfNCommand: SlashCommand = {
         onAttemptComplete: (a: SolutionAttempt) => {
           console.log(
             chalk.green(`  ✓ Attempt #${a.index} completed`) +
-              chalk.dim(` (score: ${a.score?.toFixed(1) ?? "?"}, ${(a.durationMs / 1000).toFixed(1)}s)`),
+              chalk.dim(
+                ` (score: ${a.score?.toFixed(1) ?? "?"}, ${(a.durationMs / 1000).toFixed(1)}s)`,
+              ),
           );
         },
         onAttemptFail: (a: SolutionAttempt) => {

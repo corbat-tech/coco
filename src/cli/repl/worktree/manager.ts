@@ -139,7 +139,11 @@ export class WorktreeManager {
     try {
       const { stdout } = await this.git(["worktree", "list", "--porcelain"]);
       const entries: Array<{ path: string; branch: string; head: string }> = [];
-      let current: { path: string; branch: string; head: string } = { path: "", branch: "", head: "" };
+      let current: { path: string; branch: string; head: string } = {
+        path: "",
+        branch: "",
+        head: "",
+      };
 
       for (const line of stdout.split("\n")) {
         if (line.startsWith("worktree ")) {
@@ -248,7 +252,10 @@ export class WorktreeManager {
 
   // ── Private merge strategies ─────────────────────────────────────
 
-  private async mergeViaMerge(worktree: Worktree, options: MergeWorktreeOptions): Promise<MergeResult> {
+  private async mergeViaMerge(
+    worktree: Worktree,
+    options: MergeWorktreeOptions,
+  ): Promise<MergeResult> {
     const message = options.message ?? `Merge ${worktree.branch} (agent: ${worktree.name})`;
 
     try {
@@ -271,7 +278,10 @@ export class WorktreeManager {
     }
   }
 
-  private async mergeViaRebase(worktree: Worktree, _options: MergeWorktreeOptions): Promise<MergeResult> {
+  private async mergeViaRebase(
+    worktree: Worktree,
+    _options: MergeWorktreeOptions,
+  ): Promise<MergeResult> {
     try {
       // Get current branch
       const { stdout: currentBranch } = await this.git(["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -293,23 +303,30 @@ export class WorktreeManager {
     }
   }
 
-  private async mergeViaPR(worktree: Worktree, options: MergeWorktreeOptions): Promise<MergeResult> {
+  private async mergeViaPR(
+    worktree: Worktree,
+    options: MergeWorktreeOptions,
+  ): Promise<MergeResult> {
     try {
       // Push the branch
       await this.git(["push", "-u", "origin", worktree.branch]);
 
       // Create PR using gh CLI
       const title = options.message ?? `Agent: ${worktree.name}`;
-      const { stdout } = await execFileAsync("gh", [
-        "pr",
-        "create",
-        "--title",
-        title,
-        "--body",
-        `Automated PR from Coco agent worktree: ${worktree.name}`,
-        "--head",
-        worktree.branch,
-      ], { cwd: this.projectRoot });
+      const { stdout } = await execFileAsync(
+        "gh",
+        [
+          "pr",
+          "create",
+          "--title",
+          title,
+          "--body",
+          `Automated PR from Coco agent worktree: ${worktree.name}`,
+          "--head",
+          worktree.branch,
+        ],
+        { cwd: this.projectRoot },
+      );
 
       const prUrl = stdout.trim();
       return { success: true, strategy: "pr", prUrl };

@@ -21,7 +21,9 @@ vi.mock("./repl/session.js", () => ({
 vi.mock("./repl/agent-loop.js", () => ({
   executeAgentTurn: vi.fn().mockResolvedValue({
     content: "Here is my analysis of the code.",
-    toolCalls: [{ id: "t1", name: "read_file", input: {}, result: { success: true, output: "ok" } }],
+    toolCalls: [
+      { id: "t1", name: "read_file", input: {}, result: { success: true, output: "ok" } },
+    ],
     usage: { inputTokens: 100, outputTokens: 50 },
     aborted: false,
   }),
@@ -124,7 +126,7 @@ describe("runHeadless", () => {
 
     expect(executeAgentTurn).toHaveBeenCalledWith(
       expect.anything(), // session
-      "fix the bug",     // task
+      "fix the bug", // task
       expect.anything(), // provider
       expect.anything(), // toolRegistry
       expect.objectContaining({ skipConfirmation: true }),

@@ -144,21 +144,15 @@ export async function runHeadless(options: HeadlessOptions): Promise<HeadlessRes
     await initializeContextManager(session, provider);
 
     // Execute agent turn
-    const result = await executeAgentTurn(
-      session,
-      task,
-      provider,
-      toolRegistry,
-      {
-        skipConfirmation: true, // No interactive confirmations in headless mode
-        onStream: (chunk) => {
-          // In text mode, stream output to stdout in real-time
-          if (options.outputFormat === "text" && chunk.type === "text" && chunk.text) {
-            process.stdout.write(chunk.text);
-          }
-        },
+    const result = await executeAgentTurn(session, task, provider, toolRegistry, {
+      skipConfirmation: true, // No interactive confirmations in headless mode
+      onStream: (chunk) => {
+        // In text mode, stream output to stdout in real-time
+        if (options.outputFormat === "text" && chunk.type === "text" && chunk.text) {
+          process.stdout.write(chunk.text);
+        }
       },
-    );
+    });
 
     const headlessResult: HeadlessResult = {
       success: !result.aborted,

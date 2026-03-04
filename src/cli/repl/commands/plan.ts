@@ -82,8 +82,7 @@ export const planCommand: SlashCommand = {
       // We inject it as a message instruction
       session.messages.push({
         role: "user",
-        content:
-          `Execute the following approved plan. Implement each step carefully:\n\n${plan}`,
+        content: `Execute the following approved plan. Implement each step carefully:\n\n${plan}`,
       });
       return false;
     }

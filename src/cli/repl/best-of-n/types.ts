@@ -52,7 +52,14 @@ export interface SolutionAttempt {
 /**
  * Status of a solution attempt
  */
-export type SolutionStatus = "pending" | "running" | "evaluating" | "completed" | "failed" | "selected" | "discarded";
+export type SolutionStatus =
+  | "pending"
+  | "running"
+  | "evaluating"
+  | "completed"
+  | "failed"
+  | "selected"
+  | "discarded";
 
 /**
  * Result of a Best-of-N run

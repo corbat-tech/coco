@@ -66,33 +66,51 @@ program
   .option("-P, --print [task]", "Headless mode: run task and print output (no interactive UI)")
   .option("--output <format>", "Output format for headless mode (text or json)", "text")
   .option("--setup", "Run setup wizard before starting")
-  .action(async (options: {
-    model?: string;
-    provider?: string;
-    path: string;
-    print?: string | boolean;
-    output?: string;
-    setup?: boolean;
-  }) => {
-    // Run setup if requested
-    if (options.setup) {
-      const result = await runOnboardingV2();
-      if (!result) {
-        console.log("\n❌ Setup cancelled.");
+  .action(
+    async (options: {
+      model?: string;
+      provider?: string;
+      path: string;
+      print?: string | boolean;
+      output?: string;
+      setup?: boolean;
+    }) => {
+      // Run setup if requested
+      if (options.setup) {
+        const result = await runOnboardingV2();
+        if (!result) {
+          console.log("\n❌ Setup cancelled.");
+          return;
+        }
+      }
+
+      // Use last used provider from preferences (falls back to env/anthropic)
+      const providerType = (options.provider as ProviderType) ?? getLastUsedProvider();
+
+      // Headless mode: -P or --print
+      if (options.print !== undefined) {
+        const task = typeof options.print === "string" ? options.print : undefined;
+        const result = await runHeadless({
+          task,
+          projectPath: options.path,
+          outputFormat: options.output === "json" ? "json" : "text",
+          config: {
+            provider: {
+              type: providerType as "anthropic" | "openai",
+              model: options.model ?? "",
+              maxTokens: 8192,
+            },
+          },
+        });
+        process.exit(result.success ? 0 : 1);
         return;
       }
-    }
 
-    // Use last used provider from preferences (falls back to env/anthropic)
-    const providerType = (options.provider as ProviderType) ?? getLastUsedProvider();
+      // Check for updates before opening the REPL
+      await checkForUpdatesInteractive();
 
-    // Headless mode: -P or --print
-    if (options.print !== undefined) {
-      const task = typeof options.print === "string" ? options.print : undefined;
-      const result = await runHeadless({
-        task,
+      await startRepl({
         projectPath: options.path,
-        outputFormat: options.output === "json" ? "json" : "text",
         config: {
           provider: {
             type: providerType as "anthropic" | "openai",
@@ -101,24 +119,8 @@ program
           },
         },
       });
-      process.exit(result.success ? 0 : 1);
-      return;
-    }
-
-    // Check for updates before opening the REPL
-    await checkForUpdatesInteractive();
-
-    await startRepl({
-      projectPath: options.path,
-      config: {
-        provider: {
-          type: providerType as "anthropic" | "openai",
-          model: options.model ?? "",
-          maxTokens: 8192,
-        },
-      },
-    });
-  });
+    },
+  );
 
 async function main(): Promise<void> {
   // API keys are loaded from ~/.coco/.env by config/env.ts (no project .env needed)

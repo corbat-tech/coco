@@ -58,16 +58,19 @@ function createMockWorktreeManager(scores: number[]) {
 
   // Mock quality evaluator scores per worktree
   let evalIndex = 0;
-  vi.mocked(createQualityEvaluator).mockImplementation(() => ({
-    evaluate: vi.fn().mockResolvedValue({
-      scores: { overall: scores[evalIndex++] ?? 50 },
-      meetsMinimum: true,
-      meetsTarget: false,
-      converged: false,
-      issues: [],
-      suggestions: [],
-    }),
-  }) as any);
+  vi.mocked(createQualityEvaluator).mockImplementation(
+    () =>
+      ({
+        evaluate: vi.fn().mockResolvedValue({
+          scores: { overall: scores[evalIndex++] ?? 50 },
+          meetsMinimum: true,
+          meetsTarget: false,
+          converged: false,
+          issues: [],
+          suggestions: [],
+        }),
+      }) as any,
+  );
 
   return mockManager;
 }
@@ -211,10 +214,43 @@ describe("formatBestOfNResult", () => {
     const result = {
       success: true,
       attempts: [
-        { id: "1", index: 1, worktreeId: "wt-1", worktreePath: "/p/.worktrees/1", branch: "b1", status: "discarded" as const, score: 70, output: "...", filesChanged: ["a.ts"], durationMs: 5000 },
-        { id: "2", index: 2, worktreeId: "wt-2", worktreePath: "/p/.worktrees/2", branch: "b2", status: "selected" as const, score: 92, output: "...", filesChanged: ["a.ts", "b.ts"], durationMs: 8000 },
+        {
+          id: "1",
+          index: 1,
+          worktreeId: "wt-1",
+          worktreePath: "/p/.worktrees/1",
+          branch: "b1",
+          status: "discarded" as const,
+          score: 70,
+          output: "...",
+          filesChanged: ["a.ts"],
+          durationMs: 5000,
+        },
+        {
+          id: "2",
+          index: 2,
+          worktreeId: "wt-2",
+          worktreePath: "/p/.worktrees/2",
+          branch: "b2",
+          status: "selected" as const,
+          score: 92,
+          output: "...",
+          filesChanged: ["a.ts", "b.ts"],
+          durationMs: 8000,
+        },
       ],
-      winner: { id: "2", index: 2, worktreeId: "wt-2", worktreePath: "/p/.worktrees/2", branch: "b2", status: "selected" as const, score: 92, output: "...", filesChanged: ["a.ts", "b.ts"], durationMs: 8000 },
+      winner: {
+        id: "2",
+        index: 2,
+        worktreeId: "wt-2",
+        worktreePath: "/p/.worktrees/2",
+        branch: "b2",
+        status: "selected" as const,
+        score: 92,
+        output: "...",
+        filesChanged: ["a.ts", "b.ts"],
+        durationMs: 8000,
+      },
       totalDurationMs: 10000,
     };
 

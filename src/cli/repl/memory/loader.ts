@@ -405,9 +405,10 @@ export class MemoryLoader {
     for (const file of files) {
       if (file.exists && file.content.trim()) {
         // Add a separator comment indicating the source
-        const label = file.level === "directory"
-          ? `directory level (${path.dirname(file.path)}/${path.basename(file.path)})`
-          : `${file.level} level (${path.basename(file.path)})`;
+        const label =
+          file.level === "directory"
+            ? `directory level (${path.dirname(file.path)}/${path.basename(file.path)})`
+            : `${file.level} level (${path.basename(file.path)})`;
         parts.push(`<!-- Memory: ${label} -->`);
         parts.push(file.content);
         parts.push("");

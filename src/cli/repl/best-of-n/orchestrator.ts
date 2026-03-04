@@ -9,12 +9,7 @@ import { randomUUID } from "node:crypto";
 import { WorktreeManager } from "../worktree/manager.js";
 import { createQualityEvaluator } from "../../../quality/evaluator.js";
 import { getLogger } from "../../../utils/logger.js";
-import type {
-  BestOfNConfig,
-  BestOfNResult,
-  SolutionAttempt,
-  BestOfNCallbacks,
-} from "./types.js";
+import type { BestOfNConfig, BestOfNResult, SolutionAttempt, BestOfNCallbacks } from "./types.js";
 
 const DEFAULT_CONFIG: BestOfNConfig = {
   attempts: 3,
@@ -175,9 +170,7 @@ export async function runBestOfN(
       }
     }
 
-    logger.info(
-      `Best-of-N: Winner is attempt #${winner.index} with score ${winner.score}`,
-    );
+    logger.info(`Best-of-N: Winner is attempt #${winner.index} with score ${winner.score}`);
 
     // Phase 5: Cleanup non-winner worktrees
     for (const attempt of attempts) {
@@ -252,7 +245,9 @@ export function formatBestOfNResult(result: BestOfNResult): string {
   lines.push(`\nTotal time: ${(result.totalDurationMs / 1000).toFixed(1)}s`);
 
   if (result.winner) {
-    lines.push(`Winner: Attempt #${result.winner.index} (Score: ${result.winner.score?.toFixed(1)})`);
+    lines.push(
+      `Winner: Attempt #${result.winner.index} (Score: ${result.winner.score?.toFixed(1)})`,
+    );
   }
 
   return lines.join("\n");

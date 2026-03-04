@@ -12,7 +12,11 @@ import {
   checkAgentCapabilityTool,
   simpleAgentTools,
 } from "./simple-agent.js";
-import { getAgentProvider, getAgentToolRegistry, getAgentManager } from "../agents/provider-bridge.js";
+import {
+  getAgentProvider,
+  getAgentToolRegistry,
+  getAgentManager,
+} from "../agents/provider-bridge.js";
 
 const mockedGetAgentProvider = vi.mocked(getAgentProvider);
 const mockedGetAgentToolRegistry = vi.mocked(getAgentToolRegistry);
@@ -200,8 +204,18 @@ describe("simple-agent", () => {
 
     it("should support all 12 agent types", async () => {
       const types = [
-        "explore", "plan", "test", "debug", "review", "architect",
-        "security", "tdd", "refactor", "e2e", "docs", "database",
+        "explore",
+        "plan",
+        "test",
+        "debug",
+        "review",
+        "architect",
+        "security",
+        "tdd",
+        "refactor",
+        "e2e",
+        "docs",
+        "database",
       ];
 
       for (const type of types) {

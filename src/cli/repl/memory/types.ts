@@ -75,7 +75,12 @@ export type MemoryLevel = "user" | "project" | "directory" | "local";
  * Array of all memory levels in order of precedence (lowest to highest).
  * Used for iterating through levels in the correct order.
  */
-export const MEMORY_LEVELS: readonly MemoryLevel[] = ["user", "project", "directory", "local"] as const;
+export const MEMORY_LEVELS: readonly MemoryLevel[] = [
+  "user",
+  "project",
+  "directory",
+  "local",
+] as const;
 
 // ============================================================================
 // Memory Section

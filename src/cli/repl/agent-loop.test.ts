@@ -1289,7 +1289,11 @@ describe("iteration limit notice", () => {
       return createTextStreamMock("Done with adjustments.")();
     });
 
-    const toolResult: ToolResult = { success: true, data: { content: "file content" }, duration: 5 };
+    const toolResult: ToolResult = {
+      success: true,
+      data: { content: "file content" },
+      duration: 5,
+    };
     (mockToolRegistry.execute as Mock).mockResolvedValue(toolResult);
 
     // Steering: return a message on first check, empty on second
@@ -1302,9 +1306,15 @@ describe("iteration limit notice", () => {
       return [];
     });
 
-    const result = await executeAgentTurn(mockSession, "Fix the code", mockProvider, mockToolRegistry, {
-      onSteeringCheck,
-    });
+    const result = await executeAgentTurn(
+      mockSession,
+      "Fix the code",
+      mockProvider,
+      mockToolRegistry,
+      {
+        onSteeringCheck,
+      },
+    );
 
     // Steering check should have been called at least once (between iterations)
     expect(onSteeringCheck).toHaveBeenCalled();
@@ -1350,12 +1360,10 @@ describe("iteration limit notice", () => {
     expect(onSteeringCheck).toHaveBeenCalled();
 
     // addMessage should NOT have been called with steering content
-    const steeringCalls = (addMessage as Mock).mock.calls.filter(
-      (call: unknown[]) => {
-        const msg = call[1] as { content: string };
-        return typeof msg.content === "string" && msg.content.includes("Mid-task steering");
-      },
-    );
+    const steeringCalls = (addMessage as Mock).mock.calls.filter((call: unknown[]) => {
+      const msg = call[1] as { content: string };
+      return typeof msg.content === "string" && msg.content.includes("Mid-task steering");
+    });
     expect(steeringCalls).toHaveLength(0);
   });
 });
