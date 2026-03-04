@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.0] - 2026-03-04
+
+### Added
+
+- **Codex-style colored diff rendering** — `diff` code blocks now render with full-width red/green background colors for removed/added lines, matching the style used by OpenAI Codex
+  - Word-level highlighting on paired delete→add lines shows exactly which words changed using brighter backgrounds
+  - Line numbers extracted from `@@ hunk` headers display alongside each diff line
+  - Auto-detection of unified diff content in code blocks without an explicit `diff` language tag
+  - Applies to both top-level and nested code blocks in markdown output
+
+---
+
 ## [2.8.2] - 2026-03-03
 
 ### Fixed
@@ -787,6 +799,7 @@ Future versions will include upgrade guides here.
 [2.2.5]: https://github.com/corbat-tech/coco/compare/v2.1.0...v2.2.5
 [2.1.0]: https://github.com/corbat-tech/coco/compare/v2.0.0...v2.1.0
 [2.4.2]: https://github.com/corbat-tech/coco/compare/v2.4.1...v2.4.2
+[2.9.0]: https://github.com/corbat-tech/coco/compare/v2.8.2...v2.9.0
 [2.4.1]: https://github.com/corbat-tech/coco/compare/v2.4.0...v2.4.1
 [2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0
