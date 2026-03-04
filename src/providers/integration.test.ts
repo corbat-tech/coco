@@ -15,34 +15,40 @@ import type { LLMProvider, Message, ToolDefinition } from "./types.js";
 
 // Mock the Anthropic SDK
 vi.mock("@anthropic-ai/sdk", () => {
-  const MockAnthropic = vi.fn().mockImplementation(() => ({
-    messages: {
-      create: vi.fn(),
-    },
-  }));
+  const MockAnthropic = vi.fn().mockImplementation(function () {
+    return {
+      messages: {
+        create: vi.fn(),
+      },
+    };
+  });
   return { default: MockAnthropic, Anthropic: MockAnthropic };
 });
 
 // Mock OpenAI SDK
 vi.mock("openai", () => {
-  const MockOpenAI = vi.fn().mockImplementation(() => ({
-    chat: {
-      completions: {
-        create: vi.fn(),
+  const MockOpenAI = vi.fn().mockImplementation(function () {
+    return {
+      chat: {
+        completions: {
+          create: vi.fn(),
+        },
       },
-    },
-  }));
+    };
+  });
   return { default: MockOpenAI, OpenAI: MockOpenAI };
 });
 
 // Mock Gemini SDK
 vi.mock("@google/generative-ai", () => ({
-  GoogleGenerativeAI: vi.fn().mockImplementation(() => ({
-    getGenerativeModel: vi.fn().mockReturnValue({
-      generateContent: vi.fn(),
-      generateContentStream: vi.fn(),
-    }),
-  })),
+  GoogleGenerativeAI: vi.fn().mockImplementation(function () {
+    return {
+      getGenerativeModel: vi.fn().mockReturnValue({
+        generateContent: vi.fn(),
+        generateContentStream: vi.fn(),
+      }),
+    };
+  }),
 }));
 
 describe("Provider Integration Tests", () => {

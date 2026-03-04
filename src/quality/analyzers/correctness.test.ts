@@ -10,9 +10,11 @@ vi.mock("execa", () => ({
 }));
 
 vi.mock("./build-verifier.js", () => ({
-  BuildVerifier: vi.fn().mockImplementation(() => ({
-    verifyTypes: vi.fn(),
-  })),
+  BuildVerifier: vi.fn().mockImplementation(function () {
+    return {
+      verifyTypes: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock("./coverage.js", () => ({

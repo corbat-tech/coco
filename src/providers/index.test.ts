@@ -7,61 +7,67 @@ import * as ProviderExports from "./index.js";
 
 // Mock Anthropic SDK
 vi.mock("@anthropic-ai/sdk", () => ({
-  default: vi.fn().mockImplementation(() => ({
-    messages: {
-      create: vi.fn().mockResolvedValue({
-        id: "msg_123",
-        content: [{ type: "text", text: "Mock response" }],
-        stop_reason: "end_turn",
-        usage: { input_tokens: 10, output_tokens: 20 },
-        model: "claude-sonnet-4-20250514",
-      }),
-    },
-  })),
+  default: vi.fn().mockImplementation(function () {
+    return {
+      messages: {
+        create: vi.fn().mockResolvedValue({
+          id: "msg_123",
+          content: [{ type: "text", text: "Mock response" }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 10, output_tokens: 20 },
+          model: "claude-sonnet-4-20250514",
+        }),
+      },
+    };
+  }),
 }));
 
 // Mock OpenAI SDK
 vi.mock("openai", () => ({
-  default: vi.fn().mockImplementation(() => ({
-    chat: {
-      completions: {
-        create: vi.fn().mockResolvedValue({
-          id: "chatcmpl_123",
-          choices: [
-            {
-              message: { content: "Mock response", role: "assistant" },
-              finish_reason: "stop",
-            },
-          ],
-          usage: { prompt_tokens: 10, completion_tokens: 20 },
-          model: "gpt-4o",
-        }),
+  default: vi.fn().mockImplementation(function () {
+    return {
+      chat: {
+        completions: {
+          create: vi.fn().mockResolvedValue({
+            id: "chatcmpl_123",
+            choices: [
+              {
+                message: { content: "Mock response", role: "assistant" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 20 },
+            model: "gpt-4o",
+          }),
+        },
       },
-    },
-    models: {
-      list: vi.fn().mockResolvedValue({ data: [] }),
-    },
-  })),
+      models: {
+        list: vi.fn().mockResolvedValue({ data: [] }),
+      },
+    };
+  }),
 }));
 
 // Mock Google Generative AI SDK
 vi.mock("@google/generative-ai", () => ({
-  GoogleGenerativeAI: vi.fn().mockImplementation(() => ({
-    getGenerativeModel: vi.fn().mockReturnValue({
-      startChat: vi.fn().mockReturnValue({
-        sendMessage: vi.fn().mockResolvedValue({
-          response: {
-            text: () => "Mock response",
-            candidates: [{ finishReason: "STOP" }],
-            usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 },
-          },
+  GoogleGenerativeAI: vi.fn().mockImplementation(function () {
+    return {
+      getGenerativeModel: vi.fn().mockReturnValue({
+        startChat: vi.fn().mockReturnValue({
+          sendMessage: vi.fn().mockResolvedValue({
+            response: {
+              text: () => "Mock response",
+              candidates: [{ finishReason: "STOP" }],
+              usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 },
+            },
+          }),
+        }),
+        generateContent: vi.fn().mockResolvedValue({
+          response: { text: () => "Mock response" },
         }),
       }),
-      generateContent: vi.fn().mockResolvedValue({
-        response: { text: () => "Mock response" },
-      }),
-    }),
-  })),
+    };
+  }),
   FunctionCallingMode: {
     AUTO: "AUTO",
     ANY: "ANY",

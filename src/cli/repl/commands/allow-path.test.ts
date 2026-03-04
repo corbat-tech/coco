@@ -179,7 +179,7 @@ describe("allowPathCommand", () => {
       vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => true } as any);
       vi.mocked(getAllowedPaths).mockReturnValue([]);
       vi.mocked(p.select).mockResolvedValue(Symbol.for("cancel") as any);
-      vi.mocked(p.isCancel).mockReturnValue(true);
+      vi.mocked(p.isCancel).mockReturnValueOnce(true);
 
       const result = await allowPathCommand.execute(["/tmp/newdir"], mockSession);
       expect(result).toBe(false);

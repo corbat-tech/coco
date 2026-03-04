@@ -2,12 +2,14 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // Mock WorktreeManager
 vi.mock("../worktree/manager.js", () => ({
-  WorktreeManager: vi.fn().mockImplementation(() => ({
-    create: vi.fn(),
-    remove: vi.fn().mockResolvedValue(undefined),
-    merge: vi.fn().mockResolvedValue({ success: true }),
-    cleanupAll: vi.fn().mockResolvedValue(undefined),
-  })),
+  WorktreeManager: vi.fn().mockImplementation(function () {
+    return {
+      create: vi.fn(),
+      remove: vi.fn().mockResolvedValue(undefined),
+      merge: vi.fn().mockResolvedValue({ success: true }),
+      cleanupAll: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
 }));
 
 // Mock quality evaluator
@@ -54,7 +56,9 @@ function createMockWorktreeManager(scores: number[]) {
     cleanupAll: vi.fn().mockResolvedValue(undefined),
   };
 
-  vi.mocked(WorktreeManager).mockImplementation(() => mockManager as any);
+  vi.mocked(WorktreeManager).mockImplementation(function () {
+    return mockManager as any;
+  });
 
   // Mock quality evaluator scores per worktree
   let evalIndex = 0;

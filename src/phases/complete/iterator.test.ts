@@ -23,7 +23,7 @@ const mockLLM = {
 };
 
 vi.mock("./generator.js", () => ({
-  CodeGenerator: vi.fn().mockImplementation(() => ({
+  CodeGenerator: vi.fn().mockImplementation(function () { return {
     generate: vi.fn().mockResolvedValue({
       files: [{ path: "src/test.ts", content: "code", action: "create" }],
       explanation: "Generated",
@@ -34,11 +34,11 @@ vi.mock("./generator.js", () => ({
       explanation: "Improved",
       confidence: 85,
     }),
-  })),
+  }; }),
 }));
 
 vi.mock("./reviewer.js", () => ({
-  CodeReviewer: vi.fn().mockImplementation(() => ({
+  CodeReviewer: vi.fn().mockImplementation(function () { return {
     review: vi.fn().mockResolvedValue({
       passed: true,
       scores: {
@@ -54,7 +54,7 @@ vi.mock("./reviewer.js", () => ({
     }),
     checkPassed: vi.fn().mockReturnValue(true),
     getCriticalIssues: vi.fn().mockReturnValue([]),
-  })),
+  }; }),
 }));
 
 describe("TaskIterator", () => {
@@ -597,7 +597,7 @@ describe("TaskIterator - version creation and issue mapping", () => {
   it("should create version with file changes categorized correctly", async () => {
     // Mock generator to return files with different actions
     vi.doMock("./generator.js", () => ({
-      CodeGenerator: vi.fn().mockImplementation(() => ({
+      CodeGenerator: vi.fn().mockImplementation(function () { return {
         generate: vi.fn().mockResolvedValue({
           files: [
             { path: "src/new.ts", content: "// new", action: "create" },
@@ -612,12 +612,12 @@ describe("TaskIterator - version creation and issue mapping", () => {
           explanation: "Improved",
           confidence: 90,
         }),
-      })),
+      }; }),
     }));
 
     // Mock reviewer to return scores and issues with various categories
     vi.doMock("./reviewer.js", () => ({
-      CodeReviewer: vi.fn().mockImplementation(() => ({
+      CodeReviewer: vi.fn().mockImplementation(function () { return {
         review: vi.fn().mockResolvedValue({
           passed: true,
           scores: {
@@ -660,7 +660,7 @@ describe("TaskIterator - version creation and issue mapping", () => {
         }),
         checkPassed: vi.fn().mockReturnValue(true),
         getCriticalIssues: vi.fn().mockReturnValue([]),
-      })),
+      }; }),
     }));
 
     const { TaskIterator } = await import("./iterator.js");
@@ -709,7 +709,7 @@ describe("TaskIterator - version creation and issue mapping", () => {
   it("should map all QualityDimensions keys to IssueCategory correctly", async () => {
     // Mock reviewer with issues for each dimension category
     vi.doMock("./reviewer.js", () => ({
-      CodeReviewer: vi.fn().mockImplementation(() => ({
+      CodeReviewer: vi.fn().mockImplementation(function () { return {
         review: vi.fn().mockResolvedValue({
           passed: true,
           scores: {
@@ -753,11 +753,11 @@ describe("TaskIterator - version creation and issue mapping", () => {
         }),
         checkPassed: vi.fn().mockReturnValue(true),
         getCriticalIssues: vi.fn().mockReturnValue([]),
-      })),
+      }; }),
     }));
 
     vi.doMock("./generator.js", () => ({
-      CodeGenerator: vi.fn().mockImplementation(() => ({
+      CodeGenerator: vi.fn().mockImplementation(function () { return {
         generate: vi.fn().mockResolvedValue({
           files: [{ path: "src/test.ts", content: "code", action: "create" }],
           explanation: "Generated",
@@ -768,7 +768,7 @@ describe("TaskIterator - version creation and issue mapping", () => {
           explanation: "Improved",
           confidence: 85,
         }),
-      })),
+      }; }),
     }));
 
     const { TaskIterator } = await import("./iterator.js");
@@ -809,7 +809,7 @@ describe("TaskIterator - version creation and issue mapping", () => {
 
   it("should handle test failures in version creation", async () => {
     vi.doMock("./reviewer.js", () => ({
-      CodeReviewer: vi.fn().mockImplementation(() => ({
+      CodeReviewer: vi.fn().mockImplementation(function () { return {
         review: vi.fn().mockResolvedValue({
           passed: true,
           scores: {
@@ -826,18 +826,18 @@ describe("TaskIterator - version creation and issue mapping", () => {
         }),
         checkPassed: vi.fn().mockReturnValue(true),
         getCriticalIssues: vi.fn().mockReturnValue([]),
-      })),
+      }; }),
     }));
 
     vi.doMock("./generator.js", () => ({
-      CodeGenerator: vi.fn().mockImplementation(() => ({
+      CodeGenerator: vi.fn().mockImplementation(function () { return {
         generate: vi.fn().mockResolvedValue({
           files: [{ path: "src/test.ts", content: "code", action: "create" }],
           explanation: "Generated",
           confidence: 80,
         }),
         improve: vi.fn(),
-      })),
+      }; }),
     }));
 
     const { TaskIterator } = await import("./iterator.js");
@@ -893,7 +893,7 @@ describe("TaskIterator - advanced scenarios", () => {
     it("should reach max iterations when quality never converges", async () => {
       // Reset mocks with special behavior for this test
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: false,
             scores: {
@@ -906,7 +906,7 @@ describe("TaskIterator - advanced scenarios", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(false),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1021,10 +1021,10 @@ describe("TaskIterator - advanced scenarios", () => {
 
     it("should handle string errors in catch block", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockRejectedValue("String error message"),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1131,7 +1131,7 @@ describe("TaskIterator - advanced scenarios", () => {
   describe("feedback building", () => {
     it("should build feedback with issues and suggestions", async () => {
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: true,
             scores: {
@@ -1156,7 +1156,7 @@ describe("TaskIterator - advanced scenarios", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(true),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1198,7 +1198,7 @@ describe("TaskIterator - advanced scenarios", () => {
   describe("convergence edge cases", () => {
     it("should return not converged when critical issues exist", async () => {
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: false,
             scores: { overall: 90, dimensions: { testCoverage: 85 } },
@@ -1209,7 +1209,7 @@ describe("TaskIterator - advanced scenarios", () => {
           getCriticalIssues: vi
             .fn()
             .mockReturnValue([{ severity: "critical", message: "Critical security issue" }]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1274,19 +1274,19 @@ describe("TaskIterator - comprehensive coverage", () => {
       });
 
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "// initial code", action: "create" }],
             explanation: "Generated",
             confidence: 80,
           }),
           improve: mockImprove,
-        })),
+        }; }),
       }));
 
       // Mock reviewer to fail on first iterations, then pass
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockImplementation(() => {
             iterationCount++;
             const score = iterationCount < 3 ? 70 : 90;
@@ -1320,7 +1320,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockImplementation(() => iterationCount >= 3),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1368,7 +1368,7 @@ describe("TaskIterator - comprehensive coverage", () => {
 
     it("should reach max iterations and return failure with lastReview populated", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
@@ -1379,11 +1379,11 @@ describe("TaskIterator - comprehensive coverage", () => {
             explanation: "Improved",
             confidence: 85,
           }),
-        })),
+        }; }),
       }));
 
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: false,
             scores: {
@@ -1398,7 +1398,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(false),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1441,7 +1441,7 @@ describe("TaskIterator - comprehensive coverage", () => {
 
     it("should return success=true when max iterations reached but lastReview passes", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
@@ -1452,12 +1452,12 @@ describe("TaskIterator - comprehensive coverage", () => {
             explanation: "Improved",
             confidence: 85,
           }),
-        })),
+        }; }),
       }));
 
       // Reviewer never causes convergence but checkPassed returns true
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => {
+        CodeReviewer: vi.fn().mockImplementation(function () {
           let callCount = 0;
           return {
             review: vi.fn().mockImplementation(() => {
@@ -1520,10 +1520,10 @@ describe("TaskIterator - comprehensive coverage", () => {
 
     it("should handle non-Error thrown in catch block", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockRejectedValue({ code: "CUSTOM_ERROR", message: "Object error" }),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1554,7 +1554,7 @@ describe("TaskIterator - comprehensive coverage", () => {
   describe("createVersion - all file action types", () => {
     it("should categorize files by action type (create, modify, delete)", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [
               { path: "src/new-file.ts", content: "// new", action: "create" },
@@ -1565,11 +1565,11 @@ describe("TaskIterator - comprehensive coverage", () => {
             confidence: 90,
           }),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: true,
             scores: {
@@ -1625,7 +1625,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(true),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1697,7 +1697,7 @@ describe("TaskIterator - comprehensive coverage", () => {
   describe("buildFeedback - truncation behavior", () => {
     it("should truncate issues to first 5 and suggestions to first 3", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
@@ -1708,12 +1708,12 @@ describe("TaskIterator - comprehensive coverage", () => {
             explanation: "Improved",
             confidence: 85,
           }),
-        })),
+        }; }),
       }));
 
       let iterationCount = 0;
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockImplementation(() => {
             iterationCount++;
             const score = iterationCount === 1 ? 70 : 92;
@@ -1744,7 +1744,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockImplementation(() => iterationCount > 1),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1793,18 +1793,18 @@ describe("TaskIterator - comprehensive coverage", () => {
   describe("buildFeedback - empty issues and suggestions", () => {
     it("should handle review with no issues and no suggestions", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
             confidence: 95,
           }),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: true,
             scores: {
@@ -1817,7 +1817,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(true),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1865,18 +1865,18 @@ describe("TaskIterator - comprehensive coverage", () => {
   describe("buildContext - with and without previous versions", () => {
     it("should include previous versions count in context when present", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
             confidence: 80,
           }),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: true,
             scores: { overall: 90, dimensions: { correctness: 90 } },
@@ -1886,7 +1886,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(true),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -1930,18 +1930,18 @@ describe("TaskIterator - comprehensive coverage", () => {
 
     it("should handle empty previous versions", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
             confidence: 80,
           }),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: true,
             scores: { overall: 90, dimensions: { correctness: 90 } },
@@ -1951,7 +1951,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(true),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -2001,7 +2001,7 @@ describe("TaskIterator - comprehensive coverage", () => {
       let iterationCount = 0;
 
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
@@ -2012,11 +2012,11 @@ describe("TaskIterator - comprehensive coverage", () => {
             explanation: "Improved",
             confidence: 85,
           }),
-        })),
+        }; }),
       }));
 
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockImplementation(() => {
             iterationCount++;
             // Scores stabilize: 88, 89, 89
@@ -2034,7 +2034,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(false), // Force convergence check
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -2082,18 +2082,18 @@ describe("TaskIterator - comprehensive coverage", () => {
   describe("mapToIssueCategory - all dimension mappings", () => {
     it("should map all QualityDimensions to correct IssueCategory", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
             confidence: 80,
           }),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: true,
             scores: {
@@ -2145,7 +2145,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(true),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -2200,7 +2200,7 @@ describe("TaskIterator - comprehensive coverage", () => {
   describe("filesToString - formatting", () => {
     it("should format multiple files correctly", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [
               { path: "src/module-a.ts", content: "export const a = 1;", action: "create" },
@@ -2221,12 +2221,12 @@ describe("TaskIterator - comprehensive coverage", () => {
             explanation: "Improved",
             confidence: 90,
           }),
-        })),
+        }; }),
       }));
 
       let callCount = 0;
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockImplementation(() => {
             callCount++;
             const score = callCount === 1 ? 75 : 92;
@@ -2250,7 +2250,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockImplementation(() => callCount > 1),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -2299,18 +2299,18 @@ describe("TaskIterator - comprehensive coverage", () => {
   describe("createVersion - test results with failures", () => {
     it("should map test failures correctly to version", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
             confidence: 80,
           }),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: true,
             scores: { overall: 90, dimensions: { correctness: 90 } },
@@ -2320,7 +2320,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(true),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -2390,18 +2390,18 @@ describe("TaskIterator - comprehensive coverage", () => {
   describe("checkConvergence - critical issues branch", () => {
     it("should not converge when critical issues exist even with good score", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
             confidence: 80,
           }),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: false,
             scores: { overall: 90, dimensions: { correctness: 90 } },
@@ -2415,7 +2415,7 @@ describe("TaskIterator - comprehensive coverage", () => {
             .mockReturnValue([
               { severity: "critical", category: "security", message: "SQL Injection" },
             ]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -2446,7 +2446,7 @@ describe("TaskIterator - comprehensive coverage", () => {
 
     it("should not converge when multiple critical issues exist", async () => {
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: false,
             scores: { overall: 95, dimensions: { correctness: 95 } },
@@ -2464,18 +2464,18 @@ describe("TaskIterator - comprehensive coverage", () => {
             { severity: "critical", category: "security", message: "CSRF vulnerability" },
             { severity: "critical", category: "correctness", message: "Data corruption" },
           ]),
-        })),
+        }; }),
       }));
 
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
             confidence: 80,
           }),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
@@ -2510,18 +2510,18 @@ describe("TaskIterator - comprehensive coverage", () => {
   describe("coverage calculations in version", () => {
     it("should include all coverage metrics in version", async () => {
       vi.doMock("./generator.js", () => ({
-        CodeGenerator: vi.fn().mockImplementation(() => ({
+        CodeGenerator: vi.fn().mockImplementation(function () { return {
           generate: vi.fn().mockResolvedValue({
             files: [{ path: "src/test.ts", content: "code", action: "create" }],
             explanation: "Generated",
             confidence: 80,
           }),
           improve: vi.fn(),
-        })),
+        }; }),
       }));
 
       vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(() => ({
+        CodeReviewer: vi.fn().mockImplementation(function () { return {
           review: vi.fn().mockResolvedValue({
             passed: true,
             scores: { overall: 90, dimensions: { correctness: 90 } },
@@ -2531,7 +2531,7 @@ describe("TaskIterator - comprehensive coverage", () => {
           }),
           checkPassed: vi.fn().mockReturnValue(true),
           getCriticalIssues: vi.fn().mockReturnValue([]),
-        })),
+        }; }),
       }));
 
       const { TaskIterator } = await import("./iterator.js");
