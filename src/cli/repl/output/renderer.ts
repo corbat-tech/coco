@@ -939,21 +939,41 @@ function renderContentPreview(content: string, maxLines: number): string {
   return chalk.dim(preview.join("\n")) + more;
 }
 
-/** Show first line of old → new for edit_file */
+/** Show changed lines of old → new for edit_file with background colors */
 function renderEditPreview(oldStr: string, newStr: string): string {
   const maxWidth = Math.max(getTerminalWidth() - 8, 30);
+  const MAX_PREVIEW_LINES = 8;
 
-  const firstOld = oldStr.split("\n").find((l) => l.trim().length > 0) ?? "";
-  const firstNew = newStr.split("\n").find((l) => l.trim().length > 0) ?? "";
+  const bgDel = chalk.bgRgb(80, 20, 20);
+  const bgAdd = chalk.bgRgb(20, 60, 20);
 
-  if (!firstOld && !firstNew) return "";
+  const oldLines = oldStr.split("\n").filter((l) => l.trim().length > 0);
+  const newLines = newStr.split("\n").filter((l) => l.trim().length > 0);
+
+  if (oldLines.length === 0 && newLines.length === 0) return "";
 
   const truncate = (s: string) => (s.length > maxWidth ? s.slice(0, maxWidth - 1) + "…" : s);
 
-  const lines: string[] = [];
-  if (firstOld) lines.push(chalk.dim("   ") + chalk.red(`- ${truncate(firstOld.trim())}`));
-  if (firstNew) lines.push(chalk.dim("   ") + chalk.green(`+ ${truncate(firstNew.trim())}`));
-  return lines.join("\n");
+  const result: string[] = [];
+  let shown = 0;
+
+  for (const line of oldLines) {
+    if (shown >= MAX_PREVIEW_LINES) break;
+    result.push(chalk.dim("   ") + bgDel(`- ${truncate(line.trim())}`));
+    shown++;
+  }
+  for (const line of newLines) {
+    if (shown >= MAX_PREVIEW_LINES) break;
+    result.push(chalk.dim("   ") + bgAdd(`+ ${truncate(line.trim())}`));
+    shown++;
+  }
+
+  const total = oldLines.length + newLines.length;
+  if (total > MAX_PREVIEW_LINES) {
+    result.push(chalk.dim(`   … +${total - MAX_PREVIEW_LINES} more lines`));
+  }
+
+  return result.join("\n");
 }
 
 export function renderToolEnd(result: ExecutedToolCall): void {

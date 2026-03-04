@@ -3,7 +3,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { parseDiff, getChangedLines } from "./diff-renderer.js";
+import { parseDiff, getChangedLines, pairAdjacentLines, highlightWordChanges } from "./diff-renderer.js";
+import type { DiffLine } from "./diff-renderer.js";
 
 const SIMPLE_DIFF = `diff --git a/src/app.ts b/src/app.ts
 index abc1234..def5678 100644
@@ -199,5 +200,140 @@ describe("getChangedLines", () => {
 
     // Deleted files have no added lines
     expect(changed.has("src/old.ts")).toBe(false);
+  });
+});
+
+// ============================================================================
+// Word-level diff highlighting tests
+// ============================================================================
+
+describe("pairAdjacentLines", () => {
+  it("pairs adjacent delete→add lines", () => {
+    const lines: DiffLine[] = [
+      { type: "context", content: "unchanged", oldLineNo: 1, newLineNo: 1 },
+      { type: "delete", content: "old line", oldLineNo: 2 },
+      { type: "add", content: "new line", newLineNo: 2 },
+      { type: "context", content: "unchanged", oldLineNo: 3, newLineNo: 3 },
+    ];
+
+    const pairs = pairAdjacentLines(lines);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]).toEqual({ deleteIdx: 1, addIdx: 2 });
+  });
+
+  it("pairs multiple consecutive delete→add blocks", () => {
+    const lines: DiffLine[] = [
+      { type: "delete", content: "old A", oldLineNo: 1 },
+      { type: "delete", content: "old B", oldLineNo: 2 },
+      { type: "add", content: "new A", newLineNo: 1 },
+      { type: "add", content: "new B", newLineNo: 2 },
+    ];
+
+    const pairs = pairAdjacentLines(lines);
+    expect(pairs).toHaveLength(2);
+    expect(pairs[0]).toEqual({ deleteIdx: 0, addIdx: 2 });
+    expect(pairs[1]).toEqual({ deleteIdx: 1, addIdx: 3 });
+  });
+
+  it("handles unmatched deletes (more deletes than adds)", () => {
+    const lines: DiffLine[] = [
+      { type: "delete", content: "old A", oldLineNo: 1 },
+      { type: "delete", content: "old B", oldLineNo: 2 },
+      { type: "add", content: "new A", newLineNo: 1 },
+    ];
+
+    const pairs = pairAdjacentLines(lines);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]).toEqual({ deleteIdx: 0, addIdx: 2 });
+  });
+
+  it("handles unpaired adds (only adds, no deletes)", () => {
+    const lines: DiffLine[] = [
+      { type: "context", content: "ctx", oldLineNo: 1, newLineNo: 1 },
+      { type: "add", content: "new line", newLineNo: 2 },
+    ];
+
+    const pairs = pairAdjacentLines(lines);
+    expect(pairs).toHaveLength(0);
+  });
+
+  it("handles empty lines array", () => {
+    expect(pairAdjacentLines([])).toHaveLength(0);
+  });
+
+  it("pairs separate change groups separated by context", () => {
+    const lines: DiffLine[] = [
+      { type: "delete", content: "old A", oldLineNo: 1 },
+      { type: "add", content: "new A", newLineNo: 1 },
+      { type: "context", content: "ctx", oldLineNo: 2, newLineNo: 2 },
+      { type: "delete", content: "old B", oldLineNo: 3 },
+      { type: "add", content: "new B", newLineNo: 3 },
+    ];
+
+    const pairs = pairAdjacentLines(lines);
+    expect(pairs).toHaveLength(2);
+    expect(pairs[0]).toEqual({ deleteIdx: 0, addIdx: 1 });
+    expect(pairs[1]).toEqual({ deleteIdx: 3, addIdx: 4 });
+  });
+
+  it("handles context-only lines", () => {
+    const lines: DiffLine[] = [
+      { type: "context", content: "line1", oldLineNo: 1, newLineNo: 1 },
+      { type: "context", content: "line2", oldLineNo: 2, newLineNo: 2 },
+    ];
+
+    expect(pairAdjacentLines(lines)).toHaveLength(0);
+  });
+});
+
+describe("highlightWordChanges", () => {
+  // Strip ANSI codes helper for content verification
+  const stripAnsi = (s: string) =>
+    // eslint-disable-next-line no-control-regex
+    s.replace(/\x1b\[[0-9;]*m/g, "");
+
+  it("returns styled strings containing the original content", () => {
+    const { styledDelete, styledAdd } = highlightWordChanges(
+      "const foo = 1;",
+      "const bar = 1;",
+    );
+
+    expect(stripAnsi(styledDelete)).toBe("const foo = 1;");
+    expect(stripAnsi(styledAdd)).toBe("const bar = 1;");
+  });
+
+  it("preserves content for lines with word-level changes", () => {
+    const { styledDelete, styledAdd } = highlightWordChanges(
+      "hello world",
+      "hello universe",
+    );
+
+    // Content must be preserved regardless of whether chalk emits ANSI in this env
+    expect(stripAnsi(styledDelete)).toBe("hello world");
+    expect(stripAnsi(styledAdd)).toBe("hello universe");
+  });
+
+  it("handles entirely different lines", () => {
+    const { styledDelete, styledAdd } = highlightWordChanges("abc", "xyz");
+
+    expect(stripAnsi(styledDelete)).toBe("abc");
+    expect(stripAnsi(styledAdd)).toBe("xyz");
+  });
+
+  it("handles identical lines", () => {
+    const { styledDelete, styledAdd } = highlightWordChanges(
+      "same content",
+      "same content",
+    );
+
+    expect(stripAnsi(styledDelete)).toBe("same content");
+    expect(stripAnsi(styledAdd)).toBe("same content");
+  });
+
+  it("handles empty strings", () => {
+    const { styledDelete, styledAdd } = highlightWordChanges("", "new content");
+
+    expect(stripAnsi(styledDelete)).toBe("");
+    expect(stripAnsi(styledAdd)).toBe("new content");
   });
 });
