@@ -514,12 +514,12 @@ function looksLikeDiff(lines: string[]): boolean {
 
 /** Check if a line in a diff block should get deletion background */
 function isDiffDeletion(line: string): boolean {
-  return (line.startsWith("-") && !line.startsWith("---"));
+  return line.startsWith("-") && !line.startsWith("---");
 }
 
 /** Check if a line in a diff block should get addition background */
 function isDiffAddition(line: string): boolean {
-  return (line.startsWith("+") && !line.startsWith("+++"));
+  return line.startsWith("+") && !line.startsWith("+++");
 }
 
 function renderSimpleCodeBlock(lang: string, lines: string[]): void {
@@ -574,12 +574,7 @@ function renderSimpleCodeBlock(lang: string, lines: string[]): void {
         );
       } else {
         console.log(
-          chalk.magenta("│") +
-            " " +
-            fullLine +
-            " ".repeat(padding) +
-            " " +
-            chalk.magenta("│"),
+          chalk.magenta("│") + " " + fullLine + " ".repeat(padding) + " " + chalk.magenta("│"),
         );
       }
     }
@@ -590,7 +585,13 @@ function renderSimpleCodeBlock(lang: string, lines: string[]): void {
         oldLineNo++;
       } else if (isDiffAddition(line)) {
         newLineNo++;
-      } else if (!line.startsWith("@@") && !line.startsWith("diff ") && !line.startsWith("index ") && !line.startsWith("---") && !line.startsWith("+++")) {
+      } else if (
+        !line.startsWith("@@") &&
+        !line.startsWith("diff ") &&
+        !line.startsWith("index ") &&
+        !line.startsWith("---") &&
+        !line.startsWith("+++")
+      ) {
         // Context line — advances both
         oldLineNo++;
         newLineNo++;
@@ -607,7 +608,13 @@ function formatDiffLineNo(line: string, oldLineNo: number, newLineNo: number): s
     return chalk.dim(String(oldLineNo).padStart(5) + " ");
   } else if (isDiffAddition(line)) {
     return chalk.dim(String(newLineNo).padStart(5) + " ");
-  } else if (line.startsWith("@@") || line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++")) {
+  } else if (
+    line.startsWith("@@") ||
+    line.startsWith("diff ") ||
+    line.startsWith("index ") ||
+    line.startsWith("---") ||
+    line.startsWith("+++")
+  ) {
     return "       "; // 7 chars blank for headers
   }
   // Context line — show new line number

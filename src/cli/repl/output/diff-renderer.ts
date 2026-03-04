@@ -419,10 +419,7 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
     // Pre-compute word-level highlights for paired lines.
     // The maps pairByAdd and wordHighlights are built from the same `pairs` array,
     // so lookups with `!` are safe — every pairedAddIdx has a corresponding deleteIdx entry.
-    const wordHighlights = new Map<
-      number,
-      { styledDelete: string; styledAdd: string }
-    >();
+    const wordHighlights = new Map<number, { styledDelete: string; styledAdd: string }>();
     for (const pair of pairs) {
       const delLine = hunk.lines[pair.deleteIdx]!;
       const addLine = hunk.lines[pair.addIdx]!;

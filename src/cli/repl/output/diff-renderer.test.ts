@@ -3,7 +3,12 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { parseDiff, getChangedLines, pairAdjacentLines, highlightWordChanges } from "./diff-renderer.js";
+import {
+  parseDiff,
+  getChangedLines,
+  pairAdjacentLines,
+  highlightWordChanges,
+} from "./diff-renderer.js";
 import type { DiffLine } from "./diff-renderer.js";
 
 const SIMPLE_DIFF = `diff --git a/src/app.ts b/src/app.ts
@@ -293,20 +298,14 @@ describe("highlightWordChanges", () => {
     s.replace(/\x1b\[[0-9;]*m/g, "");
 
   it("returns styled strings containing the original content", () => {
-    const { styledDelete, styledAdd } = highlightWordChanges(
-      "const foo = 1;",
-      "const bar = 1;",
-    );
+    const { styledDelete, styledAdd } = highlightWordChanges("const foo = 1;", "const bar = 1;");
 
     expect(stripAnsi(styledDelete)).toBe("const foo = 1;");
     expect(stripAnsi(styledAdd)).toBe("const bar = 1;");
   });
 
   it("preserves content for lines with word-level changes", () => {
-    const { styledDelete, styledAdd } = highlightWordChanges(
-      "hello world",
-      "hello universe",
-    );
+    const { styledDelete, styledAdd } = highlightWordChanges("hello world", "hello universe");
 
     // Content must be preserved regardless of whether chalk emits ANSI in this env
     expect(stripAnsi(styledDelete)).toBe("hello world");
@@ -321,10 +320,7 @@ describe("highlightWordChanges", () => {
   });
 
   it("handles identical lines", () => {
-    const { styledDelete, styledAdd } = highlightWordChanges(
-      "same content",
-      "same content",
-    );
+    const { styledDelete, styledAdd } = highlightWordChanges("same content", "same content");
 
     expect(stripAnsi(styledDelete)).toBe("same content");
     expect(stripAnsi(styledAdd)).toBe("same content");
