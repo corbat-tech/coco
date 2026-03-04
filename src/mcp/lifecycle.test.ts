@@ -16,44 +16,50 @@ vi.mock("../utils/logger.js", () => ({
 
 // Mock transports
 vi.mock("./transport/stdio.js", () => ({
-  StdioTransport: vi.fn().mockImplementation(() => ({
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
-    send: vi.fn().mockResolvedValue(undefined),
-    onMessage: vi.fn(),
-    onError: vi.fn(),
-    onClose: vi.fn(),
-    isConnected: vi.fn().mockReturnValue(true),
-  })),
+  StdioTransport: vi.fn().mockImplementation(function () {
+    return {
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+      onMessage: vi.fn(),
+      onError: vi.fn(),
+      onClose: vi.fn(),
+      isConnected: vi.fn().mockReturnValue(true),
+    };
+  }),
 }));
 
 vi.mock("./transport/http.js", () => ({
-  HTTPTransport: vi.fn().mockImplementation(() => ({
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
-    send: vi.fn().mockResolvedValue(undefined),
-    onMessage: vi.fn(),
-    onError: vi.fn(),
-    onClose: vi.fn(),
-    isConnected: vi.fn().mockReturnValue(true),
-  })),
+  HTTPTransport: vi.fn().mockImplementation(function () {
+    return {
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+      onMessage: vi.fn(),
+      onError: vi.fn(),
+      onClose: vi.fn(),
+      isConnected: vi.fn().mockReturnValue(true),
+    };
+  }),
 }));
 
 vi.mock("./transport/sse.js", () => ({
-  SSETransport: vi.fn().mockImplementation(() => ({
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
-    send: vi.fn().mockResolvedValue(undefined),
-    onMessage: vi.fn(),
-    onError: vi.fn(),
-    onClose: vi.fn(),
-    isConnected: vi.fn().mockReturnValue(true),
-  })),
+  SSETransport: vi.fn().mockImplementation(function () {
+    return {
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+      onMessage: vi.fn(),
+      onError: vi.fn(),
+      onClose: vi.fn(),
+      isConnected: vi.fn().mockReturnValue(true),
+    };
+  }),
 }));
 
 // Mock client
 vi.mock("./client.js", () => ({
-  MCPClientImpl: vi.fn().mockImplementation(() => {
+  MCPClientImpl: vi.fn().mockImplementation(function () {
     let initialized = false;
     return {
       initialize: vi.fn().mockImplementation(() => {

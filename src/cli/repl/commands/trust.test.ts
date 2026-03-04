@@ -134,7 +134,7 @@ describe("trustCommand", () => {
 
     it("cancels when user cancels level selection", async () => {
       vi.mocked(p.select).mockResolvedValue(Symbol.for("cancel") as any);
-      vi.mocked(p.isCancel).mockReturnValue(true);
+      vi.mocked(p.isCancel).mockReturnValueOnce(true);
 
       const result = await trustCommand.execute(["level"], mockSession);
 

@@ -5,20 +5,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("tslog", () => ({
-  Logger: vi.fn().mockImplementation(() => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    fatal: vi.fn(),
-    getSubLogger: vi.fn().mockReturnValue({
+  Logger: vi.fn().mockImplementation(function () {
+    return {
       debug: vi.fn(),
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
-    }),
-    attachTransport: vi.fn(),
-  })),
+      fatal: vi.fn(),
+      getSubLogger: vi.fn().mockReturnValue({
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      }),
+      attachTransport: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock("node:fs", async (importOriginal) => {

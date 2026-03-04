@@ -34,12 +34,14 @@ class MockAPIError extends Error {
 // Mock @anthropic-ai/sdk
 vi.mock("@anthropic-ai/sdk", () => {
   return {
-    default: vi.fn().mockImplementation(() => ({
-      messages: {
-        create: mockMessagesCreate,
-        stream: mockMessagesStream,
-      },
-    })),
+    default: vi.fn().mockImplementation(function () {
+      return {
+        messages: {
+          create: mockMessagesCreate,
+          stream: mockMessagesStream,
+        },
+      };
+    }),
     APIError: MockAPIError,
   };
 });

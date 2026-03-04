@@ -29,7 +29,9 @@ vi.mock("../utils/resource-monitor.js", () => ({
 
 // Mock AgentExecutor + AGENT_ROLES
 vi.mock("../agents/executor.js", () => ({
-  AgentExecutor: vi.fn().mockImplementation(() => ({})),
+  AgentExecutor: vi.fn().mockImplementation(function () {
+    return {};
+  }),
   AGENT_ROLES: {
     researcher: { role: "researcher", systemPrompt: "", allowedTools: [] },
     coder: { role: "coder", systemPrompt: "", allowedTools: [] },
