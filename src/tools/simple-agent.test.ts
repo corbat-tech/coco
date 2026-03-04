@@ -4,29 +4,19 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 vi.mock("../agents/provider-bridge.js", () => ({
   getAgentProvider: vi.fn(),
   getAgentToolRegistry: vi.fn(),
+  getAgentManager: vi.fn(),
 }));
-
-// Mock AgentExecutor class
-vi.mock("../agents/executor.js", async (importOriginal) => {
-  const original = (await importOriginal()) as Record<string, unknown>;
-  return {
-    ...original,
-    AgentExecutor: vi.fn().mockImplementation(() => ({
-      execute: vi.fn(),
-    })),
-  };
-});
 
 import {
   spawnSimpleAgentTool,
   checkAgentCapabilityTool,
   simpleAgentTools,
 } from "./simple-agent.js";
-import { getAgentProvider, getAgentToolRegistry } from "../agents/provider-bridge.js";
-import { AgentExecutor, AGENT_ROLES } from "../agents/executor.js";
+import { getAgentProvider, getAgentToolRegistry, getAgentManager } from "../agents/provider-bridge.js";
 
 const mockedGetAgentProvider = vi.mocked(getAgentProvider);
 const mockedGetAgentToolRegistry = vi.mocked(getAgentToolRegistry);
+const mockedGetAgentManager = vi.mocked(getAgentManager);
 
 describe("simple-agent", () => {
   beforeEach(() => {
@@ -37,16 +27,15 @@ describe("simple-agent", () => {
     it("should have correct metadata", () => {
       expect(spawnSimpleAgentTool.name).toBe("spawnSimpleAgent");
       expect(spawnSimpleAgentTool.category).toBe("build");
-      expect(spawnSimpleAgentTool.description).toContain("Spawn a sub-agent");
+      expect(spawnSimpleAgentTool.description).toContain("Spawn a specialized sub-agent");
     });
 
-    it("should return unavailable when provider is not initialized", async () => {
-      mockedGetAgentProvider.mockReturnValue(null);
-      mockedGetAgentToolRegistry.mockReturnValue(null);
+    it("should return unavailable when agent manager is not initialized", async () => {
+      mockedGetAgentManager.mockReturnValue(null);
 
       const result = await spawnSimpleAgentTool.execute({
         task: "Write tests",
-        role: "coder",
+        type: "test",
         maxTurns: 10,
       });
 
@@ -56,122 +45,132 @@ describe("simple-agent", () => {
       expect(parsed.task).toBe("Write tests");
       expect(parsed.message).toContain("Agent provider not initialized");
       expect(result.exitCode).toBe(1);
-      expect(result.duration).toBe(0);
     });
 
-    it("should return unavailable when only provider is null", async () => {
-      mockedGetAgentProvider.mockReturnValue(null);
-      mockedGetAgentToolRegistry.mockReturnValue({} as any);
-
-      const result = await spawnSimpleAgentTool.execute({
-        task: "Analyze code",
-        role: "reviewer",
-        maxTurns: 5,
-      });
-
-      const parsed = JSON.parse(result.stdout);
-      expect(parsed.status).toBe("unavailable");
-      expect(parsed.success).toBe(false);
-    });
-
-    it("should return unavailable when only toolRegistry is null", async () => {
-      mockedGetAgentProvider.mockReturnValue({} as any);
-      mockedGetAgentToolRegistry.mockReturnValue(null);
-
-      const result = await spawnSimpleAgentTool.execute({
-        task: "Fix bug",
-        role: "coder",
-        maxTurns: 10,
-      });
-
-      const parsed = JSON.parse(result.stdout);
-      expect(parsed.status).toBe("unavailable");
-      expect(parsed.success).toBe(false);
-    });
-
-    it("should return error for unknown agent role", async () => {
-      const mockProvider = { id: "test-provider" } as any;
-      const mockToolRegistry = {} as any;
-      mockedGetAgentProvider.mockReturnValue(mockProvider);
-      mockedGetAgentToolRegistry.mockReturnValue(mockToolRegistry);
-
-      const result = await spawnSimpleAgentTool.execute({
-        task: "Do something",
-        role: "unknown_role" as any,
-        maxTurns: 5,
-      });
-
-      const parsed = JSON.parse(result.stdout);
-      expect(parsed.status).toBe("error");
-      expect(parsed.success).toBe(false);
-      expect(parsed.message).toContain("Unknown agent role");
-      expect(result.exitCode).toBe(1);
-    });
-
-    it("should execute agent successfully when provider is available", async () => {
-      const mockProvider = { id: "test-provider" } as any;
-      const mockToolRegistry = {} as any;
-      mockedGetAgentProvider.mockReturnValue(mockProvider);
-      mockedGetAgentToolRegistry.mockReturnValue(mockToolRegistry);
-
-      const mockExecuteResult = {
-        output: "Tests written successfully",
+    it("should spawn agent with correct type via AgentManager", async () => {
+      const mockSpawn = vi.fn().mockResolvedValue({
+        agent: { id: "test-agent-123" },
         success: true,
-        turns: 3,
-        toolsUsed: ["read_file", "write_file"],
-        tokensUsed: 1500,
-        duration: 5000,
-      };
+        output: "Tests written successfully",
+        usage: { inputTokens: 1000, outputTokens: 500 },
+      });
 
-      const mockExecute = vi.fn().mockResolvedValue(mockExecuteResult);
-      vi.mocked(AgentExecutor).mockImplementation(
-        () =>
-          ({
-            execute: mockExecute,
-          }) as any,
-      );
+      mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
 
       const result = await spawnSimpleAgentTool.execute({
         task: "Write unit tests",
-        role: "tester",
+        type: "test",
         maxTurns: 10,
       });
 
       const parsed = JSON.parse(result.stdout);
       expect(parsed.status).toBe("completed");
       expect(parsed.success).toBe(true);
+      expect(parsed.agentType).toBe("test");
       expect(parsed.output).toBe("Tests written successfully");
-      expect(parsed.turns).toBe(3);
-      expect(parsed.toolsUsed).toEqual(["read_file", "write_file"]);
-      expect(parsed.tokensUsed).toBe(1500);
       expect(result.exitCode).toBe(0);
+
+      // Verify spawn was called with correct type
+      expect(mockSpawn).toHaveBeenCalledWith("test", "Write unit tests", expect.any(Object));
+    });
+
+    it("should map legacy 'researcher' role to 'explore' type", async () => {
+      const mockSpawn = vi.fn().mockResolvedValue({
+        agent: { id: "test-agent-456" },
+        success: true,
+        output: "Research complete",
+        usage: { inputTokens: 500, outputTokens: 200 },
+      });
+
+      mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
+
+      const result = await spawnSimpleAgentTool.execute({
+        task: "Explore the codebase",
+        role: "researcher",
+        maxTurns: 5,
+      });
+
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.agentType).toBe("explore");
+      expect(mockSpawn).toHaveBeenCalledWith("explore", expect.any(String), expect.any(Object));
+    });
+
+    it("should map legacy 'coder' role to 'debug' type", async () => {
+      const mockSpawn = vi.fn().mockResolvedValue({
+        agent: { id: "test-agent-789" },
+        success: true,
+        output: "Code written",
+        usage: {},
+      });
+
+      mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
+
+      await spawnSimpleAgentTool.execute({
+        task: "Fix auth bug",
+        role: "coder",
+        maxTurns: 10,
+      });
+
+      expect(mockSpawn).toHaveBeenCalledWith("debug", expect.any(String), expect.any(Object));
+    });
+
+    it("should prefer 'type' over 'role' when both are provided", async () => {
+      const mockSpawn = vi.fn().mockResolvedValue({
+        agent: { id: "test-agent-abc" },
+        success: true,
+        output: "Done",
+        usage: {},
+      });
+
+      mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
+
+      await spawnSimpleAgentTool.execute({
+        task: "Review security",
+        type: "security",
+        role: "reviewer",
+        maxTurns: 5,
+      });
+
+      expect(mockSpawn).toHaveBeenCalledWith("security", expect.any(String), expect.any(Object));
+    });
+
+    it("should prepend context to task description when provided", async () => {
+      const mockSpawn = vi.fn().mockResolvedValue({
+        agent: { id: "test-agent-ctx" },
+        success: true,
+        output: "Done",
+        usage: {},
+      });
+
+      mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
+
+      await spawnSimpleAgentTool.execute({
+        task: "Write auth module",
+        context: "Use JWT for authentication",
+        type: "debug",
+        maxTurns: 5,
+      });
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        "debug",
+        "Write auth module\n\nAdditional context: Use JWT for authentication",
+        expect.any(Object),
+      );
     });
 
     it("should return failed status when agent execution fails", async () => {
-      const mockProvider = { id: "test-provider" } as any;
-      const mockToolRegistry = {} as any;
-      mockedGetAgentProvider.mockReturnValue(mockProvider);
-      mockedGetAgentToolRegistry.mockReturnValue(mockToolRegistry);
-
-      const mockExecuteResult = {
-        output: "Agent reached maximum turns",
+      const mockSpawn = vi.fn().mockResolvedValue({
+        agent: { id: "test-agent-fail" },
         success: false,
-        turns: 10,
-        toolsUsed: ["read_file"],
-        tokensUsed: 3000,
-        duration: 10000,
-      };
+        output: "Agent reached maximum turns",
+        usage: {},
+      });
 
-      vi.mocked(AgentExecutor).mockImplementation(
-        () =>
-          ({
-            execute: vi.fn().mockResolvedValue(mockExecuteResult),
-          }) as any,
-      );
+      mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
 
       const result = await spawnSimpleAgentTool.execute({
         task: "Complex task",
-        role: "coder",
+        type: "refactor",
         maxTurns: 10,
       });
 
@@ -181,111 +180,50 @@ describe("simple-agent", () => {
       expect(result.exitCode).toBe(1);
     });
 
-    it("should pass context to the agent executor when provided", async () => {
-      const mockProvider = { id: "test-provider" } as any;
-      const mockToolRegistry = {} as any;
-      mockedGetAgentProvider.mockReturnValue(mockProvider);
-      mockedGetAgentToolRegistry.mockReturnValue(mockToolRegistry);
-
-      const mockExecute = vi.fn().mockResolvedValue({
-        output: "Done",
+    it("should default to 'explore' when no type or role specified", async () => {
+      const mockSpawn = vi.fn().mockResolvedValue({
+        agent: { id: "test-agent-default" },
         success: true,
-        turns: 1,
-        toolsUsed: [],
-        tokensUsed: 100,
-        duration: 500,
+        output: "Done",
+        usage: {},
       });
 
-      vi.mocked(AgentExecutor).mockImplementation(
-        () =>
-          ({
-            execute: mockExecute,
-          }) as any,
-      );
+      mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
 
       await spawnSimpleAgentTool.execute({
-        task: "Write auth module",
-        context: "Use JWT for authentication",
-        role: "coder",
+        task: "Do something",
         maxTurns: 5,
       });
 
-      expect(mockExecute).toHaveBeenCalledWith(
-        expect.objectContaining({ maxTurns: 5 }),
-        expect.objectContaining({
-          description: "Write auth module",
-          context: { userContext: "Use JWT for authentication" },
-        }),
-      );
+      expect(mockSpawn).toHaveBeenCalledWith("explore", expect.any(String), expect.any(Object));
     });
 
-    it("should pass undefined context when not provided", async () => {
-      const mockProvider = { id: "test-provider" } as any;
-      const mockToolRegistry = {} as any;
-      mockedGetAgentProvider.mockReturnValue(mockProvider);
-      mockedGetAgentToolRegistry.mockReturnValue(mockToolRegistry);
+    it("should support all 12 agent types", async () => {
+      const types = [
+        "explore", "plan", "test", "debug", "review", "architect",
+        "security", "tdd", "refactor", "e2e", "docs", "database",
+      ];
 
-      const mockExecute = vi.fn().mockResolvedValue({
-        output: "Done",
-        success: true,
-        turns: 1,
-        toolsUsed: [],
-        tokensUsed: 100,
-        duration: 500,
-      });
+      for (const type of types) {
+        const mockSpawn = vi.fn().mockResolvedValue({
+          agent: { id: `agent-${type}` },
+          success: true,
+          output: `${type} done`,
+          usage: {},
+        });
 
-      vi.mocked(AgentExecutor).mockImplementation(
-        () =>
-          ({
-            execute: mockExecute,
-          }) as any,
-      );
+        mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
 
-      await spawnSimpleAgentTool.execute({
-        task: "Simple task",
-        role: "coder",
-        maxTurns: 10,
-      });
+        const result = await spawnSimpleAgentTool.execute({
+          task: `Task for ${type}`,
+          type: type as any,
+          maxTurns: 5,
+        });
 
-      expect(mockExecute).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          context: undefined,
-        }),
-      );
-    });
-
-    it("should use maxTurns from input", async () => {
-      const mockProvider = { id: "test-provider" } as any;
-      const mockToolRegistry = {} as any;
-      mockedGetAgentProvider.mockReturnValue(mockProvider);
-      mockedGetAgentToolRegistry.mockReturnValue(mockToolRegistry);
-
-      const mockExecute = vi.fn().mockResolvedValue({
-        output: "Done",
-        success: true,
-        turns: 1,
-        toolsUsed: [],
-        duration: 100,
-      });
-
-      vi.mocked(AgentExecutor).mockImplementation(
-        () =>
-          ({
-            execute: mockExecute,
-          }) as any,
-      );
-
-      await spawnSimpleAgentTool.execute({
-        task: "Quick task",
-        role: "researcher",
-        maxTurns: 3,
-      });
-
-      expect(mockExecute).toHaveBeenCalledWith(
-        expect.objectContaining({ maxTurns: 3 }),
-        expect.anything(),
-      );
+        const parsed = JSON.parse(result.stdout);
+        expect(parsed.agentType).toBe(type);
+        expect(parsed.success).toBe(true);
+      }
     });
   });
 
@@ -307,8 +245,7 @@ describe("simple-agent", () => {
       expect(parsed.toolRegistryConfigured).toBe(false);
       expect(parsed.ready).toBe(false);
       expect(parsed.features.taskDelegation).toContain("requires provider");
-      expect(parsed.features.parallelSpawn).toContain("requires provider");
-      expect(parsed.features.multiTurnToolUse).toContain("requires provider");
+      expect(parsed.features.specializedAgents).toContain("requires provider");
       expect(result.exitCode).toBe(0);
     });
 
@@ -323,34 +260,30 @@ describe("simple-agent", () => {
       expect(parsed.providerConfigured).toBe(true);
       expect(parsed.toolRegistryConfigured).toBe(true);
       expect(parsed.features.taskDelegation).toBe("ready");
-      expect(parsed.features.parallelSpawn).toBe("ready");
-      expect(parsed.features.multiTurnToolUse).toBe("ready");
-      expect(parsed.availableRoles).toEqual(
-        expect.arrayContaining(["coder", "tester", "reviewer"]),
+      expect(parsed.features.specializedAgents).toBe("ready");
+      expect(parsed.availableTypes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "explore" }),
+          expect.objectContaining({ type: "plan" }),
+          expect.objectContaining({ type: "review" }),
+        ]),
       );
       expect(result.exitCode).toBe(0);
     });
 
-    it("should report not ready when only provider is configured", async () => {
-      mockedGetAgentProvider.mockReturnValue({ id: "test" } as any);
-      mockedGetAgentToolRegistry.mockReturnValue(null);
-
-      const result = await checkAgentCapabilityTool.execute({});
-
-      const parsed = JSON.parse(result.stdout);
-      expect(parsed.ready).toBe(false);
-      expect(parsed.providerConfigured).toBe(true);
-      expect(parsed.toolRegistryConfigured).toBe(false);
-    });
-
-    it("should list all available roles from AGENT_ROLES", async () => {
+    it("should list all 12 agent types", async () => {
       mockedGetAgentProvider.mockReturnValue(null);
       mockedGetAgentToolRegistry.mockReturnValue(null);
 
       const result = await checkAgentCapabilityTool.execute({});
 
       const parsed = JSON.parse(result.stdout);
-      expect(parsed.availableRoles).toEqual(Object.keys(AGENT_ROLES));
+      expect(parsed.availableTypes).toHaveLength(12);
+      const typeNames = parsed.availableTypes.map((t: any) => t.type);
+      expect(typeNames).toContain("explore");
+      expect(typeNames).toContain("architect");
+      expect(typeNames).toContain("security");
+      expect(typeNames).toContain("database");
     });
   });
 

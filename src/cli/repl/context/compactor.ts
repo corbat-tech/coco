@@ -35,21 +35,38 @@ export interface CompactionResult {
   compactedTokens: number;
   /** Whether compaction was performed */
   wasCompacted: boolean;
+  /** Key items that were preserved during compaction */
+  preserved?: string[];
 }
 
 /**
- * Prompt for summarizing conversation history
+ * Options for compaction
  */
-const COMPACTION_PROMPT = `Summarize the following conversation history concisely, preserving:
+export interface CompactOptions {
+  /** Topic to focus on — details about this topic are preserved */
+  focusTopic?: string;
+  /** Abort signal */
+  signal?: AbortSignal;
+}
+
+/**
+ * Build the compaction prompt, optionally with a focus topic.
+ */
+function buildCompactionPrompt(focusTopic?: string): string {
+  let prompt = `Summarize the following conversation history concisely, preserving:
 1. Key decisions made
-2. Important code/file changes discussed
+2. Important code/file changes discussed (always include file paths)
 3. Current task context and goals
 4. Any errors or issues encountered
+5. Original user requests (verbatim if short)`;
 
-Keep the summary under 500 words. Format as bullet points.
+  if (focusTopic) {
+    prompt += `\n\n**IMPORTANT**: Preserve ALL details related to "${focusTopic}" — include specific code snippets, file paths, decisions, and context about this topic. You may be more concise about unrelated topics.`;
+  }
 
-CONVERSATION:
-`;
+  prompt += `\n\nKeep the summary under 500 words. Format as bullet points.\n\nCONVERSATION:\n`;
+  return prompt;
+}
 
 /**
  * Compacts conversation history by summarizing older messages
@@ -74,8 +91,14 @@ export class ContextCompactor {
   async compact(
     messages: Message[],
     provider: LLMProvider,
-    signal?: AbortSignal,
+    signalOrOptions?: AbortSignal | CompactOptions,
   ): Promise<CompactionResult> {
+    // Support both old (signal) and new (options) calling convention
+    const options: CompactOptions =
+      signalOrOptions instanceof AbortSignal
+        ? { signal: signalOrOptions }
+        : signalOrOptions ?? {};
+    const signal = options.signal;
     // Filter out system messages - those are handled separately
     const conversationMessages = messages.filter((m) => m.role !== "system");
 
@@ -132,8 +155,8 @@ export class ContextCompactor {
     // Format messages for summarization
     const conversationText = this.formatMessagesForSummary(messagesToSummarize);
 
-    // Generate summary using the LLM
-    const summary = await this.generateSummary(conversationText, provider, signal);
+    // Generate summary using the LLM, with optional focus topic
+    const summary = await this.generateSummary(conversationText, provider, signal, options.focusTopic);
 
     // Create compacted message array
     // Include system messages at the start, then summary, then preserved messages
@@ -207,10 +230,11 @@ export class ContextCompactor {
     conversationText: string,
     provider: LLMProvider,
     signal?: AbortSignal,
+    focusTopic?: string,
   ): Promise<string> {
     if (signal?.aborted) return "[Compaction cancelled]";
 
-    const prompt = COMPACTION_PROMPT + conversationText;
+    const prompt = buildCompactionPrompt(focusTopic) + conversationText;
 
     try {
       const chatPromise = provider.chat([{ role: "user", content: prompt }], {

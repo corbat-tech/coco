@@ -48,11 +48,12 @@ const CLASSIFICATION_SYSTEM_PROMPT = `You are a message classifier for a coding 
 Classify the message into exactly ONE category. Reply with ONLY the category word, nothing else.
 
 Categories:
-- MODIFY: The message changes, corrects, or redirects the CURRENT task (e.g. "use Python instead", "no, make it blue", "add tests too", "hazlo en español", "better make it bigger")
+- STEER: The message provides a hint, preference, or minor adjustment to the CURRENT task without requiring a restart (e.g. "also add a test", "use camelCase", "make sure to handle errors", "btw the file is in src/", "prefer async/await")
+- MODIFY: The message fundamentally changes the CURRENT task requiring a fresh start (e.g. "actually use Python instead of JS", "no, do it completely differently", "start over with a new approach")
 - QUEUE: The message is a NEW, DIFFERENT task unrelated to what's being done (e.g. "what's 2+2", "tell me the weather", "create another file for X")
 - ABORT: The message asks to stop/cancel the current work (e.g. "stop", "cancel", "para", "never mind")
 
-Reply with exactly one word: MODIFY, QUEUE, or ABORT`;
+Reply with exactly one word: STEER, MODIFY, QUEUE, or ABORT`;
 
 /**
  * Build the user message for classification.
@@ -73,6 +74,7 @@ function buildClassificationPrompt(userMessage: string, currentTask: string | nu
 function parseResponse(response: string): InterruptionAction | null {
   const normalized = response.trim().toUpperCase();
 
+  if (normalized.includes("STEER")) return InterruptionAction.Steer;
   if (normalized.includes("MODIFY")) return InterruptionAction.Modify;
   if (normalized.includes("QUEUE")) return InterruptionAction.Queue;
   if (normalized.includes("ABORT")) return InterruptionAction.Abort;
@@ -115,21 +117,26 @@ export function createLLMClassifier(provider: LLMProvider, config?: Partial<LLMC
     ): Promise<LLMClassificationResult> {
       // Race: LLM classification vs timeout
       const llmPromise = classifyWithLLM(provider, message, currentTask, cfg);
-      const timeoutPromise = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), cfg.timeoutMs),
-      );
+      let timeoutId: NodeJS.Timeout;
+      const timeoutPromise = new Promise<null>((resolve) => {
+        timeoutId = setTimeout(() => resolve(null), cfg.timeoutMs);
+      });
 
-      const llmResult = await Promise.race([llmPromise, timeoutPromise]);
+      try {
+        const llmResult = await Promise.race([llmPromise, timeoutPromise]);
 
-      if (llmResult !== null) {
-        return { action: llmResult, source: "llm" };
+        if (llmResult !== null) {
+          return { action: llmResult, source: "llm" };
+        }
+
+        // Timeout: fall back to keywords
+        return {
+          action: classifyWithKeywords(message),
+          source: "keywords",
+        };
+      } finally {
+        clearTimeout(timeoutId!);
       }
-
-      // Timeout: fall back to keywords
-      return {
-        action: classifyWithKeywords(message),
-        source: "keywords",
-      };
     },
   };
 }

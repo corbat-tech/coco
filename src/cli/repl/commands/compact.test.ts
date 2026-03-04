@@ -9,6 +9,10 @@ import type { ReplSession } from "../types.js";
 vi.mock("chalk", () => ({
   default: {
     dim: (s: string) => s,
+    cyan: (s: string) => s,
+    green: (s: string) => s,
+    yellow: (s: string) => s,
+    red: (s: string) => s,
   },
 }));
 
@@ -17,7 +21,6 @@ describe("compactCommand", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
-    // Reset module to reset compactMode state
     vi.resetModules();
 
     mockSession = {
@@ -26,7 +29,7 @@ describe("compactCommand", () => {
       messages: [],
       projectPath: "/test/project",
       config: {
-        provider: { type: "anthropic", model: "claude-sonnet-4-20250514", maxTokens: 8192 },
+        provider: { type: "anthropic" as any, model: "claude-sonnet-4-20250514", maxTokens: 8192 },
         ui: { theme: "dark", showTimestamps: false, maxHistorySize: 100 },
         agent: { systemPrompt: "test", maxToolIterations: 25, confirmDestructive: true },
       },
@@ -50,21 +53,18 @@ describe("compactCommand", () => {
       expect(compactCommand.aliases).toEqual([]);
     });
 
-    it("should have description", async () => {
+    it("should have description about compaction", async () => {
       const { compactCommand } = await import("./compact.js");
-      expect(compactCommand.description).toContain("compact mode");
+      expect(compactCommand.description).toContain("Compact");
     });
   });
 
-  describe("execute", () => {
+  describe("/compact verbose — toggle mode", () => {
     it("should toggle compact mode on", async () => {
       const { compactCommand, isCompactMode } = await import("./compact.js");
 
-      // Initially off
       expect(isCompactMode()).toBe(false);
-
-      await compactCommand.execute([], mockSession);
-
+      await compactCommand.execute(["verbose"], mockSession);
       expect(isCompactMode()).toBe(true);
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("ON"));
     });
@@ -72,14 +72,39 @@ describe("compactCommand", () => {
     it("should toggle compact mode off", async () => {
       const { compactCommand, isCompactMode } = await import("./compact.js");
 
-      // Turn on first
-      await compactCommand.execute([], mockSession);
+      await compactCommand.execute(["verbose"], mockSession);
       expect(isCompactMode()).toBe(true);
 
-      // Toggle off
-      await compactCommand.execute([], mockSession);
+      await compactCommand.execute(["verbose"], mockSession);
       expect(isCompactMode()).toBe(false);
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("OFF"));
+    });
+  });
+
+  describe("/compact — manual compaction", () => {
+    it("should warn when context manager not initialized", async () => {
+      const { compactCommand } = await import("./compact.js");
+
+      const result = await compactCommand.execute([], mockSession);
+
+      expect(result).toBe(false);
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Context manager not initialized"),
+      );
+    });
+
+    it("should warn when not enough messages", async () => {
+      const { compactCommand } = await import("./compact.js");
+      mockSession.contextManager = {
+        _compactor: {},
+        _provider: {},
+      } as any;
+
+      const result = await compactCommand.execute([], mockSession);
+      expect(result).toBe(false);
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Not enough messages"),
+      );
     });
 
     it("should return false (do not exit)", async () => {
@@ -91,10 +116,9 @@ describe("compactCommand", () => {
 
   describe("isCompactMode", () => {
     it("should return current compact mode state", async () => {
-      const { compactCommand, isCompactMode } = await import("./compact.js");
-
+      const { isCompactMode, compactCommand } = await import("./compact.js");
       expect(isCompactMode()).toBe(false);
-      await compactCommand.execute([], mockSession);
+      await compactCommand.execute(["verbose"], mockSession);
       expect(isCompactMode()).toBe(true);
     });
   });

@@ -122,17 +122,17 @@ describe("compactCommand", () => {
     expect(compactCommand.description).toBeTruthy();
   });
 
-  it("should toggle compact mode", async () => {
+  it("should toggle compact mode via /compact verbose", async () => {
     const initial = isCompactMode();
-    await compactCommand.execute([], mockSession);
+    await compactCommand.execute(["verbose"], mockSession);
     expect(isCompactMode()).toBe(!initial);
     // Toggle back
-    await compactCommand.execute([], mockSession);
+    await compactCommand.execute(["verbose"], mockSession);
     expect(isCompactMode()).toBe(initial);
   });
 
   it("should return false (don't exit)", async () => {
-    const result = await compactCommand.execute([], mockSession);
+    const result = await compactCommand.execute(["verbose"], mockSession);
     expect(result).toBe(false);
   });
 });

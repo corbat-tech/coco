@@ -15,6 +15,7 @@ import { createMemoryLoader, type MemoryContext } from "./memory/index.js";
 import { CONFIG_PATHS } from "../../config/paths.js";
 import type { ToolRegistry } from "../../tools/registry.js";
 import { isMarkdownContent, type MarkdownSkillContent } from "../../skills/types.js";
+import { PLAN_MODE_SYSTEM_PROMPT } from "./commands/plan.js";
 
 /** Maximum total characters budget for active skill instructions (~4000 tokens, ~2% of typical 200K context) */
 const MAX_SKILL_INSTRUCTIONS_CHARS = 16000;
@@ -530,6 +531,11 @@ export function getConversationContext(
         systemPrompt = `${systemPrompt}\n\n# Active Skill Instructions\n\n${finalInstructions}`;
       }
     }
+  }
+
+  // Inject plan mode instructions when active
+  if (session.planMode) {
+    systemPrompt = `${systemPrompt}\n\n${PLAN_MODE_SYSTEM_PROMPT}`;
   }
 
   return [{ role: "system", content: systemPrompt }, ...session.messages];
