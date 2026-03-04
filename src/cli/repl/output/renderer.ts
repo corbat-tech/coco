@@ -959,12 +959,16 @@ function renderEditPreview(oldStr: string, newStr: string): string {
 
   for (const line of oldLines) {
     if (shown >= MAX_PREVIEW_LINES) break;
-    result.push(chalk.dim("   ") + bgDel(`- ${truncate(line.trim())}`));
+    const text = `- ${truncate(line.trim())}`;
+    const pad = Math.max(0, maxWidth - text.length);
+    result.push("   " + bgDel(text + " ".repeat(pad)));
     shown++;
   }
   for (const line of newLines) {
     if (shown >= MAX_PREVIEW_LINES) break;
-    result.push(chalk.dim("   ") + bgAdd(`+ ${truncate(line.trim())}`));
+    const text = `+ ${truncate(line.trim())}`;
+    const pad = Math.max(0, maxWidth - text.length);
+    result.push("   " + bgAdd(text + " ".repeat(pad)));
     shown++;
   }
 

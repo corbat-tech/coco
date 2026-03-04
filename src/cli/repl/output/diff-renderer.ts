@@ -442,16 +442,15 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
           const delIdx = pairByAdd.get(li)!;
           content = wordHighlights.get(delIdx)!.styledAdd;
         } else {
-          content = bgAddLine(line.content);
+          content = line.content;
         }
-        const lineStr = `${lineNo}${prefix} ${content}`;
-        const plainLen = stripAnsi(lineStr).length;
+        // Full-width background: line number + prefix + content + padding
+        const innerText = `${lineNo}${prefix} ${content}`;
+        const plainLen = stripAnsi(innerText).length + 1; // +1 for leading space
         const pad = Math.max(0, contentWidth - plainLen);
         console.log(
           chalk.magenta("│") +
-            ` ${lineStr}` +
-            " ".repeat(pad) +
-            " " +
+            bgAddLine(` ${innerText}` + " ".repeat(pad + 2)) +
             chalk.magenta("│"),
         );
       } else if (line.type === "delete") {
@@ -460,16 +459,15 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
         if (isPaired) {
           content = wordHighlights.get(li)!.styledDelete;
         } else {
-          content = bgDeleteLine(line.content);
+          content = line.content;
         }
-        const lineStr = `${lineNo}${prefix} ${content}`;
-        const plainLen = stripAnsi(lineStr).length;
+        // Full-width background: line number + prefix + content + padding
+        const innerText = `${lineNo}${prefix} ${content}`;
+        const plainLen = stripAnsi(innerText).length + 1;
         const pad = Math.max(0, contentWidth - plainLen);
         console.log(
           chalk.magenta("│") +
-            ` ${lineStr}` +
-            " ".repeat(pad) +
-            " " +
+            bgDeleteLine(` ${innerText}` + " ".repeat(pad + 2)) +
             chalk.magenta("│"),
         );
       } else {
@@ -492,7 +490,7 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
   }
 
   // Bottom border
-  console.log(chalk.magenta("╰" + "─".repeat(maxWidth - 2) + "╯"));
+  console.log(chalk.magenta("╰" + "─".repeat(Math.max(0, maxWidth - 2)) + "╯"));
 }
 
 function formatLineNo(line: DiffLine, show: boolean): string {
@@ -506,12 +504,17 @@ function formatLineNo(line: DiffLine, show: boolean): string {
  * Shows old → new in a compact format.
  */
 export function renderInlineDiff(oldLines: string[], newLines: string[]): string {
+  const maxWidth = Math.min(getTerminalWidth() - 4, 120);
   const result: string[] = [];
   for (const line of oldLines) {
-    result.push(chalk.red(`  - ${line}`));
+    const text = `- ${line}`;
+    const pad = Math.max(0, maxWidth - text.length);
+    result.push("  " + bgDeleteLine(text + " ".repeat(pad)));
   }
   for (const line of newLines) {
-    result.push(chalk.green(`  + ${line}`));
+    const text = `+ ${line}`;
+    const pad = Math.max(0, maxWidth - text.length);
+    result.push("  " + bgAddLine(text + " ".repeat(pad)));
   }
   return result.join("\n");
 }
