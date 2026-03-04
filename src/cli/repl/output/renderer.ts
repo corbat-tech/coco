@@ -441,6 +441,7 @@ function renderNestedTable(lines: string[], parentWidth: number): void {
 function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: number): void {
   const innerWidth = parentWidth - 4;
   const title = lang || "code";
+  const isDiff = lang === "diff";
 
   // Inner top border (cyan for contrast)
   const innerTopPadding = Math.floor((innerWidth - title.length - 4) / 2);
@@ -459,23 +460,44 @@ function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: numbe
       ),
   );
 
+  const bgDel = chalk.bgRgb(80, 20, 20);
+  const bgAdd = chalk.bgRgb(20, 60, 20);
+
   // Code lines
   for (const line of lines) {
     const formatted = formatCodeLine(line, lang);
     const codeWidth = innerWidth - 4;
     const wrappedLines = wrapText(formatted, codeWidth);
     for (const wrappedLine of wrappedLines) {
-      const padding = codeWidth - stripAnsi(wrappedLine).length;
-      console.log(
-        chalk.magenta("│") +
-          " " +
-          chalk.cyan("│") +
-          " " +
-          wrappedLine +
-          " ".repeat(Math.max(0, padding)) +
-          " " +
-          chalk.cyan("│"),
-      );
+      const padding = Math.max(0, codeWidth - stripAnsi(wrappedLine).length);
+      if (isDiff && line.startsWith("-")) {
+        console.log(
+          chalk.magenta("│") +
+            " " +
+            chalk.cyan("│") +
+            bgDel(" " + wrappedLine + " ".repeat(padding) + " ") +
+            chalk.cyan("│"),
+        );
+      } else if (isDiff && line.startsWith("+")) {
+        console.log(
+          chalk.magenta("│") +
+            " " +
+            chalk.cyan("│") +
+            bgAdd(" " + wrappedLine + " ".repeat(padding) + " ") +
+            chalk.cyan("│"),
+        );
+      } else {
+        console.log(
+          chalk.magenta("│") +
+            " " +
+            chalk.cyan("│") +
+            " " +
+            wrappedLine +
+            " ".repeat(padding) +
+            " " +
+            chalk.cyan("│"),
+        );
+      }
     }
   }
 
@@ -486,6 +508,7 @@ function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: numbe
 function renderSimpleCodeBlock(lang: string, lines: string[]): void {
   const width = Math.min(getTerminalWidth() - 4, 100);
   const contentWidth = width - 4;
+  const isDiff = lang === "diff";
 
   const title = lang || "Code";
   const titleDisplay = ` ${title} `;
@@ -496,19 +519,36 @@ function renderSimpleCodeBlock(lang: string, lines: string[]): void {
     chalk.magenta("╭" + "─".repeat(topPadding) + titleDisplay + "─".repeat(topRemainder) + "╮"),
   );
 
+  const bgDel = chalk.bgRgb(80, 20, 20);
+  const bgAdd = chalk.bgRgb(20, 60, 20);
+
   for (const line of lines) {
     const formatted = formatCodeLine(line, lang);
     const wrappedLines = wrapText(formatted, contentWidth);
     for (const wrappedLine of wrappedLines) {
-      const padding = contentWidth - stripAnsi(wrappedLine).length;
-      console.log(
-        chalk.magenta("│") +
-          " " +
-          wrappedLine +
-          " ".repeat(Math.max(0, padding)) +
-          " " +
-          chalk.magenta("│"),
-      );
+      const padding = Math.max(0, contentWidth - stripAnsi(wrappedLine).length);
+      if (isDiff && line.startsWith("-")) {
+        console.log(
+          chalk.magenta("│") +
+            bgDel(" " + wrappedLine + " ".repeat(padding) + " ") +
+            chalk.magenta("│"),
+        );
+      } else if (isDiff && line.startsWith("+")) {
+        console.log(
+          chalk.magenta("│") +
+            bgAdd(" " + wrappedLine + " ".repeat(padding) + " ") +
+            chalk.magenta("│"),
+        );
+      } else {
+        console.log(
+          chalk.magenta("│") +
+            " " +
+            wrappedLine +
+            " ".repeat(padding) +
+            " " +
+            chalk.magenta("│"),
+        );
+      }
     }
   }
 
