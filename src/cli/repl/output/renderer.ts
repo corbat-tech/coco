@@ -539,37 +539,79 @@ function renderSimpleCodeBlock(lang: string, lines: string[]): void {
   const bgDel = chalk.bgRgb(80, 20, 20);
   const bgAdd = chalk.bgRgb(20, 60, 20);
 
+  // Track line numbers from @@ hunk headers for diff blocks
+  let oldLineNo = 0;
+  let newLineNo = 0;
+
   for (const line of lines) {
+    // Parse @@ headers to update line counters
+    if (isDiff) {
+      const hunkMatch = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hunkMatch) {
+        oldLineNo = parseInt(hunkMatch[1]!, 10);
+        newLineNo = parseInt(hunkMatch[2]!, 10);
+      }
+    }
+
     const formatted = formatCodeLine(line, lang);
-    const wrappedLines = wrapText(formatted, contentWidth);
+    const lineNoStr = isDiff ? formatDiffLineNo(line, oldLineNo, newLineNo) : "";
+    const adjustedWidth = isDiff ? contentWidth - 7 : contentWidth; // 7 = "NNNNN " + space
+    const wrappedLines = wrapText(formatted, adjustedWidth);
     for (const wrappedLine of wrappedLines) {
-      const padding = Math.max(0, contentWidth - stripAnsi(wrappedLine).length);
+      const fullLine = lineNoStr + wrappedLine;
+      const padding = Math.max(0, contentWidth - stripAnsi(fullLine).length);
       if (isDiff && isDiffDeletion(line)) {
         console.log(
           chalk.magenta("│") +
-            bgDel(" " + wrappedLine + " ".repeat(padding) + " ") +
+            bgDel(" " + fullLine + " ".repeat(padding) + " ") +
             chalk.magenta("│"),
         );
       } else if (isDiff && isDiffAddition(line)) {
         console.log(
           chalk.magenta("│") +
-            bgAdd(" " + wrappedLine + " ".repeat(padding) + " ") +
+            bgAdd(" " + fullLine + " ".repeat(padding) + " ") +
             chalk.magenta("│"),
         );
       } else {
         console.log(
           chalk.magenta("│") +
             " " +
-            wrappedLine +
+            fullLine +
             " ".repeat(padding) +
             " " +
             chalk.magenta("│"),
         );
       }
     }
+
+    // Advance line counters after rendering
+    if (isDiff) {
+      if (isDiffDeletion(line)) {
+        oldLineNo++;
+      } else if (isDiffAddition(line)) {
+        newLineNo++;
+      } else if (!line.startsWith("@@") && !line.startsWith("diff ") && !line.startsWith("index ") && !line.startsWith("---") && !line.startsWith("+++")) {
+        // Context line — advances both
+        oldLineNo++;
+        newLineNo++;
+      }
+    }
   }
 
   console.log(chalk.magenta("╰" + "─".repeat(width - 2) + "╯"));
+}
+
+/** Format line number for diff code blocks */
+function formatDiffLineNo(line: string, oldLineNo: number, newLineNo: number): string {
+  if (isDiffDeletion(line)) {
+    return chalk.dim(String(oldLineNo).padStart(5) + " ");
+  } else if (isDiffAddition(line)) {
+    return chalk.dim(String(newLineNo).padStart(5) + " ");
+  } else if (line.startsWith("@@") || line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++")) {
+    return "       "; // 7 chars blank for headers
+  }
+  // Context line — show new line number
+  return chalk.dim(String(newLineNo).padStart(5) + " ");
 }
 
 function formatCodeLine(line: string, lang: string): string {
