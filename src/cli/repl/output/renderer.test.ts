@@ -61,6 +61,7 @@ function createChalkMock() {
     white: whiteFn,
     italic: (s: string) => `[italic]${s}[/italic]`,
     gray: (s: string) => `[gray]${s}[/gray]`,
+    bgRgb: (_r: number, _g: number, _b: number) => (s: string) => s,
   };
 }
 

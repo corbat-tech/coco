@@ -441,6 +441,7 @@ function renderNestedTable(lines: string[], parentWidth: number): void {
 function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: number): void {
   const innerWidth = parentWidth - 4;
   const title = lang || "code";
+  const isDiff = lang === "diff" || (!lang && looksLikeDiff(lines));
 
   // Inner top border (cyan for contrast)
   const innerTopPadding = Math.floor((innerWidth - title.length - 4) / 2);
@@ -459,23 +460,44 @@ function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: numbe
       ),
   );
 
+  const bgDel = chalk.bgRgb(80, 20, 20);
+  const bgAdd = chalk.bgRgb(20, 60, 20);
+
   // Code lines
   for (const line of lines) {
     const formatted = formatCodeLine(line, lang);
     const codeWidth = innerWidth - 4;
     const wrappedLines = wrapText(formatted, codeWidth);
     for (const wrappedLine of wrappedLines) {
-      const padding = codeWidth - stripAnsi(wrappedLine).length;
-      console.log(
-        chalk.magenta("│") +
-          " " +
-          chalk.cyan("│") +
-          " " +
-          wrappedLine +
-          " ".repeat(Math.max(0, padding)) +
-          " " +
-          chalk.cyan("│"),
-      );
+      const padding = Math.max(0, codeWidth - stripAnsi(wrappedLine).length);
+      if (isDiff && isDiffDeletion(line)) {
+        console.log(
+          chalk.magenta("│") +
+            " " +
+            chalk.cyan("│") +
+            bgDel(" " + wrappedLine + " ".repeat(padding) + " ") +
+            chalk.cyan("│"),
+        );
+      } else if (isDiff && isDiffAddition(line)) {
+        console.log(
+          chalk.magenta("│") +
+            " " +
+            chalk.cyan("│") +
+            bgAdd(" " + wrappedLine + " ".repeat(padding) + " ") +
+            chalk.cyan("│"),
+        );
+      } else {
+        console.log(
+          chalk.magenta("│") +
+            " " +
+            chalk.cyan("│") +
+            " " +
+            wrappedLine +
+            " ".repeat(padding) +
+            " " +
+            chalk.cyan("│"),
+        );
+      }
     }
   }
 
@@ -483,9 +505,27 @@ function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: numbe
   console.log(chalk.magenta("│") + " " + chalk.cyan("╰" + "─".repeat(innerWidth - 2) + "╯"));
 }
 
+/** Detect unified diff content by checking for typical headers */
+function looksLikeDiff(lines: string[]): boolean {
+  // Check first 5 lines for unified diff markers
+  const head = lines.slice(0, 5);
+  return head.some((l) => l.startsWith("--- ") || l.startsWith("+++ ") || l.startsWith("@@ "));
+}
+
+/** Check if a line in a diff block should get deletion background */
+function isDiffDeletion(line: string): boolean {
+  return line.startsWith("-") && !line.startsWith("---");
+}
+
+/** Check if a line in a diff block should get addition background */
+function isDiffAddition(line: string): boolean {
+  return line.startsWith("+") && !line.startsWith("+++");
+}
+
 function renderSimpleCodeBlock(lang: string, lines: string[]): void {
   const width = Math.min(getTerminalWidth() - 4, 100);
   const contentWidth = width - 4;
+  const isDiff = lang === "diff" || (!lang && looksLikeDiff(lines));
 
   const title = lang || "Code";
   const titleDisplay = ` ${title} `;
@@ -496,23 +536,89 @@ function renderSimpleCodeBlock(lang: string, lines: string[]): void {
     chalk.magenta("╭" + "─".repeat(topPadding) + titleDisplay + "─".repeat(topRemainder) + "╮"),
   );
 
+  const bgDel = chalk.bgRgb(80, 20, 20);
+  const bgAdd = chalk.bgRgb(20, 60, 20);
+
+  // Track line numbers from @@ hunk headers for diff blocks
+  let oldLineNo = 0;
+  let newLineNo = 0;
+
   for (const line of lines) {
+    // Parse @@ headers to update line counters
+    if (isDiff) {
+      const hunkMatch = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hunkMatch) {
+        oldLineNo = parseInt(hunkMatch[1]!, 10);
+        newLineNo = parseInt(hunkMatch[2]!, 10);
+      }
+    }
+
     const formatted = formatCodeLine(line, lang);
-    const wrappedLines = wrapText(formatted, contentWidth);
+    const lineNoStr = isDiff ? formatDiffLineNo(line, oldLineNo, newLineNo) : "";
+    const adjustedWidth = isDiff ? contentWidth - 7 : contentWidth; // 7 = "NNNNN " + space
+    const wrappedLines = wrapText(formatted, adjustedWidth);
     for (const wrappedLine of wrappedLines) {
-      const padding = contentWidth - stripAnsi(wrappedLine).length;
-      console.log(
-        chalk.magenta("│") +
-          " " +
-          wrappedLine +
-          " ".repeat(Math.max(0, padding)) +
-          " " +
-          chalk.magenta("│"),
-      );
+      const fullLine = lineNoStr + wrappedLine;
+      const padding = Math.max(0, contentWidth - stripAnsi(fullLine).length);
+      if (isDiff && isDiffDeletion(line)) {
+        console.log(
+          chalk.magenta("│") +
+            bgDel(" " + fullLine + " ".repeat(padding) + " ") +
+            chalk.magenta("│"),
+        );
+      } else if (isDiff && isDiffAddition(line)) {
+        console.log(
+          chalk.magenta("│") +
+            bgAdd(" " + fullLine + " ".repeat(padding) + " ") +
+            chalk.magenta("│"),
+        );
+      } else {
+        console.log(
+          chalk.magenta("│") + " " + fullLine + " ".repeat(padding) + " " + chalk.magenta("│"),
+        );
+      }
+    }
+
+    // Advance line counters after rendering
+    if (isDiff) {
+      if (isDiffDeletion(line)) {
+        oldLineNo++;
+      } else if (isDiffAddition(line)) {
+        newLineNo++;
+      } else if (
+        !line.startsWith("@@") &&
+        !line.startsWith("diff ") &&
+        !line.startsWith("index ") &&
+        !line.startsWith("---") &&
+        !line.startsWith("+++")
+      ) {
+        // Context line — advances both
+        oldLineNo++;
+        newLineNo++;
+      }
     }
   }
 
   console.log(chalk.magenta("╰" + "─".repeat(width - 2) + "╯"));
+}
+
+/** Format line number for diff code blocks */
+function formatDiffLineNo(line: string, oldLineNo: number, newLineNo: number): string {
+  if (isDiffDeletion(line)) {
+    return chalk.dim(String(oldLineNo).padStart(5) + " ");
+  } else if (isDiffAddition(line)) {
+    return chalk.dim(String(newLineNo).padStart(5) + " ");
+  } else if (
+    line.startsWith("@@") ||
+    line.startsWith("diff ") ||
+    line.startsWith("index ") ||
+    line.startsWith("---") ||
+    line.startsWith("+++")
+  ) {
+    return "       "; // 7 chars blank for headers
+  }
+  // Context line — show new line number
+  return chalk.dim(String(newLineNo).padStart(5) + " ");
 }
 
 function formatCodeLine(line: string, lang: string): string {
@@ -939,21 +1045,45 @@ function renderContentPreview(content: string, maxLines: number): string {
   return chalk.dim(preview.join("\n")) + more;
 }
 
-/** Show first line of old → new for edit_file */
+/** Show changed lines of old → new for edit_file with background colors */
 function renderEditPreview(oldStr: string, newStr: string): string {
   const maxWidth = Math.max(getTerminalWidth() - 8, 30);
+  const MAX_PREVIEW_LINES = 8;
 
-  const firstOld = oldStr.split("\n").find((l) => l.trim().length > 0) ?? "";
-  const firstNew = newStr.split("\n").find((l) => l.trim().length > 0) ?? "";
+  const bgDel = chalk.bgRgb(80, 20, 20);
+  const bgAdd = chalk.bgRgb(20, 60, 20);
 
-  if (!firstOld && !firstNew) return "";
+  const oldLines = oldStr.split("\n").filter((l) => l.trim().length > 0);
+  const newLines = newStr.split("\n").filter((l) => l.trim().length > 0);
+
+  if (oldLines.length === 0 && newLines.length === 0) return "";
 
   const truncate = (s: string) => (s.length > maxWidth ? s.slice(0, maxWidth - 1) + "…" : s);
 
-  const lines: string[] = [];
-  if (firstOld) lines.push(chalk.dim("   ") + chalk.red(`- ${truncate(firstOld.trim())}`));
-  if (firstNew) lines.push(chalk.dim("   ") + chalk.green(`+ ${truncate(firstNew.trim())}`));
-  return lines.join("\n");
+  const result: string[] = [];
+  let shown = 0;
+
+  for (const line of oldLines) {
+    if (shown >= MAX_PREVIEW_LINES) break;
+    const text = `- ${truncate(line.trim())}`;
+    const pad = Math.max(0, maxWidth - text.length);
+    result.push("   " + bgDel(text + " ".repeat(pad)));
+    shown++;
+  }
+  for (const line of newLines) {
+    if (shown >= MAX_PREVIEW_LINES) break;
+    const text = `+ ${truncate(line.trim())}`;
+    const pad = Math.max(0, maxWidth - text.length);
+    result.push("   " + bgAdd(text + " ".repeat(pad)));
+    shown++;
+  }
+
+  const total = oldLines.length + newLines.length;
+  if (total > MAX_PREVIEW_LINES) {
+    result.push(chalk.dim(`   … +${total - MAX_PREVIEW_LINES} more lines`));
+  }
+
+  return result.join("\n");
 }
 
 export function renderToolEnd(result: ExecutedToolCall): void {

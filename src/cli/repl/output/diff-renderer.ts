@@ -6,7 +6,21 @@
  */
 
 import chalk from "chalk";
+import { diffWords } from "diff";
 import { highlightLine } from "./syntax.js";
+
+// ============================================================================
+// Background color helpers for Codex-style diff rendering
+// ============================================================================
+
+/** Subtle dark red background for deleted lines */
+const bgDeleteLine = chalk.bgRgb(80, 20, 20);
+/** Subtle dark green background for added lines */
+const bgAddLine = chalk.bgRgb(20, 60, 20);
+/** Brighter red background for specific removed words */
+const bgDeleteWord = chalk.bgRgb(160, 40, 40);
+/** Brighter green background for specific added words */
+const bgAddWord = chalk.bgRgb(40, 120, 40);
 
 // ============================================================================
 // Types
@@ -216,6 +230,83 @@ function parseHunk(lines: string[], start: number): { hunk: DiffHunk; nextIndex:
 }
 
 // ============================================================================
+// Word-level diff highlighting
+// ============================================================================
+
+interface LinePair {
+  deleteIdx: number;
+  addIdx: number;
+}
+
+/**
+ * Identify adjacent delete→add pairs within a hunk's lines.
+ * Consecutive deletes followed by consecutive adds are matched 1:1.
+ */
+export function pairAdjacentLines(lines: DiffLine[]): LinePair[] {
+  const pairs: LinePair[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    // Collect consecutive deletes
+    const deleteStart = i;
+    while (i < lines.length && lines[i]!.type === "delete") i++;
+    const deleteEnd = i;
+
+    // Collect consecutive adds immediately after
+    const addStart = i;
+    while (i < lines.length && lines[i]!.type === "add") i++;
+    const addEnd = i;
+
+    const deleteCount = deleteEnd - deleteStart;
+    const addCount = addEnd - addStart;
+
+    if (deleteCount > 0 && addCount > 0) {
+      // Pair them 1:1, up to the smaller count
+      const pairCount = Math.min(deleteCount, addCount);
+      for (let j = 0; j < pairCount; j++) {
+        pairs.push({ deleteIdx: deleteStart + j, addIdx: addStart + j });
+      }
+    }
+
+    // Skip any non-delete/add lines (context)
+    if (i === deleteEnd && i === addEnd) {
+      // No deletes or adds found, advance past context
+      i++;
+    }
+  }
+
+  return pairs;
+}
+
+/**
+ * Highlight word-level changes between a deleted and an added line.
+ * Returns { styledDelete, styledAdd } with background-color segments.
+ */
+export function highlightWordChanges(
+  deletedContent: string,
+  addedContent: string,
+): { styledDelete: string; styledAdd: string } {
+  const changes = diffWords(deletedContent, addedContent);
+
+  let styledDelete = "";
+  let styledAdd = "";
+
+  for (const change of changes) {
+    if (change.added) {
+      styledAdd += bgAddWord(change.value);
+    } else if (change.removed) {
+      styledDelete += bgDeleteWord(change.value);
+    } else {
+      // Unchanged text — use the subtle line background
+      styledDelete += bgDeleteLine(change.value);
+      styledAdd += bgAddLine(change.value);
+    }
+  }
+
+  return { styledDelete, styledAdd };
+}
+
+// ============================================================================
 // Renderer
 // ============================================================================
 
@@ -319,38 +410,71 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
       );
     }
 
+    // Build word-level pair map for this hunk
+    const pairs = pairAdjacentLines(hunk.lines);
+    const pairedDeleteIndices = new Set(pairs.map((p) => p.deleteIdx));
+    const pairedAddIndices = new Set(pairs.map((p) => p.addIdx));
+    const pairByAdd = new Map(pairs.map((p) => [p.addIdx, p.deleteIdx]));
+
+    // Pre-compute word-level highlights for paired lines.
+    // The maps pairByAdd and wordHighlights are built from the same `pairs` array,
+    // so lookups with `!` are safe — every pairedAddIdx has a corresponding deleteIdx entry.
+    const wordHighlights = new Map<number, { styledDelete: string; styledAdd: string }>();
+    for (const pair of pairs) {
+      const delLine = hunk.lines[pair.deleteIdx]!;
+      const addLine = hunk.lines[pair.addIdx]!;
+      wordHighlights.set(pair.deleteIdx, highlightWordChanges(delLine.content, addLine.content));
+    }
+
     // Lines
-    for (const line of hunk.lines) {
+    for (let li = 0; li < hunk.lines.length; li++) {
+      const line = hunk.lines[li]!;
       const lineNo = formatLineNo(line, showLineNumbers);
       const prefix = line.type === "add" ? "+" : line.type === "delete" ? "-" : " ";
 
-      let content = line.content;
-      // Syntax highlight context and added lines (deleted lines keep dim)
-      if (line.type !== "delete" && lang) {
-        content = highlightLine(content, lang);
-      }
-
-      const lineStr = `${lineNo}${prefix} ${content}`;
-      const plainLen = stripAnsi(lineStr).length;
-      const pad = Math.max(0, contentWidth - plainLen);
-
       if (line.type === "add") {
+        const isPaired = pairedAddIndices.has(li);
+        let content: string;
+        if (isPaired) {
+          const delIdx = pairByAdd.get(li)!;
+          content = wordHighlights.get(delIdx)!.styledAdd;
+        } else {
+          content = line.content;
+        }
+        // Full-width background: line number + prefix + content + padding
+        const innerText = `${lineNo}${prefix} ${content}`;
+        const plainLen = stripAnsi(innerText).length + 1; // +1 for leading space
+        const pad = Math.max(0, contentWidth - plainLen);
         console.log(
           chalk.magenta("│") +
-            chalk.green(` ${lineStr}`) +
-            " ".repeat(pad) +
-            " " +
+            bgAddLine(` ${innerText}` + " ".repeat(pad + 2)) +
             chalk.magenta("│"),
         );
       } else if (line.type === "delete") {
+        const isPaired = pairedDeleteIndices.has(li);
+        let content: string;
+        if (isPaired) {
+          content = wordHighlights.get(li)!.styledDelete;
+        } else {
+          content = line.content;
+        }
+        // Full-width background: line number + prefix + content + padding
+        const innerText = `${lineNo}${prefix} ${content}`;
+        const plainLen = stripAnsi(innerText).length + 1;
+        const pad = Math.max(0, contentWidth - plainLen);
         console.log(
           chalk.magenta("│") +
-            chalk.red(` ${lineStr}`) +
-            " ".repeat(pad) +
-            " " +
+            bgDeleteLine(` ${innerText}` + " ".repeat(pad + 2)) +
             chalk.magenta("│"),
         );
       } else {
+        let content = line.content;
+        if (lang) {
+          content = highlightLine(content, lang);
+        }
+        const lineStr = `${lineNo}${prefix} ${content}`;
+        const plainLen = stripAnsi(lineStr).length;
+        const pad = Math.max(0, contentWidth - plainLen);
         console.log(
           chalk.magenta("│") +
             chalk.dim(` ${lineStr}`) +
@@ -363,7 +487,7 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
   }
 
   // Bottom border
-  console.log(chalk.magenta("╰" + "─".repeat(maxWidth - 2) + "╯"));
+  console.log(chalk.magenta("╰" + "─".repeat(Math.max(0, maxWidth - 2)) + "╯"));
 }
 
 function formatLineNo(line: DiffLine, show: boolean): string {
@@ -377,12 +501,17 @@ function formatLineNo(line: DiffLine, show: boolean): string {
  * Shows old → new in a compact format.
  */
 export function renderInlineDiff(oldLines: string[], newLines: string[]): string {
+  const maxWidth = Math.min(getTerminalWidth() - 4, 120);
   const result: string[] = [];
   for (const line of oldLines) {
-    result.push(chalk.red(`  - ${line}`));
+    const text = `- ${line}`;
+    const pad = Math.max(0, maxWidth - text.length);
+    result.push("  " + bgDeleteLine(text + " ".repeat(pad)));
   }
   for (const line of newLines) {
-    result.push(chalk.green(`  + ${line}`));
+    const text = `+ ${line}`;
+    const pad = Math.max(0, maxWidth - text.length);
+    result.push("  " + bgAddLine(text + " ".repeat(pad)));
   }
   return result.join("\n");
 }
