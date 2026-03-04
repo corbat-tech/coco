@@ -441,7 +441,7 @@ function renderNestedTable(lines: string[], parentWidth: number): void {
 function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: number): void {
   const innerWidth = parentWidth - 4;
   const title = lang || "code";
-  const isDiff = lang === "diff";
+  const isDiff = lang === "diff" || (!lang && looksLikeDiff(lines));
 
   // Inner top border (cyan for contrast)
   const innerTopPadding = Math.floor((innerWidth - title.length - 4) / 2);
@@ -470,7 +470,7 @@ function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: numbe
     const wrappedLines = wrapText(formatted, codeWidth);
     for (const wrappedLine of wrappedLines) {
       const padding = Math.max(0, codeWidth - stripAnsi(wrappedLine).length);
-      if (isDiff && line.startsWith("-")) {
+      if (isDiff && isDiffDeletion(line)) {
         console.log(
           chalk.magenta("│") +
             " " +
@@ -478,7 +478,7 @@ function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: numbe
             bgDel(" " + wrappedLine + " ".repeat(padding) + " ") +
             chalk.cyan("│"),
         );
-      } else if (isDiff && line.startsWith("+")) {
+      } else if (isDiff && isDiffAddition(line)) {
         console.log(
           chalk.magenta("│") +
             " " +
@@ -505,10 +505,27 @@ function renderNestedCodeBlock(lang: string, lines: string[], parentWidth: numbe
   console.log(chalk.magenta("│") + " " + chalk.cyan("╰" + "─".repeat(innerWidth - 2) + "╯"));
 }
 
+/** Detect unified diff content by checking for typical headers */
+function looksLikeDiff(lines: string[]): boolean {
+  // Check first 5 lines for unified diff markers
+  const head = lines.slice(0, 5);
+  return head.some((l) => l.startsWith("--- ") || l.startsWith("+++ ") || l.startsWith("@@ "));
+}
+
+/** Check if a line in a diff block should get deletion background */
+function isDiffDeletion(line: string): boolean {
+  return (line.startsWith("-") && !line.startsWith("---"));
+}
+
+/** Check if a line in a diff block should get addition background */
+function isDiffAddition(line: string): boolean {
+  return (line.startsWith("+") && !line.startsWith("+++"));
+}
+
 function renderSimpleCodeBlock(lang: string, lines: string[]): void {
   const width = Math.min(getTerminalWidth() - 4, 100);
   const contentWidth = width - 4;
-  const isDiff = lang === "diff";
+  const isDiff = lang === "diff" || (!lang && looksLikeDiff(lines));
 
   const title = lang || "Code";
   const titleDisplay = ` ${title} `;
@@ -527,13 +544,13 @@ function renderSimpleCodeBlock(lang: string, lines: string[]): void {
     const wrappedLines = wrapText(formatted, contentWidth);
     for (const wrappedLine of wrappedLines) {
       const padding = Math.max(0, contentWidth - stripAnsi(wrappedLine).length);
-      if (isDiff && line.startsWith("-")) {
+      if (isDiff && isDiffDeletion(line)) {
         console.log(
           chalk.magenta("│") +
             bgDel(" " + wrappedLine + " ".repeat(padding) + " ") +
             chalk.magenta("│"),
         );
-      } else if (isDiff && line.startsWith("+")) {
+      } else if (isDiff && isDiffAddition(line)) {
         console.log(
           chalk.magenta("│") +
             bgAdd(" " + wrappedLine + " ".repeat(padding) + " ") +
