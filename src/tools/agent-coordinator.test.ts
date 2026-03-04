@@ -4,18 +4,8 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 vi.mock("../agents/provider-bridge.js", () => ({
   getAgentProvider: vi.fn(),
   getAgentToolRegistry: vi.fn(),
+  getAgentManager: vi.fn(),
 }));
-
-// Mock AgentExecutor
-vi.mock("../agents/executor.js", async (importOriginal) => {
-  const original = (await importOriginal()) as Record<string, unknown>;
-  return {
-    ...original,
-    AgentExecutor: vi.fn().mockImplementation(() => ({
-      execute: vi.fn(),
-    })),
-  };
-});
 
 import {
   AgentTaskQueue,
@@ -25,11 +15,9 @@ import {
   aggregateResultsTool,
   agentCoordinatorTools,
 } from "./agent-coordinator.js";
-import { getAgentProvider, getAgentToolRegistry } from "../agents/provider-bridge.js";
-import { AgentExecutor } from "../agents/executor.js";
+import { getAgentManager } from "../agents/provider-bridge.js";
 
-const mockedGetAgentProvider = vi.mocked(getAgentProvider);
-const mockedGetAgentToolRegistry = vi.mocked(getAgentToolRegistry);
+const mockedGetAgentManager = vi.mocked(getAgentManager);
 
 describe("agent-coordinator", () => {
   beforeEach(() => {
@@ -107,7 +95,6 @@ describe("agent-coordinator", () => {
       const queue = new AgentTaskQueue();
       queue.completeTask("nonexistent", {});
       queue.failTask("nonexistent", "error");
-      // No error thrown
       expect(queue.getTasks()).toHaveLength(0);
     });
 
@@ -149,11 +136,9 @@ describe("agent-coordinator", () => {
         "dep-3",
       );
 
-      // Before completing dep-1, only independent tasks are ready
       let ready = queue.getReadyTasks();
       expect(ready.map((t) => t.id)).toEqual(["dep-1", "dep-3"]);
 
-      // After completing dep-1, dep-2 becomes ready
       queue.completeTask("dep-1", {});
       ready = queue.getReadyTasks();
       expect(ready.map((t) => t.id)).toEqual(["dep-2", "dep-3"]);
@@ -195,7 +180,7 @@ describe("agent-coordinator", () => {
 
       const plan = planExecution(tasks, "sequential");
       expect(plan.maxParallelism).toBe(1);
-      expect(plan.estimatedTime).toBe(200); // 2 tasks * 100ms
+      expect(plan.estimatedTime).toBe(200);
       expect(plan.plan).toEqual(["task-0", "task-1"]);
     });
 
@@ -208,11 +193,10 @@ describe("agent-coordinator", () => {
 
       const plan = planExecution(tasks, "priority-based");
       expect(plan.maxParallelism).toBe(3);
-      // Sorted by priority: high > medium > low
       expect(plan.plan[0]).toBe("task-1"); // high
       expect(plan.plan[1]).toBe("task-2"); // medium
       expect(plan.plan[2]).toBe("task-0"); // low
-      expect(plan.estimatedTime).toBe(240); // 3 * 80
+      expect(plan.estimatedTime).toBe(240);
     });
 
     it("should plan pipeline execution with topological sort", () => {
@@ -224,13 +208,12 @@ describe("agent-coordinator", () => {
 
       const plan = planExecution(tasks, "pipeline");
       expect(plan.maxParallelism).toBe(2);
-      // Topological order: task-0 before task-1, task-1 before task-2
       const idx0 = plan.plan.indexOf("task-0");
       const idx1 = plan.plan.indexOf("task-1");
       const idx2 = plan.plan.indexOf("task-2");
       expect(idx0).toBeLessThan(idx1);
       expect(idx1).toBeLessThan(idx2);
-      expect(plan.estimatedTime).toBe(270); // 3 * 90
+      expect(plan.estimatedTime).toBe(270);
     });
 
     it("should detect circular dependencies in pipeline", () => {
@@ -253,7 +236,6 @@ describe("agent-coordinator", () => {
         { taskId: "task-0", dependency: "missing-dep" },
         { taskId: "task-1", dependency: "also-missing" },
       ]);
-      // Tasks should still be in the plan (with unresolved deps filtered out)
       expect(plan.plan).toContain("task-0");
       expect(plan.plan).toContain("task-1");
     });
@@ -330,14 +312,13 @@ describe("agent-coordinator", () => {
       expect(delegateTaskTool.category).toBe("build");
     });
 
-    it("should return unavailable when provider is not initialized", async () => {
-      mockedGetAgentProvider.mockReturnValue(null);
-      mockedGetAgentToolRegistry.mockReturnValue(null);
+    it("should return unavailable when agent manager is not initialized", async () => {
+      mockedGetAgentManager.mockReturnValue(null);
 
       const result = await delegateTaskTool.execute({
         taskId: "task-1",
         task: "Build feature",
-        agentRole: "coder",
+        agentType: "debug",
         maxTurns: 10,
       });
 
@@ -347,48 +328,20 @@ describe("agent-coordinator", () => {
       expect(result.message).toContain("Agent provider not initialized");
     });
 
-    it("should return error for unknown agent role", async () => {
-      mockedGetAgentProvider.mockReturnValue({ id: "test" } as any);
-      mockedGetAgentToolRegistry.mockReturnValue({} as any);
-
-      const result = await delegateTaskTool.execute({
-        taskId: "task-1",
-        task: "Build feature",
-        agentRole: "nonexistent_role" as any,
-        maxTurns: 10,
-      });
-
-      expect(result.status).toBe("error");
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("Unknown agent role");
-    });
-
-    it("should delegate task successfully to agent executor", async () => {
-      const mockProvider = { id: "test" } as any;
-      const mockToolRegistry = {} as any;
-      mockedGetAgentProvider.mockReturnValue(mockProvider);
-      mockedGetAgentToolRegistry.mockReturnValue(mockToolRegistry);
-
-      const mockExecute = vi.fn().mockResolvedValue({
-        output: "Feature built successfully",
+    it("should delegate task successfully via AgentManager", async () => {
+      const mockSpawn = vi.fn().mockResolvedValue({
+        agent: { id: "agent-test-123" },
         success: true,
-        turns: 4,
-        toolsUsed: ["write_file", "bash_exec"],
-        tokensUsed: 2000,
-        duration: 8000,
+        output: "Feature built successfully",
+        usage: { inputTokens: 1000, outputTokens: 500 },
       });
 
-      vi.mocked(AgentExecutor).mockImplementation(
-        () =>
-          ({
-            execute: mockExecute,
-          }) as any,
-      );
+      mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
 
       const result = await delegateTaskTool.execute({
         taskId: "task-42",
         task: "Build auth feature",
-        agentRole: "coder",
+        agentType: "debug",
         context: "Use JWT tokens",
         maxTurns: 15,
       });
@@ -396,33 +349,52 @@ describe("agent-coordinator", () => {
       expect(result.status).toBe("completed");
       expect(result.success).toBe(true);
       expect(result.taskId).toBe("task-42");
-      expect(result.role).toBe("coder");
+      expect(result.agentType).toBe("debug");
       expect(result.output).toBe("Feature built successfully");
-      expect(result.turns).toBe(4);
-      expect(result.toolsUsed).toEqual(["write_file", "bash_exec"]);
+
+      // Verify spawn was called with context appended
+      expect(mockSpawn).toHaveBeenCalledWith(
+        "debug",
+        "Build auth feature\n\nAdditional context: Use JWT tokens",
+        expect.any(Object),
+      );
+    });
+
+    it("should map legacy agentRole to new agentType", async () => {
+      const mockSpawn = vi.fn().mockResolvedValue({
+        agent: { id: "agent-legacy" },
+        success: true,
+        output: "Done",
+        usage: {},
+      });
+
+      mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
+
+      const result = await delegateTaskTool.execute({
+        taskId: "task-legacy",
+        task: "Review code",
+        agentRole: "reviewer",
+        maxTurns: 5,
+      });
+
+      expect(result.agentType).toBe("review");
+      expect(mockSpawn).toHaveBeenCalledWith("review", expect.any(String), expect.any(Object));
     });
 
     it("should report failure when agent execution fails", async () => {
-      mockedGetAgentProvider.mockReturnValue({ id: "test" } as any);
-      mockedGetAgentToolRegistry.mockReturnValue({} as any);
+      const mockSpawn = vi.fn().mockResolvedValue({
+        agent: { id: "agent-fail" },
+        success: false,
+        output: "Max turns exceeded",
+        usage: {},
+      });
 
-      vi.mocked(AgentExecutor).mockImplementation(
-        () =>
-          ({
-            execute: vi.fn().mockResolvedValue({
-              output: "Max turns exceeded",
-              success: false,
-              turns: 10,
-              toolsUsed: [],
-              duration: 5000,
-            }),
-          }) as any,
-      );
+      mockedGetAgentManager.mockReturnValue({ spawn: mockSpawn } as any);
 
       const result = await delegateTaskTool.execute({
         taskId: "task-99",
         task: "Impossible task",
-        agentRole: "coder",
+        agentType: "refactor",
         maxTurns: 10,
       });
 
@@ -493,7 +465,6 @@ describe("agent-coordinator", () => {
         aggregationStrategy: "best",
       });
 
-      // Should pick first completed result, prefixed with success rate
       expect(result.aggregatedOutput).toContain("[Success rate: 67%]");
       expect(result.aggregatedOutput).toContain("First completed");
     });

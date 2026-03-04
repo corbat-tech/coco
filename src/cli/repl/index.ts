@@ -645,6 +645,8 @@ export async function startRepl(
       // Track actioned interruptions and queued messages for this turn
       const turnActionedInterruptions: ActionedInterruption[] = [];
       const turnQueuedMessages: string[] = [];
+      // Track steering messages that are injected mid-turn without aborting
+      const turnSteeringMessages: string[] = [];
       // Track pending LLM classification promises so we can await them after agent completes
       const pendingClassifications: Promise<void>[] = [];
       // Track async LLM error-explanation promises (fire-and-forget, printed as hints)
@@ -686,6 +688,13 @@ export async function startRepl(
                 wasAborted = true;
                 abortController.abort();
                 console.log(chalk.yellow(`  \u26A1 Modifying: `) + chalk.dim(preview) + sourceHint);
+                break;
+
+              case InterruptionAction.Steer:
+                turnSteeringMessages.push(msg.text);
+                console.log(
+                  chalk.magenta(`  \uD83C\uDFAF Steering: `) + chalk.dim(preview) + sourceHint,
+                );
                 break;
 
               case InterruptionAction.Queue:
@@ -830,6 +839,11 @@ export async function startRepl(
           inputEcho.resume();
         },
         signal: abortController.signal,
+        // Mid-task steering: drain any accumulated steering messages between iterations
+        onSteeringCheck: () => {
+          const messages = turnSteeringMessages.splice(0, turnSteeringMessages.length);
+          return messages;
+        },
         // Wire lifecycle hooks (PreToolUse/PostToolUse) if configured in .coco/hooks.json
         hookRegistry,
         hookExecutor,

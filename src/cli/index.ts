@@ -17,6 +17,7 @@ import { registerSkillsCommand } from "./commands/skills.js";
 import { registerCheckCommand } from "./commands/check.js";
 import { registerSwarmCommand } from "./commands/swarm.js";
 import { startRepl } from "./repl/index.js";
+import { runHeadless } from "./headless.js";
 import { runOnboardingV2 } from "./repl/onboarding-v2.js";
 import { checkForUpdatesInteractive } from "./repl/version-check.js";
 import { getLastUsedProvider } from "../config/env.js";
@@ -62,8 +63,17 @@ program
   .option("-m, --model <model>", "LLM model to use")
   .option("--provider <provider>", "LLM provider (anthropic, openai, codex, gemini, kimi)")
   .option("-p, --path <path>", "Project path", process.cwd())
+  .option("-P, --print [task]", "Headless mode: run task and print output (no interactive UI)")
+  .option("--output <format>", "Output format for headless mode (text or json)", "text")
   .option("--setup", "Run setup wizard before starting")
-  .action(async (options: { model?: string; provider?: string; path: string; setup?: boolean }) => {
+  .action(async (options: {
+    model?: string;
+    provider?: string;
+    path: string;
+    print?: string | boolean;
+    output?: string;
+    setup?: boolean;
+  }) => {
     // Run setup if requested
     if (options.setup) {
       const result = await runOnboardingV2();
@@ -73,11 +83,31 @@ program
       }
     }
 
+    // Use last used provider from preferences (falls back to env/anthropic)
+    const providerType = (options.provider as ProviderType) ?? getLastUsedProvider();
+
+    // Headless mode: -P or --print
+    if (options.print !== undefined) {
+      const task = typeof options.print === "string" ? options.print : undefined;
+      const result = await runHeadless({
+        task,
+        projectPath: options.path,
+        outputFormat: options.output === "json" ? "json" : "text",
+        config: {
+          provider: {
+            type: providerType as "anthropic" | "openai",
+            model: options.model ?? "",
+            maxTokens: 8192,
+          },
+        },
+      });
+      process.exit(result.success ? 0 : 1);
+      return;
+    }
+
     // Check for updates before opening the REPL
     await checkForUpdatesInteractive();
 
-    // Use last used provider from preferences (falls back to env/anthropic)
-    const providerType = (options.provider as ProviderType) ?? getLastUsedProvider();
     await startRepl({
       projectPath: options.path,
       config: {

@@ -67,6 +67,12 @@ export interface AgentTurnOptions {
   hookExecutor?: HookExecutor;
   /** Callback when a hook executes */
   onHookExecuted?: (event: string, result: HookExecutionResult) => void;
+  /**
+   * Mid-task steering: called between iterations to check for pending user
+   * messages that should be injected as context without aborting the turn.
+   * Returns an array of steering messages, or empty/undefined if none.
+   */
+  onSteeringCheck?: () => string[];
 }
 
 /**
@@ -110,7 +116,9 @@ export async function executeAgentTurn(
   };
 
   // Get tool definitions for LLM (cast to provider's ToolDefinition type)
-  const tools = toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
+  // In plan mode, restrict to read-only tools only
+  const allTools = toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
+  const tools = session.planMode ? filterReadOnlyTools(allTools) : allTools;
 
   // Agentic loop - continue until no more tool calls
   let iteration = 0;
@@ -542,6 +550,27 @@ export async function executeAgentTurn(
       content: toolResults,
     });
 
+    // Mid-task steering: check for user messages injected between iterations.
+    // These are incorporated as additional context without aborting the turn,
+    // allowing the user to redirect the agent while it's working.
+    if (options.onSteeringCheck) {
+      const steeringMessages = options.onSteeringCheck();
+      if (steeringMessages.length > 0) {
+        const steeringContext = [
+          "\n---",
+          "## Mid-task steering from user:",
+          ...steeringMessages.map((m, i) => `${i + 1}. ${m}`),
+          "",
+          "Incorporate the above feedback into your ongoing work. Adjust your approach accordingly.",
+        ].join("\n");
+
+        addMessage(session, {
+          role: "user",
+          content: steeringContext,
+        });
+      }
+    }
+
     // Give the LLM one final text-only turn to explain the error to the user.
     // We call streamWithTools with tools=[] so the LLM can only produce text.
     if (stuckInErrorLoop) {
@@ -643,4 +672,42 @@ export function summarizeToolResults(toolCalls: ExecutedToolCall[]): string {
     "",
     "Reuse the above results where relevant — do NOT repeat searches or work already done.",
   ].join("\n");
+}
+
+/**
+ * Read-only tool names allowed in plan mode.
+ * These tools cannot modify files or execute destructive operations.
+ */
+const PLAN_MODE_ALLOWED_TOOLS = new Set([
+  // File reading
+  "glob",
+  "read_file",
+  "list_dir",
+  "tree",
+  // Search
+  "grep",
+  "find_in_file",
+  "semantic_search",
+  "codebase_map",
+  // Git read-only
+  "git_status",
+  "git_log",
+  "git_diff",
+  "git_show",
+  "git_branch",
+  // Memory read
+  "recall_memory",
+  "list_memories",
+  // Checkpoint read
+  "list_checkpoints",
+  // Agent spawning (read-only agents only)
+  "spawnSimpleAgent",
+  "checkAgentCapability",
+]);
+
+/**
+ * Filter tool definitions to only read-only tools for plan mode.
+ */
+function filterReadOnlyTools(tools: ToolDefinition[]): ToolDefinition[] {
+  return tools.filter((tool) => PLAN_MODE_ALLOWED_TOOLS.has(tool.name));
 }

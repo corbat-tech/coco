@@ -29,13 +29,14 @@ describe("types.ts", () => {
 
       expect(MEMORY_LEVELS[0]).toBe("user");
       expect(MEMORY_LEVELS[1]).toBe("project");
-      expect(MEMORY_LEVELS[2]).toBe("local");
+      expect(MEMORY_LEVELS[2]).toBe("directory");
+      expect(MEMORY_LEVELS[3]).toBe("local");
     });
 
-    it("should have exactly 3 levels", async () => {
+    it("should have exactly 4 levels", async () => {
       const { MEMORY_LEVELS } = await import("./types.js");
 
-      expect(MEMORY_LEVELS).toHaveLength(3);
+      expect(MEMORY_LEVELS).toHaveLength(4);
     });
 
     it("should be a readonly tuple defined with as const", async () => {
@@ -44,7 +45,7 @@ describe("types.ts", () => {
       // TypeScript readonly arrays (as const) are not runtime-frozen but are typed readonly
       // We just verify the array exists and has the right structure
       expect(Array.isArray(MEMORY_LEVELS)).toBe(true);
-      expect(MEMORY_LEVELS).toEqual(["user", "project", "local"]);
+      expect(MEMORY_LEVELS).toEqual(["user", "project", "directory", "local"]);
     });
   });
 
