@@ -187,17 +187,25 @@ export class AnthropicProvider implements LLMProvider {
         { signal: options?.signal },
       );
 
-      // Activity-based timeout protection (matches OpenAI provider pattern)
+      // Activity-based timeout: abort the stream if no events for streamTimeout ms.
+      // IMPORTANT: We use AbortController instead of throwing from setInterval,
+      // because throw inside setInterval causes an unhandled exception that kills
+      // the process instead of propagating to the async generator.
       const streamTimeout = this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
+      const timeoutController = new AbortController();
 
-      const checkTimeout = () => {
+      const timeoutInterval = setInterval(() => {
         if (Date.now() - lastActivityTime > streamTimeout) {
-          throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
+          clearInterval(timeoutInterval);
+          timeoutController.abort();
         }
-      };
+      }, 5000);
 
-      const timeoutInterval = setInterval(checkTimeout, 5000);
+      // Abort the underlying stream when timeout fires
+      timeoutController.signal.addEventListener("abort", () => stream.controller.abort(), {
+        once: true,
+      });
 
       try {
         let streamStopReason: StreamChunk["stopReason"];
@@ -221,6 +229,11 @@ export class AnthropicProvider implements LLMProvider {
         yield { type: "done", stopReason: streamStopReason };
       } finally {
         clearInterval(timeoutInterval);
+      }
+
+      // If we exited the loop because of our timeout, throw a descriptive error
+      if (timeoutController.signal.aborted) {
+        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
       throw this.handleError(error);
@@ -254,19 +267,22 @@ export class AnthropicProvider implements LLMProvider {
       let currentToolCall: Partial<ToolCall> | null = null;
       let currentToolInputJson = "";
 
-      // Activity-based timeout protection (matches OpenAI provider pattern).
-      // If no stream events arrive for `streamTimeout` ms, throw to unblock
-      // the REPL instead of hanging indefinitely.
+      // Activity-based timeout: abort the stream if no events for streamTimeout ms.
+      // Uses AbortController to safely break the for-await loop (see stream() comment).
       const streamTimeout = this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
+      const timeoutController = new AbortController();
 
-      const checkTimeout = () => {
+      const timeoutInterval = setInterval(() => {
         if (Date.now() - lastActivityTime > streamTimeout) {
-          throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
+          clearInterval(timeoutInterval);
+          timeoutController.abort();
         }
-      };
+      }, 5000);
 
-      const timeoutInterval = setInterval(checkTimeout, 5000);
+      timeoutController.signal.addEventListener("abort", () => stream.controller.abort(), {
+        once: true,
+      });
 
       try {
         let streamStopReason: StreamChunk["stopReason"];
@@ -371,6 +387,10 @@ export class AnthropicProvider implements LLMProvider {
         yield { type: "done", stopReason: streamStopReason };
       } finally {
         clearInterval(timeoutInterval);
+      }
+
+      if (timeoutController.signal.aborted) {
+        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
       throw this.handleError(error);
