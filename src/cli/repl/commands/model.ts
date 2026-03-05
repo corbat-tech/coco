@@ -204,9 +204,7 @@ async function selectModelInteractively(
 
         // Build suffix: star + context + description (truncated to fit)
         const star = model.recommended ? " ⭐" : "";
-        const ctx = model.contextWindow
-          ? ` ${Math.round(model.contextWindow / 1000)}K`
-          : "";
+        const ctx = model.contextWindow ? ` ${Math.round(model.contextWindow / 1000)}K` : "";
         const desc = model.description ? `  ${model.description}` : "";
         const hint = model.hint ? `  → ${model.hint}` : "";
         const suffix = truncate(`${star}${ctx}${desc}${hint}`, descWidth, "…");

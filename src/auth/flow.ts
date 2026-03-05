@@ -968,9 +968,10 @@ async function runCopilotDeviceFlow(): Promise<{
     } else if (errorMsg.includes("denied")) {
       console.log(chalk.yellow("   ⚠ Access was denied."));
     } else {
-      const category = errorMsg.includes("network") || errorMsg.includes("fetch")
-        ? "Network error"
-        : "Authentication error";
+      const category =
+        errorMsg.includes("network") || errorMsg.includes("fetch")
+          ? "Network error"
+          : "Authentication error";
       console.log(chalk.red(`   ✗ ${category}`));
     }
     console.log();

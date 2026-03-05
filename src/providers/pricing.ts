@@ -43,7 +43,11 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
 
   // Google Gemini models
   "gemini-3.1-pro-preview": { inputPerMillion: 1.25, outputPerMillion: 5, contextWindow: 1000000 },
-  "gemini-3-flash-preview": { inputPerMillion: 0.15, outputPerMillion: 0.6, contextWindow: 1000000 },
+  "gemini-3-flash-preview": {
+    inputPerMillion: 0.15,
+    outputPerMillion: 0.6,
+    contextWindow: 1000000,
+  },
   "gemini-3.1-flash-lite-preview": {
     inputPerMillion: 0.075,
     outputPerMillion: 0.3,
@@ -51,7 +55,11 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   },
   "gemini-2.5-pro": { inputPerMillion: 1.25, outputPerMillion: 5, contextWindow: 1048576 },
   "gemini-2.5-flash": { inputPerMillion: 0.15, outputPerMillion: 0.6, contextWindow: 1048576 },
-  "gemini-2.5-flash-lite": { inputPerMillion: 0.075, outputPerMillion: 0.3, contextWindow: 1048576 },
+  "gemini-2.5-flash-lite": {
+    inputPerMillion: 0.075,
+    outputPerMillion: 0.3,
+    contextWindow: 1048576,
+  },
 
   // Kimi/Moonshot models
   "kimi-k2.5": { inputPerMillion: 2, outputPerMillion: 2, contextWindow: 262144 },

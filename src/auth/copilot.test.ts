@@ -136,9 +136,7 @@ describe("Copilot Authentication", () => {
         json: async () => ({ error: "expired_token" }),
       });
 
-      await expect(pollGitHubForToken("dc_123", 0.01, 10)).rejects.toThrow(
-        "Device code expired",
-      );
+      await expect(pollGitHubForToken("dc_123", 0.01, 10)).rejects.toThrow("Device code expired");
     });
 
     it("should throw on access_denied", async () => {
@@ -146,9 +144,7 @@ describe("Copilot Authentication", () => {
         json: async () => ({ error: "access_denied" }),
       });
 
-      await expect(pollGitHubForToken("dc_123", 0.01, 10)).rejects.toThrow(
-        "Access denied",
-      );
+      await expect(pollGitHubForToken("dc_123", 0.01, 10)).rejects.toThrow("Access denied");
     });
 
     it("should call onPoll callback", async () => {
@@ -277,10 +273,10 @@ describe("Copilot Authentication", () => {
 
       await saveCopilotCredentials(creds);
 
-      expect(mockedMkdir).toHaveBeenCalledWith(
-        expect.stringContaining(".coco/tokens"),
-        { recursive: true, mode: 0o700 },
-      );
+      expect(mockedMkdir).toHaveBeenCalledWith(expect.stringContaining(".coco/tokens"), {
+        recursive: true,
+        mode: 0o700,
+      });
       expect(mockedWriteFile).toHaveBeenCalledWith(
         expect.stringContaining("copilot.json"),
         expect.any(String),

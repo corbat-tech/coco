@@ -71,17 +71,13 @@ describe("CopilotProvider", () => {
       mockedGetValidCopilotToken.mockResolvedValueOnce(null);
 
       // Should not throw when apiKey is provided
-      await expect(
-        provider.initialize({ apiKey: "direct_token_123" }),
-      ).resolves.toBeUndefined();
+      await expect(provider.initialize({ apiKey: "direct_token_123" })).resolves.toBeUndefined();
     });
 
     it("should throw when no token found", async () => {
       mockedGetValidCopilotToken.mockResolvedValueOnce(null);
 
-      await expect(provider.initialize({})).rejects.toThrow(
-        "No Copilot token found",
-      );
+      await expect(provider.initialize({})).rejects.toThrow("No Copilot token found");
     });
 
     it("should use custom model from config", async () => {

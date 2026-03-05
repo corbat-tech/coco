@@ -215,9 +215,7 @@ async function setupProviderWithAuth(
     const isGitHubCopilot = provider.id === "copilot";
     authOptions.push({
       value: "oauth",
-      label: isGitHubCopilot
-        ? "🐙 Sign in with GitHub account"
-        : "🔐 Sign in with ChatGPT account",
+      label: isGitHubCopilot ? "🐙 Sign in with GitHub account" : "🔐 Sign in with ChatGPT account",
       hint: isGitHubCopilot
         ? "Use your Copilot subscription (recommended)"
         : "Use your Plus/Pro subscription (recommended)",
@@ -1609,7 +1607,7 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
   // but copilot requires device flow credentials, not just requiresApiKey === false
   const configuredProviders = providers.filter((p) => {
     if (p.id === "copilot") return isProviderConfigured("copilot");
-    return (p.requiresApiKey === false) || !!process.env[p.envVar];
+    return p.requiresApiKey === false || !!process.env[p.envVar];
   });
 
   for (const prov of configuredProviders) {

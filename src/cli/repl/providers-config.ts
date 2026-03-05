@@ -1218,9 +1218,7 @@ export function getConfiguredProviders(): ProviderDefinition[] {
  */
 export function isProviderConfigured(type: ProviderType): boolean {
   if (type === "copilot") {
-    return (
-      !!process.env["GITHUB_TOKEN"] || !!process.env["GH_TOKEN"] || hasCopilotCredentials()
-    );
+    return !!process.env["GITHUB_TOKEN"] || !!process.env["GH_TOKEN"] || hasCopilotCredentials();
   }
   return !!process.env[PROVIDER_DEFINITIONS[type].envVar];
 }
