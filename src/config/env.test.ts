@@ -203,7 +203,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("anthropic");
 
-    expect(model).toBe("claude-opus-4-6-20260115");
+    expect(model).toBe("claude-opus-4-6");
   });
 
   it("should return custom OPENAI_MODEL if set", () => {
@@ -235,7 +235,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("gemini");
 
-    expect(model).toBe("gemini-3-flash-preview");
+    expect(model).toBe("gemini-3.1-pro-preview");
   });
 
   it("should return custom KIMI_MODEL if set", () => {

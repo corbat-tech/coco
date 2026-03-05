@@ -19,48 +19,47 @@ export interface ModelPricing {
  * Pricing table for all supported models
  */
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  // Anthropic Claude models
-  "claude-opus-4-20250514": { inputPerMillion: 15, outputPerMillion: 75, contextWindow: 200000 },
+  // Anthropic Claude models (March 2026 pricing)
+  "claude-opus-4-6": { inputPerMillion: 5, outputPerMillion: 25, contextWindow: 200000 },
+  "claude-sonnet-4-6": { inputPerMillion: 3, outputPerMillion: 15, contextWindow: 200000 },
+  "claude-haiku-4-5-20251001": { inputPerMillion: 1, outputPerMillion: 5, contextWindow: 200000 },
+  "claude-sonnet-4-5-20250929": { inputPerMillion: 3, outputPerMillion: 15, contextWindow: 200000 },
+  "claude-opus-4-5-20251101": { inputPerMillion: 5, outputPerMillion: 25, contextWindow: 200000 },
+  "claude-opus-4-1-20250805": { inputPerMillion: 15, outputPerMillion: 75, contextWindow: 200000 },
   "claude-sonnet-4-20250514": { inputPerMillion: 3, outputPerMillion: 15, contextWindow: 200000 },
-  "claude-3-5-sonnet-20241022": { inputPerMillion: 3, outputPerMillion: 15, contextWindow: 200000 },
-  "claude-3-5-haiku-20241022": { inputPerMillion: 0.8, outputPerMillion: 4, contextWindow: 200000 },
-  "claude-3-opus-20240229": { inputPerMillion: 15, outputPerMillion: 75, contextWindow: 200000 },
-  "claude-3-sonnet-20240229": { inputPerMillion: 3, outputPerMillion: 15, contextWindow: 200000 },
-  "claude-3-haiku-20240307": {
-    inputPerMillion: 0.25,
-    outputPerMillion: 1.25,
-    contextWindow: 200000,
-  },
+  "claude-opus-4-20250514": { inputPerMillion: 15, outputPerMillion: 75, contextWindow: 200000 },
 
   // OpenAI models
   "gpt-5.3-codex": { inputPerMillion: 2, outputPerMillion: 8, contextWindow: 400000 },
   "gpt-5.2-codex": { inputPerMillion: 2, outputPerMillion: 8, contextWindow: 400000 },
-  "gpt-5.2-thinking": { inputPerMillion: 3, outputPerMillion: 12, contextWindow: 400000 },
-  "gpt-5.2-pro": { inputPerMillion: 3, outputPerMillion: 12, contextWindow: 400000 },
-  "gpt-5.2-instant": { inputPerMillion: 1, outputPerMillion: 4, contextWindow: 400000 },
+  "gpt-5.1-codex-max": { inputPerMillion: 3, outputPerMillion: 12, contextWindow: 400000 },
+  "gpt-5.2": { inputPerMillion: 3, outputPerMillion: 12, contextWindow: 400000 },
+  "gpt-5.1": { inputPerMillion: 2, outputPerMillion: 8, contextWindow: 400000 },
   "gpt-4.1": { inputPerMillion: 2, outputPerMillion: 8, contextWindow: 1048576 },
   "gpt-4.1-mini": { inputPerMillion: 0.4, outputPerMillion: 1.6, contextWindow: 1048576 },
   "o4-mini": { inputPerMillion: 1.1, outputPerMillion: 4.4, contextWindow: 200000 },
   "gpt-4o": { inputPerMillion: 2.5, outputPerMillion: 10, contextWindow: 128000 },
   "gpt-4o-mini": { inputPerMillion: 0.15, outputPerMillion: 0.6, contextWindow: 128000 },
-  "gpt-4-turbo": { inputPerMillion: 10, outputPerMillion: 30, contextWindow: 128000 },
-  "gpt-4": { inputPerMillion: 30, outputPerMillion: 60, contextWindow: 8192 },
-  "gpt-3.5-turbo": { inputPerMillion: 0.5, outputPerMillion: 1.5, contextWindow: 16384 },
-  o1: { inputPerMillion: 15, outputPerMillion: 60, contextWindow: 200000 },
-  "o1-mini": { inputPerMillion: 3, outputPerMillion: 12, contextWindow: 128000 },
 
   // Google Gemini models
+  "gemini-3.1-pro-preview": { inputPerMillion: 1.25, outputPerMillion: 5, contextWindow: 1000000 },
   "gemini-3-flash-preview": {
     inputPerMillion: 0.15,
     outputPerMillion: 0.6,
     contextWindow: 1000000,
   },
-  "gemini-3-pro-preview": { inputPerMillion: 1.25, outputPerMillion: 5, contextWindow: 1000000 },
+  "gemini-3.1-flash-lite-preview": {
+    inputPerMillion: 0.075,
+    outputPerMillion: 0.3,
+    contextWindow: 1000000,
+  },
   "gemini-2.5-pro": { inputPerMillion: 1.25, outputPerMillion: 5, contextWindow: 1048576 },
   "gemini-2.5-flash": { inputPerMillion: 0.15, outputPerMillion: 0.6, contextWindow: 1048576 },
-  "gemini-2.0-flash": { inputPerMillion: 0.1, outputPerMillion: 0.4, contextWindow: 1048576 },
-  "gemini-1.5-flash": { inputPerMillion: 0.075, outputPerMillion: 0.3, contextWindow: 1000000 },
-  "gemini-1.5-pro": { inputPerMillion: 1.25, outputPerMillion: 5, contextWindow: 2000000 },
+  "gemini-2.5-flash-lite": {
+    inputPerMillion: 0.075,
+    outputPerMillion: 0.3,
+    contextWindow: 1048576,
+  },
 
   // Kimi/Moonshot models
   "kimi-k2.5": { inputPerMillion: 2, outputPerMillion: 2, contextWindow: 262144 },
@@ -80,6 +79,7 @@ export const DEFAULT_PRICING: Record<ProviderType, ModelPricing> = {
   gemini: { inputPerMillion: 0.1, outputPerMillion: 0.4, contextWindow: 1000000 },
   kimi: { inputPerMillion: 1.2, outputPerMillion: 1.2, contextWindow: 8192 },
   "kimi-code": { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 131072 }, // Included in subscription
+  copilot: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 200000 }, // Included in subscription
   lmstudio: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 32768 }, // Free - local models
   ollama: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 128000 }, // Free - local models
   groq: { inputPerMillion: 0.05, outputPerMillion: 0.08, contextWindow: 128000 }, // Free tier available

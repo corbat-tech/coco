@@ -40,6 +40,15 @@ import {
 import { generatePKCECredentials } from "./pkce.js";
 import { createCallbackServer } from "./callback-server.js";
 import { isWSL } from "../utils/platform.js";
+import {
+  requestGitHubDeviceCode,
+  pollGitHubForToken,
+  exchangeForCopilotToken,
+  getValidCopilotToken,
+  saveCopilotCredentials,
+  loadCopilotCredentials,
+  type CopilotCredentials,
+} from "./copilot.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -71,6 +80,13 @@ function getProviderDisplayInfo(provider: string): {
         authDescription: "Sign in with your ChatGPT account",
         apiKeyUrl: "https://platform.openai.com/api-keys",
       };
+    case "copilot":
+      return {
+        name: "GitHub Copilot",
+        emoji: "🐙",
+        authDescription: "Sign in with your GitHub account",
+        apiKeyUrl: "https://github.com/settings/copilot",
+      };
     default:
       // Generic fallback (Gemini OAuth removed - use API key or gcloud ADC)
       return {
@@ -86,6 +102,7 @@ function getProviderDisplayInfo(provider: string): {
  * Check if a provider supports OAuth
  */
 export function supportsOAuth(provider: string): boolean {
+  if (provider === "copilot") return true;
   const oauthProvider = getOAuthProviderName(provider);
   return oauthProvider in OAUTH_CONFIGS;
 }
@@ -94,6 +111,10 @@ export function supportsOAuth(provider: string): boolean {
  * Check if OAuth is already configured for a provider
  */
 export async function isOAuthConfigured(provider: string): Promise<boolean> {
+  if (provider === "copilot") {
+    const creds = await loadCopilotCredentials();
+    return creds !== null;
+  }
   const oauthProvider = getOAuthProviderName(provider);
   const tokens = await loadTokens(oauthProvider);
   return tokens !== null;
@@ -233,6 +254,11 @@ async function openBrowserFallback(url: string): Promise<boolean> {
 export async function runOAuthFlow(
   provider: string,
 ): Promise<{ tokens: OAuthTokens; accessToken: string } | null> {
+  // Copilot uses its own GitHub device flow (not standard OAuth)
+  if (provider === "copilot") {
+    return runCopilotDeviceFlow();
+  }
+
   // Map codex to openai for OAuth config (they share the same auth)
   const oauthProvider = getOAuthProviderName(provider);
   const config = OAUTH_CONFIGS[oauthProvider];
@@ -706,6 +732,9 @@ async function runDeviceCodeFlow(
 async function runApiKeyFlow(
   provider: string,
 ): Promise<{ tokens: OAuthTokens; accessToken: string } | null> {
+  if (provider === "copilot") {
+    throw new Error("runApiKeyFlow called with copilot — use runCopilotDeviceFlow() instead");
+  }
   const oauthProvider = getOAuthProviderName(provider);
   const displayInfo = getProviderDisplayInfo(provider);
   const apiKeysUrl = displayInfo.apiKeyUrl;
@@ -805,11 +834,172 @@ async function runApiKeyFlow(
 }
 
 /**
+ * Run GitHub Copilot device flow authentication
+ *
+ * This uses GitHub's OAuth Device Flow:
+ * 1. Request device code from GitHub
+ * 2. User authorizes at github.com/login/device
+ * 3. Poll for GitHub access token
+ * 4. Exchange GitHub token for Copilot API token
+ * 5. Save both tokens
+ */
+async function runCopilotDeviceFlow(): Promise<{
+  tokens: OAuthTokens;
+  accessToken: string;
+} | null> {
+  console.log();
+  console.log(chalk.magenta("   ╭─────────────────────────────────────────────────╮"));
+  console.log(
+    chalk.magenta("   │ ") +
+      chalk.bold.white("🐙 GitHub Copilot Authentication".padEnd(47)) +
+      chalk.magenta("│"),
+  );
+  console.log(chalk.magenta("   ╰─────────────────────────────────────────────────╯"));
+  console.log();
+  console.log(chalk.dim("   Requires an active GitHub Copilot subscription."));
+  console.log(chalk.dim("   https://github.com/settings/copilot"));
+  console.log();
+
+  try {
+    // Step 1: Request device code
+    console.log(chalk.dim("   Requesting device code from GitHub..."));
+    const deviceCode = await requestGitHubDeviceCode();
+
+    // Step 2: Show code to user
+    console.log();
+    console.log(chalk.magenta("   ╭─────────────────────────────────────────────────╮"));
+    console.log(
+      chalk.magenta("   │ ") +
+        chalk.bold.white("Enter this code in your browser:") +
+        chalk.magenta("               │"),
+    );
+    console.log(chalk.magenta("   │                                                 │"));
+    console.log(
+      chalk.magenta("   │       ") +
+        chalk.bold.cyan.bgBlack(` ${deviceCode.user_code} `) +
+        chalk.magenta("                            │"),
+    );
+    console.log(chalk.magenta("   │                                                 │"));
+    console.log(chalk.magenta("   ╰─────────────────────────────────────────────────╯"));
+    console.log();
+    console.log(chalk.cyan(`   → ${deviceCode.verification_uri}`));
+    console.log();
+
+    // Step 3: Open browser
+    const openIt = await p.confirm({
+      message: "Open browser to sign in?",
+      initialValue: true,
+    });
+
+    if (p.isCancel(openIt)) return null;
+
+    if (openIt) {
+      const opened = await openBrowser(deviceCode.verification_uri);
+      if (opened) {
+        console.log(chalk.green("   ✓ Browser opened"));
+      } else {
+        const fallbackOpened = await openBrowserFallback(deviceCode.verification_uri);
+        if (fallbackOpened) {
+          console.log(chalk.green("   ✓ Browser opened"));
+        } else {
+          console.log(chalk.dim("   Copy the URL above and paste it in your browser"));
+        }
+      }
+    }
+
+    console.log();
+
+    // Step 4: Poll for GitHub token
+    const spinner = p.spinner();
+    spinner.start("Waiting for you to sign in on GitHub...");
+
+    let pollCount = 0;
+    const githubToken = await pollGitHubForToken(
+      deviceCode.device_code,
+      deviceCode.interval,
+      deviceCode.expires_in,
+      () => {
+        pollCount++;
+        const dots = ".".repeat((pollCount % 3) + 1);
+        spinner.message(`Waiting for you to sign in on GitHub${dots}`);
+      },
+    );
+
+    spinner.stop(chalk.green("✓ GitHub authentication successful!"));
+
+    // Step 5: Exchange for Copilot token
+    console.log(chalk.dim("   Exchanging token for Copilot access..."));
+
+    const copilotToken = await exchangeForCopilotToken(githubToken);
+
+    // Step 6: Save credentials
+    const creds: CopilotCredentials = {
+      githubToken,
+      copilotToken: copilotToken.token,
+      copilotTokenExpiresAt: copilotToken.expires_at * 1000,
+      accountType: copilotToken.annotations?.copilot_plan,
+    };
+
+    await saveCopilotCredentials(creds);
+
+    const planType = creds.accountType ?? "individual";
+    console.log(chalk.green("\n   ✅ GitHub Copilot authenticated!\n"));
+    console.log(chalk.dim(`   Plan: ${planType}`));
+    console.log(chalk.dim("   Credentials stored in ~/.coco/tokens/copilot.json\n"));
+
+    // Return as OAuthTokens for compatibility with the flow return type
+    const tokens: OAuthTokens = {
+      accessToken: copilotToken.token,
+      tokenType: "Bearer",
+      expiresAt: copilotToken.expires_at * 1000,
+    };
+
+    return { tokens, accessToken: copilotToken.token };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+
+    console.log();
+    if (errorMsg.includes("403") || errorMsg.includes("not enabled")) {
+      console.log(chalk.red("   ✗ GitHub Copilot is not enabled for this account."));
+      console.log(chalk.dim("   Please ensure you have an active Copilot subscription:"));
+      console.log(chalk.cyan("   → https://github.com/settings/copilot"));
+    } else if (errorMsg.includes("expired") || errorMsg.includes("timed out")) {
+      console.log(chalk.yellow("   ⚠ Authentication timed out. Please try again."));
+    } else if (errorMsg.includes("denied")) {
+      console.log(chalk.yellow("   ⚠ Access was denied."));
+    } else {
+      const category =
+        errorMsg.includes("network") || errorMsg.includes("fetch")
+          ? "Network error"
+          : "Authentication error";
+      console.log(chalk.red(`   ✗ ${category}`));
+    }
+    console.log();
+
+    return null;
+  }
+}
+
+/**
  * Get stored OAuth token or run flow if needed
  */
 export async function getOrRefreshOAuthToken(
   provider: string,
 ): Promise<{ accessToken: string } | null> {
+  // Copilot has its own token management
+  if (provider === "copilot") {
+    const tokenResult = await getValidCopilotToken();
+    if (tokenResult) {
+      return { accessToken: tokenResult.token };
+    }
+    // Need to authenticate
+    const flowResult = await runOAuthFlow(provider);
+    if (flowResult) {
+      return { accessToken: flowResult.accessToken };
+    }
+    return null;
+  }
+
   // Map codex to openai for OAuth (they share the same auth)
   const oauthProvider = getOAuthProviderName(provider);
 

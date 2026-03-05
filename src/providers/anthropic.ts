@@ -28,23 +28,24 @@ import { getLogger } from "../utils/logger.js";
 /**
  * Default model - Updated February 2026
  */
-const DEFAULT_MODEL = "claude-opus-4-6-20260115";
+const DEFAULT_MODEL = "claude-opus-4-6";
 
 /**
  * Context windows for models
- * Updated February 2026 - Added Claude 4.6
+ * Updated March 2026
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
   // Kimi Code model (Anthropic-compatible endpoint)
   "kimi-for-coding": 131072,
-  // Claude 4.6 (latest, Jan 2026) - 200K-1M context, 128K output
-  "claude-opus-4-6-20260115": 200000,
-  // Claude 4.5 models (Nov 2025)
-  "claude-opus-4-5-20251124": 200000,
+  // Claude 4.6 (latest) — 200K standard, 1M beta
+  "claude-opus-4-6": 200000,
+  "claude-sonnet-4-6": 200000,
+  // Claude 4.5 models
+  "claude-opus-4-5-20251101": 200000,
   "claude-sonnet-4-5-20250929": 200000,
   "claude-haiku-4-5-20251001": 200000,
   // Claude 4.1 models
-  "claude-opus-4-1-20250801": 200000,
+  "claude-opus-4-1-20250805": 200000,
   // Claude 4 models
   "claude-sonnet-4-20250514": 200000,
   "claude-opus-4-20250514": 200000,

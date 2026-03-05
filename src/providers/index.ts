@@ -32,6 +32,9 @@ export { OpenAIProvider, createOpenAIProvider, createKimiProvider } from "./open
 // Codex provider (ChatGPT Plus/Pro via OAuth)
 export { CodexProvider, createCodexProvider } from "./codex.js";
 
+// Copilot provider (GitHub Copilot subscription)
+export { CopilotProvider, createCopilotProvider } from "./copilot.js";
+
 // Gemini provider
 export { GeminiProvider, createGeminiProvider } from "./gemini.js";
 
@@ -75,11 +78,14 @@ export {
 } from "./fallback.js";
 
 // Provider registry
+import { accessSync } from "node:fs";
+import { getCopilotCredentialsPath } from "../auth/copilot.js";
 import type { LLMProvider, ProviderConfig } from "./types.js";
 import { AnthropicProvider, createKimiCodeProvider } from "./anthropic.js";
 import { OpenAIProvider, createKimiProvider } from "./openai.js";
 import { GeminiProvider } from "./gemini.js";
 import { CodexProvider } from "./codex.js";
+import { CopilotProvider } from "./copilot.js";
 import { ProviderError } from "../utils/errors.js";
 import { getApiKey, getBaseUrl, getDefaultModel } from "../config/env.js";
 
@@ -90,6 +96,7 @@ export type ProviderType =
   | "anthropic"
   | "openai"
   | "codex"
+  | "copilot"
   | "gemini"
   | "kimi"
   | "kimi-code"
@@ -134,6 +141,10 @@ export async function createProvider(
     case "codex":
       // Codex uses OAuth tokens from ChatGPT Plus/Pro
       provider = new CodexProvider();
+      break;
+
+    case "copilot":
+      provider = new CopilotProvider();
       break;
 
     case "gemini":
@@ -237,6 +248,18 @@ export function listProviders(): Array<{
       id: "codex",
       name: "OpenAI Codex (ChatGPT Plus/Pro)",
       configured: false, // Will check OAuth tokens separately
+    },
+    {
+      id: "copilot",
+      name: "GitHub Copilot",
+      configured: (() => {
+        try {
+          accessSync(getCopilotCredentialsPath());
+          return true;
+        } catch {
+          return !!process.env["GITHUB_TOKEN"] || !!process.env["GH_TOKEN"];
+        }
+      })(),
     },
     { id: "gemini", name: "Google Gemini", configured: !!getApiKey("gemini") },
     { id: "kimi", name: "Kimi (Moonshot API)", configured: !!getApiKey("kimi") },

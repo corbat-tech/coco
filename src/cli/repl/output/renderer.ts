@@ -147,7 +147,8 @@ export function renderStreamChunk(chunk: StreamChunk): void {
 function processAndOutputLine(line: string): void {
   // Strip invisible Unicode characters that some LLMs inject at line starts
   // (BOM U+FEFF, zero-width space U+200B, etc.) — these break startsWith() matching.
-  line = line.replace(/^[\u200B\uFEFF\u200C\u200D\u2060\u00AD]+/, "");
+  // oxlint: no-misleading-character-class flags ZWJ in char classes; use alternation instead
+  line = line.replace(/^(?:\u{200B}|\u{FEFF}|\u{200C}|\u{200D}|\u{2060}|\u{00AD})+/u, "");
 
   // ── Tilde fence detection (~~~lang opens a block; bare ~~~ closes or is text) ──
   const tildeFenceMatch = line.match(/^~~~(\w*)$/);

@@ -15,20 +15,20 @@ import {
 
 describe("MODEL_PRICING", () => {
   it("should have pricing for Claude models", () => {
-    expect(MODEL_PRICING["claude-sonnet-4-20250514"]).toBeDefined();
-    expect(MODEL_PRICING["claude-opus-4-20250514"]).toBeDefined();
-    expect(MODEL_PRICING["claude-3-5-sonnet-20241022"]).toBeDefined();
+    expect(MODEL_PRICING["claude-sonnet-4-6"]).toBeDefined();
+    expect(MODEL_PRICING["claude-opus-4-6"]).toBeDefined();
+    expect(MODEL_PRICING["claude-haiku-4-5-20251001"]).toBeDefined();
   });
 
   it("should have pricing for OpenAI models", () => {
     expect(MODEL_PRICING["gpt-5.3-codex"]).toBeDefined();
     expect(MODEL_PRICING["gpt-4.1"]).toBeDefined();
-    expect(MODEL_PRICING["o1"]).toBeDefined();
+    expect(MODEL_PRICING["o4-mini"]).toBeDefined();
   });
 
   it("should have pricing for Gemini models", () => {
     expect(MODEL_PRICING["gemini-2.5-pro"]).toBeDefined();
-    expect(MODEL_PRICING["gemini-1.5-pro"]).toBeDefined();
+    expect(MODEL_PRICING["gemini-3.1-pro-preview"]).toBeDefined();
   });
 
   it("should have pricing for Kimi models", () => {

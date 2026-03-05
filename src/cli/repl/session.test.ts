@@ -12,7 +12,7 @@ vi.mock("node:crypto", () => ({
 // Mock env config
 vi.mock("../../config/env.js", () => ({
   getDefaultProvider: vi.fn().mockReturnValue("anthropic"),
-  getDefaultModel: vi.fn().mockReturnValue("claude-opus-4-6-20260115"),
+  getDefaultModel: vi.fn().mockReturnValue("claude-opus-4-6"),
   getLastUsedProvider: vi.fn().mockReturnValue("anthropic"),
   getLastUsedModel: vi.fn().mockReturnValue(undefined),
 }));
@@ -24,7 +24,7 @@ describe("createDefaultReplConfig", () => {
     const config = createDefaultReplConfig();
 
     expect(config.provider.type).toBe("anthropic");
-    expect(config.provider.model).toBe("claude-opus-4-6-20260115");
+    expect(config.provider.model).toBe("claude-opus-4-6");
     expect(config.provider.maxTokens).toBe(8192);
   });
 

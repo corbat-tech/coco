@@ -26,6 +26,7 @@ import {
   isOAuthConfigured,
   getOrRefreshOAuthToken,
   deleteTokens,
+  deleteCopilotCredentials,
 } from "../../../auth/index.js";
 import { saveProviderPreference, clearAuthMethod, type AuthMethod } from "../../../config/env.js";
 
@@ -259,8 +260,9 @@ async function switchProvider(
   const hasOAuth = supportsOAuth(newProvider.id) || newProvider.supportsOAuth;
   const hasGcloudADC = newProvider.supportsGcloudADC;
 
-  // Determine which OAuth provider to check (openai for OpenAI/codex, gemini for Gemini)
-  const oauthProviderName = newProvider.id === "gemini" ? "gemini" : "openai";
+  // Determine which OAuth provider to check
+  const oauthProviderName =
+    newProvider.id === "copilot" ? "copilot" : newProvider.id === "gemini" ? "gemini" : "openai";
 
   // Check if OAuth is already configured for this provider
   let oauthConnected = false;
@@ -281,17 +283,23 @@ async function switchProvider(
     if (hasOAuth) {
       // Determine OAuth labels based on provider
       const oauthLabels =
-        newProvider.id === "gemini"
+        newProvider.id === "copilot"
           ? {
-              connected: "🔐 Google account (connected ✓)",
-              signIn: "🔐 Sign in with Google account",
-              hint: "Same as Gemini CLI",
+              connected: "🐙 GitHub account (connected ✓)",
+              signIn: "🐙 Sign in with GitHub account",
+              hint: "Use your Copilot subscription",
             }
-          : {
-              connected: "🔐 ChatGPT account (connected ✓)",
-              signIn: "🔐 Sign in with ChatGPT account",
-              hint: "Use your Plus/Pro subscription",
-            };
+          : newProvider.id === "gemini"
+            ? {
+                connected: "🔐 Google account (connected ✓)",
+                signIn: "🔐 Sign in with Google account",
+                hint: "Same as Gemini CLI",
+              }
+            : {
+                connected: "🔐 ChatGPT account (connected ✓)",
+                signIn: "🔐 Sign in with ChatGPT account",
+                hint: "Use your Plus/Pro subscription",
+              };
 
       if (oauthConnected) {
         authOptions.push({
@@ -359,42 +367,57 @@ async function switchProvider(
 
       // Handle OAuth flow
       if (authChoice === "oauth") {
-        // Determine token env var and internal provider based on provider type
+        const isCopilot = newProvider.id === "copilot";
         const isGemini = newProvider.id === "gemini";
-        const tokenEnvVar = isGemini ? "GEMINI_OAUTH_TOKEN" : "OPENAI_CODEX_TOKEN";
 
-        if (oauthConnected) {
-          // Use existing OAuth session
-          try {
-            const tokenResult = await getOrRefreshOAuthToken(oauthProviderName);
-            if (tokenResult) {
-              process.env[tokenEnvVar] = tokenResult.accessToken;
-              selectedAuthMethod = "oauth";
-              if (!isGemini) internalProviderId = "codex";
-              console.log(chalk.dim(`\nUsing existing OAuth session...`));
-            } else {
-              // Token refresh failed, need to re-authenticate
+        if (isCopilot) {
+          // Copilot uses GitHub Device Flow — handled entirely by the copilot provider
+          // Just run the device flow if not already authenticated
+          if (oauthConnected) {
+            console.log(chalk.dim(`\nUsing existing GitHub session...`));
+          } else {
+            const result = await runOAuthFlow("copilot");
+            if (!result) return false;
+          }
+          selectedAuthMethod = "oauth";
+          // internalProviderId stays "copilot" — CopilotProvider handles its own tokens
+        } else {
+          // OpenAI/Gemini OAuth flow
+          const tokenEnvVar = isGemini ? "GEMINI_OAUTH_TOKEN" : "OPENAI_CODEX_TOKEN";
+
+          if (oauthConnected) {
+            // Use existing OAuth session
+            try {
+              const tokenResult = await getOrRefreshOAuthToken(oauthProviderName);
+              if (tokenResult) {
+                process.env[tokenEnvVar] = tokenResult.accessToken;
+                selectedAuthMethod = "oauth";
+                if (!isGemini) internalProviderId = "codex";
+                console.log(chalk.dim(`\nUsing existing OAuth session...`));
+              } else {
+                // Token refresh failed, need to re-authenticate
+                const result = await runOAuthFlow(newProvider.id);
+                if (!result) return false;
+                process.env[tokenEnvVar] = result.accessToken;
+                selectedAuthMethod = "oauth";
+                if (!isGemini) internalProviderId = "codex";
+              }
+            } catch {
+              // Token expired, need to re-authenticate
               const result = await runOAuthFlow(newProvider.id);
               if (!result) return false;
               process.env[tokenEnvVar] = result.accessToken;
               selectedAuthMethod = "oauth";
               if (!isGemini) internalProviderId = "codex";
             }
-          } catch {
-            // Token expired, need to re-authenticate
+          } else {
+            // New OAuth flow
             const result = await runOAuthFlow(newProvider.id);
             if (!result) return false;
             process.env[tokenEnvVar] = result.accessToken;
             selectedAuthMethod = "oauth";
             if (!isGemini) internalProviderId = "codex";
           }
-        } else {
-          // New OAuth flow
-          const result = await runOAuthFlow(newProvider.id);
-          if (!result) return false;
-          process.env[tokenEnvVar] = result.accessToken;
-          selectedAuthMethod = "oauth";
-          if (!isGemini) internalProviderId = "codex";
         }
       }
       // Handle gcloud ADC flow
@@ -465,7 +488,11 @@ async function switchProvider(
         }
 
         if (removeChoice === "oauth" || removeChoice === "all") {
-          await deleteTokens(oauthProviderName);
+          if (oauthProviderName === "copilot") {
+            await deleteCopilotCredentials();
+          } else {
+            await deleteTokens(oauthProviderName);
+          }
           await clearAuthMethod(newProvider.id as ProviderType);
           console.log(chalk.green("✓ OAuth session removed"));
         }
@@ -547,7 +574,11 @@ async function switchProvider(
     console.log(chalk.dim(`  Model: ${newModel}`));
     if (selectedAuthMethod === "oauth") {
       const authLabel =
-        newProvider.id === "gemini" ? "Google account (OAuth)" : "ChatGPT subscription (OAuth)";
+        newProvider.id === "copilot"
+          ? "GitHub Copilot (OAuth)"
+          : newProvider.id === "gemini"
+            ? "Google account (OAuth)"
+            : "ChatGPT subscription (OAuth)";
       console.log(chalk.dim(`  Auth: ${authLabel}`));
     }
     console.log(chalk.dim(`  Use /model to change models\n`));

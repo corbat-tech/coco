@@ -157,9 +157,9 @@ export class OpenAIProvider implements LLMProvider {
   readonly id: string;
   readonly name: string;
 
-  private client: OpenAI | null = null;
-  private config: ProviderConfig = {};
-  private retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
+  protected client: OpenAI | null = null;
+  protected config: ProviderConfig = {};
+  protected retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
 
   constructor(id = "openai", name = "OpenAI") {
     this.id = id;
@@ -748,7 +748,7 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Ensure client is initialized
    */
-  private ensureInitialized(): void {
+  protected ensureInitialized(): void {
     if (!this.client) {
       throw new ProviderError("Provider not initialized. Call initialize() first.", {
         provider: this.id,
@@ -963,7 +963,7 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Handle API errors
    */
-  private handleError(error: unknown): never {
+  protected handleError(error: unknown): never {
     if (error instanceof OpenAI.APIError) {
       const retryable = error.status === 429 || (error.status ?? 0) >= 500;
       throw new ProviderError(error.message, {

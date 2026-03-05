@@ -64,6 +64,23 @@ export {
 
 export { runOAuthFlow, supportsOAuth, isOAuthConfigured, getOrRefreshOAuthToken } from "./flow.js";
 
+// GitHub Copilot authentication
+export {
+  requestGitHubDeviceCode,
+  pollGitHubForToken,
+  exchangeForCopilotToken,
+  getValidCopilotToken,
+  saveCopilotCredentials,
+  loadCopilotCredentials,
+  deleteCopilotCredentials,
+  getCopilotCredentialsPath,
+  getCopilotBaseUrl,
+  CopilotAuthError,
+  type CopilotCredentials,
+  type CopilotToken,
+  type GitHubDeviceCodeResponse,
+} from "./copilot.js";
+
 // Google Cloud ADC support
 export {
   isGcloudInstalled,

@@ -102,14 +102,14 @@ describe("modelCommand", () => {
   describe("execute with valid model argument", () => {
     it("should change to a known model in same provider", async () => {
       // Use a model from the current provider config
-      const result = await modelCommand.execute(["claude-opus-4-5-20251124"], mockSession);
+      const result = await modelCommand.execute(["claude-opus-4-5-20251101"], mockSession);
 
-      expect(mockSession.config.provider.model).toBe("claude-opus-4-5-20251124");
+      expect(mockSession.config.provider.model).toBe("claude-opus-4-5-20251101");
       expect(result).toBe(false);
     });
 
     it("should display success message", async () => {
-      await modelCommand.execute(["claude-opus-4-5-20251124"], mockSession);
+      await modelCommand.execute(["claude-opus-4-5-20251101"], mockSession);
 
       const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
       expect(allOutput).toContain("Switched to");
