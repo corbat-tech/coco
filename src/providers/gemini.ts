@@ -37,27 +37,25 @@ import { getCachedADCToken } from "../auth/gcloud.js";
 /**
  * Default model - Updated February 2026
  */
-const DEFAULT_MODEL = "gemini-3-flash-preview";
+const DEFAULT_MODEL = "gemini-3.1-pro-preview";
 
 /**
  * Context windows for models
- * Updated February 2026 - Gemini 3 uses -preview suffix
+ * Updated March 2026 — gemini-3-pro-preview deprecated March 9
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
-  // Gemini 3 series (latest, Jan 2026 - use -preview suffix)
+  // Gemini 3.1 series (latest)
+  "gemini-3.1-pro-preview": 1000000,
+  "gemini-3.1-flash-lite-preview": 1000000,
+  // Gemini 3 series
   "gemini-3-flash-preview": 1000000,
-  "gemini-3-pro-preview": 1000000,
   // Gemini 2.5 series (production stable)
-  "gemini-2.5-pro-preview-05-06": 1048576,
-  "gemini-2.5-flash-preview-05-20": 1048576,
   "gemini-2.5-pro": 1048576,
   "gemini-2.5-flash": 1048576,
-  // Gemini 2.0 series (GA stable)
-  "gemini-2.0-flash": 1048576,
+  "gemini-2.5-flash-lite": 1048576,
   // Legacy
   "gemini-1.5-flash": 1000000,
   "gemini-1.5-pro": 2000000,
-  "gemini-1.0-pro": 32000,
 };
 
 /**

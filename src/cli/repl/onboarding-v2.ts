@@ -19,6 +19,7 @@ import {
   getProviderDefinition,
   getRecommendedModel,
   getConfiguredProviders,
+  isProviderConfigured,
   formatModelInfo,
   type ProviderDefinition,
   type ProviderPaymentType,
@@ -211,10 +212,15 @@ async function setupProviderWithAuth(
   const authOptions: Array<{ value: string; label: string; hint: string }> = [];
 
   if (hasOAuth) {
+    const isGitHubCopilot = provider.id === "copilot";
     authOptions.push({
       value: "oauth",
-      label: "🔐 Sign in with ChatGPT account",
-      hint: "Use your Plus/Pro subscription (recommended)",
+      label: isGitHubCopilot
+        ? "🐙 Sign in with GitHub account"
+        : "🔐 Sign in with ChatGPT account",
+      hint: isGitHubCopilot
+        ? "Use your Copilot subscription (recommended)"
+        : "Use your Plus/Pro subscription (recommended)",
     });
   }
 
@@ -247,6 +253,18 @@ async function setupProviderWithAuth(
     // OAuth flow
     const result = await runOAuthFlow(provider.id);
     if (!result) return null;
+
+    if (provider.id === "copilot") {
+      // Copilot: select from copilot models directly
+      const model = await selectModel(provider);
+      if (!model) return null;
+
+      return {
+        type: "copilot" as ProviderType,
+        model,
+        apiKey: result.accessToken,
+      };
+    }
 
     // When using OAuth for OpenAI, we need to use the "codex" provider
     // because OAuth tokens only work with the Codex API endpoint (chatgpt.com/backend-api)
@@ -1293,6 +1311,15 @@ export async function saveConfiguration(result: OnboardingResult): Promise<void>
     return;
   }
 
+  // Copilot credentials are already saved by the device flow (copilot.json)
+  // Just save the provider/model preference to config.json
+  if (result.type === "copilot") {
+    await saveProviderPreference("copilot", result.model, "oauth");
+    p.log.success("✅ GitHub Copilot configured");
+    p.log.message(chalk.dim("   Credentials stored in ~/.coco/tokens/copilot.json"));
+    return;
+  }
+
   // API keys are user-level credentials — always saved globally in ~/.coco/.env
   const isLocalProvider = result.type === "lmstudio" || result.type === "ollama";
   const message = isLocalProvider
@@ -1497,10 +1524,13 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
 
   // 1a. Check if preferred provider uses OAuth (e.g., openai with OAuth)
   // Also handle legacy "codex" provider which always uses OAuth
-  const usesOAuth = authMethod === "oauth" || config.provider.type === "codex";
+  // NOTE: Copilot is excluded — it manages its own tokens via CopilotProvider.initialize()
+  const usesOpenAIOAuth =
+    (authMethod === "oauth" || config.provider.type === "codex") &&
+    config.provider.type !== "copilot";
 
-  if (usesOAuth) {
-    // For OAuth, we always check openai tokens (codex maps to openai internally)
+  if (usesOpenAIOAuth) {
+    // For OpenAI OAuth, check openai tokens (codex maps to openai internally)
     const hasOAuthTokens = await isOAuthConfigured("openai");
     if (hasOAuthTokens) {
       try {
@@ -1540,11 +1570,16 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
   // For local providers (requiresApiKey: false), don't require an env var —
   // they use a local server that may or may not be running.
   const preferredProviderDef = providers.find((p) => p.id === config.provider.type);
-  const preferredIsLocal = preferredProviderDef?.requiresApiKey === false;
+  // Local providers (lmstudio, ollama) don't need API keys — but copilot
+  // uses device flow auth, not a local server, so it's not "local"
+  const preferredIsLocal =
+    preferredProviderDef?.requiresApiKey === false && preferredProviderDef?.id !== "copilot";
   const preferredHasApiKey = preferredProviderDef
     ? !!process.env[preferredProviderDef.envVar]
     : false;
-  const preferredIsConfigured = preferredIsLocal || preferredHasApiKey;
+  const preferredHasCopilotCreds =
+    preferredProviderDef?.id === "copilot" && isProviderConfigured("copilot");
+  const preferredIsConfigured = preferredIsLocal || preferredHasApiKey || preferredHasCopilotCreds;
 
   if (preferredProviderDef && preferredIsConfigured) {
     try {
@@ -1570,10 +1605,12 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
   }
 
   // 2. Find any configured provider (silently use the first available)
-  // Include local providers (requiresApiKey: false) even without env vars
-  const configuredProviders = providers.filter(
-    (p) => p.requiresApiKey === false || !!process.env[p.envVar],
-  );
+  // Include local providers (requiresApiKey: false) even without env vars,
+  // but copilot requires device flow credentials, not just requiresApiKey === false
+  const configuredProviders = providers.filter((p) => {
+    if (p.id === "copilot") return isProviderConfigured("copilot");
+    return (p.requiresApiKey === false) || !!process.env[p.envVar];
+  });
 
   for (const prov of configuredProviders) {
     try {

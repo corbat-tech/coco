@@ -54,6 +54,7 @@ export type ProviderType =
   | "anthropic"
   | "openai"
   | "codex"
+  | "copilot"
   | "gemini"
   | "kimi"
   | "kimi-code"
@@ -91,6 +92,9 @@ export function getApiKey(provider: ProviderType): string | undefined {
     case "codex":
       // Codex uses OAuth tokens, not API keys - return undefined to trigger OAuth flow
       return undefined;
+    case "copilot":
+      // Copilot uses GitHub device flow - env vars as optional override
+      return process.env["GITHUB_TOKEN"] ?? process.env["GH_TOKEN"];
     case "groq":
       return process.env["GROQ_API_KEY"];
     case "openrouter":
@@ -130,6 +134,8 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
       return process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434/v1";
     case "codex":
       return "https://chatgpt.com/backend-api/codex/responses";
+    case "copilot":
+      return process.env["COPILOT_BASE_URL"] ?? "https://api.githubcopilot.com";
     case "groq":
       return process.env["GROQ_BASE_URL"] ?? "https://api.groq.com/openai/v1";
     case "openrouter":
@@ -161,11 +167,11 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
 export function getDefaultModel(provider: ProviderType): string {
   switch (provider) {
     case "anthropic":
-      return process.env["ANTHROPIC_MODEL"] ?? "claude-opus-4-6-20260115";
+      return process.env["ANTHROPIC_MODEL"] ?? "claude-opus-4-6";
     case "openai":
       return process.env["OPENAI_MODEL"] ?? "gpt-5.3-codex";
     case "gemini":
-      return process.env["GEMINI_MODEL"] ?? "gemini-3-flash-preview";
+      return process.env["GEMINI_MODEL"] ?? "gemini-3.1-pro-preview";
     case "kimi":
       return process.env["KIMI_MODEL"] ?? "kimi-k2.5";
     case "kimi-code":
@@ -179,6 +185,8 @@ export function getDefaultModel(provider: ProviderType): string {
     case "codex":
       // Codex via ChatGPT subscription uses different models
       return process.env["CODEX_MODEL"] ?? "gpt-5.3-codex";
+    case "copilot":
+      return process.env["COPILOT_MODEL"] ?? "claude-sonnet-4.6";
     case "groq":
       return process.env["GROQ_MODEL"] ?? "llama-3.3-70b-versatile";
     case "openrouter":
@@ -203,6 +211,7 @@ const VALID_PROVIDERS: ProviderType[] = [
   "anthropic",
   "openai",
   "codex",
+  "copilot",
   "gemini",
   "kimi",
   "kimi-code",

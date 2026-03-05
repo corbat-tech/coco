@@ -8,6 +8,7 @@
  */
 
 import chalk from "chalk";
+import { truncate } from "../../../utils/strings.js";
 import type { SlashCommand, ReplSession } from "../types.js";
 import { getProviderDefinition, getAllProviders } from "../providers-config.js";
 import type { ProviderType } from "../../../providers/index.js";
@@ -183,6 +184,9 @@ async function selectModelInteractively(
     const renderMenu = () => {
       clearPrevious();
 
+      const termWidth = process.stdout.columns || 80;
+      // Prefix is ~5 chars (" ○ " or " ▶ "), model ID padded to 30
+      const descWidth = Math.max(10, termWidth - 42);
       let totalLines = 0;
       let separatorPrinted = false;
 
@@ -198,48 +202,35 @@ async function selectModelInteractively(
           totalLines++;
         }
 
+        // Build suffix: star + context + description (truncated to fit)
+        const star = model.recommended ? " ⭐" : "";
+        const ctx = model.contextWindow
+          ? ` ${Math.round(model.contextWindow / 1000)}K`
+          : "";
+        const desc = model.description ? `  ${model.description}` : "";
+        const hint = model.hint ? `  → ${model.hint}` : "";
+        const suffix = truncate(`${star}${ctx}${desc}${hint}`, descWidth, "…");
+
         if (model.disabled) {
-          // Disabled item — grayed out with description (RAM info) and hint
           let line = chalk.dim("   ○ ");
           line += chalk.dim(model.id.padEnd(30));
-          const star = model.recommended ? chalk.dim(" ⭐") : "   ";
-          const ctx = model.contextWindow
-            ? chalk.dim(` ${Math.round(model.contextWindow / 1000)}K`)
-            : "";
-          line += star + ctx;
-          // Show description (contains RAM requirements) + install hint
-          if (model.description) {
-            line += chalk.dim(`  ${model.description}`);
-          }
-          if (model.hint) {
-            line += chalk.dim.italic(`  → ${model.hint}`);
-          }
+          line += chalk.dim(suffix);
           process.stdout.write(line + "\n");
           totalLines++;
           continue;
         }
 
-        // Enabled item — normal rendering
+        // Enabled item
         let line = "";
         if (isSelected) {
-          line += chalk.bgBlue.white(" ▶ ");
-          line += chalk.bgBlue.white(model.id.padEnd(30));
+          line += chalk.bgBlue.white(` ▶ ${model.id.padEnd(30)}`);
         } else {
           const marker = isCurrent ? chalk.green(" ● ") : chalk.dim(" ○ ");
           line += marker;
           line += isCurrent ? chalk.green(model.id.padEnd(30)) : model.id.padEnd(30);
         }
 
-        const star = model.recommended ? chalk.magenta(" ⭐") : "";
-        const ctx = model.contextWindow
-          ? chalk.dim(` ${Math.round(model.contextWindow / 1000)}K`)
-          : "";
-        line += star + ctx;
-
-        // Show description (RAM info, etc.) for all items
-        if (model.description) {
-          line += chalk.dim(`  ${model.description}`);
-        }
+        line += model.recommended ? chalk.magenta(suffix) : chalk.dim(suffix);
 
         process.stdout.write(line + "\n");
         totalLines++;

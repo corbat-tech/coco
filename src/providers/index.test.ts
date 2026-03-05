@@ -216,11 +216,12 @@ describe("Providers module exports", () => {
 
     it("should return list of providers", () => {
       const providers = ProviderExports.listProviders();
-      expect(providers).toHaveLength(15);
+      expect(providers).toHaveLength(16);
       expect(providers.map((p) => p.id)).toEqual([
         "anthropic",
         "openai",
         "codex",
+        "copilot",
         "gemini",
         "kimi",
         "kimi-code",

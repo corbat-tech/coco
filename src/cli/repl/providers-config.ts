@@ -83,12 +83,13 @@
  * - src/auth/flow.ts (getProviderDisplayInfo)
  *
  * ============================================================================
- * Last updated: February 23, 2026
+ * Last updated: March 5, 2026
  *
  * CURRENT MODELS (verified from official docs):
- * - Anthropic: claude-opus-4-6-20260115 (latest), claude-sonnet-4-5, claude-haiku-4-5
- * - OpenAI: gpt-5.3-codex (latest), gpt-5.2-codex, gpt-4.1, o4-mini
- * - Gemini: gemini-3-flash-preview, gemini-3-pro-preview, gemini-2.5-pro, gemini-2.5-flash
+ * - Anthropic: claude-opus-4-6 (latest), claude-sonnet-4-6, claude-haiku-4-5
+ * - OpenAI: gpt-5.3-codex (latest), gpt-5.2-codex, gpt-5.1-codex-max, gpt-4.1
+ * - Gemini: gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-2.5-pro, gemini-2.5-flash
+ * - Copilot: claude-sonnet-4.6, claude-opus-4.6, gpt-5.3-codex, gpt-4.1, gemini-3.1-pro-preview
  * - Kimi: kimi-k2.5, kimi-k2-thinking
  * - Qwen: qwen-coder-plus (recommended), qwen-max, qwen-plus, qwen-turbo, qwq-plus
  * - LM Studio: qwen3-coder series (best local option)
@@ -96,6 +97,8 @@
  * ============================================================================
  */
 
+import { accessSync } from "node:fs";
+import { getCopilotCredentialsPath } from "../../auth/copilot.js";
 import type { ProviderType } from "../../providers/index.js";
 
 /**
@@ -174,34 +177,48 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true,
     },
-    // Updated: February 2026 - Claude 4.6 is latest
+    // Updated: March 2026 — from docs.anthropic.com/en/docs/about-claude/models
     models: [
       {
-        id: "claude-opus-4-6-20260115",
+        id: "claude-opus-4-6",
         name: "Claude Opus 4.6",
-        description: "Most capable - coding, agents & complex tasks (Jan 2026)",
+        description: "Most intelligent — agents, coding & complex tasks",
         contextWindow: 200000,
         maxOutputTokens: 128000,
         recommended: true,
       },
       {
-        id: "claude-sonnet-4-5-20250929",
-        name: "Claude Sonnet 4.5",
-        description: "Best balance of speed and capability (Sep 2025)",
+        id: "claude-sonnet-4-6",
+        name: "Claude Sonnet 4.6",
+        description: "Best speed + intelligence balance (1M beta)",
         contextWindow: 200000,
         maxOutputTokens: 64000,
       },
       {
         id: "claude-haiku-4-5-20251001",
         name: "Claude Haiku 4.5",
-        description: "Fastest and cheapest (Oct 2025)",
+        description: "Fastest and cheapest",
         contextWindow: 200000,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 64000,
       },
       {
-        id: "claude-opus-4-5-20251124",
+        id: "claude-sonnet-4-5-20250929",
+        name: "Claude Sonnet 4.5",
+        description: "Previous balanced model (Sep 2025)",
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "claude-opus-4-5-20251101",
         name: "Claude Opus 4.5",
         description: "Previous flagship (Nov 2025)",
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "claude-opus-4-1-20250805",
+        name: "Claude Opus 4.1",
+        description: "Legacy model (Aug 2025)",
         contextWindow: 200000,
         maxOutputTokens: 32000,
       },
@@ -210,7 +227,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         name: "Claude Sonnet 4",
         description: "Stable production model (May 2025)",
         contextWindow: 200000,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 64000,
       },
     ],
   },
@@ -233,12 +250,12 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true,
     },
-    // Updated: February 2026 - GPT-5.3 Codex is latest
+    // Updated: March 2026 — from platform.openai.com/docs/models
     models: [
       {
         id: "gpt-5.3-codex",
         name: "GPT-5.3 Codex",
-        description: "Latest coding model, 25% faster than 5.2 (Feb 2026)",
+        description: "Latest agentic coding model (Feb 2026)",
         contextWindow: 400000,
         maxOutputTokens: 128000,
         recommended: true,
@@ -246,65 +263,179 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       {
         id: "gpt-5.2-codex",
         name: "GPT-5.2 Codex",
-        description: "Previous coding model - stable (Jan 2026)",
+        description: "Previous coding model — stable (Jan 2026)",
         contextWindow: 400000,
         maxOutputTokens: 128000,
       },
       {
-        id: "gpt-5.2-thinking",
-        name: "GPT-5.2 Thinking",
-        description: "Deep reasoning for complex tasks (Dec 2025)",
+        id: "gpt-5.1-codex-max",
+        name: "GPT-5.1 Codex Max",
+        description: "Frontier model for long-running project-scale work",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-5.2",
+        name: "GPT-5.2",
+        description: "Flagship reasoning model (Dec 2025)",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-5.1",
+        name: "GPT-5.1",
+        description: "General-purpose model (2025)",
         contextWindow: 400000,
         maxOutputTokens: 128000,
       },
       {
         id: "gpt-4.1",
         name: "GPT-4.1",
-        description: "Best for long context — 1M window (Feb 2026)",
+        description: "Best for long context — 1M window",
         contextWindow: 1048576,
         maxOutputTokens: 32768,
       },
       {
         id: "gpt-4.1-mini",
         name: "GPT-4.1 Mini",
-        description: "Fast & cheap long context — 1M window (Feb 2026)",
+        description: "Fast & cheap long context — 1M window",
         contextWindow: 1048576,
         maxOutputTokens: 32768,
       },
       {
         id: "o4-mini",
         name: "o4-mini",
-        description: "Fast reasoning model (Feb 2026)",
+        description: "Fast reasoning model",
         contextWindow: 200000,
         maxOutputTokens: 100000,
       },
       {
-        id: "gpt-5.2-pro",
-        name: "GPT-5.2 Pro",
-        description: "Most intelligent for hard problems (Dec 2025)",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5.2-instant",
-        name: "GPT-5.2 Instant",
-        description: "Fast everyday workhorse (Dec 2025)",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
         id: "gpt-4o",
         name: "GPT-4o",
-        description: "Multimodal model — cheaper option (May 2024)",
+        description: "Multimodal model — cheaper option (legacy)",
         contextWindow: 128000,
         maxOutputTokens: 16384,
       },
       {
         id: "gpt-4o-mini",
         name: "GPT-4o Mini",
-        description: "Cheapest OpenAI model (Jul 2024)",
+        description: "Cheapest OpenAI model (legacy)",
         contextWindow: 128000,
         maxOutputTokens: 16384,
+      },
+    ],
+  },
+
+  // GitHub Copilot - Use your Copilot subscription to access multiple models
+  copilot: {
+    id: "copilot",
+    name: "GitHub Copilot",
+    emoji: "🐙",
+    description: "Use your GitHub Copilot subscription — Claude, GPT, Gemini models",
+    envVar: "GITHUB_TOKEN", // Optional override; primary auth is device flow
+    apiKeyUrl: "https://github.com/settings/copilot",
+    docsUrl: "https://docs.github.com/en/copilot",
+    baseUrl: "https://api.githubcopilot.com",
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    requiresApiKey: false, // Uses GitHub device flow
+    supportsOAuth: true, // Device flow auth
+    paymentType: "sub",
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: true,
+    },
+    // Updated: March 2026 — from docs.github.com/en/copilot/reference/ai-models/supported-models
+    models: [
+      // Anthropic models
+      {
+        id: "claude-sonnet-4.6",
+        name: "Claude Sonnet 4.6",
+        description: "Anthropic's latest balanced model via Copilot",
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+        recommended: true,
+      },
+      {
+        id: "claude-opus-4.6",
+        name: "Claude Opus 4.6",
+        description: "Anthropic's most intelligent model via Copilot",
+        contextWindow: 200000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "claude-sonnet-4.5",
+        name: "Claude Sonnet 4.5",
+        description: "Previous balanced Claude model via Copilot",
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "claude-opus-4.5",
+        name: "Claude Opus 4.5",
+        description: "Previous flagship Claude model via Copilot",
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "claude-haiku-4.5",
+        name: "Claude Haiku 4.5",
+        description: "Fast and affordable Claude model via Copilot",
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+      },
+      // OpenAI models (Codex/GPT-5+ use /responses API, others use /chat/completions)
+      {
+        id: "gpt-5.3-codex",
+        name: "GPT-5.3 Codex",
+        description: "OpenAI's latest coding model via Copilot",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+        recommended: true,
+      },
+      {
+        id: "gpt-5.2-codex",
+        name: "GPT-5.2 Codex",
+        description: "OpenAI's previous coding model via Copilot",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-5.1-codex-max",
+        name: "GPT-5.1 Codex Max",
+        description: "Frontier agentic coding model via Copilot",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-4.1",
+        name: "GPT-4.1",
+        description: "OpenAI long-context model via Copilot (1M)",
+        contextWindow: 1048576,
+        maxOutputTokens: 32768,
+      },
+      // Google models
+      {
+        id: "gemini-3.1-pro-preview",
+        name: "Gemini 3.1 Pro",
+        description: "Google's latest model via Copilot (1M)",
+        contextWindow: 1000000,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "gemini-3-flash-preview",
+        name: "Gemini 3 Flash",
+        description: "Google's fast model via Copilot (1M)",
+        contextWindow: 1000000,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
+        description: "Google stable model via Copilot (1M)",
+        contextWindow: 1048576,
+        maxOutputTokens: 65536,
       },
     ],
   },
@@ -381,57 +512,51 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true,
     },
-    // Updated: February 2026 - Gemini 3 series is latest (use -preview suffix)
+    // Updated: March 2026 — from ai.google.dev/gemini-api/docs/models
+    // gemini-3-pro-preview deprecated March 9, 2026 → use 3.1-pro-preview
     models: [
       {
-        id: "gemini-3-flash-preview",
-        name: "Gemini 3 Flash",
-        description: "Fast with PhD-level reasoning - 1M context (Jan 2026)",
+        id: "gemini-3.1-pro-preview",
+        name: "Gemini 3.1 Pro",
+        description: "Most powerful — agentic & coding (1M context)",
         contextWindow: 1000000,
-        maxOutputTokens: 65536,
+        maxOutputTokens: 64000,
         recommended: true,
       },
       {
-        id: "gemini-3-pro-preview",
-        name: "Gemini 3 Pro",
-        description: "Most powerful - beats 19/20 benchmarks (Jan 2026)",
+        id: "gemini-3-flash-preview",
+        name: "Gemini 3 Flash",
+        description: "Fast frontier-class performance (1M context)",
         contextWindow: 1000000,
-        maxOutputTokens: 65536,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "gemini-3.1-flash-lite-preview",
+        name: "Gemini 3.1 Flash-Lite",
+        description: "Cost-efficient workhorse model (1M context)",
+        contextWindow: 1000000,
+        maxOutputTokens: 64000,
       },
       {
         id: "gemini-2.5-pro",
         name: "Gemini 2.5 Pro",
-        description: "Production stable - complex reasoning & coding (GA)",
+        description: "Production stable — complex reasoning & coding (GA)",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
       },
       {
         id: "gemini-2.5-flash",
         name: "Gemini 2.5 Flash",
-        description: "Production stable - fast with thinking budgets (GA)",
+        description: "Production stable — fast with thinking budgets (GA)",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
       },
       {
-        id: "gemini-2.5-pro-preview-05-06",
-        name: "Gemini 2.5 Pro (Preview)",
-        description: "Preview version of 2.5 Pro — use stable instead",
+        id: "gemini-2.5-flash-lite",
+        name: "Gemini 2.5 Flash-Lite",
+        description: "Cheapest stable option (GA)",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
-      },
-      {
-        id: "gemini-2.5-flash-preview-05-20",
-        name: "Gemini 2.5 Flash (Preview)",
-        description: "Preview version of 2.5 Flash — use stable instead",
-        contextWindow: 1048576,
-        maxOutputTokens: 65536,
-      },
-      {
-        id: "gemini-2.0-flash",
-        name: "Gemini 2.0 Flash",
-        description: "Stable GA model — cheaper option (2024)",
-        contextWindow: 1048576,
-        maxOutputTokens: 8192,
       },
     ],
   },
@@ -1062,16 +1187,41 @@ export function getRecommendedModel(type: ProviderType): ModelDefinition | undef
 }
 
 /**
- * Get all available providers that have API keys configured
+ * Check if Copilot credentials file exists (sync check for UI)
+ */
+function hasCopilotCredentials(): boolean {
+  try {
+    accessSync(getCopilotCredentialsPath());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get all available providers that have API keys configured.
+ *
+ * For most providers, checks env vars. For copilot, checks the
+ * stored credentials file (since its primary auth is device flow).
  */
 export function getConfiguredProviders(): ProviderDefinition[] {
-  return getAllProviders().filter((p) => !!process.env[p.envVar]);
+  return getAllProviders().filter((p) => {
+    if (p.id === "copilot") {
+      return !!process.env["GITHUB_TOKEN"] || !!process.env["GH_TOKEN"] || hasCopilotCredentials();
+    }
+    return !!process.env[p.envVar];
+  });
 }
 
 /**
  * Check if a provider is configured
  */
 export function isProviderConfigured(type: ProviderType): boolean {
+  if (type === "copilot") {
+    return (
+      !!process.env["GITHUB_TOKEN"] || !!process.env["GH_TOKEN"] || hasCopilotCredentials()
+    );
+  }
   return !!process.env[PROVIDER_DEFINITIONS[type].envVar];
 }
 
