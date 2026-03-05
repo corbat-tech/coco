@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.0] - 2026-03-05
+
+### Added
+
+- **GitHub Copilot provider** — full provider integration with device flow authentication, isolated credential storage, and automatic Responses API routing for Codex/GPT-5+ models
+  - 15 models across 3 families (OpenAI, Anthropic, Google) via Copilot
+  - Shared `getCopilotCredentialsPath()` utility for credential isolation
+  - Defense-in-depth guard against `GITHUB_TOKEN` env bleeding into stored credentials
+- **Auth isolation layer** — dedicated `src/auth/` module separating Copilot auth from OpenAI OAuth flows (credentials, tokens, and device flow fully independent)
+
+### Improved
+
+- **Model selector rendering** — truncate lines to terminal width to prevent stacked duplicate renders from line wrapping
+- **Provider model catalog** — update all providers to March 2026 versions: Anthropic (claude-opus-4-6 alias), OpenAI (gpt-5.3-codex), Gemini (3.1-pro-preview)
+- **Onboarding flow** — correctly handle Copilot as a cloud provider during configuration
+
+### Fixed
+
+- **Lint warning for Unicode ZWJ** — use alternation instead of character class for zero-width joiner sequences in renderer
+
 ## [2.10.0] - 2026-03-04
 
 ### Added
@@ -811,7 +831,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.8.2...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/corbat-tech/coco/compare/v2.10.0...v2.11.0
 [2.8.2]: https://github.com/corbat-tech/coco/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/corbat-tech/coco/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/corbat-tech/coco/compare/v2.7.0...v2.8.0
