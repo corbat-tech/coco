@@ -68,12 +68,17 @@ Read the current README.md. Only update if:
 
 If no relevant changes, skip this step and say so.
 
-## Step 4: Bump version in package.json
+## Step 4: Bump version in package.json and VS Code extension
 
 ```bash
-# Use npm version without git tag (we tag manually later)
+# Bump root package.json (no git tag — we tag manually later)
 npm version NEW_VERSION --no-git-tag-version
+
+# Bump VS Code extension version to match
+cd vscode-extension && npm version NEW_VERSION --no-git-tag-version && cd ..
 ```
+
+Both `package.json` files must have the same version so the release workflow publishes both npm and the VS Code Marketplace extension with matching versions.
 
 ## Step 5: Run full checks
 
@@ -95,7 +100,7 @@ If after 5 attempts checks still fail, STOP and report the issue.
 Stage only the relevant files and commit:
 
 ```bash
-git add CHANGELOG.md README.md package.json pnpm-lock.yaml
+git add CHANGELOG.md README.md package.json pnpm-lock.yaml vscode-extension/package.json
 git commit -m "chore(release): bump version to NEW_VERSION"
 ```
 

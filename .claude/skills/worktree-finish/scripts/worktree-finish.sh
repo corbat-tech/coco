@@ -230,8 +230,19 @@ echo ""
 # --- Phase 4: Remove worktree and branch ---
 
 echo "[4/4] Cleaning up worktree..."
-git worktree remove "$WORKTREE_PATH" --force
-git branch -d "$BRANCH_NAME"
+git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
+
+# Force-remove the directory if git worktree remove didn't fully clean it
+# (e.g., node_modules or other untracked files may prevent full removal)
+if [ -d "$WORKTREE_PATH" ]; then
+  echo "  Directory still exists after git worktree remove, force-deleting..."
+  rm -rf "$WORKTREE_PATH"
+fi
+
+# Prune stale worktree references
+git worktree prune
+
+git branch -d "$BRANCH_NAME" 2>/dev/null || git branch -D "$BRANCH_NAME" 2>/dev/null || true
 echo "  Worktree removed: $WORKTREE_PATH"
 echo "  Branch deleted:   $BRANCH_NAME"
 
