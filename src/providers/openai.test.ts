@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock OpenAI SDK
 const mockCreate = vi.fn();
+const mockResponsesCreate = vi.fn();
 const mockList = vi.fn();
 
 // Create a mock APIError class that we can reference
@@ -26,6 +27,9 @@ vi.mock("openai", () => {
           completions: {
             create: mockCreate,
           },
+        },
+        responses: {
+          create: mockResponsesCreate,
         },
         models: {
           list: mockList,
@@ -153,7 +157,7 @@ describe("OpenAIProvider", () => {
       const { OpenAIProvider } = await import("./openai.js");
 
       const provider = new OpenAIProvider();
-      await provider.initialize({ apiKey: "test" });
+      await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
       expect(await provider.isAvailable()).toBe(true);
     });
@@ -167,7 +171,7 @@ describe("OpenAIProvider", () => {
       const { OpenAIProvider } = await import("./openai.js");
 
       const provider = new OpenAIProvider();
-      await provider.initialize({ apiKey: "test" });
+      await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
       expect(await provider.isAvailable()).toBe(false);
     });
@@ -203,7 +207,7 @@ describe("OpenAIProvider", () => {
       const { OpenAIProvider } = await import("./openai.js");
 
       const provider = new OpenAIProvider();
-      await provider.initialize({ apiKey: "test" });
+      await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
       const response = await provider.chat([{ role: "user", content: "Hi" }]);
 
@@ -246,7 +250,7 @@ describe("OpenAIProvider", () => {
       const { OpenAIProvider } = await import("./openai.js");
 
       const provider = new OpenAIProvider();
-      await provider.initialize({ apiKey: "test" });
+      await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
       const response = await provider.chatWithTools([{ role: "user", content: "Read test.txt" }], {
         tools: [
@@ -329,7 +333,7 @@ describe("stream", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     const chunks: { type: string; text?: string }[] = [];
     for await (const chunk of provider.stream([{ role: "user", content: "Hi" }])) {
@@ -353,7 +357,7 @@ describe("stream", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     const iterator = provider.stream([{ role: "user", content: "Hello" }]);
     await expect(iterator.next()).rejects.toThrow();
@@ -371,7 +375,7 @@ describe("message conversion", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await provider.chat([
       { role: "system", content: "You are helpful" },
@@ -395,7 +399,7 @@ describe("message conversion", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await provider.chat([{ role: "user", content: "Hello" }], { system: "You are helpful" });
 
@@ -418,7 +422,7 @@ describe("message conversion", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await provider.chat([{ role: "user", content: [{ type: "text", text: "Hello" }] }]);
 
@@ -435,7 +439,7 @@ describe("message conversion", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await provider.chat([
       { role: "user", content: "Read file" },
@@ -470,7 +474,7 @@ describe("message conversion", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await provider.chat([
       {
@@ -510,7 +514,7 @@ describe("message conversion", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await provider.chat([
       {
@@ -534,7 +538,7 @@ describe("tool choice conversion", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await provider.chatWithTools([{ role: "user", content: "Hello" }], { tools: [] });
 
@@ -555,7 +559,7 @@ describe("tool choice conversion", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await provider.chatWithTools([{ role: "user", content: "Hello" }], {
       tools: [],
@@ -579,7 +583,7 @@ describe("tool choice conversion", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await provider.chatWithTools([{ role: "user", content: "Hello" }], {
       tools: [],
@@ -603,7 +607,7 @@ describe("tool choice conversion", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await provider.chatWithTools([{ role: "user", content: "Hello" }], {
       tools: [],
@@ -629,7 +633,7 @@ describe("finish reason mapping", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     const response = await provider.chat([{ role: "user", content: "Hello" }]);
 
@@ -646,7 +650,7 @@ describe("finish reason mapping", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     const response = await provider.chat([{ role: "user", content: "Hello" }]);
 
@@ -663,7 +667,7 @@ describe("finish reason mapping", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     const response = await provider.chat([{ role: "user", content: "Hello" }]);
 
@@ -677,7 +681,7 @@ describe("error handling", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await expect(provider.chat([{ role: "user", content: "Hello" }])).rejects.toThrow();
   });
@@ -687,7 +691,7 @@ describe("error handling", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await expect(provider.chat([{ role: "user", content: "Hello" }])).rejects.toThrow();
   });
@@ -697,7 +701,7 @@ describe("error handling", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await expect(provider.chat([{ role: "user", content: "Hello" }])).rejects.toThrow();
   });
@@ -707,7 +711,7 @@ describe("error handling", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await expect(provider.chat([{ role: "user", content: "Hello" }])).rejects.toThrow();
   });
@@ -717,7 +721,7 @@ describe("error handling", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await expect(provider.chat([{ role: "user", content: "Hello" }])).rejects.toThrow();
   });
@@ -727,7 +731,7 @@ describe("error handling", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     await expect(
       provider.chatWithTools([{ role: "user", content: "Hello" }], { tools: [] }),
@@ -769,7 +773,7 @@ describe("tool call extraction", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     const response = await provider.chatWithTools([{ role: "user", content: "Hello" }], {
       tools: [],
@@ -788,7 +792,7 @@ describe("tool call extraction", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     const response = await provider.chatWithTools([{ role: "user", content: "Hello" }], {
       tools: [],
@@ -824,7 +828,7 @@ describe("tool call extraction", () => {
 
     const { OpenAIProvider } = await import("./openai.js");
     const provider = new OpenAIProvider();
-    await provider.initialize({ apiKey: "test" });
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
     const response = await provider.chatWithTools([{ role: "user", content: "Hello" }], {
       tools: [],

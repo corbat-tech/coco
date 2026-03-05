@@ -4,6 +4,7 @@
  */
 
 import OpenAI from "openai";
+import type { Responses } from "openai/resources/responses/responses.js";
 import { jsonrepair } from "jsonrepair";
 import type {
   LLMProvider,
@@ -151,6 +152,21 @@ const LOCAL_MODEL_PATTERNS: string[] = [
 const MODELS_WITH_THINKING_MODE: string[] = ["kimi-k2.5", "kimi-k2-0324", "kimi-latest"];
 
 /**
+ * Check if a model requires the Responses API (/responses) instead of
+ * Chat Completions (/chat/completions).
+ *
+ * GPT-5+, Codex, o3, and o4 models only support the Responses API.
+ */
+export function needsResponsesApi(model: string): boolean {
+  return (
+    model.includes("codex") ||
+    model.startsWith("gpt-5") ||
+    model.startsWith("o4-") ||
+    model.startsWith("o3-")
+  );
+}
+
+/**
  * OpenAI provider implementation
  */
 export class OpenAIProvider implements LLMProvider {
@@ -236,9 +252,13 @@ export class OpenAIProvider implements LLMProvider {
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
 
+    const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+    if (needsResponsesApi(model)) {
+      return this.chatViaResponses(messages, options);
+    }
+
     return withRetry(async () => {
       try {
-        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
         const supportsTemp = this.supportsTemperature(model);
 
         const response = await this.client!.chat.completions.create({
@@ -278,9 +298,13 @@ export class OpenAIProvider implements LLMProvider {
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
 
+    const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+    if (needsResponsesApi(model)) {
+      return this.chatWithToolsViaResponses(messages, options);
+    }
+
     return withRetry(async () => {
       try {
-        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
         const supportsTemp = this.supportsTemperature(model);
         const extraBody = this.getExtraBody(model);
 
@@ -332,8 +356,13 @@ export class OpenAIProvider implements LLMProvider {
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
 
+    const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+    if (needsResponsesApi(model)) {
+      yield* this.streamViaResponses(messages, options);
+      return;
+    }
+
     try {
-      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
       const supportsTemp = this.supportsTemperature(model);
 
       const stream = await this.client!.chat.completions.create({
@@ -372,8 +401,13 @@ export class OpenAIProvider implements LLMProvider {
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
 
+    const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+    if (needsResponsesApi(model)) {
+      yield* this.streamWithToolsViaResponses(messages, options);
+      return;
+    }
+
     try {
-      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
       const supportsTemp = this.supportsTemperature(model);
       const extraBody = this.getExtraBody(model);
 
@@ -404,20 +438,25 @@ export class OpenAIProvider implements LLMProvider {
       const toolCallBuilders: Map<number, { id: string; name: string; arguments: string }> =
         new Map();
 
-      // Add timeout protection for local LLMs that may hang
-      // Note: COCO mode needs time for quality iterations (30-60s)
-      // Don't use aggressive timeouts that interrupt quality loops
-      const streamTimeout = this.config.timeout ?? 120000; // Same timeout for all providers
+      // Activity-based timeout: abort the stream if no events for streamTimeout ms.
+      // IMPORTANT: We use AbortController instead of throwing from setInterval,
+      // because throw inside setInterval causes an unhandled exception that kills
+      // the process instead of propagating to the async generator.
+      const streamTimeout = this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
+      const timeoutController = new AbortController();
 
-      const checkTimeout = () => {
+      const timeoutInterval = setInterval(() => {
         if (Date.now() - lastActivityTime > streamTimeout) {
-          throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
+          clearInterval(timeoutInterval);
+          timeoutController.abort();
         }
-      };
+      }, 5000);
 
-      // Set up periodic timeout check
-      const timeoutInterval = setInterval(checkTimeout, 5000);
+      // Abort the underlying stream when timeout fires
+      timeoutController.signal.addEventListener("abort", () => stream.controller.abort(), {
+        once: true,
+      });
 
       // Helper: parse accumulated JSON arguments with jsonrepair fallback.
       // Captured as a local const to avoid `this` capture issues inside the loop.
@@ -557,6 +596,11 @@ export class OpenAIProvider implements LLMProvider {
         yield { type: "done", stopReason: streamStopReason };
       } finally {
         clearInterval(timeoutInterval);
+      }
+
+      // If we exited the loop because of our timeout, throw a descriptive error
+      if (timeoutController.signal.aborted) {
+        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
       throw this.handleError(error);
@@ -878,7 +922,7 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Convert content to string
    */
-  private contentToString(content: MessageContent): string {
+  protected contentToString(content: MessageContent): string {
     if (typeof content === "string") {
       return content;
     }
@@ -978,6 +1022,448 @@ export class OpenAIProvider implements LLMProvider {
       provider: this.id,
       cause: error instanceof Error ? error : undefined,
     });
+  }
+
+  // --- Responses API support (GPT-5+, Codex, o3, o4 models) ---
+
+  /**
+   * Simple chat via Responses API (no tools)
+   */
+  protected async chatViaResponses(
+    messages: Message[],
+    options?: ChatOptions,
+  ): Promise<ChatResponse> {
+    this.ensureInitialized();
+
+    return withRetry(async () => {
+      try {
+        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+        const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+
+        const response = await this.client!.responses.create({
+          model,
+          input,
+          instructions: instructions ?? undefined,
+          max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+          temperature: options?.temperature ?? this.config.temperature ?? 0,
+          store: false,
+        });
+
+        return {
+          id: response.id,
+          content: response.output_text ?? "",
+          stopReason: response.status === "completed" ? "end_turn" : "max_tokens",
+          usage: {
+            inputTokens: response.usage?.input_tokens ?? 0,
+            outputTokens: response.usage?.output_tokens ?? 0,
+          },
+          model: String(response.model),
+        };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }, this.retryConfig);
+  }
+
+  /**
+   * Chat with tools via Responses API
+   */
+  protected async chatWithToolsViaResponses(
+    messages: Message[],
+    options: ChatWithToolsOptions,
+  ): Promise<ChatWithToolsResponse> {
+    this.ensureInitialized();
+
+    return withRetry(async () => {
+      try {
+        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+        const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+        const tools = this.convertToolsForResponses(options.tools);
+
+        const response = await this.client!.responses.create({
+          model,
+          input,
+          instructions: instructions ?? undefined,
+          tools,
+          max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+          temperature: options?.temperature ?? this.config.temperature ?? 0,
+          store: false,
+        });
+
+        // Extract text and tool calls from output
+        let content = "";
+        const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+
+        for (const item of response.output) {
+          if (item.type === "message") {
+            for (const part of item.content) {
+              if (part.type === "output_text") {
+                content += part.text;
+              }
+            }
+          } else if (item.type === "function_call") {
+            toolCalls.push({
+              id: item.call_id,
+              name: item.name,
+              input: this.parseResponsesArguments(item.arguments),
+            });
+          }
+        }
+
+        return {
+          id: response.id,
+          content,
+          stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
+          usage: {
+            inputTokens: response.usage?.input_tokens ?? 0,
+            outputTokens: response.usage?.output_tokens ?? 0,
+          },
+          model: String(response.model),
+          toolCalls,
+        };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }, this.retryConfig);
+  }
+
+  /**
+   * Stream via Responses API (no tools)
+   */
+  protected async *streamViaResponses(
+    messages: Message[],
+    options?: ChatOptions,
+  ): AsyncIterable<StreamChunk> {
+    this.ensureInitialized();
+
+    try {
+      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+      const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+
+      const stream = await this.client!.responses.create({
+        model,
+        input,
+        instructions: instructions ?? undefined,
+        max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+        temperature: options?.temperature ?? this.config.temperature ?? 0,
+        store: false,
+        stream: true,
+      });
+
+      // Activity-based timeout using AbortController (safe for async generators)
+      const streamTimeout = this.config.timeout ?? 120000;
+      let lastActivityTime = Date.now();
+      const timeoutController = new AbortController();
+
+      const timeoutInterval = setInterval(() => {
+        if (Date.now() - lastActivityTime > streamTimeout) {
+          clearInterval(timeoutInterval);
+          timeoutController.abort();
+        }
+      }, 5000);
+
+      timeoutController.signal.addEventListener(
+        "abort",
+        () => (stream as unknown as { controller: AbortController }).controller?.abort(),
+        { once: true },
+      );
+
+      try {
+        for await (const event of stream) {
+          lastActivityTime = Date.now();
+          if (event.type === "response.output_text.delta") {
+            yield { type: "text", text: event.delta };
+          } else if (event.type === "response.completed") {
+            yield { type: "done", stopReason: "end_turn" };
+          }
+        }
+      } finally {
+        clearInterval(timeoutInterval);
+      }
+
+      if (timeoutController.signal.aborted) {
+        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
+      }
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Stream with tools via Responses API
+   *
+   * IMPORTANT: fnCallBuilders is keyed by output item ID (fc.id), NOT by
+   * call_id. The streaming events (function_call_arguments.delta/done) use
+   * item_id which references the output item's id field, not call_id.
+   */
+  protected async *streamWithToolsViaResponses(
+    messages: Message[],
+    options: ChatWithToolsOptions,
+  ): AsyncIterable<StreamChunk> {
+    this.ensureInitialized();
+
+    try {
+      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+      const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+      const tools =
+        options.tools.length > 0 ? this.convertToolsForResponses(options.tools) : undefined;
+
+      const requestParams: Record<string, unknown> = {
+        model,
+        input,
+        instructions: instructions ?? undefined,
+        max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+        temperature: options?.temperature ?? this.config.temperature ?? 0,
+        store: false,
+        stream: true,
+      };
+
+      if (tools) {
+        requestParams.tools = tools;
+      }
+
+      const stream = await this.client!.responses.create(
+        requestParams as unknown as Responses.ResponseCreateParamsStreaming,
+      );
+
+      // Track function call builders — keyed by output item ID (NOT call_id)
+      const fnCallBuilders: Map<string, { callId: string; name: string; arguments: string }> =
+        new Map();
+
+      // Activity-based timeout using AbortController (safe for async generators)
+      const streamTimeout = this.config.timeout ?? 120000;
+      let lastActivityTime = Date.now();
+      const timeoutController = new AbortController();
+
+      const timeoutInterval = setInterval(() => {
+        if (Date.now() - lastActivityTime > streamTimeout) {
+          clearInterval(timeoutInterval);
+          timeoutController.abort();
+        }
+      }, 5000);
+
+      timeoutController.signal.addEventListener(
+        "abort",
+        () => (stream as unknown as { controller: AbortController }).controller?.abort(),
+        { once: true },
+      );
+
+      try {
+        for await (const event of stream) {
+          lastActivityTime = Date.now();
+
+          switch (event.type) {
+            case "response.output_text.delta":
+              yield { type: "text", text: event.delta };
+              break;
+
+            case "response.output_item.added":
+              if (event.item.type === "function_call") {
+                const fc = event.item;
+                // Key by item ID — event.item_id in delta/done events matches this.
+                // Fall back to call_id if id is not provided (optional in SDK types).
+                const itemKey = fc.id ?? fc.call_id;
+                fnCallBuilders.set(itemKey, {
+                  callId: fc.call_id,
+                  name: fc.name,
+                  arguments: "",
+                });
+                yield {
+                  type: "tool_use_start",
+                  toolCall: { id: fc.call_id, name: fc.name },
+                };
+              }
+              break;
+
+            case "response.function_call_arguments.delta":
+              {
+                const builder = fnCallBuilders.get(event.item_id);
+                if (builder) {
+                  builder.arguments += event.delta;
+                }
+              }
+              break;
+
+            case "response.function_call_arguments.done":
+              {
+                const builder = fnCallBuilders.get(event.item_id);
+                if (builder) {
+                  yield {
+                    type: "tool_use_end",
+                    toolCall: {
+                      id: builder.callId,
+                      name: builder.name,
+                      input: this.parseResponsesArguments(event.arguments),
+                    },
+                  };
+                  fnCallBuilders.delete(event.item_id);
+                }
+              }
+              break;
+
+            case "response.completed":
+              {
+                // Emit any remaining function calls not finalized via done events
+                for (const [, builder] of fnCallBuilders) {
+                  yield {
+                    type: "tool_use_end",
+                    toolCall: {
+                      id: builder.callId,
+                      name: builder.name,
+                      input: this.parseResponsesArguments(builder.arguments),
+                    },
+                  };
+                }
+                fnCallBuilders.clear();
+
+                const hasToolCalls = event.response.output.some(
+                  (i: { type: string }) => i.type === "function_call",
+                );
+                yield {
+                  type: "done",
+                  stopReason: hasToolCalls ? "tool_use" : "end_turn",
+                };
+              }
+              break;
+          }
+        }
+      } finally {
+        clearInterval(timeoutInterval);
+      }
+
+      if (timeoutController.signal.aborted) {
+        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
+      }
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // --- Responses API conversion helpers ---
+
+  /**
+   * Convert internal messages to Responses API input format.
+   *
+   * The Responses API uses a flat array of input items instead of the
+   * chat completions messages array.
+   */
+  protected convertToResponsesInput(
+    messages: Message[],
+    systemPrompt?: string,
+  ): { input: Responses.ResponseInput; instructions: string | null } {
+    const input: Responses.ResponseInput = [];
+    let instructions: string | null = null;
+
+    if (systemPrompt) {
+      instructions = systemPrompt;
+    }
+
+    for (const msg of messages) {
+      if (msg.role === "system") {
+        instructions =
+          (instructions ? instructions + "\n\n" : "") + this.contentToString(msg.content);
+      } else if (msg.role === "user") {
+        if (Array.isArray(msg.content) && msg.content.some((b) => b.type === "tool_result")) {
+          // Convert tool results to function_call_output items
+          for (const block of msg.content) {
+            if (block.type === "tool_result") {
+              const tr = block as ToolResultContent;
+              input.push({
+                type: "function_call_output",
+                call_id: tr.tool_use_id,
+                output: tr.content,
+              });
+            }
+          }
+        } else if (Array.isArray(msg.content) && msg.content.some((b) => b.type === "image")) {
+          // Build Responses API multi-part content with images
+          const parts: Responses.ResponseInputContent[] = [];
+          for (const block of msg.content) {
+            if (block.type === "text") {
+              parts.push({ type: "input_text", text: block.text });
+            } else if (block.type === "image") {
+              const imgBlock = block as ImageContent;
+              parts.push({
+                type: "input_image",
+                image_url: `data:${imgBlock.source.media_type};base64,${imgBlock.source.data}`,
+                detail: "auto",
+              });
+            }
+          }
+          input.push({
+            role: "user",
+            content: parts,
+          } as Responses.EasyInputMessage);
+        } else {
+          input.push({
+            role: "user",
+            content: this.contentToString(msg.content),
+          });
+        }
+      } else if (msg.role === "assistant") {
+        if (typeof msg.content === "string") {
+          input.push({ role: "assistant", content: msg.content });
+        } else if (Array.isArray(msg.content)) {
+          const textParts: string[] = [];
+
+          for (const block of msg.content) {
+            if (block.type === "text") {
+              textParts.push(block.text);
+            } else if (block.type === "tool_use") {
+              // Emit accumulated text before function_call
+              if (textParts.length > 0) {
+                input.push({ role: "assistant", content: textParts.join("") });
+                textParts.length = 0;
+              }
+              input.push({
+                type: "function_call",
+                call_id: block.id,
+                name: block.name,
+                arguments: JSON.stringify(block.input),
+              });
+            }
+          }
+
+          if (textParts.length > 0) {
+            input.push({ role: "assistant", content: textParts.join("") });
+          }
+        }
+      }
+    }
+
+    return { input, instructions };
+  }
+
+  /**
+   * Convert tool definitions to Responses API FunctionTool format
+   */
+  protected convertToolsForResponses(tools: ToolDefinition[]): Responses.FunctionTool[] {
+    return tools.map((tool) => ({
+      type: "function" as const,
+      name: tool.name,
+      description: tool.description ?? undefined,
+      parameters: tool.input_schema ?? null,
+      strict: false,
+    }));
+  }
+
+  /**
+   * Parse tool call arguments with jsonrepair fallback (Responses API)
+   */
+  protected parseResponsesArguments(args: string): Record<string, unknown> {
+    try {
+      return args ? JSON.parse(args) : {};
+    } catch {
+      try {
+        if (args) {
+          const repaired = jsonrepair(args);
+          return JSON.parse(repaired);
+        }
+      } catch {
+        console.error(`[${this.name}] Cannot parse tool arguments: ${args.slice(0, 200)}`);
+      }
+      return {};
+    }
   }
 }
 

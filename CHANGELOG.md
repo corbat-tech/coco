@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.1] - 2026-03-05
+
+### Fixed
+
+- **Stream timeout crashes the process** — `throw` inside `setInterval` was an unhandled exception that killed the Node.js process instead of propagating to the async generator. Affects all providers (OpenAI, Anthropic, Copilot). Now uses `AbortController` to safely abort the stream and propagate the timeout error through the normal error handling path
+- **OpenAI provider cannot call tools with GPT-5+/Codex models** — these models require the Responses API (`/responses`) instead of Chat Completions (`/chat/completions`). The provider only had Chat Completions support, so the model would respond with text but never emit tool calls, causing the agent loop to exit silently. Added full Responses API routing and implementation
+- **Copilot Responses API streaming drops tool call arguments** — the `fnCallBuilders` map was keyed by `call_id` but the streaming events reference items by `item_id` (the output item's `id`), causing argument accumulation to fail silently. Tool calls were emitted with empty inputs
+
+### Improved
+
+- **Copilot provider simplified** — removed ~200 lines of duplicated Responses API code by delegating to the parent `OpenAIProvider`. Copilot now only adds token refresh on top of the shared implementation
+
+---
+
 ## [2.11.0] - 2026-03-05
 
 ### Added
@@ -845,6 +859,7 @@ Future versions will include upgrade guides here.
 [2.4.2]: https://github.com/corbat-tech/coco/compare/v2.4.1...v2.4.2
 [2.10.0]: https://github.com/corbat-tech/coco/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/corbat-tech/coco/compare/v2.8.2...v2.9.0
+[2.11.1]: https://github.com/corbat-tech/coco/compare/v2.11.0...v2.11.1
 [2.4.1]: https://github.com/corbat-tech/coco/compare/v2.4.0...v2.4.1
 [2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0
