@@ -115,11 +115,11 @@ describe("OpenAIProvider", () => {
   });
 
   describe("getContextWindow", () => {
-    it("should return default context window for gpt-5.3-codex", async () => {
+    it("should return default context window for gpt-5.4-codex", async () => {
       const { OpenAIProvider } = await import("./openai.js");
 
       const provider = new OpenAIProvider();
-      await provider.initialize({ apiKey: "test", model: "gpt-5.3-codex" });
+      await provider.initialize({ apiKey: "test", model: "gpt-5.4-codex" });
 
       expect(provider.getContextWindow()).toBe(400000);
     });

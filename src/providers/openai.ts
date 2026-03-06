@@ -27,10 +27,10 @@ import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 /**
  * Default model - Updated February 2026
  */
-const DEFAULT_MODEL = "gpt-5.3-codex";
+const DEFAULT_MODEL = "gpt-5.4-codex";
 
 /**
- * Context windows for models
+ * Context windows for models (Updated March 2026)
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
   // OpenAI models
@@ -54,6 +54,7 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "gpt-5.2-instant": 400000,
   "gpt-5.2-pro": 400000,
   "gpt-5.3-codex": 400000,
+  "gpt-5.4-codex": 400000,
   // Kimi/Moonshot models
   "kimi-k2.5": 262144,
   "kimi-k2-0324": 131072,
@@ -110,7 +111,7 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "microsoft/Phi-4": 16384,
   // OpenRouter model IDs
   "anthropic/claude-opus-4-6": 200000,
-  "openai/gpt-5.3-codex": 400000,
+  "openai/gpt-5.4-codex": 400000,
   "google/gemini-3-flash-preview": 1000000,
   "meta-llama/llama-3.3-70b-instruct": 128000,
 };

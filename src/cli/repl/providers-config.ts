@@ -87,9 +87,9 @@
  *
  * CURRENT MODELS (verified from official docs):
  * - Anthropic: claude-opus-4-6 (latest), claude-sonnet-4-6, claude-haiku-4-5
- * - OpenAI: gpt-5.3-codex (latest), gpt-5.2-codex, gpt-5.1-codex-max, gpt-4.1
+ * - OpenAI: gpt-5.4-codex (latest), gpt-5.3-codex, gpt-5.2-codex, gpt-5.1-codex-max, gpt-4.1
  * - Gemini: gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-2.5-pro, gemini-2.5-flash
- * - Copilot: claude-sonnet-4.6, claude-opus-4.6, gpt-5.3-codex, gpt-4.1, gemini-3.1-pro-preview
+ * - Copilot: claude-sonnet-4.6, claude-opus-4.6, gpt-5.4-codex, gpt-4.1, gemini-3.1-pro-preview
  * - Kimi: kimi-k2.5, kimi-k2-thinking
  * - Qwen: qwen-coder-plus (recommended), qwen-max, qwen-plus, qwen-turbo, qwq-plus
  * - LM Studio: qwen3-coder series (best local option)
@@ -253,12 +253,19 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     // Updated: March 2026 — from platform.openai.com/docs/models
     models: [
       {
-        id: "gpt-5.3-codex",
-        name: "GPT-5.3 Codex",
-        description: "Latest agentic coding model (Feb 2026)",
+        id: "gpt-5.4-codex",
+        name: "GPT-5.4 Codex",
+        description: "Latest agentic coding model (Mar 2026)",
         contextWindow: 400000,
         maxOutputTokens: 128000,
         recommended: true,
+      },
+      {
+        id: "gpt-5.3-codex",
+        name: "GPT-5.3 Codex",
+        description: "Previous agentic coding model (Feb 2026)",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
       },
       {
         id: "gpt-5.2-codex",
@@ -387,12 +394,19 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       },
       // OpenAI models (Codex/GPT-5+ use /responses API, others use /chat/completions)
       {
-        id: "gpt-5.3-codex",
-        name: "GPT-5.3 Codex",
-        description: "OpenAI's latest coding model via Copilot",
+        id: "gpt-5.4-codex",
+        name: "GPT-5.4 Codex",
+        description: "OpenAI's latest coding model via Copilot (Mar 2026)",
         contextWindow: 400000,
         maxOutputTokens: 128000,
         recommended: true,
+      },
+      {
+        id: "gpt-5.3-codex",
+        name: "GPT-5.3 Codex",
+        description: "OpenAI's previous coding model via Copilot",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
       },
       {
         id: "gpt-5.2-codex",
@@ -462,12 +476,19 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     },
     models: [
       {
-        id: "gpt-5.3-codex",
-        name: "GPT-5.3 Codex",
-        description: "Latest coding model via ChatGPT subscription (Feb 2026)",
+        id: "gpt-5.4-codex",
+        name: "GPT-5.4 Codex",
+        description: "Latest coding model via ChatGPT subscription (Mar 2026)",
         contextWindow: 200000,
         maxOutputTokens: 128000,
         recommended: true,
+      },
+      {
+        id: "gpt-5.3-codex",
+        name: "GPT-5.3 Codex",
+        description: "Previous coding model via ChatGPT subscription",
+        contextWindow: 200000,
+        maxOutputTokens: 128000,
       },
       {
         id: "gpt-5.2-codex",
@@ -883,9 +904,9 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         recommended: true,
       },
       {
-        id: "openai/gpt-5.3-codex",
-        name: "GPT-5.3 Codex (via OR)",
-        description: "OpenAI's coding model — via OpenRouter",
+        id: "openai/gpt-5.4-codex",
+        name: "GPT-5.4 Codex (via OR)",
+        description: "OpenAI's latest coding model — via OpenRouter",
         contextWindow: 400000,
         maxOutputTokens: 128000,
       },

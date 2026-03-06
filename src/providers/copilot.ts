@@ -43,6 +43,7 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   // OpenAI models — chat/completions
   "gpt-4.1": 1048576,
   // OpenAI models — /responses API (Codex/GPT-5+)
+  "gpt-5.4-codex": 400000,
   "gpt-5.3-codex": 400000,
   "gpt-5.2-codex": 400000,
   "gpt-5.1-codex-max": 400000,
