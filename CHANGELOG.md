@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.0] - 2026-03-06
+
+### Added
+- **GPT-5.4 Codex model support** — add OpenAI's latest agentic coding model across all providers
+  - New default model for OpenAI, Codex, and Copilot providers
+  - Available in OpenRouter as `openai/gpt-5.4-codex`
+  - Pricing: $2/M input, $8/M output (400K context window)
+  - Previous models (gpt-5.3-codex and earlier) remain available as non-default options
+
+---
+
 ## [2.11.1] - 2026-03-05
 
 ### Fixed
@@ -808,6 +819,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 2.12.0 | 2026-03-06 | GPT-5.4 Codex model support across all OpenAI-compatible providers |
 | 2.8.1 | 2026-03-03 | Fix REPL freeze on Anthropic/Kimi streaming, compaction timeout+spinner, addMessage pair-safe trimming |
 | 2.1.0 | 2026-02-20 | /mcp, /intent commands, kimi-code provider, MCP+skills wired to REPL, VS Code extension, improved welcome screen |
 | 2.0.0 | 2026-02-20 | React/Java analyzers, ProjectConfig, quality bridge, report exporter, GitHub Actions generator, 6 new providers |
@@ -845,7 +857,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.12.0...HEAD
+[2.12.0]: https://github.com/corbat-tech/coco/compare/v2.11.1...v2.12.0
 [2.11.0]: https://github.com/corbat-tech/coco/compare/v2.10.0...v2.11.0
 [2.8.2]: https://github.com/corbat-tech/coco/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/corbat-tech/coco/compare/v2.8.0...v2.8.1

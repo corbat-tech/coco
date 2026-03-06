@@ -30,6 +30,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "claude-opus-4-20250514": { inputPerMillion: 15, outputPerMillion: 75, contextWindow: 200000 },
 
   // OpenAI models
+  "gpt-5.4-codex": { inputPerMillion: 2, outputPerMillion: 8, contextWindow: 400000 },
   "gpt-5.3-codex": { inputPerMillion: 2, outputPerMillion: 8, contextWindow: 400000 },
   "gpt-5.2-codex": { inputPerMillion: 2, outputPerMillion: 8, contextWindow: 400000 },
   "gpt-5.1-codex-max": { inputPerMillion: 3, outputPerMillion: 12, contextWindow: 400000 },
