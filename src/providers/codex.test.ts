@@ -65,6 +65,7 @@ function mockSuccessfulChatResponse(
       response: {
         id,
         status,
+        output: [],
         usage: { input_tokens: inputTokens, output_tokens: outputTokens },
       },
     },
@@ -74,6 +75,64 @@ function mockSuccessfulChatResponse(
     ok: true,
     body: buildSSEStream(events),
   });
+}
+
+/**
+ * Helper: mock a Codex response that includes tool calls
+ */
+function mockToolCallResponse(toolCalls: Array<{ callId: string; name: string; args: string }>) {
+  const events: Array<Record<string, unknown>> = [
+    { id: "resp-tools", type: "response.created" },
+    { type: "response.output_text.delta", delta: "Let me help." },
+  ];
+
+  // Add function call events for each tool call
+  for (const tc of toolCalls) {
+    events.push({
+      type: "response.output_item.added",
+      item: { type: "function_call", id: `item_${tc.callId}`, call_id: tc.callId, name: tc.name },
+    });
+    events.push({
+      type: "response.function_call_arguments.delta",
+      item_id: `item_${tc.callId}`,
+      delta: tc.args,
+    });
+    events.push({
+      type: "response.function_call_arguments.done",
+      item_id: `item_${tc.callId}`,
+      arguments: tc.args,
+    });
+  }
+
+  events.push({
+    type: "response.completed",
+    response: {
+      id: "resp-tools",
+      status: "completed",
+      output: toolCalls.map((tc) => ({
+        type: "function_call",
+        call_id: tc.callId,
+        name: tc.name,
+        arguments: tc.args,
+      })),
+      usage: { input_tokens: 50, output_tokens: 30 },
+    },
+  });
+
+  mockFetch.mockResolvedValue({
+    ok: true,
+    body: buildSSEStream(events),
+  });
+}
+
+async function initProvider() {
+  const token = createFakeJwt({ chatgpt_account_id: "acct-test" });
+  mockGetValidAccessToken.mockResolvedValue({ accessToken: token });
+
+  const { CodexProvider } = await import("./codex.js");
+  const provider = new CodexProvider();
+  await provider.initialize({});
+  return provider;
 }
 
 describe("CodexProvider", () => {
@@ -284,16 +343,6 @@ describe("CodexProvider", () => {
   });
 
   describe("chat", () => {
-    async function initProvider() {
-      const token = createFakeJwt({ chatgpt_account_id: "acct-test" });
-      mockGetValidAccessToken.mockResolvedValue({ accessToken: token });
-
-      const { CodexProvider } = await import("./codex.js");
-      const provider = new CodexProvider();
-      await provider.initialize({});
-      return provider;
-    }
-
     it("should throw ProviderError if not initialized", async () => {
       const { CodexProvider } = await import("./codex.js");
       const provider = new CodexProvider();
@@ -372,12 +421,10 @@ describe("CodexProvider", () => {
       expect(body.instructions).toBe("You are a helpful coding assistant.");
     });
 
-    it("should map system role to developer in input messages", async () => {
+    it("should convert user and assistant messages correctly", async () => {
       const provider = await initProvider();
       mockSuccessfulChatResponse("Hi");
 
-      // Even though system is extracted as instructions, test the role mapping
-      // by checking remaining non-system messages
       await provider.chat([
         { role: "user", content: "Hello" },
         { role: "assistant", content: "Hi there" },
@@ -386,30 +433,47 @@ describe("CodexProvider", () => {
       const fetchCall = mockFetch.mock.calls[0] as [string, RequestInit];
       const body = JSON.parse(fetchCall[1].body as string);
       expect(body.input[0].role).toBe("user");
-      expect(body.input[0].content[0].type).toBe("input_text");
+      expect(body.input[0].content).toBe("Hello");
       expect(body.input[1].role).toBe("assistant");
-      expect(body.input[1].content[0].type).toBe("output_text");
+      expect(body.input[1].content).toBe("Hi there");
     });
 
-    it("should handle array content in messages", async () => {
+    it("should convert tool_result messages to function_call_output", async () => {
       const provider = await initProvider();
       mockSuccessfulChatResponse("Done");
 
       await provider.chat([
+        { role: "user", content: "Read a file" },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Reading..." },
+            { type: "tool_use", id: "call_1", name: "read_file", input: { path: "test.txt" } },
+          ],
+        },
         {
           role: "user",
-          content: [
-            { type: "text", text: "Hello" },
-            { type: "tool_result", tool_use_id: "call_1", content: "result data" },
-          ],
+          content: [{ type: "tool_result", tool_use_id: "call_1", content: "file contents here" }],
         },
       ]);
 
       const fetchCall = mockFetch.mock.calls[0] as [string, RequestInit];
       const body = JSON.parse(fetchCall[1].body as string);
-      // extractTextContent joins text parts
-      expect(body.input[0].content[0].text).toContain("Hello");
-      expect(body.input[0].content[0].text).toContain("Tool result:");
+
+      // assistant text + function_call + function_call_output
+      const functionCallOutput = body.input.find(
+        (i: Record<string, unknown>) => i.type === "function_call_output",
+      );
+      expect(functionCallOutput).toBeDefined();
+      expect(functionCallOutput.call_id).toBe("call_1");
+      expect(functionCallOutput.output).toBe("file contents here");
+
+      const functionCall = body.input.find(
+        (i: Record<string, unknown>) => i.type === "function_call",
+      );
+      expect(functionCall).toBeDefined();
+      expect(functionCall.call_id).toBe("call_1");
+      expect(functionCall.name).toBe("read_file");
     });
 
     it("should handle response.output_text.done event (full text)", async () => {
@@ -424,6 +488,7 @@ describe("CodexProvider", () => {
           response: {
             id: "resp-1",
             status: "completed",
+            output: [],
             usage: { input_tokens: 5, output_tokens: 10 },
           },
         },
@@ -467,32 +532,6 @@ describe("CodexProvider", () => {
       );
     });
 
-    it("should throw when no content is returned", async () => {
-      const provider = await initProvider();
-
-      // Stream with no text events
-      const events = [
-        { id: "resp-1", type: "response.created" },
-        {
-          type: "response.completed",
-          response: {
-            id: "resp-1",
-            status: "completed",
-            usage: { input_tokens: 5, output_tokens: 0 },
-          },
-        },
-      ];
-
-      mockFetch.mockResolvedValue({
-        ok: true,
-        body: buildSSEStream(events),
-      });
-
-      await expect(provider.chat([{ role: "user", content: "Hello" }])).rejects.toThrow(
-        /No response content/,
-      );
-    });
-
     it("should map incomplete status to max_tokens stop reason", async () => {
       const provider = await initProvider();
 
@@ -502,6 +541,7 @@ describe("CodexProvider", () => {
           type: "response.completed",
           response: {
             status: "incomplete",
+            output: [],
             usage: { input_tokens: 100, output_tokens: 4096 },
           },
         },
@@ -525,7 +565,7 @@ describe("CodexProvider", () => {
       const lines = [
         "data: {invalid json}\n\n",
         `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "Hello" })}\n\n`,
-        `data: ${JSON.stringify({ type: "response.completed", response: { status: "completed", usage: { input_tokens: 1, output_tokens: 1 } } })}\n\n`,
+        `data: ${JSON.stringify({ type: "response.completed", response: { status: "completed", output: [], usage: { input_tokens: 1, output_tokens: 1 } } })}\n\n`,
         "data: [DONE]\n\n",
       ];
 
@@ -573,21 +613,11 @@ describe("CodexProvider", () => {
   });
 
   describe("chatWithTools", () => {
-    async function initProvider() {
-      const token = createFakeJwt({ chatgpt_account_id: "acct-test" });
-      mockGetValidAccessToken.mockResolvedValue({ accessToken: token });
-
-      const { CodexProvider } = await import("./codex.js");
-      const provider = new CodexProvider();
-      await provider.initialize({});
-      return provider;
-    }
-
-    it("should delegate to chat() and return empty toolCalls", async () => {
+    it("should send tools in the request body", async () => {
       const provider = await initProvider();
-      mockSuccessfulChatResponse("I'll help with that", { inputTokens: 20, outputTokens: 15 });
+      mockSuccessfulChatResponse("I'll help with that");
 
-      const response = await provider.chatWithTools([{ role: "user", content: "Read test.txt" }], {
+      await provider.chatWithTools([{ role: "user", content: "Read test.txt" }], {
         tools: [
           {
             name: "read_file",
@@ -597,33 +627,73 @@ describe("CodexProvider", () => {
         ],
       });
 
+      const fetchCall = mockFetch.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(fetchCall[1].body as string);
+      expect(body.tools).toHaveLength(1);
+      expect(body.tools[0].type).toBe("function");
+      expect(body.tools[0].name).toBe("read_file");
+    });
+
+    it("should return empty toolCalls when model responds with text only", async () => {
+      const provider = await initProvider();
+      mockSuccessfulChatResponse("I'll help with that", { inputTokens: 20, outputTokens: 15 });
+
+      const response = await provider.chatWithTools([{ role: "user", content: "What is 2+2?" }], {
+        tools: [{ name: "calc", description: "Calculate", input_schema: { type: "object" } }],
+      });
+
       expect(response.content).toBe("I'll help with that");
       expect(response.toolCalls).toEqual([]);
-      expect(response.usage.inputTokens).toBe(20);
-      expect(response.usage.outputTokens).toBe(15);
+      expect(response.stopReason).toBe("end_turn");
+    });
+
+    it("should parse function call events into toolCalls", async () => {
+      const provider = await initProvider();
+      mockToolCallResponse([
+        { callId: "call_abc", name: "read_file", args: '{"path":"test.txt"}' },
+      ]);
+
+      const response = await provider.chatWithTools([{ role: "user", content: "Read test.txt" }], {
+        tools: [
+          { name: "read_file", description: "Read a file", input_schema: { type: "object" } },
+        ],
+      });
+
+      expect(response.toolCalls).toHaveLength(1);
+      expect(response.toolCalls[0].id).toBe("call_abc");
+      expect(response.toolCalls[0].name).toBe("read_file");
+      expect(response.toolCalls[0].input).toEqual({ path: "test.txt" });
+      expect(response.stopReason).toBe("tool_use");
+    });
+
+    it("should handle multiple tool calls", async () => {
+      const provider = await initProvider();
+      mockToolCallResponse([
+        { callId: "call_1", name: "read_file", args: '{"path":"a.txt"}' },
+        { callId: "call_2", name: "read_file", args: '{"path":"b.txt"}' },
+      ]);
+
+      const response = await provider.chatWithTools(
+        [{ role: "user", content: "Read both files" }],
+        { tools: [{ name: "read_file", description: "Read", input_schema: { type: "object" } }] },
+      );
+
+      expect(response.toolCalls).toHaveLength(2);
+      expect(response.toolCalls[0].name).toBe("read_file");
+      expect(response.toolCalls[1].name).toBe("read_file");
+      expect(response.toolCalls[0].input).toEqual({ path: "a.txt" });
+      expect(response.toolCalls[1].input).toEqual({ path: "b.txt" });
     });
   });
 
   describe("stream", () => {
-    async function initProvider() {
-      const token = createFakeJwt({ chatgpt_account_id: "acct-test" });
-      mockGetValidAccessToken.mockResolvedValue({ accessToken: token });
-
-      const { CodexProvider } = await import("./codex.js");
-      const provider = new CodexProvider();
-      await provider.initialize({});
-      return provider;
-    }
-
     it("should throw if not initialized", async () => {
       const { CodexProvider } = await import("./codex.js");
       const provider = new CodexProvider();
 
-      const iterator = provider.stream([{ role: "user", content: "Hello" }]);
-      // Calling next() triggers the generator which calls chat() which checks initialization
       await expect(
         (async () => {
-          for await (const _chunk of iterator) {
+          for await (const _chunk of provider.stream([{ role: "user", content: "Hello" }])) {
             // consume
           }
         })(),
@@ -639,33 +709,20 @@ describe("CodexProvider", () => {
         chunks.push(chunk);
       }
 
-      // Should have text chunks plus a "done" chunk at the end
-      expect(chunks.length).toBeGreaterThan(1);
       const textChunks = chunks.filter((c) => c.type === "text");
       expect(textChunks.length).toBeGreaterThan(0);
-
-      // Last chunk should be "done"
       expect(chunks[chunks.length - 1]?.type).toBe("done");
 
-      // All text combined should equal the original content
       const combinedText = textChunks.map((c) => c.text).join("");
       expect(combinedText).toBe("Hello World!");
     });
 
-    it("should handle empty content response", async () => {
+    it("should throw when response body is null", async () => {
       const provider = await initProvider();
-
-      // A response that results in an empty content will throw in chat()
-      const events = [
-        {
-          type: "response.completed",
-          response: { status: "completed", usage: { input_tokens: 1, output_tokens: 0 } },
-        },
-      ];
 
       mockFetch.mockResolvedValue({
         ok: true,
-        body: buildSSEStream(events),
+        body: null,
       });
 
       await expect(
@@ -674,22 +731,16 @@ describe("CodexProvider", () => {
             // consume
           }
         })(),
-      ).rejects.toThrow(/No response content/);
+      ).rejects.toThrow(/No response body/);
     });
   });
 
   describe("streamWithTools", () => {
-    it("should delegate to stream()", async () => {
-      const token = createFakeJwt({ chatgpt_account_id: "acct-test" });
-      mockGetValidAccessToken.mockResolvedValue({ accessToken: token });
+    it("should send tools in the request body", async () => {
+      const provider = await initProvider();
+      mockSuccessfulChatResponse("Streaming response");
 
-      const { CodexProvider } = await import("./codex.js");
-      const provider = new CodexProvider();
-      await provider.initialize({});
-
-      mockSuccessfulChatResponse("Streaming with tools");
-
-      const chunks: Array<{ type: string; text?: string }> = [];
+      const chunks: Array<Record<string, unknown>> = [];
       for await (const chunk of provider.streamWithTools([{ role: "user", content: "Hi" }], {
         tools: [
           { name: "test", description: "test", input_schema: { type: "object", properties: {} } },
@@ -698,8 +749,89 @@ describe("CodexProvider", () => {
         chunks.push(chunk);
       }
 
+      const fetchCall = mockFetch.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(fetchCall[1].body as string);
+      expect(body.tools).toHaveLength(1);
+      expect(body.tools[0].name).toBe("test");
+
       expect(chunks.length).toBeGreaterThan(1);
       expect(chunks[chunks.length - 1]?.type).toBe("done");
+    });
+
+    it("should yield tool_use_start and tool_use_end for function calls", async () => {
+      const provider = await initProvider();
+      mockToolCallResponse([
+        { callId: "call_stream", name: "read_file", args: '{"path":"hello.txt"}' },
+      ]);
+
+      const chunks: Array<Record<string, unknown>> = [];
+      for await (const chunk of provider.streamWithTools(
+        [{ role: "user", content: "Read hello.txt" }],
+        {
+          tools: [
+            {
+              name: "read_file",
+              description: "Read a file",
+              input_schema: { type: "object" },
+            },
+          ],
+        },
+      )) {
+        chunks.push(chunk);
+      }
+
+      const toolStarts = chunks.filter((c) => c.type === "tool_use_start");
+      const toolEnds = chunks.filter((c) => c.type === "tool_use_end");
+      const doneChunk = chunks.find((c) => c.type === "done");
+
+      expect(toolStarts).toHaveLength(1);
+      expect((toolStarts[0].toolCall as Record<string, unknown>).name).toBe("read_file");
+      expect((toolStarts[0].toolCall as Record<string, unknown>).id).toBe("call_stream");
+
+      expect(toolEnds).toHaveLength(1);
+      const endToolCall = toolEnds[0].toolCall as Record<string, unknown>;
+      expect(endToolCall.name).toBe("read_file");
+      expect(endToolCall.input).toEqual({ path: "hello.txt" });
+
+      expect(doneChunk).toBeDefined();
+      expect(doneChunk!.stopReason).toBe("tool_use");
+    });
+
+    it("should handle text-only response with no tool calls", async () => {
+      const provider = await initProvider();
+      mockSuccessfulChatResponse("Just text, no tools needed.");
+
+      const chunks: Array<Record<string, unknown>> = [];
+      for await (const chunk of provider.streamWithTools(
+        [{ role: "user", content: "What is 2+2?" }],
+        { tools: [{ name: "calc", description: "Calc", input_schema: { type: "object" } }] },
+      )) {
+        chunks.push(chunk);
+      }
+
+      const toolChunks = chunks.filter(
+        (c) => c.type === "tool_use_start" || c.type === "tool_use_end",
+      );
+      expect(toolChunks).toHaveLength(0);
+
+      const doneChunk = chunks.find((c) => c.type === "done");
+      expect(doneChunk!.stopReason).toBe("end_turn");
+    });
+
+    it("should throw when response body is null", async () => {
+      const provider = await initProvider();
+
+      mockFetch.mockResolvedValue({ ok: true, body: null });
+
+      await expect(
+        (async () => {
+          for await (const _chunk of provider.streamWithTools([{ role: "user", content: "Hi" }], {
+            tools: [{ name: "t", description: "t", input_schema: { type: "object" } }],
+          })) {
+            // consume
+          }
+        })(),
+      ).rejects.toThrow(/No response body/);
     });
   });
 });
