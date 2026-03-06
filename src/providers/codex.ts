@@ -11,6 +11,7 @@
  * - Supports automatic token refresh
  */
 
+import { jsonrepair } from "jsonrepair";
 import type {
   LLMProvider,
   ProviderConfig,
@@ -20,9 +21,13 @@ import type {
   ChatWithToolsOptions,
   ChatWithToolsResponse,
   StreamChunk,
+  ToolDefinition,
+  ToolUseContent,
+  ToolResultContent,
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
 import { getValidAccessToken } from "../auth/index.js";
+import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 
 /**
  * Codex API endpoint (ChatGPT backend)
@@ -50,6 +55,11 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "gpt-5.2": 200000,
   "gpt-5.1": 200000,
 };
+
+/**
+ * Stream timeout in milliseconds
+ */
+const STREAM_TIMEOUT_MS = 120000;
 
 /**
  * Parse JWT token to extract claims
@@ -81,6 +91,50 @@ function extractAccountId(accessToken: string): string | undefined {
 }
 
 /**
+ * Parse JSON arguments with jsonrepair fallback
+ */
+function parseArguments(args: string): Record<string, unknown> {
+  try {
+    return args ? JSON.parse(args) : {};
+  } catch {
+    try {
+      if (args) {
+        const repaired = jsonrepair(args);
+        return JSON.parse(repaired);
+      }
+    } catch {
+      console.error(`[Codex] Cannot parse tool arguments: ${args.slice(0, 200)}`);
+    }
+    return {};
+  }
+}
+
+// --- Responses API input types (raw fetch, no SDK) ---
+
+interface ResponsesInputMessage {
+  role: string;
+  content: string | Array<{ type: string; text: string }>;
+}
+
+interface ResponsesFunctionCall {
+  type: "function_call";
+  call_id: string;
+  name: string;
+  arguments: string;
+}
+
+interface ResponsesFunctionCallOutput {
+  type: "function_call_output";
+  call_id: string;
+  output: string;
+}
+
+type ResponsesInputItem =
+  | ResponsesInputMessage
+  | ResponsesFunctionCall
+  | ResponsesFunctionCallOutput;
+
+/**
  * Codex provider implementation
  * Uses ChatGPT Plus/Pro subscription via OAuth
  */
@@ -91,6 +145,7 @@ export class CodexProvider implements LLMProvider {
   private config: ProviderConfig = {};
   private accessToken: string | null = null;
   private accountId: string | undefined;
+  private retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
 
   /**
    * Initialize the provider with OAuth tokens
@@ -192,226 +247,581 @@ export class CodexProvider implements LLMProvider {
   /**
    * Extract text content from a message
    */
-  private extractTextContent(msg: Message): string {
-    if (typeof msg.content === "string") {
-      return msg.content;
-    }
-    if (Array.isArray(msg.content)) {
-      return msg.content
-        .map((part) => {
-          if (part.type === "text") return part.text;
-          if (part.type === "tool_result") return `Tool result: ${JSON.stringify(part.content)}`;
-          return "";
-        })
+  private contentToString(content: Message["content"]): string {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .filter((part) => part.type === "text")
+        .map((part) => (part as { text: string }).text)
         .join("\n");
     }
     return "";
   }
 
   /**
-   * Convert messages to Codex Responses API format
-   * Codex uses a different format than Chat Completions:
-   * {
-   *   "input": [
-   *     { "type": "message", "role": "developer|user", "content": [{ "type": "input_text", "text": "..." }] },
-   *     { "type": "message", "role": "assistant", "content": [{ "type": "output_text", "text": "..." }] }
-   *   ]
-   * }
+   * Convert messages to Responses API input format.
    *
-   * IMPORTANT: User/developer messages use "input_text", assistant messages use "output_text"
+   * Handles:
+   * - system messages → extracted as instructions
+   * - user text messages → { role: "user", content: "..." }
+   * - user tool_result messages → function_call_output items
+   * - assistant text → { role: "assistant", content: "..." }
+   * - assistant tool_use → function_call items
    */
-  private convertMessagesToResponsesFormat(messages: Message[]): Array<{
-    type: string;
-    role: string;
-    content: Array<{ type: string; text: string }>;
+  private convertToResponsesInput(
+    messages: Message[],
+    systemPrompt?: string,
+  ): { input: ResponsesInputItem[]; instructions: string | null } {
+    const input: ResponsesInputItem[] = [];
+    let instructions: string | null = systemPrompt ?? null;
+
+    for (const msg of messages) {
+      if (msg.role === "system") {
+        instructions =
+          (instructions ? instructions + "\n\n" : "") + this.contentToString(msg.content);
+      } else if (msg.role === "user") {
+        if (Array.isArray(msg.content) && msg.content.some((b) => b.type === "tool_result")) {
+          // Convert tool results to function_call_output items
+          for (const block of msg.content) {
+            if (block.type === "tool_result") {
+              const tr = block as ToolResultContent;
+              input.push({
+                type: "function_call_output",
+                call_id: tr.tool_use_id,
+                output: tr.content,
+              });
+            }
+          }
+        } else {
+          // Note: image blocks are silently dropped — Codex backend does not support images.
+          // contentToString extracts only text parts, which is the safe fallback.
+          input.push({
+            role: "user",
+            content: this.contentToString(msg.content),
+          });
+        }
+      } else if (msg.role === "assistant") {
+        if (typeof msg.content === "string") {
+          input.push({ role: "assistant", content: msg.content });
+        } else if (Array.isArray(msg.content)) {
+          const textParts: string[] = [];
+
+          for (const block of msg.content) {
+            if (block.type === "text") {
+              textParts.push(block.text);
+            } else if (block.type === "tool_use") {
+              // Emit accumulated text before function_call
+              if (textParts.length > 0) {
+                input.push({ role: "assistant", content: textParts.join("") });
+                textParts.length = 0;
+              }
+              const tu = block as ToolUseContent;
+              input.push({
+                type: "function_call",
+                call_id: tu.id,
+                name: tu.name,
+                arguments: JSON.stringify(tu.input),
+              });
+            }
+          }
+
+          if (textParts.length > 0) {
+            input.push({ role: "assistant", content: textParts.join("") });
+          }
+        }
+      }
+    }
+
+    return { input, instructions };
+  }
+
+  /**
+   * Convert tool definitions to Responses API function tool format
+   */
+  private convertTools(tools: ToolDefinition[]): Array<{
+    type: "function";
+    name: string;
+    description?: string;
+    parameters: unknown;
+    strict: boolean;
   }> {
-    return messages.map((msg) => {
-      const text = this.extractTextContent(msg);
-      // Map roles: system -> developer, assistant -> assistant, user -> user
-      const role = msg.role === "system" ? "developer" : msg.role;
-      // Assistant messages use "output_text", all others use "input_text"
-      const contentType = msg.role === "assistant" ? "output_text" : "input_text";
-      return {
-        type: "message",
-        role,
-        content: [{ type: contentType, text }],
-      };
-    });
+    return tools.map((tool) => ({
+      type: "function" as const,
+      name: tool.name,
+      description: tool.description ?? undefined,
+      parameters: tool.input_schema ?? null,
+      strict: false,
+    }));
+  }
+
+  /**
+   * Build the request body for the Codex Responses API
+   */
+  private buildRequestBody(
+    model: string,
+    input: ResponsesInputItem[],
+    instructions: string | null,
+    options?: { tools?: ToolDefinition[]; maxTokens?: number; temperature?: number },
+  ): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      model,
+      input,
+      instructions: instructions ?? "You are a helpful coding assistant.",
+      max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+      temperature: options?.temperature ?? this.config.temperature ?? 0,
+      store: false,
+      stream: true, // Codex API requires streaming
+    };
+
+    if (options?.tools && options.tools.length > 0) {
+      body.tools = this.convertTools(options.tools);
+    }
+
+    return body;
+  }
+
+  /**
+   * Read SSE stream and call handler for each parsed event.
+   * Returns when stream ends.
+   */
+  private async readSSEStream(
+    response: Response,
+    onEvent: (event: Record<string, unknown>) => void,
+  ): Promise<void> {
+    if (!response.body) {
+      throw new ProviderError("No response body from Codex API", { provider: this.id });
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    // Activity-based timeout using AbortController
+    let lastActivityTime = Date.now();
+    const timeoutController = new AbortController();
+
+    const timeoutInterval = setInterval(() => {
+      if (Date.now() - lastActivityTime > STREAM_TIMEOUT_MS) {
+        clearInterval(timeoutInterval);
+        timeoutController.abort();
+      }
+    }, 5000);
+
+    try {
+      while (true) {
+        if (timeoutController.signal.aborted) break;
+
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        lastActivityTime = Date.now();
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (!data || data === "[DONE]") continue;
+
+          try {
+            onEvent(JSON.parse(data));
+          } catch {
+            // Invalid JSON, skip
+          }
+        }
+      }
+    } finally {
+      clearInterval(timeoutInterval);
+      reader.releaseLock();
+    }
+
+    if (timeoutController.signal.aborted) {
+      throw new Error(
+        `Stream timeout: No response from Codex API for ${STREAM_TIMEOUT_MS / 1000}s`,
+      );
+    }
   }
 
   /**
    * Send a chat message using Codex Responses API format
    */
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
-    const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-
-    // Extract system message for instructions (if any)
-    const systemMsg = messages.find((m) => m.role === "system");
-    const instructions = systemMsg
-      ? this.extractTextContent(systemMsg)
-      : "You are a helpful coding assistant.";
-
-    // Convert remaining messages to Responses API format
-    const inputMessages = messages
-      .filter((m) => m.role !== "system")
-      .map((msg) => this.convertMessagesToResponsesFormat([msg])[0]);
-
-    const body = {
-      model,
-      instructions,
-      input: inputMessages,
-      tools: [],
-      store: false,
-      stream: true, // Codex API requires streaming
-    };
-
-    const response = await this.makeRequest(body);
-
-    if (!response.body) {
-      throw new ProviderError("No response body from Codex API", {
-        provider: this.id,
+    return withRetry(async () => {
+      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+      const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+      const body = this.buildRequestBody(model, input, instructions, {
+        maxTokens: options?.maxTokens,
+        temperature: options?.temperature,
       });
-    }
 
-    // Read streaming response (SSE format)
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let content = "";
-    let responseId = `codex-${Date.now()}`;
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let status = "completed";
+      const response = await this.makeRequest(body);
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      let content = "";
+      let responseId = `codex-${Date.now()}`;
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let status = "completed";
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+      await this.readSSEStream(response, (event) => {
+        if (event.id) responseId = event.id as string;
 
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6).trim();
-            if (!data || data === "[DONE]") continue;
-
-            try {
-              const parsed = JSON.parse(data);
-
-              // Extract response ID
-              if (parsed.id) {
-                responseId = parsed.id;
-              }
-
-              // Handle different event types
-              if (parsed.type === "response.output_text.delta" && parsed.delta) {
-                content += parsed.delta;
-              } else if (parsed.type === "response.completed" && parsed.response) {
-                // Final response with usage info
-                if (parsed.response.usage) {
-                  inputTokens = parsed.response.usage.input_tokens ?? 0;
-                  outputTokens = parsed.response.usage.output_tokens ?? 0;
-                }
-                status = parsed.response.status ?? "completed";
-              } else if (parsed.type === "response.output_text.done" && parsed.text) {
-                // Full text output
-                content = parsed.text;
-              }
-            } catch {
-              // Invalid JSON, skip
-            }
+        if (event.type === "response.output_text.delta" && event.delta) {
+          content += event.delta as string;
+        } else if (event.type === "response.output_text.done" && event.text) {
+          content = event.text as string;
+        } else if (event.type === "response.completed" && event.response) {
+          const resp = event.response as Record<string, unknown>;
+          const usage = resp.usage as Record<string, number> | undefined;
+          if (usage) {
+            inputTokens = usage.input_tokens ?? 0;
+            outputTokens = usage.output_tokens ?? 0;
           }
+          status = (resp.status as string) ?? "completed";
         }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    if (!content) {
-      throw new ProviderError("No response content from Codex API", {
-        provider: this.id,
       });
-    }
 
-    const stopReason =
-      status === "completed"
-        ? ("end_turn" as const)
-        : status === "incomplete"
-          ? ("max_tokens" as const)
-          : ("end_turn" as const);
+      const stopReason =
+        status === "completed"
+          ? ("end_turn" as const)
+          : status === "incomplete"
+            ? ("max_tokens" as const)
+            : ("end_turn" as const);
 
-    return {
-      id: responseId,
-      content,
-      stopReason,
-      model,
-      usage: {
-        inputTokens,
-        outputTokens,
-      },
-    };
+      return {
+        id: responseId,
+        content,
+        stopReason,
+        model,
+        usage: { inputTokens, outputTokens },
+      };
+    }, this.retryConfig);
   }
 
   /**
-   * Send a chat message with tool use
-   * Note: Codex Responses API tool support is complex; for now we delegate to chat()
-   * and return empty toolCalls. Full tool support can be added later.
+   * Send a chat message with tool use via Responses API
    */
   async chatWithTools(
     messages: Message[],
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
-    // For now, use basic chat without tools
-    const response = await this.chat(messages, options);
+    return withRetry(async () => {
+      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+      const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+      const body = this.buildRequestBody(model, input, instructions, {
+        tools: options.tools,
+        maxTokens: options?.maxTokens,
+      });
 
-    return {
-      ...response,
-      toolCalls: [], // Tools not yet supported in Codex provider
-    };
+      const response = await this.makeRequest(body);
+
+      let content = "";
+      let responseId = `codex-${Date.now()}`;
+      let inputTokens = 0;
+      let outputTokens = 0;
+      const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+
+      // Track function call builders for streaming assembly
+      const fnCallBuilders: Map<string, { callId: string; name: string; arguments: string }> =
+        new Map();
+
+      await this.readSSEStream(response, (event) => {
+        if (event.id) responseId = event.id as string;
+
+        switch (event.type) {
+          case "response.output_text.delta":
+            content += (event.delta as string) ?? "";
+            break;
+
+          case "response.output_text.done":
+            content = (event.text as string) ?? content;
+            break;
+
+          case "response.output_item.added": {
+            const item = event.item as Record<string, unknown>;
+            if (item.type === "function_call") {
+              const itemKey = (item.id as string) ?? (item.call_id as string);
+              fnCallBuilders.set(itemKey, {
+                callId: item.call_id as string,
+                name: item.name as string,
+                arguments: "",
+              });
+            }
+            break;
+          }
+
+          case "response.function_call_arguments.delta": {
+            const builder = fnCallBuilders.get(event.item_id as string);
+            if (builder) builder.arguments += (event.delta as string) ?? "";
+            break;
+          }
+
+          case "response.function_call_arguments.done": {
+            const builder = fnCallBuilders.get(event.item_id as string);
+            if (builder) {
+              toolCalls.push({
+                id: builder.callId,
+                name: builder.name,
+                input: parseArguments(event.arguments as string),
+              });
+              fnCallBuilders.delete(event.item_id as string);
+            }
+            break;
+          }
+
+          case "response.completed": {
+            const resp = event.response as Record<string, unknown>;
+            const usage = resp.usage as Record<string, number> | undefined;
+            if (usage) {
+              inputTokens = usage.input_tokens ?? 0;
+              outputTokens = usage.output_tokens ?? 0;
+            }
+            // Finalize any remaining builders
+            for (const [, builder] of fnCallBuilders) {
+              toolCalls.push({
+                id: builder.callId,
+                name: builder.name,
+                input: parseArguments(builder.arguments),
+              });
+            }
+            fnCallBuilders.clear();
+            break;
+          }
+        }
+      });
+
+      return {
+        id: responseId,
+        content,
+        stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
+        model,
+        usage: { inputTokens, outputTokens },
+        toolCalls,
+      };
+    }, this.retryConfig);
   }
 
   /**
-   * Stream a chat response
-   * Note: True streaming with Codex Responses API is complex.
-   * For now, we make a non-streaming call and simulate streaming by emitting chunks.
+   * Stream a chat response (no tools)
    */
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
-    // Make a regular chat call and emit the result
-    const response = await this.chat(messages, options);
+    const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+    const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+    const body = this.buildRequestBody(model, input, instructions, {
+      maxTokens: options?.maxTokens,
+    });
 
-    // Simulate streaming by emitting content in small chunks
-    // This provides better visual feedback than emitting all at once
-    if (response.content) {
-      const content = response.content;
-      const chunkSize = 20; // Characters per chunk for smooth display
+    const response = await this.makeRequest(body);
 
-      for (let i = 0; i < content.length; i += chunkSize) {
-        const chunk = content.slice(i, i + chunkSize);
-        yield { type: "text" as const, text: chunk };
-
-        // Small delay to simulate streaming (only if there's more content)
-        if (i + chunkSize < content.length) {
-          await new Promise((resolve) => setTimeout(resolve, 5));
-        }
-      }
+    if (!response.body) {
+      throw new ProviderError("No response body from Codex API", { provider: this.id });
     }
 
-    yield { type: "done" as const, stopReason: response.stopReason };
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let lastActivityTime = Date.now();
+    const timeoutController = new AbortController();
+
+    const timeoutInterval = setInterval(() => {
+      if (Date.now() - lastActivityTime > STREAM_TIMEOUT_MS) {
+        clearInterval(timeoutInterval);
+        timeoutController.abort();
+      }
+    }, 5000);
+
+    try {
+      while (true) {
+        if (timeoutController.signal.aborted) break;
+
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        lastActivityTime = Date.now();
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (!data || data === "[DONE]") continue;
+
+          try {
+            const event = JSON.parse(data);
+
+            if (event.type === "response.output_text.delta" && event.delta) {
+              yield { type: "text", text: event.delta };
+            } else if (event.type === "response.completed") {
+              yield { type: "done", stopReason: "end_turn" };
+            }
+          } catch {
+            // Invalid JSON, skip
+          }
+        }
+      }
+    } finally {
+      clearInterval(timeoutInterval);
+      reader.releaseLock();
+    }
+
+    if (timeoutController.signal.aborted) {
+      throw new Error(
+        `Stream timeout: No response from Codex API for ${STREAM_TIMEOUT_MS / 1000}s`,
+      );
+    }
   }
 
   /**
-   * Stream a chat response with tool use
-   * Note: Tools and true streaming with Codex Responses API are not yet implemented.
-   * For now, we delegate to stream() which uses non-streaming under the hood.
+   * Stream a chat response with tool use via Responses API.
+   *
+   * IMPORTANT: fnCallBuilders is keyed by output item ID (item.id), NOT by
+   * call_id. The streaming events (function_call_arguments.delta/done) use
+   * item_id which references the output item's id field, not call_id.
    */
   async *streamWithTools(
     messages: Message[],
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
-    // Use the basic stream method (tools not supported yet)
-    yield* this.stream(messages, options);
+    const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+    const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+    const body = this.buildRequestBody(model, input, instructions, {
+      tools: options.tools,
+      maxTokens: options?.maxTokens,
+    });
+
+    const response = await this.makeRequest(body);
+
+    if (!response.body) {
+      throw new ProviderError("No response body from Codex API", { provider: this.id });
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    // Track function call builders — keyed by output item ID (NOT call_id)
+    const fnCallBuilders: Map<string, { callId: string; name: string; arguments: string }> =
+      new Map();
+
+    // Activity-based timeout using AbortController (safe for async generators)
+    let lastActivityTime = Date.now();
+    const timeoutController = new AbortController();
+
+    const timeoutInterval = setInterval(() => {
+      if (Date.now() - lastActivityTime > STREAM_TIMEOUT_MS) {
+        clearInterval(timeoutInterval);
+        timeoutController.abort();
+      }
+    }, 5000);
+
+    try {
+      while (true) {
+        if (timeoutController.signal.aborted) break;
+
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        lastActivityTime = Date.now();
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (!data || data === "[DONE]") continue;
+
+          let event: Record<string, unknown>;
+          try {
+            event = JSON.parse(data);
+          } catch {
+            continue;
+          }
+
+          switch (event.type) {
+            case "response.output_text.delta":
+              yield { type: "text", text: (event.delta as string) ?? "" };
+              break;
+
+            case "response.output_item.added": {
+              const item = event.item as Record<string, unknown>;
+              if (item.type === "function_call") {
+                // Key by item ID — event.item_id in delta/done events matches this.
+                const itemKey = (item.id as string) ?? (item.call_id as string);
+                fnCallBuilders.set(itemKey, {
+                  callId: item.call_id as string,
+                  name: item.name as string,
+                  arguments: "",
+                });
+                yield {
+                  type: "tool_use_start",
+                  toolCall: { id: item.call_id as string, name: item.name as string },
+                };
+              }
+              break;
+            }
+
+            case "response.function_call_arguments.delta": {
+              const builder = fnCallBuilders.get(event.item_id as string);
+              if (builder) {
+                builder.arguments += (event.delta as string) ?? "";
+              }
+              break;
+            }
+
+            case "response.function_call_arguments.done": {
+              const builder = fnCallBuilders.get(event.item_id as string);
+              if (builder) {
+                yield {
+                  type: "tool_use_end",
+                  toolCall: {
+                    id: builder.callId,
+                    name: builder.name,
+                    input: parseArguments((event.arguments as string) ?? builder.arguments),
+                  },
+                };
+                fnCallBuilders.delete(event.item_id as string);
+              }
+              break;
+            }
+
+            case "response.completed": {
+              // Emit any remaining function calls not finalized via done events
+              for (const [, builder] of fnCallBuilders) {
+                yield {
+                  type: "tool_use_end",
+                  toolCall: {
+                    id: builder.callId,
+                    name: builder.name,
+                    input: parseArguments(builder.arguments),
+                  },
+                };
+              }
+              fnCallBuilders.clear();
+
+              const resp = event.response as Record<string, unknown> | undefined;
+              const output = (resp?.output as Array<{ type: string }>) ?? [];
+              const hasToolCalls = output.some((i) => i.type === "function_call");
+              yield {
+                type: "done",
+                stopReason: hasToolCalls ? "tool_use" : "end_turn",
+              };
+              break;
+            }
+          }
+        }
+      }
+    } finally {
+      clearInterval(timeoutInterval);
+      reader.releaseLock();
+    }
+
+    if (timeoutController.signal.aborted) {
+      throw new Error(
+        `Stream timeout: No response from Codex API for ${STREAM_TIMEOUT_MS / 1000}s`,
+      );
+    }
   }
 }
 
