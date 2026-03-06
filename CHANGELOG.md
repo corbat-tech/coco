@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.13.0] - 2026-03-06
+
+### Added
+- **Codex provider tool calling** — full tool calling support for the ChatGPT OAuth (Codex) provider via the Responses API
+  - Message conversion: `tool_use` → `function_call`, `tool_result` → `function_call_output`
+  - SSE streaming with function call event parsing and argument accumulation
+  - `fnCallBuilders` keyed by `item.id` (Responses API invariant)
+  - Safe `AbortController` timeout pattern (no throw-in-setInterval crash)
+  - `withRetry` wrapper for transient API errors on both `chat()` and `chatWithTools()`
+  - Temperature pass-through to `buildRequestBody`
+
+---
+
 ## [2.12.0] - 2026-03-06
 
 ### Added
@@ -873,6 +886,7 @@ Future versions will include upgrade guides here.
 [2.10.0]: https://github.com/corbat-tech/coco/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/corbat-tech/coco/compare/v2.8.2...v2.9.0
 [2.11.1]: https://github.com/corbat-tech/coco/compare/v2.11.0...v2.11.1
+[2.13.0]: https://github.com/corbat-tech/coco/compare/v2.12.0...v2.13.0
 [2.4.1]: https://github.com/corbat-tech/coco/compare/v2.4.0...v2.4.1
 [2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0
