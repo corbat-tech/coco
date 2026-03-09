@@ -168,6 +168,41 @@ export function needsResponsesApi(model: string): boolean {
 }
 
 /**
+ * Check if a model requires `max_completion_tokens` instead of `max_tokens`
+ * in the Chat Completions API.
+ *
+ * OpenAI's newer models (o1, o1-mini, o1-preview, gpt-4o, etc.) deprecated
+ * `max_tokens` in favor of `max_completion_tokens`. Sending `max_tokens`
+ * to these models causes a 400 error.
+ */
+function needsMaxCompletionTokens(model: string): boolean {
+  return (
+    model.startsWith("o1") ||
+    model.startsWith("o3") ||
+    model.startsWith("o4") ||
+    model.startsWith("gpt-4o") ||
+    model.startsWith("gpt-4.1") ||
+    model.startsWith("gpt-5") ||
+    model.startsWith("chatgpt-4o")
+  );
+}
+
+/**
+ * Build the appropriate max tokens parameter for Chat Completions API.
+ * Returns `{ max_completion_tokens }` or `{ max_tokens }` depending on model.
+ *
+ * PRECONDITION: must only be called for models that do NOT require the
+ * Responses API (i.e. needsResponsesApi(model) === false). Callers must
+ * guard with needsResponsesApi() first.
+ */
+function buildMaxTokensParam(model: string, maxTokens: number): Record<string, number> {
+  if (needsMaxCompletionTokens(model)) {
+    return { max_completion_tokens: maxTokens };
+  }
+  return { max_tokens: maxTokens };
+}
+
+/**
  * OpenAI provider implementation
  */
 export class OpenAIProvider implements LLMProvider {
@@ -262,15 +297,16 @@ export class OpenAIProvider implements LLMProvider {
       try {
         const supportsTemp = this.supportsTemperature(model);
 
+        const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
         const response = await this.client!.chat.completions.create({
           model,
-          max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+          ...buildMaxTokensParam(model, maxTokens),
           messages: this.convertMessages(messages, options?.system),
           stop: options?.stopSequences,
           ...(supportsTemp && {
             temperature: options?.temperature ?? this.config.temperature ?? 0,
           }),
-        });
+        } as OpenAI.ChatCompletionCreateParamsNonStreaming);
 
         const choice = response.choices[0];
 
@@ -310,9 +346,10 @@ export class OpenAIProvider implements LLMProvider {
         const extraBody = this.getExtraBody(model);
 
         // Build request params
+        const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
         const requestParams: Record<string, unknown> = {
           model,
-          max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+          ...buildMaxTokensParam(model, maxTokens),
           messages: this.convertMessages(messages, options?.system),
           tools: this.convertTools(options.tools),
           tool_choice: this.convertToolChoice(options.toolChoice),
@@ -366,13 +403,14 @@ export class OpenAIProvider implements LLMProvider {
     try {
       const supportsTemp = this.supportsTemperature(model);
 
+      const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
       const stream = await this.client!.chat.completions.create({
         model,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+        ...buildMaxTokensParam(model, maxTokens),
         messages: this.convertMessages(messages, options?.system),
         stream: true,
         ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
-      });
+      } as OpenAI.ChatCompletionCreateParamsStreaming);
 
       let streamStopReason: StreamChunk["stopReason"];
 
@@ -413,9 +451,10 @@ export class OpenAIProvider implements LLMProvider {
       const extraBody = this.getExtraBody(model);
 
       // Build request params
+      const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
       const requestParams: Record<string, unknown> = {
         model,
-        max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+        ...buildMaxTokensParam(model, maxTokens),
         messages: this.convertMessages(messages, options?.system),
         tools: this.convertTools(options.tools),
         tool_choice: this.convertToolChoice(options.toolChoice),
@@ -771,15 +810,24 @@ export class OpenAIProvider implements LLMProvider {
       await this.client.models.list();
       return true;
     } catch {
-      // Fallback: try a simple chat completion
+      // Fallback: try a simple request
       // This works better for OpenAI-compatible APIs like Kimi
       try {
         const model = this.config.model || DEFAULT_MODEL;
-        await this.client.chat.completions.create({
-          model,
-          messages: [{ role: "user", content: "Hi" }],
-          max_tokens: 1,
-        });
+        if (needsResponsesApi(model)) {
+          await (this.client as any).responses.create({
+            model,
+            input: [{ role: "user", content: [{ type: "input_text", text: "Hi" }] }],
+            max_output_tokens: 1,
+            store: false,
+          });
+        } else {
+          await this.client.chat.completions.create({
+            model,
+            messages: [{ role: "user", content: "Hi" }],
+            ...buildMaxTokensParam(model, 1),
+          } as OpenAI.ChatCompletionCreateParamsNonStreaming);
+        }
         return true;
       } catch {
         // If we get a 401/403, the key is invalid
