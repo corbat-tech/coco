@@ -64,7 +64,7 @@ importers:
         version: 10.2.4
       openai:
         specifier: ^6.25.0
-        version: 6.25.0(zod@4.3.6)
+        version: 6.27.0(zod@4.3.6)
       ora:
         specifier: ^9.2.0
         version: 9.3.0
@@ -1461,8 +1461,8 @@ packages:
     resolution: {integrity: sha512-VXJjc87FScF88uafS3JllDgvAm+c/Slfz06lorj2uAY34rlUu0Nt+v8wreiImcrgAjjIHp1rXpTDlLOGw29WwQ==}
     engines: {node: '>=18'}
 
-  openai@6.25.0:
-    resolution: {integrity: sha512-mEh6VZ2ds2AGGokWARo18aPISI1OhlgdEIC1ewhkZr8pSIT31dec0ecr9Nhxx0JlybyOgoAT1sWeKtwPZzJyww==}
+  openai@6.27.0:
+    resolution: {integrity: sha512-osTKySlrdYrLYTt0zjhY8yp0JUBmWDCN+Q+QxsV4xMQnnoVFpylgKGgxwN8sSdTNw0G4y+WUXs4eCMWpyDNWZQ==}
     hasBin: true
     peerDependencies:
       ws: ^8.18.0
@@ -3062,7 +3062,7 @@ snapshots:
     dependencies:
       mimic-function: 5.0.1
 
-  openai@6.25.0(zod@4.3.6):
+  openai@6.27.0(zod@4.3.6):
     optionalDependencies:
       zod: 4.3.6
 
