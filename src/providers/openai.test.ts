@@ -837,3 +837,108 @@ describe("tool call extraction", () => {
     expect(response.toolCalls[0]?.input).toEqual({});
   });
 });
+
+describe("max_tokens vs max_completion_tokens routing", () => {
+  const chatResponse = {
+    id: "chatcmpl-123",
+    model: "test",
+    choices: [{ message: { content: "Hi" }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 10, completion_tokens: 5 },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreate.mockResolvedValue(chatResponse);
+  });
+
+  it("should send max_completion_tokens for gpt-4o models", async () => {
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
+
+    await provider.chat([{ role: "user", content: "Hello" }]);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_completion_tokens: 8192 }),
+    );
+    expect(mockCreate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: expect.anything() }),
+    );
+  });
+
+  it("should send max_completion_tokens for gpt-4.1 models", async () => {
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "gpt-4.1-mini" });
+
+    await provider.chat([{ role: "user", content: "Hello" }]);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_completion_tokens: 8192 }),
+    );
+  });
+
+  it("should send max_completion_tokens for o1-mini", async () => {
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "o1-mini" });
+
+    await provider.chat([{ role: "user", content: "Hello" }]);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_completion_tokens: 8192 }),
+    );
+  });
+
+  it("should send max_tokens for legacy gpt-4 models", async () => {
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "gpt-4" });
+
+    await provider.chat([{ role: "user", content: "Hello" }]);
+
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ max_tokens: 8192 }));
+    expect(mockCreate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ max_completion_tokens: expect.anything() }),
+    );
+  });
+
+  it("should send max_tokens for deepseek models", async () => {
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "deepseek-chat" });
+
+    await provider.chat([{ role: "user", content: "Hello" }]);
+
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ max_tokens: 8192 }));
+  });
+
+  it("should send max_completion_tokens for chatgpt-4o-latest", async () => {
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "chatgpt-4o-latest" });
+
+    await provider.chat([{ role: "user", content: "Hello" }]);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_completion_tokens: 8192 }),
+    );
+  });
+
+  it("should send max_completion_tokens in chatWithTools for gpt-4o", async () => {
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
+
+    mockCreate.mockResolvedValue({
+      ...chatResponse,
+      choices: [{ message: { content: "Hi", tool_calls: [] }, finish_reason: "stop" }],
+    });
+
+    await provider.chatWithTools([{ role: "user", content: "Hello" }], { tools: [] });
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_completion_tokens: 8192 }),
+    );
+  });
+});
