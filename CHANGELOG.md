@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.13.1] - 2026-03-09
+
+### Fixed
+- **OpenAI API rejects `max_tokens` for newer models** — GPT-4o, GPT-4.1, o1, o3, o4, and chatgpt-4o model families require `max_completion_tokens` instead of `max_tokens` in the Chat Completions API. Sending the deprecated parameter causes 400 errors on some installations depending on SDK version
+  - Add `buildMaxTokensParam()` helper that selects the correct parameter based on model
+  - Fix `isAvailable()` health check to use Responses API for Responses-only models (e.g. `gpt-5.4-codex`)
+
+---
+
 ## [2.13.0] - 2026-03-06
 
 ### Added
@@ -870,7 +879,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.13.1...HEAD
+[2.13.1]: https://github.com/corbat-tech/coco/compare/v2.13.0...v2.13.1
 [2.12.0]: https://github.com/corbat-tech/coco/compare/v2.11.1...v2.12.0
 [2.11.0]: https://github.com/corbat-tech/coco/compare/v2.10.0...v2.11.0
 [2.8.2]: https://github.com/corbat-tech/coco/compare/v2.8.1...v2.8.2
