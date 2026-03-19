@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.14.1] - 2026-03-19
+
+### Fixed
+- **Agent loop stops silently on long conversations** — `checkAndCompactContext()` was called without the tool registry, causing the context token counter to underestimate usage by ~2,000 tokens per turn (tool catalog, memory, and skills were not counted). Context would silently balloon past the window limit, causing API errors or the agent to stop mid-task
+- **PR review dumps thousands of lines to terminal** — the `review_code` tool included full raw diff hunks in its return value, which got serialized into the LLM's tool result and reproduced verbatim in the response. Now strips diff hunks from the result since findings are already extracted during analysis — the agent receives only summary, findings, and file metadata
+
+---
+
 ## [2.14.0] - 2026-03-19
 
 ### Added
@@ -921,6 +929,7 @@ Future versions will include upgrade guides here.
 [2.9.0]: https://github.com/corbat-tech/coco/compare/v2.8.2...v2.9.0
 [2.11.1]: https://github.com/corbat-tech/coco/compare/v2.11.0...v2.11.1
 [2.13.0]: https://github.com/corbat-tech/coco/compare/v2.12.0...v2.13.0
+[2.14.1]: https://github.com/corbat-tech/coco/compare/v2.14.0...v2.14.1
 [2.14.0]: https://github.com/corbat-tech/coco/compare/v2.13.1...v2.14.0
 [2.4.1]: https://github.com/corbat-tech/coco/compare/v2.4.0...v2.4.1
 [2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0
