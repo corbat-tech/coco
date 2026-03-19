@@ -49,9 +49,7 @@ describe("composeEnhancers", () => {
   });
 
   it("should always include at least the first enhancer even if over budget", () => {
-    const enhancers = [
-      makeEnhancer({ name: "Big", content: "X".repeat(200), priority: 1 }),
-    ];
+    const enhancers = [makeEnhancer({ name: "Big", content: "X".repeat(200), priority: 1 })];
     // Budget smaller than the content
     const result = composeEnhancers(enhancers, 50);
     expect(result).toContain("## Big");

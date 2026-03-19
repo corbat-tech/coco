@@ -9,7 +9,8 @@ import type { PromptEnhancer } from "./types.js";
 
 export const PARALLEL_ENHANCER: PromptEnhancer = {
   name: "Parallel Tool Execution",
-  description: "Instructs the agent to execute independent tool calls concurrently for 3-5x speedup",
+  description:
+    "Instructs the agent to execute independent tool calls concurrently for 3-5x speedup",
   triggers: [
     "feature",
     "bugfix",

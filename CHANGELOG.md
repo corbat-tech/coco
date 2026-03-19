@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.14.0] - 2026-03-19
+
+### Added
+- **Unified system prompt rewritten to match Cursor/Claude Code quality** — complete rewrite of the agent system prompt based on analysis of leaked prompts from Cursor, Claude Code, Codex CLI, Devin, Windsurf, Augment Code, and Superpowers
+  - Verification protocol: 5-step evidence gate with anti-rationalization rules ("Belief is not evidence")
+  - Parallel tool execution: "DEFAULT IS PARALLEL" directive with concrete examples for 3-5x speedup
+  - Systematic debugging protocol: 3-phase Investigate → Analyze → Fix with escalation after 3 failed attempts
+  - Code style rules: naming, typing, nesting, comments (inspired by Cursor CLI's `<code_style>`)
+  - Testing discipline: never modify existing tests, mandatory regression tests for bugfixes
+  - Task planning: atomic steps, vertical slice implementation, verify after each step
+  - Tone and brevity: no sycophancy, lead with answer, disagree when warranted
+  - Error recovery classification: invalid input / transient / structural (replaces flat tool-specific list)
+- **Prompt enhancers reference module** — modular prompt enhancement system with request classifier, enhancer registry, and token-budget composer. Retained as reference for the content merged into the unified prompt
+
+### Improved
+- **System prompt 52% smaller** — reduced from 14,543 to 6,921 chars while adding 6 new behavioral sections. Effective prompt with 88 tools: ~13,500 chars (~3,400 tokens), aligned with Cursor CLI
+- **Codebase research directive consolidated** — merged duplicate "Proactive Code Reference Search" section into single "Codebase Research Before Changes" under Tool Strategy
+
+### Fixed
+- **Context token counter undercounting** — `updateContextTokens()` was counting only the raw base prompt, ignoring tool catalog, memory, skills, and quality loop injections (~2,000 tokens undercount per turn). Now accepts optional `toolRegistry` to count the actual effective system prompt, improving compaction timing accuracy
+- **`checkAndCompactContext()` forwards toolRegistry** — the compaction decision path now uses the accurate token count instead of the underestimated fallback
+
+---
+
 ## [2.13.1] - 2026-03-09
 
 ### Fixed
@@ -897,6 +921,7 @@ Future versions will include upgrade guides here.
 [2.9.0]: https://github.com/corbat-tech/coco/compare/v2.8.2...v2.9.0
 [2.11.1]: https://github.com/corbat-tech/coco/compare/v2.11.0...v2.11.1
 [2.13.0]: https://github.com/corbat-tech/coco/compare/v2.12.0...v2.13.0
+[2.14.0]: https://github.com/corbat-tech/coco/compare/v2.13.1...v2.14.0
 [2.4.1]: https://github.com/corbat-tech/coco/compare/v2.4.0...v2.4.1
 [2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0
