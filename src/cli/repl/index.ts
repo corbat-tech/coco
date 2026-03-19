@@ -989,6 +989,7 @@ export async function startRepl(
             session,
             provider,
             compactAbort.signal,
+            toolRegistry,
           );
           if (compactionResult?.wasCompacted) {
             usageForDisplay = getContextUsagePercent(session);

@@ -596,7 +596,17 @@ Examples:
         required,
         suggestions,
         maturity,
-        diff,
+        // Include full diff for skill access, but strip raw content from files
+        // to prevent dumping thousands of lines into the LLM tool result.
+        // Skills that need file content can access diff.files[].hunks,
+        // but the serialised output stays lean (stats + file names only).
+        diff: {
+          ...diff,
+          files: diff.files.map((f) => ({
+            ...f,
+            hunks: [], // strip raw diff hunks — findings already extracted above
+          })),
+        },
       };
       if (diffWarnings.length > 0) {
         result.warnings = diffWarnings;
