@@ -376,10 +376,7 @@ export class ContextCompactor {
 
       const blocks = msg.content as ContentBlock[];
       const trimmedContent: ContentBlock[] = blocks.map((block) => {
-        if (
-          block.type === "tool_result" &&
-          block.content.length > PRESERVED_RESULT_SOFT_CAP
-        ) {
+        if (block.type === "tool_result" && block.content.length > PRESERVED_RESULT_SOFT_CAP) {
           const full = block.content;
           const head = full.slice(0, PRESERVED_RESULT_SOFT_HEAD);
           const tail = full.slice(-PRESERVED_RESULT_SOFT_TAIL);

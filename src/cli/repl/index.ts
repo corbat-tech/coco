@@ -1064,10 +1064,14 @@ export async function startRepl(
           if (compactionResult?.wasCompacted) {
             console.log(chalk.green("   \u2713 Context compacted. Please retry your message."));
           } else {
-            console.log(chalk.yellow("   \u26A0 Could not compact context. Use /clear to start fresh."));
+            console.log(
+              chalk.yellow("   \u26A0 Could not compact context. Use /clear to start fresh."),
+            );
           }
         } catch {
-          console.log(chalk.yellow("   \u26A0 Context compaction failed. Use /clear to start fresh."));
+          console.log(
+            chalk.yellow("   \u26A0 Context compaction failed. Use /clear to start fresh."),
+          );
         }
         continue;
       }
