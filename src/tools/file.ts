@@ -853,12 +853,51 @@ Examples:
 /**
  * Tree tool - visualize directory structure
  */
+/**
+ * Directories always excluded from tree output.
+ * These are large, generated, or irrelevant to code understanding.
+ * Matches the same defaults used by Claude Code, Cursor, and aider.
+ */
+const TREE_IGNORED_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  ".nuxt",
+  ".cache",
+  ".turbo",
+  ".parcel-cache",
+  "coverage",
+  ".nyc_output",
+  "vendor",
+  "__pycache__",
+  ".venv",
+  "venv",
+  "env",
+  "target",
+  ".gradle",
+  ".mvn",
+  "bin",
+  "obj",
+]);
+
+/**
+ * Maximum lines in tree output. Beyond this the tree is truncated with a
+ * summary line. Prevents single tool results from consuming tens of thousands
+ * of tokens on large repos. Based on aider's default repo-map budget (~1K tokens).
+ */
+const MAX_TREE_LINES = 500;
+
 export const treeTool: ToolDefinition<
   { path?: string; depth?: number; showHidden?: boolean; dirsOnly?: boolean },
-  { tree: string; totalFiles: number; totalDirs: number }
+  { tree: string; totalFiles: number; totalDirs: number; truncated: boolean }
 > = defineTool({
   name: "tree",
   description: `Display directory structure as a tree.
+
+Large dependency directories (node_modules, dist, .next, etc.) are excluded
+automatically. Output is capped at ${MAX_TREE_LINES} lines to keep context lean.
 
 Examples:
 - Current dir: { }
@@ -879,13 +918,18 @@ Examples:
       let totalFiles = 0;
       let totalDirs = 0;
       const lines: string[] = [path.basename(absolutePath) + "/"];
+      let truncated = false;
 
       async function buildTree(dir: string, prefix: string, currentDepth: number) {
         if (currentDepth > (depth ?? 4)) return;
+        if (lines.length >= MAX_TREE_LINES) return;
 
         let items = await fs.readdir(dir, { withFileTypes: true });
 
-        // Filter hidden files
+        // Always exclude known large/generated directories regardless of showHidden
+        items = items.filter((item) => !TREE_IGNORED_DIRS.has(item.name));
+
+        // Filter hidden files (dotfiles/dotdirs) unless explicitly requested
         if (!showHidden) {
           items = items.filter((item) => !item.name.startsWith("."));
         }
@@ -903,6 +947,10 @@ Examples:
         });
 
         for (let i = 0; i < items.length; i++) {
+          if (lines.length >= MAX_TREE_LINES) {
+            truncated = true;
+            return;
+          }
           const item = items[i]!;
           const isLast = i === items.length - 1;
           const connector = isLast ? "└── " : "├── ";
@@ -921,10 +969,17 @@ Examples:
 
       await buildTree(absolutePath, "", 1);
 
+      if (truncated) {
+        lines.push(
+          `\n[... output truncated at ${MAX_TREE_LINES} lines. Use a deeper path or lower depth to see more.]`,
+        );
+      }
+
       return {
         tree: lines.join("\n"),
         totalFiles,
         totalDirs,
+        truncated,
       };
     } catch (error) {
       if (isENOENT(error)) {

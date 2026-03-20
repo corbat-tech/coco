@@ -14,9 +14,10 @@ import { VERSION } from "../version.js";
 const DEFAULT_TIMEOUT_MS = 30000;
 
 /**
- * Default max content length (50K chars)
+ * Default max content length (8K chars — keeps context lean).
+ * Callers can pass a larger maxLength when they need full content.
  */
-const DEFAULT_MAX_LENGTH = 50000;
+const DEFAULT_MAX_LENGTH = 8000;
 
 /**
  * Maximum response size to download (10MB)

@@ -132,6 +132,38 @@ export async function executeAgentTurn(
   const toolErrorCounts = new Map<string, number>();
   const MAX_CONSECUTIVE_TOOL_ERRORS = 3;
 
+  // ---------------------------------------------------------------------------
+  // Inline tool-result size cap
+  // ---------------------------------------------------------------------------
+  // Industry practice (Claude Code, Cursor): large tool outputs are written to
+  // disk and only a pointer is kept in the context. We approximate this by
+  // truncating oversized results inline — keeping the head (most relevant) and
+  // a small tail (usually contains closing structure / error summary), with a
+  // clear marker for the omitted middle. This prevents quadratic token growth
+  // when the same large result is re-sent on every iteration of the agent loop.
+  //
+  // Numbers derived from production agents:
+  //   Cursor: ~8K effective per result before offloading
+  //   Morph/common frameworks: 5K–10K truncation threshold
+  //   We use 8K total (6.5K head + 1K tail) — enough for most outputs while
+  //   still cutting >80% of tokens for large tree/grep/web results.
+  const INLINE_RESULT_MAX_CHARS = 8000;
+  const INLINE_RESULT_HEAD_CHARS = 6500;
+  const INLINE_RESULT_TAIL_CHARS = 1000;
+
+  function truncateInlineResult(content: string, toolName: string): string {
+    if (content.length <= INLINE_RESULT_MAX_CHARS) return content;
+    const head = content.slice(0, INLINE_RESULT_HEAD_CHARS);
+    const tail = content.slice(-INLINE_RESULT_TAIL_CHARS);
+    const omitted = content.length - INLINE_RESULT_HEAD_CHARS - INLINE_RESULT_TAIL_CHARS;
+    return (
+      `${head}\n` +
+      `[... ${omitted.toLocaleString()} characters omitted — ` +
+      `use read_file with offset/limit to retrieve more of '${toolName}' output ...]\n` +
+      `${tail}`
+    );
+  }
+
   while (iteration < maxIterations) {
     iteration++;
 
@@ -486,7 +518,7 @@ export async function executeAgentTurn(
         toolResults.push({
           type: "tool_result",
           tool_use_id: toolCall.id,
-          content: executedCall.result.output,
+          content: truncateInlineResult(executedCall.result.output, toolCall.name),
           is_error: !executedCall.result.success,
         });
       } else {

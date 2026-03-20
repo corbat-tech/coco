@@ -832,7 +832,7 @@ export async function checkAndCompactContext(
 
   // Perform compaction
   const compactor = createContextCompactor({
-    preserveLastN: 4,
+    preserveLastN: 8,
     summaryMaxTokens: 1000,
   });
 

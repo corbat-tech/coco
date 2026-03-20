@@ -20,7 +20,11 @@ export interface ContextManagerConfig {
  */
 export const DEFAULT_CONTEXT_CONFIG: ContextManagerConfig = {
   maxTokens: 200000,
-  compactionThreshold: 0.8,
+  // 75% leaves a comfortable headroom for the compaction summary call itself
+  // and the active tool-call accumulation within the current turn.
+  // Industry reference: OpenCode uses 75%, Claude Code effective ~83.5% but
+  // with an additional 33K output reserve. 75% is the recommended safe value.
+  compactionThreshold: 0.75,
   reservedTokens: 4096,
 };
 

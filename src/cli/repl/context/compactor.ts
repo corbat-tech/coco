@@ -3,7 +3,17 @@
  * Preserves key information while reducing token usage
  */
 
-import type { LLMProvider, Message } from "../../../providers/types.js";
+import type {
+  LLMProvider,
+  Message,
+  MessageContent,
+  TextContent,
+  ImageContent,
+  ToolUseContent,
+  ToolResultContent,
+} from "../../../providers/types.js";
+
+type ContentBlock = TextContent | ImageContent | ToolUseContent | ToolResultContent;
 
 /**
  * Configuration for the context compactor
@@ -16,10 +26,14 @@ export interface CompactorConfig {
 }
 
 /**
- * Default compactor configuration
+ * Default compactor configuration.
+ * preserveLastN=8 keeps the last 4 user/assistant exchange pairs (8 messages)
+ * verbatim — this is the "hot tail" that the LLM needs for immediate reasoning.
+ * Everything older is summarized. Claude Code keeps ~last 10 pairs; aider ~4.
+ * 8 is a good balance for typical coding tasks.
  */
 export const DEFAULT_COMPACTOR_CONFIG: CompactorConfig = {
-  preserveLastN: 4,
+  preserveLastN: 8,
   summaryMaxTokens: 1000,
 };
 
@@ -50,21 +64,59 @@ export interface CompactOptions {
 }
 
 /**
- * Build the compaction prompt, optionally with a focus topic.
+ * Chars kept from the head of a large tool result when trimming within the
+ * preserved window during compaction. The last HOT_TAIL_TOOL_PAIRS pairs are
+ * kept verbatim; older pairs in the preserved window are soft-capped here.
+ * This mirrors Claude Code's "cold storage" concept without disk I/O.
+ */
+const PRESERVED_RESULT_SOFT_CAP = 16000;
+const PRESERVED_RESULT_SOFT_HEAD = 13000;
+const PRESERVED_RESULT_SOFT_TAIL = 1500;
+
+/** Number of most-recent tool-result pairs to keep fully verbatim. */
+const HOT_TAIL_TOOL_PAIRS = 4;
+
+/**
+ * Build the compaction prompt.
+ *
+ * Structured after the Claude Code compaction prompt — keeps the summary
+ * machine-readable so the agent can recover task state post-compaction.
  */
 function buildCompactionPrompt(focusTopic?: string): string {
-  let prompt = `Summarize the following conversation history concisely, preserving:
-1. Key decisions made
-2. Important code/file changes discussed (always include file paths)
-3. Current task context and goals
-4. Any errors or issues encountered
-5. Original user requests (verbatim if short)`;
+  let prompt = `This is a coding agent session that needs to be compacted due to context length.
+Create a structured summary that preserves everything the agent needs to continue working.
+
+## Required sections (use these exact headings):
+
+### Original Request
+State the user's original task or question verbatim (or paraphrase if very long).
+
+### Work Completed
+List every concrete action taken: files created/modified (with paths), commands run,
+bugs fixed, features implemented. Be specific — include file paths and function names.
+
+### Key Decisions
+Document architectural decisions, approaches chosen, and the reasoning behind them.
+
+### Current State
+Describe exactly where the work stands: what is done, what is in progress, what remains.
+
+### Files Touched
+List all file paths that were read, modified, or created during this session.
+
+### Errors & Resolutions
+Document any errors encountered and how they were resolved (or if still unresolved).
+
+### Next Steps
+If the task is incomplete, list the immediate next actions the agent should take.`;
 
   if (focusTopic) {
-    prompt += `\n\n**IMPORTANT**: Preserve ALL details related to "${focusTopic}" — include specific code snippets, file paths, decisions, and context about this topic. You may be more concise about unrelated topics.`;
+    prompt += `\n\n**PRIORITY**: Preserve ALL details related to "${focusTopic}" — include specific code snippets, exact file paths, and full context. Be concise about unrelated topics.`;
   }
 
-  prompt += `\n\nKeep the summary under 500 words. Format as bullet points.\n\nCONVERSATION:\n`;
+  prompt +=
+    `\n\nKeep the total summary under 600 words. Use bullet points within each section.` +
+    `\n\nSESSION HISTORY TO SUMMARIZE:\n`;
   return prompt;
 }
 
@@ -137,7 +189,13 @@ export class ContextCompactor {
       }
     }
     const messagesToSummarize = conversationMessages.slice(0, preserveStart);
-    const messagesToPreserve = conversationMessages.slice(preserveStart);
+    // Apply hot-tail policy to the preserved window: the last HOT_TAIL_TOOL_PAIRS
+    // tool-result pairs are kept fully verbatim; older pairs in the preserved
+    // window have their large results soft-capped to avoid stale large outputs
+    // that were added before the inline cap was in place.
+    const messagesToPreserve = this.trimPreservedToolResults(
+      conversationMessages.slice(preserveStart),
+    );
 
     // If nothing to summarize, return as-is
     if (messagesToSummarize.length === 0) {
@@ -268,6 +326,78 @@ export class ContextCompactor {
       const errorMessage = error instanceof Error ? error.message : String(error);
       return `[Summary generation failed: ${errorMessage}. Previous conversation had ${conversationText.length} characters.]`;
     }
+  }
+
+  /**
+   * Hot-tail policy: apply a soft cap to tool results in the preserved window.
+   *
+   * The last HOT_TAIL_TOOL_PAIRS tool-result pairs are kept verbatim (hot tail).
+   * Older pairs in the preserved window that contain results larger than
+   * PRESERVED_RESULT_SOFT_CAP are trimmed to head+tail with a marker.
+   *
+   * This handles legacy results that were stored before the inline cap was in
+   * place, ensuring that a single large stale tree/grep/web result cannot fill
+   * the context even after compaction.
+   */
+  private trimPreservedToolResults(messages: Message[]): Message[] {
+    // Walk backwards to find the start of the hot tail (last N tool-result pairs)
+    let hotTailStart = messages.length;
+    let pairsFound = 0;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg) continue;
+      const isToolResultMsg =
+        Array.isArray(msg.content) &&
+        msg.content.length > 0 &&
+        (msg.content[0] as { type?: string })?.type === "tool_result";
+      if (isToolResultMsg) {
+        pairsFound++;
+        if (pairsFound >= HOT_TAIL_TOOL_PAIRS) {
+          // Include the corresponding assistant(tool_use) message too
+          hotTailStart = i > 0 ? i - 1 : i;
+          break;
+        }
+      }
+    }
+
+    return messages.map((msg, idx) => {
+      if (idx >= hotTailStart) return msg; // hot tail: verbatim
+      if (!Array.isArray(msg.content)) return msg;
+
+      const hasOversized = msg.content.some((block) => {
+        const b = block as { type?: string; content?: string };
+        return (
+          b.type === "tool_result" &&
+          typeof b.content === "string" &&
+          b.content.length > PRESERVED_RESULT_SOFT_CAP
+        );
+      });
+      if (!hasOversized) return msg;
+
+      const blocks = msg.content as ContentBlock[];
+      const trimmedContent: ContentBlock[] = blocks.map((block) => {
+        if (
+          block.type === "tool_result" &&
+          block.content.length > PRESERVED_RESULT_SOFT_CAP
+        ) {
+          const full = block.content;
+          const head = full.slice(0, PRESERVED_RESULT_SOFT_HEAD);
+          const tail = full.slice(-PRESERVED_RESULT_SOFT_TAIL);
+          const omitted = full.length - PRESERVED_RESULT_SOFT_HEAD - PRESERVED_RESULT_SOFT_TAIL;
+          const trimmedResult: ToolResultContent = {
+            ...block,
+            content:
+              `${head}\n` +
+              `[... ${omitted.toLocaleString()} chars trimmed (compaction soft-cap) ...]\n` +
+              `${tail}`,
+          };
+          return trimmedResult;
+        }
+        return block;
+      });
+
+      return { ...msg, content: trimmedContent as MessageContent };
+    });
   }
 
   /**
