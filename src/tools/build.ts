@@ -646,6 +646,250 @@ Examples:
 });
 
 /**
+ * Resolve Maven wrapper or system mvn
+ */
+async function resolveMaven(cwd: string): Promise<string> {
+  try {
+    await fs.access(path.join(cwd, "mvnw"));
+    return "./mvnw";
+  } catch {
+    return "mvn";
+  }
+}
+
+/**
+ * Resolve Gradle wrapper or system gradle
+ */
+async function resolveGradle(cwd: string): Promise<string> {
+  try {
+    await fs.access(path.join(cwd, "gradlew"));
+    return "./gradlew";
+  } catch {
+    return "gradle";
+  }
+}
+
+/**
+ * Run Maven goal tool
+ */
+export const runMavenTool: ToolDefinition<
+  {
+    goal: string;
+    cwd?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    timeout?: number;
+  },
+  BuildResult
+> = defineTool({
+  name: "run_maven",
+  description: `Run a Maven goal (auto-detects ./mvnw wrapper).
+
+Examples:
+- Compile: { "goal": "compile" }
+- Run tests: { "goal": "test" }
+- Package: { "goal": "package" }
+- Skip tests: { "goal": "package", "args": ["-DskipTests"] }
+- Specific module: { "goal": "test", "args": ["-pl", "stock-core"] }
+- Quiet mode: { "goal": "verify", "args": ["-q", "--no-transfer-progress"] }`,
+  category: "build",
+  parameters: z.object({
+    goal: z.string().describe("Maven goal (compile, test, package, verify, clean, install, ...)"),
+    cwd: z.string().optional().describe("Project directory"),
+    args: z.array(z.string()).optional().describe("Additional Maven arguments"),
+    env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
+    timeout: z.number().optional().describe("Timeout in milliseconds"),
+  }),
+  async execute({ goal, cwd, args, env, timeout }) {
+    const projectDir = cwd ?? process.cwd();
+    const startTime = performance.now();
+    const timeoutMs = timeout ?? DEFAULT_TIMEOUT_MS;
+
+    const { CommandHeartbeat } = await import("./utils/heartbeat.js");
+    const heartbeat = new CommandHeartbeat({
+      onUpdate: (stats) => {
+        if (stats.elapsedSeconds > 10)
+          process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
+      },
+      onWarn: (message) => process.stderr.write(`\n${message}\n`),
+    });
+
+    try {
+      heartbeat.start();
+      const command = await resolveMaven(projectDir);
+      const cmdArgs = [goal, "--no-transfer-progress", "-B", ...(args ?? [])];
+
+      const subprocess = execa(command, cmdArgs, {
+        cwd: projectDir,
+        timeout: timeoutMs,
+        env: { ...process.env, ...env },
+        reject: false,
+        buffer: false,
+        maxBuffer: MAX_OUTPUT_SIZE,
+      });
+
+      let stdoutBuffer = "";
+      let stderrBuffer = "";
+
+      subprocess.stdout?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stdoutBuffer += text;
+        process.stdout.write(text);
+        heartbeat.activity();
+      });
+
+      subprocess.stderr?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderrBuffer += text;
+        process.stderr.write(text);
+        heartbeat.activity();
+      });
+
+      const result = await subprocess;
+
+      const buildResult: BuildResult = {
+        success: result.exitCode === 0,
+        stdout: truncateOutput(stdoutBuffer),
+        stderr: truncateOutput(stderrBuffer),
+        exitCode: result.exitCode ?? 0,
+        duration: performance.now() - startTime,
+      };
+      if (!buildResult.success) {
+        buildResult.hint = getBuildHint(stderrBuffer || stdoutBuffer, "run_maven");
+      }
+      return buildResult;
+    } catch (error) {
+      if ((error as { timedOut?: boolean }).timedOut) {
+        throw new TimeoutError(`Maven goal '${goal}' timed out after ${timeoutMs}ms`, {
+          timeoutMs,
+          operation: `mvn ${goal}`,
+        });
+      }
+      throw new ToolError(
+        `Maven failed: ${error instanceof Error ? error.message : String(error)}`,
+        { tool: "run_maven", cause: error instanceof Error ? error : undefined },
+      );
+    } finally {
+      heartbeat.stop();
+      process.stderr.write("\r                                        \r");
+    }
+  },
+});
+
+/**
+ * Run Gradle task tool
+ */
+export const runGradleTool: ToolDefinition<
+  {
+    task: string;
+    cwd?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    timeout?: number;
+  },
+  BuildResult
+> = defineTool({
+  name: "run_gradle",
+  description: `Run a Gradle task (auto-detects ./gradlew wrapper).
+
+Examples:
+- Build: { "task": "build" }
+- Run tests: { "task": "test" }
+- Assemble: { "task": "assemble" }
+- Skip tests: { "task": "build", "args": ["-x", "test"] }
+- Specific subproject: { "task": ":stock-core:test" }`,
+  category: "build",
+  parameters: z.object({
+    task: z.string().describe("Gradle task (build, test, assemble, clean, check, ...)"),
+    cwd: z.string().optional().describe("Project directory"),
+    args: z.array(z.string()).optional().describe("Additional Gradle arguments"),
+    env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
+    timeout: z.number().optional().describe("Timeout in milliseconds"),
+  }),
+  async execute({ task, cwd, args, env, timeout }) {
+    const projectDir = cwd ?? process.cwd();
+    const startTime = performance.now();
+    const timeoutMs = timeout ?? DEFAULT_TIMEOUT_MS;
+
+    const { CommandHeartbeat } = await import("./utils/heartbeat.js");
+    const heartbeat = new CommandHeartbeat({
+      onUpdate: (stats) => {
+        if (stats.elapsedSeconds > 10)
+          process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
+      },
+      onWarn: (message) => process.stderr.write(`\n${message}\n`),
+    });
+
+    try {
+      heartbeat.start();
+      const command = await resolveGradle(projectDir);
+      const cmdArgs = [task, "--console=plain", ...(args ?? [])];
+
+      const subprocess = execa(command, cmdArgs, {
+        cwd: projectDir,
+        timeout: timeoutMs,
+        env: { ...process.env, ...env },
+        reject: false,
+        buffer: false,
+        maxBuffer: MAX_OUTPUT_SIZE,
+      });
+
+      let stdoutBuffer = "";
+      let stderrBuffer = "";
+
+      subprocess.stdout?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stdoutBuffer += text;
+        process.stdout.write(text);
+        heartbeat.activity();
+      });
+
+      subprocess.stderr?.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderrBuffer += text;
+        process.stderr.write(text);
+        heartbeat.activity();
+      });
+
+      const result = await subprocess;
+
+      const buildResult: BuildResult = {
+        success: result.exitCode === 0,
+        stdout: truncateOutput(stdoutBuffer),
+        stderr: truncateOutput(stderrBuffer),
+        exitCode: result.exitCode ?? 0,
+        duration: performance.now() - startTime,
+      };
+      if (!buildResult.success) {
+        buildResult.hint = getBuildHint(stderrBuffer || stdoutBuffer, "run_gradle");
+      }
+      return buildResult;
+    } catch (error) {
+      if ((error as { timedOut?: boolean }).timedOut) {
+        throw new TimeoutError(`Gradle task '${task}' timed out after ${timeoutMs}ms`, {
+          timeoutMs,
+          operation: `gradle ${task}`,
+        });
+      }
+      throw new ToolError(
+        `Gradle failed: ${error instanceof Error ? error.message : String(error)}`,
+        { tool: "run_gradle", cause: error instanceof Error ? error : undefined },
+      );
+    } finally {
+      heartbeat.stop();
+      process.stderr.write("\r                                        \r");
+    }
+  },
+});
+
+/**
  * All build tools
  */
-export const buildTools = [runScriptTool, installDepsTool, makeTool, tscTool];
+export const buildTools = [
+  runScriptTool,
+  installDepsTool,
+  makeTool,
+  tscTool,
+  runMavenTool,
+  runGradleTool,
+];

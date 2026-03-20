@@ -81,8 +81,8 @@ describe("Build Tools", () => {
   });
 
   describe("buildTools export", () => {
-    it("should export all 4 build tools", () => {
-      expect(buildTools).toHaveLength(4);
+    it("should export all 6 build tools", () => {
+      expect(buildTools).toHaveLength(6);
     });
   });
 

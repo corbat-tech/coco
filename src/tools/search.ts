@@ -118,7 +118,7 @@ Examples:
       if (stats.isFile()) {
         filesToSearch = [targetPath];
       } else {
-        const globPattern = include ?? "**/*.{ts,tsx,js,jsx,json,md,txt}";
+        const globPattern = include ?? "**/*.{ts,tsx,js,jsx,java,py,go,rs,json,md,txt}";
         const defaultExclude = ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/coverage/**"];
         const excludePatterns = exclude ?? defaultExclude;
 

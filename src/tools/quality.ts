@@ -71,6 +71,23 @@ export interface FunctionComplexity {
  * Detect linter in project
  */
 async function detectLinter(cwd: string): Promise<string | null> {
+  // JVM projects: try Maven/Gradle checkstyle
+  try {
+    await fs.access(path.join(cwd, "pom.xml"));
+    return "maven-checkstyle";
+  } catch {
+    // not Maven
+  }
+  for (const f of ["build.gradle", "build.gradle.kts"]) {
+    try {
+      await fs.access(path.join(cwd, f));
+      return "gradle-checkstyle";
+    } catch {
+      // not Gradle
+    }
+  }
+
+  // Node.js linters
   try {
     const pkgPath = path.join(cwd, "package.json");
     const pkgContent = await fs.readFile(pkgPath, "utf-8");
@@ -95,6 +112,61 @@ async function detectLinter(cwd: string): Promise<string | null> {
 }
 
 /**
+ * Resolve the Maven executable (wrapper preferred)
+ */
+async function mavenExec(cwd: string): Promise<string> {
+  try {
+    await fs.access(path.join(cwd, "mvnw"));
+    return "./mvnw";
+  } catch {
+    return "mvn";
+  }
+}
+
+/**
+ * Resolve the Gradle executable (wrapper preferred)
+ */
+async function gradleExec(cwd: string): Promise<string> {
+  try {
+    await fs.access(path.join(cwd, "gradlew"));
+    return "./gradlew";
+  } catch {
+    return "gradle";
+  }
+}
+
+/**
+ * Parse Maven/Gradle Checkstyle text output into LintResult.
+ * Lines look like: [ERROR] /path/File.java:[10,5] (group) Rule: message
+ */
+function parseCheckstyleOutput(stdout: string, stderr: string): LintResult {
+  const output = stdout + "\n" + stderr;
+  const issues: LintIssue[] = [];
+  let errors = 0;
+  let warnings = 0;
+
+  // Match: [ERROR] or [WARN] /file.java:[line,col] (group) Rule: msg
+  const lineRe =
+    /\[(ERROR|WARN(?:ING)?)\]\s+(.+?):(?:\[(\d+)(?:,(\d+))?\])?\s*(?:\([^)]*\))?\s*(.+)/gi;
+  for (const m of output.matchAll(lineRe)) {
+    const sev = (m[1] ?? "").toUpperCase().startsWith("ERROR") ? "error" : "warning";
+    if (sev === "error") errors++;
+    else warnings++;
+    issues.push({
+      file: m[2]?.trim() ?? "",
+      line: parseInt(m[3] ?? "0", 10),
+      column: parseInt(m[4] ?? "0", 10),
+      severity: sev,
+      message: m[5]?.trim() ?? "",
+      rule: "",
+    });
+  }
+
+  const score = Math.max(0, 100 - errors * 5 - warnings * 2);
+  return { errors, warnings, fixable: 0, issues, score };
+}
+
+/**
  * Run linter tool
  */
 export const runLinterTool: ToolDefinition<
@@ -102,19 +174,23 @@ export const runLinterTool: ToolDefinition<
   LintResult
 > = defineTool({
   name: "run_linter",
-  description: `Run linter on the codebase (auto-detects eslint, oxlint, or biome).
+  description: `Run linter on the codebase (auto-detects eslint, oxlint, biome for Node.js; checkstyle for Maven/Gradle).
 
 Examples:
 - Lint all: {} → { "errors": 0, "warnings": 5, "score": 90 }
-- Auto-fix: { "fix": true }
+- Auto-fix (Node.js): { "fix": true }
 - Specific files: { "files": ["src/app.ts", "src/utils.ts"] }
-- Force linter: { "linter": "eslint" }`,
+- Force linter: { "linter": "eslint" }
+- Java project (Maven): automatically runs checkstyle:check if plugin is configured`,
   category: "quality",
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),
     files: z.array(z.string()).optional().describe("Specific files to lint"),
-    fix: z.boolean().optional().default(false).describe("Auto-fix issues"),
-    linter: z.string().optional().describe("Linter to use (eslint, oxlint, biome)"),
+    fix: z.boolean().optional().default(false).describe("Auto-fix issues (Node.js only)"),
+    linter: z
+      .string()
+      .optional()
+      .describe("Linter to use (eslint, oxlint, biome, maven-checkstyle, gradle-checkstyle)"),
   }),
   async execute({ cwd, files, fix, linter }) {
     const projectDir = cwd ?? process.cwd();
@@ -129,7 +205,7 @@ Examples:
         score: null,
         linter: "none",
         message:
-          "No linter detected (looked for: eslint, oxlint, biome). Install one or use bash_exec to run a custom linter.",
+          "No linter detected (looked for: eslint, oxlint, biome for Node.js; checkstyle plugin for Maven/Gradle). Install one or use bash_exec to run a custom linter.",
       };
     }
 
@@ -138,6 +214,18 @@ Examples:
       let command = "npx";
 
       switch (detectedLinter) {
+        case "maven-checkstyle": {
+          command = await mavenExec(projectDir);
+          args.push("checkstyle:check", "--no-transfer-progress", "-q");
+          break;
+        }
+
+        case "gradle-checkstyle": {
+          command = await gradleExec(projectDir);
+          args.push("checkstyleMain", "--quiet");
+          break;
+        }
+
         case "oxlint":
           args.push("oxlint");
           if (files && files.length > 0) {
@@ -183,7 +271,32 @@ Examples:
         timeout: 120000,
       });
 
-      return parseLintResults(detectedLinter, result.stdout, result.stderr);
+      // JVM checkstyle: if Maven/Gradle says "plugin not found" → return graceful no-linter
+      const combinedOutput = (result.stdout ?? "") + (result.stderr ?? "");
+      if (
+        (detectedLinter === "maven-checkstyle" || detectedLinter === "gradle-checkstyle") &&
+        /No plugin found|Task.*not found|checkstyle.*not configured/i.test(combinedOutput)
+      ) {
+        return {
+          errors: 0,
+          warnings: 0,
+          fixable: 0,
+          issues: [],
+          score: null,
+          linter: "none",
+          message:
+            "Checkstyle plugin not configured in build file. Add maven-checkstyle-plugin (Maven) or checkstyle plugin (Gradle) to enable Java linting.",
+        };
+      }
+
+      if (detectedLinter === "maven-checkstyle" || detectedLinter === "gradle-checkstyle") {
+        return {
+          ...parseCheckstyleOutput(result.stdout ?? "", result.stderr ?? ""),
+          linter: detectedLinter,
+        };
+      }
+
+      return parseLintResults(detectedLinter, result.stdout ?? "", result.stderr ?? "");
     } catch (error) {
       throw new ToolError(
         `Linting failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -326,10 +439,38 @@ Examples:
 });
 
 /**
- * Find source files in project
+ * Find source files in project, adapting glob pattern to the detected stack.
  */
 async function findSourceFiles(cwd: string): Promise<string[]> {
   const { glob } = await import("glob");
+
+  // Detect JVM project
+  let isJava = false;
+  try {
+    await fs.access(path.join(cwd, "pom.xml"));
+    isJava = true;
+  } catch {
+    // not Maven
+  }
+  if (!isJava) {
+    for (const f of ["build.gradle", "build.gradle.kts"]) {
+      try {
+        await fs.access(path.join(cwd, f));
+        isJava = true;
+        break;
+      } catch {
+        // not Gradle
+      }
+    }
+  }
+
+  if (isJava) {
+    return glob("src/main/java/**/*.java", {
+      cwd,
+      absolute: true,
+    });
+  }
+
   return glob("src/**/*.{ts,js,tsx,jsx}", {
     cwd,
     absolute: true,
@@ -353,10 +494,14 @@ function analyzeFileComplexity(content: string, file: string): FileComplexity {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
 
-    // Detect function start (simplified)
-    const funcMatch = line.match(
-      /(?:function|async function)\s+(\w+)|(\w+)\s*(?:=|:)\s*(?:async\s*)?\(?.*\)?\s*=>/,
-    );
+    // Detect function/method start (JS/TS and Java)
+    const funcMatch =
+      line.match(
+        /(?:function|async function)\s+(\w+)|(\w+)\s*(?:=|:)\s*(?:async\s*)?\(?.*\)?\s*=>/,
+      ) ??
+      line.match(
+        /(?:public|private|protected|static|final|native|synchronized|abstract)\s+\S+\s+(\w+)\s*\(/,
+      );
     if (funcMatch && braceDepth === 0) {
       if (currentFunction) {
         functions.push({

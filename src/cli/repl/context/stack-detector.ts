@@ -273,7 +273,13 @@ export async function detectProjectStack(cwd: string): Promise<ProjectStackConte
     testingFrameworks = parsed.testingFrameworks;
     languages = parsed.languages;
   } else if (stack === "java") {
-    const parsed = await parsePomXml(cwd);
+    // Use the correct parser based on which build tool is actually present
+    const isGradle =
+      (await fileExists(path.join(cwd, "build.gradle"))) ||
+      (await fileExists(path.join(cwd, "build.gradle.kts")));
+    const parsed = isGradle
+      ? { dependencies: {}, frameworks: [], buildTools: ["gradle"], testingFrameworks: ["JUnit"] }
+      : await parsePomXml(cwd);
     dependencies = parsed.dependencies;
     frameworks = parsed.frameworks;
     buildTools = parsed.buildTools;

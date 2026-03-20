@@ -407,9 +407,36 @@ export class QualityEvaluator {
   }
 
   /**
-   * Find source files in project
+   * Find source files in project, adapting to the detected language stack.
    */
   private async findSourceFiles(): Promise<string[]> {
+    const { access } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+
+    // Detect JVM project
+    let isJava = false;
+    try {
+      await access(join(this.projectPath, "pom.xml"));
+      isJava = true;
+    } catch {
+      for (const f of ["build.gradle", "build.gradle.kts"]) {
+        try {
+          await access(join(this.projectPath, f));
+          isJava = true;
+          break;
+        } catch {
+          // not Gradle
+        }
+      }
+    }
+
+    if (isJava) {
+      return glob("src/main/java/**/*.java", {
+        cwd: this.projectPath,
+        absolute: true,
+      });
+    }
+
     return glob("**/*.{ts,js,tsx,jsx}", {
       cwd: this.projectPath,
       absolute: true,

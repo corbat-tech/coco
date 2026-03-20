@@ -67,9 +67,9 @@ export class BuildVerifier {
       }
 
       // Validate build command against safe allowlist before execution
-      // Also allows "npx tsc --noEmit" which detectBuildCommand() returns for TS-only projects.
+      // Covers: npm/pnpm/yarn/bun scripts, npx tsc, Maven wrappers, Gradle wrappers
       const SAFE_BUILD_PATTERN =
-        /^(npm|pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+$|^npx\s+tsc(\s+--[\w-]+)*$/;
+        /^(npm|pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+$|^npx\s+tsc(\s+--[\w-]+)*$|^\.(\/|\\)(mvnw|gradlew)(\s+[\w:.-]+)*(\s+-[\w-]+)*$/;
       if (!SAFE_BUILD_PATTERN.test(buildCommand.trim())) {
         return {
           success: false,
@@ -188,28 +188,41 @@ export class BuildVerifier {
   }
 
   /**
-   * Detect build command from package.json
+   * Detect build command from project build files.
+   * Checks Maven, Gradle, and Node.js in that order.
    */
   private async detectBuildCommand(): Promise<string | null> {
+    // Maven
+    if (await this.fileExists(path.join(this.projectPath, "pom.xml"))) {
+      const wrapper = path.join(this.projectPath, "mvnw");
+      return (await this.fileExists(wrapper)) ? "./mvnw compile -B -q" : "mvn compile -B -q";
+    }
+
+    // Gradle
+    for (const f of ["build.gradle", "build.gradle.kts"]) {
+      if (await this.fileExists(path.join(this.projectPath, f))) {
+        const wrapper = path.join(this.projectPath, "gradlew");
+        return (await this.fileExists(wrapper)) ? "./gradlew classes -q" : "gradle classes -q";
+      }
+    }
+
+    // Node.js
     try {
       const packageJsonPath = path.join(this.projectPath, "package.json");
       const content = await fs.readFile(packageJsonPath, "utf-8");
       const packageJson = JSON.parse(content);
 
-      // Check for build script
       if (packageJson.scripts?.build) {
         return "npm run build";
       }
-
-      // Check for TypeScript
       if (packageJson.devDependencies?.typescript || packageJson.dependencies?.typescript) {
         return "npx tsc --noEmit";
       }
-
-      return null;
     } catch {
-      return null;
+      // no package.json
     }
+
+    return null;
   }
 
   /**

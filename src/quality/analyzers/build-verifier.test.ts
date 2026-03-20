@@ -52,6 +52,9 @@ describe("BuildVerifier", () => {
       access: fs.access as ReturnType<typeof vi.fn>,
     };
 
+    // Default: no JVM project files present (pom.xml, build.gradle, tsconfig.json absent)
+    mockFs.access.mockRejectedValue(new Error("ENOENT"));
+
     // Re-import to pick up mocks
     const mod = await import("./build-verifier.js");
     verifier = new mod.BuildVerifier("/project");

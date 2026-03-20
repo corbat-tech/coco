@@ -4,9 +4,28 @@
  */
 
 import { execa } from "execa";
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import { BuildVerifier, type BuildError } from "./build-verifier.js";
 import { detectTestFramework, type TestFramework } from "./coverage.js";
 import { trackSubprocess } from "../../utils/subprocess-registry.js";
+
+/**
+ * Resolve Maven or Gradle executable, preferring wrapper scripts.
+ */
+async function resolveJvmExecutable(
+  projectPath: string,
+  tool: "maven" | "gradle",
+): Promise<string> {
+  const wrapper = tool === "maven" ? "mvnw" : "gradlew";
+  const fallback = tool === "maven" ? "mvn" : "gradle";
+  try {
+    await access(join(projectPath, wrapper));
+    return join(projectPath, wrapper);
+  } catch {
+    return fallback;
+  }
+}
 
 /**
  * Correctness analysis result
@@ -93,9 +112,38 @@ function buildTestCommand(framework: TestFramework): { command: string; args: st
       return { command: "npx", args: ["jest", "--json"] };
     case "mocha":
       return { command: "npx", args: ["mocha", "--reporter=json"] };
+    case "maven":
+      // Executable resolved asynchronously in runTests() before this is called
+      return { command: "__maven__", args: ["test", "--no-transfer-progress", "-B"] };
+    case "gradle":
+      return { command: "__gradle__", args: ["test"] };
     default:
       return null;
   }
+}
+
+/**
+ * Parse Maven Surefire output: "Tests run: X, Failures: Y, Errors: Z, Skipped: W"
+ */
+function parseMavenOutput(output: string): { passed: number; failed: number; skipped: number } {
+  let passed = 0,
+    failed = 0,
+    skipped = 0;
+
+  const pattern =
+    /Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)/gi;
+  for (const match of output.matchAll(pattern)) {
+    const total = parseInt(match[1] ?? "0", 10);
+    const failures = parseInt(match[2] ?? "0", 10);
+    const errors = parseInt(match[3] ?? "0", 10);
+    const skip = parseInt(match[4] ?? "0", 10);
+    const f = failures + errors;
+    passed += total - f - skip;
+    failed += f;
+    skipped += skip;
+  }
+
+  return { passed, failed, skipped };
 }
 
 /**
@@ -165,6 +213,13 @@ export class CorrectnessAnalyzer {
       return { passed: 0, failed: 0, skipped: 0 };
     }
 
+    // Resolve JVM wrapper executables asynchronously
+    if (cmd.command === "__maven__") {
+      cmd.command = await resolveJvmExecutable(this.projectPath, "maven");
+    } else if (cmd.command === "__gradle__") {
+      cmd.command = await resolveJvmExecutable(this.projectPath, "gradle");
+    }
+
     try {
       const proc = execa(cmd.command, cmd.args, {
         cwd: this.projectPath,
@@ -175,16 +230,16 @@ export class CorrectnessAnalyzer {
       trackSubprocess(proc);
       const result = await proc;
 
-      const output = result.stdout + "\n" + result.stderr;
+      const output = (result.stdout ?? "") + "\n" + (result.stderr ?? "");
 
       switch (framework) {
         case "vitest":
           return parseVitestOutput(output);
         case "jest":
-          return parseJestOutput(result.stdout);
+          return parseJestOutput(result.stdout ?? "");
         case "mocha": {
           try {
-            const json = JSON.parse(result.stdout);
+            const json = JSON.parse(result.stdout ?? "");
             return {
               passed: json.stats?.passes ?? 0,
               failed: json.stats?.failures ?? 0,
@@ -194,6 +249,9 @@ export class CorrectnessAnalyzer {
             return { passed: 0, failed: 0, skipped: 0 };
           }
         }
+        case "maven":
+        case "gradle":
+          return parseMavenOutput(output);
         default:
           return { passed: 0, failed: 0, skipped: 0 };
       }

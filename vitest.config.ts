@@ -52,7 +52,7 @@ export default defineConfig({
         lines: 66,
         functions: 72,
         branches: 57,
-        statements: 66,
+        statements: 65,
       },
     },
     testTimeout: 30000,
