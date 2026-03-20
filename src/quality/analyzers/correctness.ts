@@ -13,7 +13,10 @@ import { trackSubprocess } from "../../utils/subprocess-registry.js";
 /**
  * Resolve Maven or Gradle executable, preferring wrapper scripts.
  */
-async function resolveJvmExecutable(projectPath: string, tool: "maven" | "gradle"): Promise<string> {
+async function resolveJvmExecutable(
+  projectPath: string,
+  tool: "maven" | "gradle",
+): Promise<string> {
   const wrapper = tool === "maven" ? "mvnw" : "gradlew";
   const fallback = tool === "maven" ? "mvn" : "gradle";
   try {

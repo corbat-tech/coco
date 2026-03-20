@@ -276,16 +276,7 @@ export class CoverageAnalyzer {
               join(this.projectPath, "target", "site", "jacoco", "jacoco.csv"),
               join(this.projectPath, "target", "site", "jacoco-ut", "jacoco.csv"),
             ]
-          : [
-              join(
-                this.projectPath,
-                "build",
-                "reports",
-                "jacoco",
-                "test",
-                "jacocoTestReport.csv",
-              ),
-            ];
+          : [join(this.projectPath, "build", "reports", "jacoco", "test", "jacocoTestReport.csv")];
 
       for (const csvPath of jacocoPaths) {
         try {

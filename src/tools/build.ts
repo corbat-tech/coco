@@ -708,7 +708,8 @@ Examples:
     const { CommandHeartbeat } = await import("./utils/heartbeat.js");
     const heartbeat = new CommandHeartbeat({
       onUpdate: (stats) => {
-        if (stats.elapsedSeconds > 10) process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
+        if (stats.elapsedSeconds > 10)
+          process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
       },
       onWarn: (message) => process.stderr.write(`\n${message}\n`),
     });
@@ -813,7 +814,8 @@ Examples:
     const { CommandHeartbeat } = await import("./utils/heartbeat.js");
     const heartbeat = new CommandHeartbeat({
       onUpdate: (stats) => {
-        if (stats.elapsedSeconds > 10) process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
+        if (stats.elapsedSeconds > 10)
+          process.stderr.write(`\r⏱️  ${stats.elapsedSeconds}s elapsed`);
       },
       onWarn: (message) => process.stderr.write(`\n${message}\n`),
     });
@@ -883,4 +885,11 @@ Examples:
 /**
  * All build tools
  */
-export const buildTools = [runScriptTool, installDepsTool, makeTool, tscTool, runMavenTool, runGradleTool];
+export const buildTools = [
+  runScriptTool,
+  installDepsTool,
+  makeTool,
+  tscTool,
+  runMavenTool,
+  runGradleTool,
+];

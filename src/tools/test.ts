@@ -287,7 +287,9 @@ function parseTestResults(
   }
 
   // Maven Surefire: "Tests run: 5, Failures: 0, Errors: 0, Skipped: 1"
-  const mavenMatch = stdout.match(/Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)/i);
+  const mavenMatch = stdout.match(
+    /Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)/i,
+  );
   if (mavenMatch) {
     const total = parseInt(mavenMatch[1] ?? "0", 10);
     const failures = parseInt(mavenMatch[2] ?? "0", 10);
@@ -472,14 +474,7 @@ Examples:
         path.join(projectDir, "target", "site", "jacoco", "jacoco.csv"),
         path.join(projectDir, "target", "site", "jacoco-ut", "jacoco.csv"),
         // Gradle JaCoCo
-        path.join(
-          projectDir,
-          "build",
-          "reports",
-          "jacoco",
-          "test",
-          "jacocoTestReport.csv",
-        ),
+        path.join(projectDir, "build", "reports", "jacoco", "test", "jacocoTestReport.csv"),
       ];
 
       for (const location of coverageLocations) {
@@ -554,7 +549,10 @@ Examples:
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),
     file: z.string().describe("Test file path or class glob"),
-    framework: z.string().optional().describe("Test framework (maven, gradle, vitest, jest, mocha)"),
+    framework: z
+      .string()
+      .optional()
+      .describe("Test framework (maven, gradle, vitest, jest, mocha)"),
     args: z.array(z.string()).optional().describe("Extra arguments (e.g. Maven -pl module)"),
   }),
   async execute({ cwd, file, framework, args }) {

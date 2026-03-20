@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.15.0] - 2026-03-20
+
+### Added
+- **Maven and Gradle project support across all tools** — Coco now works out of the box on Spring Boot, Quarkus, and any JVM project. All analysis tools auto-detect `pom.xml` / `build.gradle` and switch to the appropriate JVM workflow:
+  - `run_tests`: runs `./mvnw test` or `./gradlew test`; parses Maven Surefire output (`Tests run: X, Failures: Y, Errors: Z`); supports `-Dtest=ClassName` / `--tests` filters from pattern param
+  - `get_coverage`: reads JaCoCo CSV reports from `target/site/jacoco/jacoco.csv` (Maven) and `build/reports/jacoco/` (Gradle)
+  - `run_linter`: tries `checkstyle:check` / `checkstyleMain` for JVM projects; gracefully returns no-linter result when Checkstyle plugin is not configured
+  - `analyze_complexity`: detects Java method signatures in addition to JS/TS functions
+  - `calculate_quality`: source file discovery returns `src/main/java/**/*.java` for JVM projects
+- **`run_maven` tool** — dedicated tool for running Maven goals with `./mvnw` wrapper detection, streaming output, heartbeat, and configurable timeout. Supports extra args for module selection (`-pl stock-core`) and goal flags (`-DskipTests`)
+- **`run_gradle` tool** — dedicated tool for running Gradle tasks with `./gradlew` wrapper detection, same streaming/heartbeat pattern
+- **JVM support in quality pipeline** — `CoverageAnalyzer`, `CorrectnessAnalyzer`, and `QualityEvaluator` now handle Maven/Gradle projects without crashing; JaCoCo CSV is parsed for real coverage metrics; Surefire output is aggregated across all modules
+
+### Improved
+- **`grep_search` default file pattern** — expanded from `{ts,tsx,js,jsx,json,md,txt}` to include `.java`, `.py`, `.go`, `.rs` so searches work across all supported language stacks by default
+- **Stack detector Gradle fix** — Gradle projects are no longer misidentified as Maven projects in the system prompt context enrichment; agent receives correct build tool and testing framework information
+- **Agent loop stability** — `JSON.stringify` calls in token estimation wrapped in try/catch to prevent crashes on circular reference objects in tool results
+
+---
+
 ## [2.14.1] - 2026-03-19
 
 ### Fixed
@@ -931,6 +951,7 @@ Future versions will include upgrade guides here.
 [2.13.0]: https://github.com/corbat-tech/coco/compare/v2.12.0...v2.13.0
 [2.14.1]: https://github.com/corbat-tech/coco/compare/v2.14.0...v2.14.1
 [2.14.0]: https://github.com/corbat-tech/coco/compare/v2.13.1...v2.14.0
+[2.15.0]: https://github.com/corbat-tech/coco/compare/v2.14.1...v2.15.0
 [2.4.1]: https://github.com/corbat-tech/coco/compare/v2.4.0...v2.4.1
 [2.0.0]: https://github.com/corbat-tech/coco/compare/v1.8.0...v2.0.0
 [1.8.0]: https://github.com/corbat-tech/corbat-coco/compare/v1.7.0...v1.8.0
