@@ -242,12 +242,23 @@ export async function executeAgentTurn(
     // Estimate token usage (streaming doesn't provide exact counts)
     // Use provider's token counting method for estimation
     const inputText = messages
-      .map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
+      .map((m) => {
+        if (typeof m.content === "string") return m.content;
+        try {
+          return JSON.stringify(m.content);
+        } catch {
+          return "";
+        }
+      })
       .join("\n");
     const estimatedInputTokens = provider.countTokens(inputText);
-    const estimatedOutputTokens = provider.countTokens(
-      responseContent + JSON.stringify(collectedToolCalls),
-    );
+    let serializedToolCalls = "";
+    try {
+      serializedToolCalls = JSON.stringify(collectedToolCalls);
+    } catch {
+      // ignore circular references in token estimation
+    }
+    const estimatedOutputTokens = provider.countTokens(responseContent + serializedToolCalls);
 
     totalInputTokens += estimatedInputTokens;
     totalOutputTokens += estimatedOutputTokens;

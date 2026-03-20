@@ -32,12 +32,30 @@ export interface CoverageMetrics {
 /**
  * Test framework types
  */
-export type TestFramework = "vitest" | "jest" | "mocha" | null;
+export type TestFramework = "vitest" | "jest" | "mocha" | "maven" | "gradle" | null;
 
 /**
  * Detect test framework in project
+ * Checks JVM build files first, then Node.js package.json
  */
 export async function detectTestFramework(projectPath: string): Promise<TestFramework> {
+  // JVM projects take priority
+  try {
+    await access(join(projectPath, "pom.xml"), constants.R_OK);
+    return "maven";
+  } catch {
+    // not Maven
+  }
+
+  for (const f of ["build.gradle", "build.gradle.kts"]) {
+    try {
+      await access(join(projectPath, f), constants.R_OK);
+      return "gradle";
+    } catch {
+      // not Gradle
+    }
+  }
+
   try {
     const pkgPath = join(projectPath, "package.json");
     const pkgContent = await readFile(pkgPath, "utf-8");
@@ -142,6 +160,70 @@ function parseCoverageSummary(report: CoverageSummaryReport): CoverageMetrics {
 }
 
 /**
+ * Parse JaCoCo jacoco.csv report into CoverageMetrics.
+ * CSV columns: GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,
+ *              BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,
+ *              COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+ */
+function parseJacocoCsv(csv: string): CoverageMetrics {
+  const lines = csv.trim().split("\n").slice(1); // skip header
+
+  let lineMissed = 0,
+    lineCovered = 0;
+  let branchMissed = 0,
+    branchCovered = 0;
+  let methodMissed = 0,
+    methodCovered = 0;
+  let instrMissed = 0,
+    instrCovered = 0;
+
+  for (const line of lines) {
+    const cols = line.split(",");
+    if (cols.length < 13) continue;
+    instrMissed += parseInt(cols[3] ?? "0", 10);
+    instrCovered += parseInt(cols[4] ?? "0", 10);
+    branchMissed += parseInt(cols[5] ?? "0", 10);
+    branchCovered += parseInt(cols[6] ?? "0", 10);
+    lineMissed += parseInt(cols[7] ?? "0", 10);
+    lineCovered += parseInt(cols[8] ?? "0", 10);
+    methodMissed += parseInt(cols[11] ?? "0", 10);
+    methodCovered += parseInt(cols[12] ?? "0", 10);
+  }
+
+  const pct = (covered: number, missed: number) => {
+    const total = covered + missed;
+    return total > 0 ? Math.round((covered / total) * 1000) / 10 : 0;
+  };
+
+  return {
+    lines: {
+      total: lineCovered + lineMissed,
+      covered: lineCovered,
+      skipped: 0,
+      percentage: pct(lineCovered, lineMissed),
+    },
+    branches: {
+      total: branchCovered + branchMissed,
+      covered: branchCovered,
+      skipped: 0,
+      percentage: pct(branchCovered, branchMissed),
+    },
+    functions: {
+      total: methodCovered + methodMissed,
+      covered: methodCovered,
+      skipped: 0,
+      percentage: pct(methodCovered, methodMissed),
+    },
+    statements: {
+      total: instrCovered + instrMissed,
+      covered: instrCovered,
+      skipped: 0,
+      percentage: pct(instrCovered, instrMissed),
+    },
+  };
+}
+
+/**
  * Real Coverage Analyzer - Measures actual test coverage
  */
 export class CoverageAnalyzer {
@@ -152,36 +234,82 @@ export class CoverageAnalyzer {
    */
   async analyze(): Promise<CoverageMetrics> {
     const framework = await detectTestFramework(this.projectPath);
-    const coverageTool = await detectCoverageTool(this.projectPath);
 
     if (!framework) {
-      throw new Error("No test framework detected (vitest, jest, or mocha)");
+      // No framework detected — return zero metrics gracefully
+      return this.zeroCoverage();
     }
 
-    // Try to read existing coverage report first
-    const existingCoverage = await this.readExistingCoverage();
+    // Try to read existing coverage report first (supports Node.js and JaCoCo)
+    const existingCoverage = await this.readExistingCoverage(framework);
     if (existingCoverage) {
       return existingCoverage;
     }
 
+    // JVM projects: we don't auto-run mvn verify here (too slow for quality checks)
+    // Return zero metrics so the quality score reflects "no coverage data available"
+    if (framework === "maven" || framework === "gradle") {
+      return this.zeroCoverage();
+    }
+
+    const coverageTool = await detectCoverageTool(this.projectPath);
     // Run tests with coverage
     return await this.runWithCoverage(framework, coverageTool);
   }
 
+  /** Return empty coverage metrics (graceful fallback) */
+  private zeroCoverage(): CoverageMetrics {
+    const zero = { total: 0, covered: 0, skipped: 0, percentage: 0 };
+    return { lines: zero, branches: zero, functions: zero, statements: zero };
+  }
+
   /**
-   * Read existing coverage report if available
+   * Read existing coverage report if available.
+   * Supports Node.js (c8/nyc JSON) and JVM (JaCoCo CSV) formats.
    */
-  private async readExistingCoverage(): Promise<CoverageMetrics | null> {
+  private async readExistingCoverage(framework: TestFramework): Promise<CoverageMetrics | null> {
+    // JaCoCo CSV paths (Maven and Gradle)
+    if (framework === "maven" || framework === "gradle") {
+      const jacocoPaths =
+        framework === "maven"
+          ? [
+              join(this.projectPath, "target", "site", "jacoco", "jacoco.csv"),
+              join(this.projectPath, "target", "site", "jacoco-ut", "jacoco.csv"),
+            ]
+          : [
+              join(
+                this.projectPath,
+                "build",
+                "reports",
+                "jacoco",
+                "test",
+                "jacocoTestReport.csv",
+              ),
+            ];
+
+      for (const csvPath of jacocoPaths) {
+        try {
+          await access(csvPath, constants.R_OK);
+          const csv = await readFile(csvPath, "utf-8");
+          return parseJacocoCsv(csv);
+        } catch {
+          // Try next
+        }
+      }
+      return null;
+    }
+
+    // Node.js JSON coverage paths
     const possiblePaths = [
       join(this.projectPath, "coverage", "coverage-summary.json"),
       join(this.projectPath, ".coverage", "coverage-summary.json"),
       join(this.projectPath, "coverage", "lcov-report", "coverage-summary.json"),
     ];
 
-    for (const path of possiblePaths) {
+    for (const p of possiblePaths) {
       try {
-        await access(path, constants.R_OK);
-        const content = await readFile(path, "utf-8");
+        await access(p, constants.R_OK);
+        const content = await readFile(p, "utf-8");
         const report = JSON.parse(content) as CoverageSummaryReport;
         return parseCoverageSummary(report);
       } catch {

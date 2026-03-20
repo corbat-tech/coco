@@ -115,14 +115,19 @@ describe("CoverageAnalyzer", () => {
     expect(metrics.functions.percentage).toBe(90);
   });
 
-  it("should handle missing coverage report gracefully", async () => {
+  it("should handle missing framework gracefully (return zero metrics instead of throwing)", async () => {
     const tempDir = await createTempProject({
       devDependencies: {},
     });
 
     const analyzer = new CoverageAnalyzer(tempDir);
 
-    await expect(analyzer.analyze()).rejects.toThrow("No test framework detected");
+    // Previously threw; now returns zero metrics so the quality loop can continue
+    const result = await analyzer.analyze();
+    expect(result.lines.percentage).toBe(0);
+    expect(result.branches.percentage).toBe(0);
+    expect(result.functions.percentage).toBe(0);
+    expect(result.statements.percentage).toBe(0);
   });
 
   it("should parse coverage metrics correctly", async () => {
