@@ -1051,6 +1051,27 @@ export async function startRepl(
 
       const errorMsg = error instanceof Error ? error.message : String(error);
 
+      // Check for Anthropic/Copilot context overflow error (400 prompt token count exceeds limit)
+      if (errorMsg.includes("prompt token count") && errorMsg.includes("exceeds the limit")) {
+        renderError("Context window full — compacting conversation history...");
+        try {
+          const compactionResult = await checkAndCompactContext(
+            session,
+            provider,
+            undefined,
+            toolRegistry,
+          );
+          if (compactionResult?.wasCompacted) {
+            console.log(chalk.green("   \u2713 Context compacted. Please retry your message."));
+          } else {
+            console.log(chalk.yellow("   \u26A0 Could not compact context. Use /clear to start fresh."));
+          }
+        } catch {
+          console.log(chalk.yellow("   \u26A0 Context compaction failed. Use /clear to start fresh."));
+        }
+        continue;
+      }
+
       // Check for LM Studio context length error
       if (errorMsg.includes("context length") || errorMsg.includes("tokens to keep")) {
         renderError(errorMsg);

@@ -47,8 +47,8 @@ export function humanizeError(message: string, toolName?: string): string {
   ) {
     return msg;
   }
-  // Also pass through "run git_init" phrasing (used by checkpoint.ts)
-  if (/run git_init\b/.test(msg)) {
+  // Also pass through "run git_init" phrasing (used by checkpoint.ts and enrichGitError)
+  if (/run git_init\b/i.test(msg)) {
     return msg;
   }
 

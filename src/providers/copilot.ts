@@ -34,12 +34,12 @@ import { getValidCopilotToken } from "../auth/copilot.js";
  * different model IDs for different endpoints — do not conflate them.
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
-  // Claude models
-  "claude-sonnet-4.6": 200000,
-  "claude-opus-4.6": 200000,
-  "claude-sonnet-4.5": 200000,
-  "claude-opus-4.5": 200000,
-  "claude-haiku-4.5": 200000,
+  // Claude models — Copilot API caps these at 168 000 (not 200 000 like Anthropic direct)
+  "claude-sonnet-4.6": 168000,
+  "claude-opus-4.6": 168000,
+  "claude-sonnet-4.5": 168000,
+  "claude-opus-4.5": 168000,
+  "claude-haiku-4.5": 168000,
   // OpenAI models — chat/completions
   "gpt-4.1": 1048576,
   // OpenAI models — /responses API (Codex/GPT-5+)
