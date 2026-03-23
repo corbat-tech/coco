@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### feat
+- `(copy)` Number code blocks as they render and expose them for clipboard access via `/copy [N]`, `/cp [N]`, and the Option+C / Alt+C keybinding
+  - `/copy` or `/cp` (no argument) copies the most recently rendered code block
+  - `/copy N` or `/cp N` copies block #N by its sequential render-time ID
+  - Option+C / Alt+C (`\x1bc`) copies the last block instantly without pressing Enter, with inline confirmation showing language and block ID
+  - Block store (`src/cli/repl/output/block-store.ts`) maintains up to 100 entries FIFO; IDs never reset within a session to avoid stale references
+  - Invalid arguments (floats, non-numeric strings, negative values) produce a clear error message rather than silently truncating to an integer
+
 ---
 
 ## [2.15.0] - 2026-03-20

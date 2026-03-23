@@ -5,7 +5,7 @@
  * We test the pure utility functions and logic patterns instead.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import * as path from "node:path";
 import * as os from "node:os";
 
@@ -247,5 +247,66 @@ describe("Input Handler", () => {
         expect(showMenu).toBe(shouldShow);
       }
     });
+  });
+});
+
+// ── handleOptionC ─────────────────────────────────────────────────────────────
+
+describe("handleOptionC (Option+C / Alt+C keybinding)", () => {
+  it("returns null when no blocks are stored", async () => {
+    const { handleOptionC } = await import("./handler.js");
+    const result = await handleOptionC(
+      vi.fn().mockResolvedValue(true),
+      vi.fn().mockReturnValue(undefined),
+    );
+    expect(result).toBeNull();
+  });
+
+  it("calls copyFn with block content", async () => {
+    const { handleOptionC } = await import("./handler.js");
+    const block = { id: 2, lang: "sql", content: "SELECT 1;" };
+    const copyFn = vi.fn().mockResolvedValue(true);
+
+    await handleOptionC(copyFn, vi.fn().mockReturnValue(block));
+
+    expect(copyFn).toHaveBeenCalledWith("SELECT 1;");
+  });
+
+  it("returns feedback message with lang and block ID on success", async () => {
+    const { handleOptionC } = await import("./handler.js");
+    const block = { id: 2, lang: "sql", content: "SELECT 1;" };
+
+    const result = await handleOptionC(
+      vi.fn().mockResolvedValue(true),
+      vi.fn().mockReturnValue(block),
+    );
+
+    expect(result).toContain("sql");
+    expect(result).toContain("#2");
+    expect(result).toContain("copied");
+  });
+
+  it("returns null when copyFn fails", async () => {
+    const { handleOptionC } = await import("./handler.js");
+    const block = { id: 1, lang: "ts", content: "const x = 1;" };
+
+    const result = await handleOptionC(
+      vi.fn().mockResolvedValue(false),
+      vi.fn().mockReturnValue(block),
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("uses 'code' as fallback when lang is empty", async () => {
+    const { handleOptionC } = await import("./handler.js");
+    const block = { id: 1, lang: "", content: "some code" };
+
+    const result = await handleOptionC(
+      vi.fn().mockResolvedValue(true),
+      vi.fn().mockReturnValue(block),
+    );
+
+    expect(result).toContain("code");
   });
 });

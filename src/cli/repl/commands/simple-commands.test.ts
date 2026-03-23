@@ -23,6 +23,12 @@ vi.mock("../output/renderer.js", () => ({
   renderError: vi.fn(),
 }));
 
+vi.mock("../output/block-store.js", () => ({
+  getBlock: vi.fn().mockReturnValue(undefined),
+  getLastBlock: vi.fn().mockReturnValue(undefined),
+  getBlockCount: vi.fn().mockReturnValue(0),
+}));
+
 vi.mock("../output/clipboard.js", () => ({
   copyToClipboard: vi.fn().mockResolvedValue(true),
   isClipboardAvailable: vi.fn().mockResolvedValue(true),
@@ -35,7 +41,7 @@ import { clearCommand } from "./clear.js";
 import { exitCommand } from "./exit.js";
 import { isQualityLoop, setQualityLoop, saveQualityLoopPreference } from "../quality-loop.js";
 import { clearSession } from "../session.js";
-import { getRawMarkdown } from "../output/renderer.js";
+import { getLastBlock, getBlockCount } from "../output/block-store.js";
 import { copyToClipboard, isClipboardAvailable } from "../output/clipboard.js";
 
 const mockSession = {} as any;
@@ -141,6 +147,10 @@ describe("copyCommand", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.mocked(isClipboardAvailable).mockResolvedValue(true);
+    vi.mocked(copyToClipboard).mockResolvedValue(true);
+    vi.mocked(getLastBlock).mockReturnValue(undefined);
+    vi.mocked(getBlockCount).mockReturnValue(0);
   });
 
   afterEach(() => {
@@ -152,14 +162,12 @@ describe("copyCommand", () => {
     expect(copyCommand.aliases).toContain("cp");
   });
 
-  it("should copy raw markdown to clipboard", async () => {
-    vi.mocked(getRawMarkdown).mockReturnValue("Hello world content");
-    vi.mocked(copyToClipboard).mockResolvedValue(true);
-    vi.mocked(isClipboardAvailable).mockResolvedValue(true);
+  it("should copy last block to clipboard", async () => {
+    vi.mocked(getLastBlock).mockReturnValue({ id: 1, lang: "sql", content: "SELECT 1;" });
 
     const result = await copyCommand.execute([], mockSession);
     expect(result).toBe(false);
-    expect(copyToClipboard).toHaveBeenCalledWith("Hello world content");
+    expect(copyToClipboard).toHaveBeenCalledWith("SELECT 1;");
   });
 
   it("should report error when clipboard not available", async () => {
@@ -170,29 +178,16 @@ describe("copyCommand", () => {
     expect(copyToClipboard).not.toHaveBeenCalled();
   });
 
-  it("should report when no response to copy", async () => {
-    vi.mocked(isClipboardAvailable).mockResolvedValue(true);
-    vi.mocked(getRawMarkdown).mockReturnValue("  ");
+  it("should report when no code blocks available", async () => {
+    vi.mocked(getLastBlock).mockReturnValue(undefined);
 
     const result = await copyCommand.execute([], mockSession);
     expect(result).toBe(false);
     expect(copyToClipboard).not.toHaveBeenCalled();
   });
 
-  it("should extract markdown code block if present", async () => {
-    vi.mocked(isClipboardAvailable).mockResolvedValue(true);
-    vi.mocked(getRawMarkdown).mockReturnValue(
-      "Some text\n```markdown\n# Title\nContent\n```\nMore",
-    );
-    vi.mocked(copyToClipboard).mockResolvedValue(true);
-
-    await copyCommand.execute([], mockSession);
-    expect(copyToClipboard).toHaveBeenCalledWith("# Title\nContent");
-  });
-
   it("should handle copy failure", async () => {
-    vi.mocked(isClipboardAvailable).mockResolvedValue(true);
-    vi.mocked(getRawMarkdown).mockReturnValue("content");
+    vi.mocked(getLastBlock).mockReturnValue({ id: 1, lang: "bash", content: "echo hi" });
     vi.mocked(copyToClipboard).mockResolvedValue(false);
 
     const result = await copyCommand.execute([], mockSession);
