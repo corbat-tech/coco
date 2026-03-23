@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Copy code blocks to clipboard** — rendered code blocks are numbered (`#1`, `#2`, …) in the block header. Press **Option+C** (macOS) / **Alt+C** (Linux) to instantly copy the last block without pressing Enter. Use `/copy [N]` or `/cp [N]` to copy a specific block by number; omit N to copy the last one. A brief inline confirmation shows language and block ID (`✓ typescript #3 copied`). Up to 100 blocks tracked per session with FIFO eviction.
+- **Copy code blocks to clipboard** — rendered code blocks are numbered (`#1`, `#2`, …) in the block header. Press **Option+C** (macOS) / **Alt+C** (Linux) to instantly copy the last block without pressing Enter. Use `/copy [N]` or `/cp [N]` to copy a specific block by number; omit N to copy the last one. A brief inline confirmation shows language and block ID (`✓ typescript #3 copied`). Block store maintains up to 100 entries FIFO; IDs never reset within a session to avoid stale references. Invalid arguments (floats, non-numeric strings) produce a clear error instead of silently truncating.
 - **Multi-image paste support** — each **Ctrl+V** or `/image` call now *accumulates* images instead of replacing the previous one. The prompt shows individual compact badges (`[📎 #1] [📎 #2]`) for each queued image so you can see exactly how many are pending. All images are sent in one agent turn when you press Enter.
 
 ### Fixed

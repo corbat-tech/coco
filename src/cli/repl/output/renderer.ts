@@ -13,6 +13,15 @@ import chalk from "chalk";
 import type { StreamChunk } from "../../../providers/types.js";
 import type { ExecutedToolCall } from "../types.js";
 import { highlightLine, highlightBlock } from "./syntax.js";
+import {
+  storeBlock,
+  resetBlockStore,
+  getBlock,
+  getLastBlock,
+  getBlockCount,
+} from "./block-store.js";
+
+export { getBlock, getLastBlock, getBlockCount };
 
 // ============================================================================
 // State Management
@@ -113,6 +122,7 @@ export function resetLineBuffer(): void {
   codeBlockLang = "";
   codeBlockLines = [];
   stopStreamingIndicator();
+  resetBlockStore();
 }
 
 export function getRawMarkdown(): string {
@@ -281,23 +291,26 @@ function processAndOutputLine(line: string): void {
 // ============================================================================
 
 function renderCodeBlock(lang: string, lines: string[]): void {
+  const blockId = storeBlock(lang, lines);
+
   // For markdown blocks, render with box but process nested code blocks
   if (lang === "markdown" || lang === "md") {
-    renderMarkdownBlock(lines);
+    renderMarkdownBlock(lines, blockId);
     return;
   }
 
   // Regular code block rendering
-  renderSimpleCodeBlock(lang, lines);
+  renderSimpleCodeBlock(lang, lines, blockId);
 }
 
-function renderMarkdownBlock(lines: string[]): void {
+function renderMarkdownBlock(lines: string[], blockId: number): void {
   const width = Math.min(getTerminalWidth() - 4, 100);
   const contentWidth = width - 4;
 
-  // Short top border with "Markdown" title
+  // Short top border with "Markdown" title and block ID
   const title = "Markdown";
-  console.log(chalk.magenta("╭── " + title + " ──"));
+  const idTag = chalk.dim(` · #${blockId}`);
+  console.log(chalk.magenta("╭── " + title) + idTag + chalk.magenta(" ──"));
 
   // Process lines, detecting nested code blocks and tables
   let i = 0;
@@ -523,18 +536,20 @@ function isDiffAddition(line: string): boolean {
   return line.startsWith("+") && !line.startsWith("+++");
 }
 
-function renderSimpleCodeBlock(lang: string, lines: string[]): void {
+function renderSimpleCodeBlock(lang: string, lines: string[], blockId: number): void {
   const width = Math.min(getTerminalWidth() - 4, 100);
   const contentWidth = width - 4;
   const isDiff = lang === "diff" || (!lang && looksLikeDiff(lines));
 
   const title = lang || "Code";
-  const titleDisplay = ` ${title} `;
+  const idSuffix = ` · #${blockId}`;
+  const titleDisplay = ` ${title}${idSuffix} `;
 
   const topPadding = Math.floor((width - titleDisplay.length - 2) / 2);
-  const topRemainder = width - titleDisplay.length - 2 - topPadding;
+  const topRemainder = Math.max(0, width - titleDisplay.length - 2 - topPadding);
+  const titleStyled = ` ${title}` + chalk.dim(idSuffix) + ` `;
   console.log(
-    chalk.magenta("╭" + "─".repeat(topPadding) + titleDisplay + "─".repeat(topRemainder) + "╮"),
+    chalk.magenta("╭" + "─".repeat(topPadding) + titleStyled + "─".repeat(topRemainder) + "╮"),
   );
 
   const bgDel = chalk.bgRgb(80, 20, 20);

@@ -24,7 +24,8 @@ import ansiEscapes from "ansi-escapes";
 import type { ReplSession } from "../types.js";
 import { getAllCommands, setPendingImage, getPendingImageCount } from "../commands/index.js";
 import { isQualityLoop } from "../quality-loop.js";
-import { readClipboardImage } from "../output/clipboard.js";
+import { readClipboardImage, copyToClipboard } from "../output/clipboard.js";
+import { getLastBlock } from "../output/renderer.js";
 
 /**
  * Input handler interface for REPL
@@ -40,6 +41,25 @@ export interface InputHandler {
 
 /** History file location */
 const HISTORY_FILE = path.join(os.homedir(), ".coco", "history");
+
+/**
+ * Handle Option+C / Alt+C keypress: copy the last rendered code block to clipboard.
+ * Extracted as a pure-ish function for testability.
+ * Returns the feedback message string, or null if nothing to copy.
+ */
+export async function handleOptionC(
+  copyFn: (text: string) => Promise<boolean> = copyToClipboard,
+  getLastBlockFn: typeof getLastBlock = getLastBlock,
+): Promise<string | null> {
+  const block = getLastBlockFn();
+  if (!block) return null;
+
+  const success = await copyFn(block.content);
+  if (!success) return null;
+
+  const lang = block.lang || "code";
+  return chalk.green("✓") + chalk.dim(` ${lang} #${block.id} copied`);
+}
 
 /**
  * Load history from file
@@ -1035,6 +1055,23 @@ export function createInputHandler(_session: ReplSession): InputHandler {
           if (key === "\x1bf" || key === "\x1b[1;3C") {
             cursorPos = findNextWordBoundary(currentLine, cursorPos);
             render();
+            return;
+          }
+
+          // Option+C (Alt+C) — copy last code block to clipboard
+          // macOS Terminal/iTerm2/Ghostty send \x1bc (ESC + c)
+          if (key === "\x1bc") {
+            handleOptionC()
+              .then((msg) => {
+                if (msg) {
+                  // Show feedback inline on the current prompt line, then re-render
+                  process.stdout.write(`  ${msg}\n`);
+                  render();
+                }
+              })
+              .catch(() => {
+                // Clipboard errors are non-fatal — silently ignore
+              });
             return;
           }
 

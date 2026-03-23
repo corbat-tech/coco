@@ -1,19 +1,22 @@
 /**
- * /copy command - Copy last response to clipboard
+ * /copy [N] — Copy a code block to clipboard.
+ *
+ * - /copy or /cp       → copies the last rendered code block
+ * - /copy N or /cp N   → copies block #N by its sequential ID
  */
 
 import chalk from "chalk";
 import type { SlashCommand } from "../types.js";
-import { getRawMarkdown } from "../output/renderer.js";
+import { getBlock, getLastBlock, getBlockCount } from "../output/block-store.js";
 import { copyToClipboard, isClipboardAvailable } from "../output/clipboard.js";
 
 export const copyCommand: SlashCommand = {
   name: "copy",
   aliases: ["cp"],
-  description: "Copy last response to clipboard",
-  usage: "/copy",
+  description: "Copy code block to clipboard (last or #N)",
+  usage: "/copy [N]",
 
-  async execute(): Promise<boolean> {
+  async execute(args: string[]): Promise<boolean> {
     const clipboardAvailable = await isClipboardAvailable();
 
     if (!clipboardAvailable) {
@@ -22,32 +25,41 @@ export const copyCommand: SlashCommand = {
       return false;
     }
 
-    const rawMarkdown = getRawMarkdown();
+    const rawArg = args[0];
+    const hasArg = rawArg !== undefined && rawArg !== "";
+    const blockNum = hasArg ? Number(rawArg) : NaN;
+    const isValidId = hasArg && Number.isInteger(blockNum) && blockNum > 0;
 
-    if (!rawMarkdown.trim()) {
-      console.log(chalk.yellow("  ⚠ No response to copy"));
-      console.log(chalk.dim("    Ask a question first, then use /copy"));
+    if (hasArg && !isValidId) {
+      console.log(chalk.yellow(`  ⚠ Invalid block number "${rawArg}"`));
+      console.log(chalk.dim("    Use /copy N where N is a positive integer, or /copy for the last block"));
       return false;
     }
 
-    // Extract markdown code block if present, otherwise use full response
-    let contentToCopy = rawMarkdown;
-    const markdownBlockMatch = rawMarkdown.match(/```(?:markdown|md)?\n([\s\S]*?)```/);
-    if (markdownBlockMatch && markdownBlockMatch[1]) {
-      contentToCopy = markdownBlockMatch[1].trim();
+    // Resolve which block to copy
+    const block = isValidId ? getBlock(blockNum) : getLastBlock();
+
+    if (!block) {
+      if (isValidId) {
+        const count = getBlockCount();
+        console.log(
+          chalk.yellow(`  ⚠ Block #${blockNum} not found`) +
+            chalk.dim(` (${count} block${count === 1 ? "" : "s"} available)`),
+        );
+      } else {
+        console.log(chalk.yellow("  ⚠ No code blocks to copy"));
+        console.log(chalk.dim("    Code blocks appear as you chat — then use /copy or Option+C"));
+      }
+      return false;
     }
 
-    const lines = contentToCopy.split("\n").length;
-    const chars = contentToCopy.length;
-
-    const success = await copyToClipboard(contentToCopy);
+    const success = await copyToClipboard(block.content);
 
     if (success) {
-      console.log(chalk.green(`  ✓ Copied to clipboard`));
-      console.log(chalk.dim(`    ${lines} lines, ${chars} characters`));
+      const lang = block.lang || "code";
+      console.log(chalk.green(`  ✓ ${lang} #${block.id} copied`));
     } else {
       console.log(chalk.red("  ✗ Failed to copy to clipboard"));
-      console.log(chalk.dim(`    Content: ${chars} chars, ${lines} lines`));
     }
 
     return false;
