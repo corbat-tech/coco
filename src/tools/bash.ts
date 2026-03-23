@@ -151,13 +151,25 @@ export const bashExecTool: ToolDefinition<
   }
 > = defineTool({
   name: "bash_exec",
-  description: `Execute a bash/shell command with safety controls.
+  description: `Execute a bash/shell command in the user's shell environment.
+
+Runs with the user's full PATH and inherited environment — any tool installed
+on the user's machine is available: kubectl, gcloud, aws, docker, git, node,
+pnpm, and others. Credentials configured locally are inherited automatically:
+kubeconfig contexts, gcloud auth, AWS profiles, SSH keys, etc.
+
+IMPORTANT: never claim you cannot run a command because you lack credentials
+or access — the environment is the user's own shell. Always attempt; report
+failure only if the command actually returns a non-zero exit code.
 
 Examples:
-- List files: { "command": "ls -la" }
-- Run npm script: { "command": "npm run build" }
-- Check disk space: { "command": "df -h" }
-- Find process: { "command": "ps aux | grep node" }`,
+- List files:          { "command": "ls -la" }
+- Run npm script:      { "command": "npm run build" }
+- Check disk space:    { "command": "df -h" }
+- Find process:        { "command": "ps aux | grep node" }
+- Kubernetes logs:     { "command": "kubectl logs -n my-ns deploy/my-app --since=30m" }
+- Cloud CLI:           { "command": "gcloud container clusters list" }
+- AWS CLI:             { "command": "aws s3 ls s3://my-bucket" }`,
   category: "bash",
   parameters: z.object({
     command: z.string().describe("Command to execute"),
@@ -284,12 +296,15 @@ export const bashBackgroundTool: ToolDefinition<
   }
 > = defineTool({
   name: "bash_background",
-  description: `Execute a command in the background (returns immediately with PID).
+  description: `Execute a command in the background in the user's shell environment (returns immediately with PID).
+
+Like bash_exec, runs with the user's full PATH and inherited environment — any
+tool available in the user's shell (docker, kubectl, gcloud, etc.) can be used.
 
 Examples:
-- Start dev server: { "command": "npm run dev" }
-- Run watcher: { "command": "npx nodemon src/index.ts" }
-- Start database: { "command": "docker-compose up" }`,
+- Start dev server:  { "command": "npm run dev" }
+- Run watcher:       { "command": "npx nodemon src/index.ts" }
+- Start database:    { "command": "docker-compose up" }`,
   category: "bash",
   parameters: z.object({
     command: z.string().describe("Command to execute"),
