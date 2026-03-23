@@ -241,6 +241,17 @@ Type `/help` inside the REPL to see everything. The most useful ones day-to-day:
 | `/permissions allow-commits` | Auto-approve git commits for this project |
 | `/status` | Project status, git info, session stats |
 | `/compact` | Compress context when the conversation grows long |
+| `/copy [N]` or `/cp [N]` | Copy code block #N to clipboard (omit N for last block) |
+| `/image [prompt]` | Paste clipboard image and send to agent with optional prompt |
+
+**Keyboard shortcuts:**
+
+| Key | What it does |
+|-----|--------------|
+| `Option+C` (macOS) / `Alt+C` (Linux) | Copy last rendered code block to clipboard instantly |
+| `Ctrl+V` | Paste clipboard image — accumulates multiple images before Enter |
+| `Tab` | Accept ghost-text completion for slash commands |
+| `↑` / `↓` | Navigate history / completion menu |
 
 You don't have to use slash commands. Natural language works:
 
