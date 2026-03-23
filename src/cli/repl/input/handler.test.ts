@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { buildImageIndicator } from "./handler.js";
 import * as path from "node:path";
 import * as os from "node:os";
 
@@ -246,6 +247,59 @@ describe("Input Handler", () => {
         const showMenu = hasCompletions && input.length >= 1;
         expect(showMenu).toBe(shouldShow);
       }
+    });
+  });
+
+  describe("buildImageIndicator", () => {
+    it("returns empty string and zero len for count 0", () => {
+      const result = buildImageIndicator(0);
+      expect(result.str).toBe("");
+      expect(result.len).toBe(0);
+    });
+
+    it("returns indicator for count 1", () => {
+      const result = buildImageIndicator(1);
+      expect(result.str).toContain("#1");
+      expect(result.len).toBeGreaterThan(0);
+    });
+
+    it("returns individual badges for count 2", () => {
+      const result = buildImageIndicator(2);
+      expect(result.str).toContain("#1");
+      expect(result.str).toContain("#2");
+    });
+
+    it("returns individual badges for count 3", () => {
+      const result = buildImageIndicator(3);
+      expect(result.str).toContain("#1");
+      expect(result.str).toContain("#2");
+      expect(result.str).toContain("#3");
+    });
+
+    it("len increases with more images", () => {
+      const one = buildImageIndicator(1);
+      const two = buildImageIndicator(2);
+      const three = buildImageIndicator(3);
+      expect(two.len).toBeGreaterThan(one.len);
+      expect(three.len).toBeGreaterThan(two.len);
+    });
+
+    it("len matches visual width of str (no ANSI codes)", () => {
+      // Strip ANSI codes from str and count visible chars
+      const { str, len } = buildImageIndicator(2);
+      // eslint-disable-next-line no-control-regex
+      const stripped = str.replace(/\x1b\[[0-9;]*m/g, "");
+      // emoji 📎 is 2 JS chars but 2 visual cols — both agree
+      expect(stripped.length).toBe(len);
+    });
+
+    it("includes surrounding spaces (leading and trailing)", () => {
+      const { str } = buildImageIndicator(1);
+      // Strip ANSI
+      // eslint-disable-next-line no-control-regex
+      const stripped = str.replace(/\x1b\[[0-9;]*m/g, "");
+      expect(stripped.startsWith(" ")).toBe(true);
+      expect(stripped.endsWith(" ")).toBe(true);
     });
   });
 });

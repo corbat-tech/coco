@@ -241,5 +241,10 @@ export function getRegisteredSkills(): SkillRegistry {
 // Re-export utilities
 export { addTokenUsage, resetTokenUsage, getTokenUsage } from "./cost.js";
 export { isCompactMode } from "./compact.js";
-export { consumePendingImage, hasPendingImage, setPendingImage } from "./image.js";
+export {
+  consumePendingImages,
+  hasPendingImage,
+  getPendingImageCount,
+  setPendingImage,
+} from "./image.js";
 export { isIntentRecognitionEnabled } from "./intent.js";
