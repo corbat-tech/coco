@@ -481,3 +481,52 @@ describe("clearSession", () => {
     expect(session.trustedTools.has("bash_exec")).toBe(true);
   });
 });
+
+// ── System prompt contracts ───────────────────────────────────────────────────
+//
+// These tests protect the LLM-facing system prompt from silent regressions.
+// The system prompt controls agent behaviour; removing key instructions causes
+// the model to revert to bad patterns (asking the user to run commands,
+// claiming it lacks credentials, etc.).
+//
+describe("COCO_SYSTEM_PROMPT — agent behaviour contracts", () => {
+  it("instructs the agent to use tools instead of asking the user", async () => {
+    const { createDefaultReplConfig } = await import("./session.js");
+    const { agent } = createDefaultReplConfig();
+    // The canonical phrase ensuring action over hesitation
+    expect(agent.systemPrompt).toMatch(/JUST DO IT/i);
+  });
+
+  it("instructs the agent never to claim it lacks real-time data access", async () => {
+    const { createDefaultReplConfig } = await import("./session.js");
+    const { agent } = createDefaultReplConfig();
+    expect(agent.systemPrompt).toMatch(/NEVER say.*don'?t have access to real-time/i);
+  });
+
+  it("instructs the agent never to claim it lacks credentials or environment access", async () => {
+    const { createDefaultReplConfig } = await import("./session.js");
+    const { agent } = createDefaultReplConfig();
+    // Guards against the kubectl/gcloud hallucination pattern
+    expect(agent.systemPrompt).toMatch(/credential|kubeconfig|shell environment/i);
+  });
+
+  it("mentions kubectl explicitly to pre-empt refusal of kubernetes commands", async () => {
+    const { createDefaultReplConfig } = await import("./session.js");
+    const { agent } = createDefaultReplConfig();
+    expect(agent.systemPrompt).toMatch(/kubectl/i);
+  });
+
+  it("instructs the agent to attempt commands before claiming inability", async () => {
+    const { createDefaultReplConfig } = await import("./session.js");
+    const { agent } = createDefaultReplConfig();
+    expect(agent.systemPrompt).toMatch(/attempt|ALWAYS attempt/i);
+  });
+
+  it("contains the tool catalog placeholder for dynamic injection", async () => {
+    const { createDefaultReplConfig } = await import("./session.js");
+    const { agent } = createDefaultReplConfig();
+    // After injection the placeholder is replaced — the raw prompt before injection
+    // is not accessible here, but the resulting prompt must reference tool names
+    expect(agent.systemPrompt).toMatch(/bash_exec|write_file|read_file/i);
+  });
+});

@@ -469,3 +469,49 @@ describe("bashBackgroundTool error handling", () => {
     );
   });
 });
+
+// ── Tool description contracts ────────────────────────────────────────────────
+//
+// These tests protect the LLM-facing descriptions from regressions.
+// The descriptions are what the model reads to understand its capabilities —
+// removing key phrases causes the model to hallucinate limitations (e.g.
+// "I can't run kubectl because I don't have credentials").
+//
+describe("bashExecTool description — LLM capability contract", () => {
+  it("mentions that the tool runs in the user's shell environment", async () => {
+    const { bashExecTool } = await import("./bash.js");
+    expect(bashExecTool.description).toMatch(/user'?s?\s+(shell\s+)?environment/i);
+  });
+
+  it("mentions full PATH inheritance so the model knows any installed tool is available", async () => {
+    const { bashExecTool } = await import("./bash.js");
+    expect(bashExecTool.description).toMatch(/PATH/);
+  });
+
+  it("mentions kubectl explicitly so the model does not refuse kubernetes commands", async () => {
+    const { bashExecTool } = await import("./bash.js");
+    expect(bashExecTool.description).toMatch(/kubectl/i);
+  });
+
+  it("mentions cloud CLIs (gcloud/aws) so the model does not refuse cloud commands", async () => {
+    const { bashExecTool } = await import("./bash.js");
+    expect(bashExecTool.description).toMatch(/gcloud|aws\s+cli|cloud\s+cli/i);
+  });
+
+  it("mentions credentials are inherited so the model does not claim it lacks auth", async () => {
+    const { bashExecTool } = await import("./bash.js");
+    expect(bashExecTool.description).toMatch(/credential|kubeconfig|auth/i);
+  });
+});
+
+describe("bashBackgroundTool description — LLM capability contract", () => {
+  it("mentions that the tool runs in the user's shell environment", async () => {
+    const { bashBackgroundTool } = await import("./bash.js");
+    expect(bashBackgroundTool.description).toMatch(/user'?s?\s+(shell\s+)?environment/i);
+  });
+
+  it("mentions full PATH inheritance", async () => {
+    const { bashBackgroundTool } = await import("./bash.js");
+    expect(bashBackgroundTool.description).toMatch(/PATH/);
+  });
+});
