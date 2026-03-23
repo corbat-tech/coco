@@ -176,6 +176,7 @@ end try
     const result = execFileSync("osascript", ["-e", script], {
       encoding: "utf-8",
       timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"], // suppress stderr (JP2 color space warnings from macOS ImageIO)
     }).trim();
 
     if (!result.startsWith("ok")) {
@@ -209,6 +210,7 @@ async function readClipboardImageLinux(): Promise<ClipboardImageData | null> {
     const targets = execFileSync("xclip", ["-selection", "clipboard", "-t", "TARGETS", "-o"], {
       encoding: "utf-8",
       timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"], // suppress stderr
     });
 
     if (!targets.includes("image/png")) {
@@ -218,6 +220,7 @@ async function readClipboardImageLinux(): Promise<ClipboardImageData | null> {
     // Read PNG data
     const buffer = execFileSync("xclip", ["-selection", "clipboard", "-t", "image/png", "-o"], {
       timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"], // suppress stderr
     });
 
     return {

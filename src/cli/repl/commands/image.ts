@@ -11,37 +11,43 @@ import type { SlashCommand } from "../types.js";
 import { readClipboardImage, isClipboardImageAvailable } from "../output/clipboard.js";
 
 /**
- * Shared state: stores pending image data for the next agent turn.
- * This is read and consumed by the REPL main loop after the command executes.
+ * Shared state: stores pending images for the next agent turn.
+ * Each Ctrl+V or /image call appends to this array.
+ * The REPL main loop consumes all pending images at once via consumePendingImages().
  */
-let pendingImage: {
-  data: string;
-  media_type: string;
-  prompt: string;
-} | null = null;
+type PendingImage = { data: string; media_type: string; prompt: string };
+let pendingImages: PendingImage[] = [];
 
 /**
- * Get and clear the pending image (consumed by the REPL loop)
+ * Get and clear all pending images (consumed by the REPL loop).
+ * Returns the full array and resets state.
  */
-export function consumePendingImage(): typeof pendingImage {
-  const img = pendingImage;
-  pendingImage = null;
-  return img;
+export function consumePendingImages(): PendingImage[] {
+  const imgs = pendingImages;
+  pendingImages = [];
+  return imgs;
 }
 
 /**
- * Check if there is a pending image
+ * Check if there are any pending images
  */
 export function hasPendingImage(): boolean {
-  return pendingImage !== null;
+  return pendingImages.length > 0;
 }
 
 /**
- * Set pending image data directly (used by Ctrl+V keybinding in handler).
- * The REPL loop will consume it via consumePendingImage().
+ * Get the number of pending images (used by prompt indicator)
+ */
+export function getPendingImageCount(): number {
+  return pendingImages.length;
+}
+
+/**
+ * Append a pending image (used by Ctrl+V keybinding and /image command).
+ * Multiple calls accumulate images — all sent together on the next agent turn.
  */
 export function setPendingImage(data: string, media_type: string, prompt: string): void {
-  pendingImage = { data, media_type, prompt };
+  pendingImages.push({ data, media_type, prompt });
 }
 
 export const imageCommand: SlashCommand = {
@@ -86,11 +92,7 @@ export const imageCommand: SlashCommand = {
     console.log(chalk.dim(`  Prompt: "${prompt}"`));
 
     // Store the pending image for the REPL loop to consume
-    pendingImage = {
-      data: imageData.data,
-      media_type: imageData.media_type,
-      prompt,
-    };
+    setPendingImage(imageData.data, imageData.media_type, prompt);
 
     // Return false = don't exit REPL
     // The REPL main loop checks hasPendingImage() after command execution

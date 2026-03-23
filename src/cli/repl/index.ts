@@ -34,7 +34,7 @@ import {
   executeSlashCommand,
   addTokenUsage,
   hasPendingImage,
-  consumePendingImage,
+  consumePendingImages,
   isIntentRecognitionEnabled,
 } from "./commands/index.js";
 import type {
@@ -422,19 +422,18 @@ export async function startRepl(
         // Don't skip the agent turn — let it process the forked skill instructions
       } else if (hasPendingImage()) {
         // Check if slash command queued a multimodal message (e.g., /image)
-        const pending = consumePendingImage()!;
+        const images = consumePendingImages();
         agentMessage = [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: pending.media_type,
-              data: pending.data,
-            },
-          } as ImageContent,
+          ...images.map(
+            (img) =>
+              ({
+                type: "image",
+                source: { type: "base64", media_type: img.media_type, data: img.data },
+              }) as ImageContent,
+          ),
           {
             type: "text",
-            text: pending.prompt,
+            text: images.map((img) => img.prompt).join("\n"),
           } as TextContent,
         ];
         // Fall through to agent turn execution below
@@ -446,19 +445,18 @@ export async function startRepl(
     // Check if Ctrl+V set a pending image (outside slash command flow)
     // This must run before intent recognition to avoid passing empty/null input
     if (agentMessage === null && hasPendingImage()) {
-      const pending = consumePendingImage()!;
+      const images = consumePendingImages();
       agentMessage = [
-        {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: pending.media_type,
-            data: pending.data,
-          },
-        } as ImageContent,
+        ...images.map(
+          (img) =>
+            ({
+              type: "image",
+              source: { type: "base64", media_type: img.media_type, data: img.data },
+            }) as ImageContent,
+        ),
         {
           type: "text",
-          text: pending.prompt,
+          text: images.map((img) => img.prompt).join("\n"),
         } as TextContent,
       ];
     }

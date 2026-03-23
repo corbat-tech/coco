@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Copy code blocks to clipboard** — rendered code blocks are numbered (`#1`, `#2`, …) in the block header. Press **Option+C** (macOS) / **Alt+C** (Linux) to instantly copy the last block without pressing Enter. Use `/copy [N]` or `/cp [N]` to copy a specific block by number; omit N to copy the last one. A brief inline confirmation shows language and block ID (`✓ typescript #3 copied`). Up to 100 blocks tracked per session with FIFO eviction.
+- **Multi-image paste support** — each **Ctrl+V** or `/image` call now *accumulates* images instead of replacing the previous one. The prompt shows individual compact badges (`[📎 #1] [📎 #2]`) for each queued image so you can see exactly how many are pending. All images are sent in one agent turn when you press Enter.
+
+### Fixed
+- **Agent refuses to run `kubectl`, `gcloud`, `aws`, and other CLIs** — the model was hallucinating a technical limitation ("I don't have credentials"). `bash_exec` inherits the user's full shell environment: PATH, kubeconfig, gcloud auth, AWS profiles, SSH keys, and every tool installed on the machine. The tool description and system prompt now state this explicitly, and regression tests guard against the behaviour returning.
+- **JP2 color space error leaking to terminal on image paste** — when pasting images via Ctrl+V on macOS, the `osascript` subprocess wrote macOS ImageIO's `*** Error creating a JP2 color space: falling back to sRGB` warning directly to the terminal. Fixed by capturing subprocess stderr instead of inheriting it (same fix applied to `xclip` on Linux).
+
 ---
 
 ## [2.15.0] - 2026-03-20

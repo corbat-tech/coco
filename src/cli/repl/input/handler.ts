@@ -22,7 +22,7 @@ import * as os from "node:os";
 import chalk from "chalk";
 import ansiEscapes from "ansi-escapes";
 import type { ReplSession } from "../types.js";
-import { getAllCommands, setPendingImage, hasPendingImage } from "../commands/index.js";
+import { getAllCommands, setPendingImage, getPendingImageCount } from "../commands/index.js";
 import { isQualityLoop } from "../quality-loop.js";
 import { readClipboardImage } from "../output/clipboard.js";
 
@@ -294,6 +294,23 @@ function computeWordWrap(
 }
 
 /**
+ * Build the image indicator string and its visual (terminal column) length.
+ * Returns individual numbered badges — one per pending image — so users can
+ * see exactly how many images they have queued and reference them by number.
+ *
+ * Format (N images): " [📎 #1] [📎 #2] "
+ * Visual length counts emoji as 2 columns (matches JS .length for U+1F4CE).
+ */
+export function buildImageIndicator(count: number): { str: string; len: number } {
+  if (count === 0) return { str: "", len: 0 };
+  const badges = Array.from({ length: count }, (_, i) => `[\u{1F4CE} #${i + 1}]`);
+  const joined = badges.join(" ");
+  // Visual: 1 leading space + joined badges + 1 trailing space
+  const len = 1 + joined.length + 1;
+  return { str: " " + chalk.cyan(joined) + " ", len };
+}
+
+/**
  * Create readline-based input handler with ghost-text completion and dropdown
  */
 export function createInputHandler(_session: ReplSession): InputHandler {
@@ -324,20 +341,19 @@ export function createInputHandler(_session: ReplSession): InputHandler {
   // Prompt changes dynamically based on quality loop mode
   // Visual length must be tracked separately from ANSI-colored string
   const getPrompt = () => {
-    const imageIndicator = hasPendingImage() ? chalk.cyan(" \u{1F4CE} 1 image") : "";
-    const imageIndicatorLen = hasPendingImage() ? 10 : 0; // " 📎 1 image" = 10 visible chars (📎=2)
+    const { str: imageStr, len: imageLen } = buildImageIndicator(getPendingImageCount());
 
     if (isQualityLoop()) {
       return {
-        str: "\u{1F965} " + chalk.magenta("[quality]") + " \u203A " + imageIndicator,
+        str: "\u{1F965} " + chalk.magenta("[quality]") + " \u203A " + imageStr,
         // 🥥=2 + space=1 + [quality]=9 + space=1 + ›=1 + space=1 = 15 + image indicator
-        visualLen: 15 + imageIndicatorLen,
+        visualLen: 15 + imageLen,
       };
     }
     return {
-      str: chalk.green("\u{1F965} \u203A ") + imageIndicator,
+      str: chalk.green("\u{1F965} \u203A ") + imageStr,
       // 🥥=2 + space=1 + ›=1 + space=1 = 5 + image indicator
-      visualLen: 5 + imageIndicatorLen,
+      visualLen: 5 + imageLen,
     };
   };
   const MAX_ROWS = 8;
