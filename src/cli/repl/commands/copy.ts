@@ -32,7 +32,9 @@ export const copyCommand: SlashCommand = {
 
     if (hasArg && !isValidId) {
       console.log(chalk.yellow(`  ⚠ Invalid block number "${rawArg}"`));
-      console.log(chalk.dim("    Use /copy N where N is a positive integer, or /copy for the last block"));
+      console.log(
+        chalk.dim("    Use /copy N where N is a positive integer, or /copy for the last block"),
+      );
       return false;
     }
 
