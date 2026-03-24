@@ -546,20 +546,11 @@ function isDiffAddition(line: string): boolean {
 }
 
 function renderSimpleCodeBlock(lang: string, lines: string[], blockId: number): void {
-  const width = Math.min(getTerminalWidth() - 4, 100);
-  const contentWidth = width - 4;
   const isDiff = lang === "diff" || (!lang && looksLikeDiff(lines));
 
+  // Show title header without box borders
   const title = lang || "Code";
-  const idSuffix = ` · #${blockId}`;
-  const titleDisplay = ` ${title}${idSuffix} `;
-
-  const topPadding = Math.floor((width - titleDisplay.length - 2) / 2);
-  const topRemainder = Math.max(0, width - titleDisplay.length - 2 - topPadding);
-  const titleStyled = ` ${title}` + chalk.dim(idSuffix) + ` `;
-  console.log(
-    chalk.magenta("╭" + "─".repeat(topPadding) + titleStyled + "─".repeat(topRemainder) + "╮"),
-  );
+  console.log(chalk.dim(`${title} · #${blockId}`));
 
   const bgDel = chalk.bgRgb(80, 20, 20);
   const bgAdd = chalk.bgRgb(20, 60, 20);
@@ -580,28 +571,13 @@ function renderSimpleCodeBlock(lang: string, lines: string[], blockId: number): 
 
     const formatted = formatCodeLine(line, lang);
     const lineNoStr = isDiff ? formatDiffLineNo(line, oldLineNo, newLineNo) : "";
-    const adjustedWidth = isDiff ? contentWidth - 7 : contentWidth; // 7 = "NNNNN " + space
-    const wrappedLines = wrapText(formatted, adjustedWidth);
-    for (const wrappedLine of wrappedLines) {
-      const fullLine = lineNoStr + wrappedLine;
-      const padding = Math.max(0, contentWidth - stripAnsi(fullLine).length);
-      if (isDiff && isDiffDeletion(line)) {
-        console.log(
-          chalk.magenta("│") +
-            bgDel(" " + fullLine + " ".repeat(padding) + " ") +
-            chalk.magenta("│"),
-        );
-      } else if (isDiff && isDiffAddition(line)) {
-        console.log(
-          chalk.magenta("│") +
-            bgAdd(" " + fullLine + " ".repeat(padding) + " ") +
-            chalk.magenta("│"),
-        );
-      } else {
-        console.log(
-          chalk.magenta("│") + " " + fullLine + " ".repeat(padding) + " " + chalk.magenta("│"),
-        );
-      }
+
+    if (isDiff && isDiffDeletion(line)) {
+      console.log(bgDel("  " + lineNoStr + formatted));
+    } else if (isDiff && isDiffAddition(line)) {
+      console.log(bgAdd("  " + lineNoStr + formatted));
+    } else {
+      console.log("  " + lineNoStr + formatted);
     }
 
     // Advance line counters after rendering
@@ -624,11 +600,8 @@ function renderSimpleCodeBlock(lang: string, lines: string[], blockId: number): 
     }
   }
 
-  const copyHint = ` #${blockId} · /copy ${blockId} `;
-  const hintStyled = chalk.dim(copyHint);
-  const hintLen = copyHint.length; // visual length (no ANSI)
-  const leftDashes = Math.max(0, width - 2 - hintLen);
-  console.log(chalk.magenta("╰" + "─".repeat(leftDashes)) + hintStyled + chalk.magenta("╯"));
+  // Show copy hint at the end
+  console.log(chalk.dim(`  #${blockId} · /copy ${blockId}`));
 }
 
 /** Format line number for diff code blocks */
