@@ -41,7 +41,7 @@ import {
 } from "./hooks/index.js";
 import { resetLineBuffer, flushLineBuffer } from "./output/renderer.js";
 import { promptAllowPath } from "./allow-path-prompt.js";
-import { isAbortError } from "./error-resilience.js";
+import { isAbortError, isNonRetryableProviderError } from "./error-resilience.js";
 
 /**
  * Options for executing an agent turn
@@ -294,8 +294,15 @@ export async function executeAgentTurn(
         return abortReturn();
       }
 
-      // For other errors, add error message to response and re-throw
-      // so the caller can handle recovery
+      // Re-throw non-retryable provider errors (auth, quota, bad request) so the
+      // caller's catch block receives the original ProviderError object. This lets
+      // getUserFacingProviderError() and isNonRetryableProviderError() work correctly
+      // — they need a ProviderError instance, not a plain Error with a message string.
+      if (isNonRetryableProviderError(streamError)) {
+        throw streamError;
+      }
+
+      // For retryable errors, return the error so the caller can attempt recovery.
       const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
 
       // Add error as assistant message so LLM can see what happened

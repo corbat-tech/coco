@@ -1246,6 +1246,11 @@ export async function startRepl(
       }
 
       // ── Fallback ──────────────────────────────────────────────────────────
+      // Non-retryable error with no user-facing message and budget not yet
+      // exhausted (e.g. 400 "unsupported parameter"). Roll back partial state
+      // and return to prompt without retrying.
+      session.messages.length = preCallMessageLength;
+      consecutiveErrors = 0;
       renderError(errorMsg);
     } finally {
       // Always clean up spinner and resume input handler after agent turn
