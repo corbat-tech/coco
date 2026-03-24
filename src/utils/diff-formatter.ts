@@ -227,9 +227,7 @@ export function formatFullDiff(
     for (const file of filesToShow) {
       const diff = getFileDiff(file.path, cwd);
       if (diff) {
-        output += chalk.bold(`─`.repeat(60)) + "\n";
         output += chalk.white.bold(`${file.path}\n`);
-        output += chalk.bold(`─`.repeat(60)) + "\n";
         output += formatDiff(diff, opts);
         output += "\n";
       }
