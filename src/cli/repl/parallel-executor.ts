@@ -239,7 +239,7 @@ export class ParallelToolExecutor {
         reject(new Error(`Tool execution timeout after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s`));
       }, TOOL_EXECUTION_TIMEOUT_MS);
       // Clean up timeout if signal is aborted
-      signal?.addEventListener('abort', () => {
+      signal?.addEventListener("abort", () => {
         clearTimeout(timeoutId);
       });
     });

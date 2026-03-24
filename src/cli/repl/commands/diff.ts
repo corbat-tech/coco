@@ -34,10 +34,7 @@ export interface DiffCommandOptions {
 /**
  * Execute the diff command
  */
-export async function executeDiffCommand(
-  session: ReplSession,
-  args: string[],
-): Promise<string> {
+export async function executeDiffCommand(session: ReplSession, args: string[]): Promise<string> {
   const options = parseArgs(args);
   const cwd = session.projectPath;
 
@@ -68,11 +65,15 @@ export async function executeDiffCommand(
   }
 
   // Show full diff
-  return formatFullDiff(cwd, {
-    maxFiles: options.all ? 0 : 5,
-    maxLinesPerFile: options.all ? 0 : 50,
-    summaryOnly: false,
-  }, files);
+  return formatFullDiff(
+    cwd,
+    {
+      maxFiles: options.all ? 0 : 5,
+      maxLinesPerFile: options.all ? 0 : 50,
+      summaryOnly: false,
+    },
+    files,
+  );
 }
 
 /**

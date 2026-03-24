@@ -1136,7 +1136,8 @@ function renderEditPreview(oldStr: string, newStr: string): string {
       .filter((l) => l.trim().length > 0)
       .slice(0, 6);
     if (lines.length === 0) return "";
-    const truncate = (s: string) => (s.length > termWidth - 2 ? s.slice(0, termWidth - 3) + "…" : s);
+    const truncate = (s: string) =>
+      s.length > termWidth - 2 ? s.slice(0, termWidth - 3) + "…" : s;
     return lines
       .map((l) => {
         const text = `+ ${truncate(l)}`;
@@ -1162,7 +1163,12 @@ function renderEditPreview(oldStr: string, newStr: string): string {
       } else if (change.removed) {
         diffLineList.push({ type: "delete", content: line, oldLineNo: oldNo++ });
       } else {
-        diffLineList.push({ type: "context", content: line, oldLineNo: oldNo++, newLineNo: newNo++ });
+        diffLineList.push({
+          type: "context",
+          content: line,
+          oldLineNo: oldNo++,
+          newLineNo: newNo++,
+        });
       }
     }
   }
@@ -1178,7 +1184,8 @@ function renderEditPreview(oldStr: string, newStr: string): string {
   for (const pair of pairs) {
     const del = diffLineList[pair.deleteIdx];
     const add = diffLineList[pair.addIdx];
-    if (del && add) wordHighlights.set(pair.deleteIdx, wordLevelHighlight(del.content, add.content));
+    if (del && add)
+      wordHighlights.set(pair.deleteIdx, wordLevelHighlight(del.content, add.content));
   }
 
   // ── Compute visible indices (changed ± 2 context lines) ──────────────────
@@ -1239,7 +1246,9 @@ function renderEditPreview(oldStr: string, newStr: string): string {
       const line = diffBgDel(` - ${rawContent}${" ".repeat(pad)}`);
       result.push("  " + gutter(dl.oldLineNo, undefined) + line);
     } else {
-      result.push("  " + gutter(dl.oldLineNo, dl.newLineNo) + chalk.dim(`   ${truncate(dl.content)}`));
+      result.push(
+        "  " + gutter(dl.oldLineNo, dl.newLineNo) + chalk.dim(`   ${truncate(dl.content)}`),
+      );
     }
   }
 

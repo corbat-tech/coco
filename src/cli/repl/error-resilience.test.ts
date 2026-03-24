@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { isAbortError, humanizeProviderError, installProcessSafetyNet, MAX_CONSECUTIVE_ERRORS } from "./error-resilience.js";
+import {
+  isAbortError,
+  humanizeProviderError,
+  installProcessSafetyNet,
+  MAX_CONSECUTIVE_ERRORS,
+} from "./error-resilience.js";
 import { ProviderError } from "../../utils/errors.js";
 
 // ─── isAbortError ─────────────────────────────────────────────────────────────
@@ -147,7 +152,9 @@ describe("installProcessSafetyNet", () => {
     // Reset the idempotency guard between tests
     // We need to reset the module-level flag
     originalUncaught = process.listeners("uncaughtException") as NodeJS.UncaughtExceptionListener[];
-    originalRejection = process.listeners("unhandledRejection") as NodeJS.UnhandledRejectionListener[];
+    originalRejection = process.listeners(
+      "unhandledRejection",
+    ) as NodeJS.UnhandledRejectionListener[];
   });
 
   afterEach(() => {
@@ -208,7 +215,10 @@ describe("isNonRetryableProviderError", () => {
   });
 
   it("returns true for quota exceeded errors", () => {
-    const err = new ProviderError("You exceeded your current quota", { provider: "openai", statusCode: 429 });
+    const err = new ProviderError("You exceeded your current quota", {
+      provider: "openai",
+      statusCode: 429,
+    });
     expect(isNonRetryableProviderError(err)).toBe(true);
   });
 
@@ -247,7 +257,10 @@ describe("isNonRetryableProviderError", () => {
 
 describe("getUserFacingProviderError", () => {
   it("returns quota message for quota exceeded errors", () => {
-    const err = new ProviderError("You exceeded your current quota", { provider: "openai", statusCode: 429 });
+    const err = new ProviderError("You exceeded your current quota", {
+      provider: "openai",
+      statusCode: 429,
+    });
     const result = getUserFacingProviderError(err);
     expect(result).toContain("Subscription limit reached");
     expect(result).toContain("💳");

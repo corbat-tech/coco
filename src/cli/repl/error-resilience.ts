@@ -111,7 +111,12 @@ export function getUserFacingProviderError(error: unknown): string | null {
   }
 
   // Auth errors
-  if (code === 401 || msg.includes("invalid_api_key") || msg.includes("incorrect api key") || msg.includes("bad credentials")) {
+  if (
+    code === 401 ||
+    msg.includes("invalid_api_key") ||
+    msg.includes("incorrect api key") ||
+    msg.includes("bad credentials")
+  ) {
     return `🔑 Authentication failed: Your API key or token is invalid or has expired. Run 'coco --setup' to reconfigure.`;
   }
 
@@ -142,7 +147,11 @@ export function humanizeProviderError(error: unknown): string {
     const msg = error.message.toLowerCase();
 
     // Quota/Billing errors
-    if (msg.includes("exceeded your current quota") || msg.includes("usage limit") || msg.includes("insufficient_quota")) {
+    if (
+      msg.includes("exceeded your current quota") ||
+      msg.includes("usage limit") ||
+      msg.includes("insufficient_quota")
+    ) {
       return "Quota exceeded — your subscription limit has been reached. Check billing or upgrade plan.";
     }
 

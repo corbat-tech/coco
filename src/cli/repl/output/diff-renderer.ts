@@ -391,9 +391,8 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
     if (!compact || h > 0) {
       const hunkLabel = hunk.heading ? ` ${chalk.dim(hunk.heading)}` : "";
       console.log(
-        chalk.cyan(
-          `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
-        ) + hunkLabel,
+        chalk.cyan(`@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`) +
+          hunkLabel,
       );
     }
 

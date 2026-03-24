@@ -15,7 +15,7 @@ vi.mock("chalk", () => {
   const mockFn = (s: string) => s;
   const mockBold = (s: string) => s;
   mockFn.bold = mockBold;
-  
+
   return {
     default: {
       dim: mockFn,

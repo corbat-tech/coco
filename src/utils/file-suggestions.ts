@@ -164,9 +164,7 @@ export async function findFileRecursive(
   }
 
   // Sort by distance (best matches first) and limit results
-  return results
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, opts.maxResults);
+  return results.sort((a, b) => a.distance - b.distance).slice(0, opts.maxResults);
 }
 
 /**

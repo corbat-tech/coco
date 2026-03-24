@@ -81,7 +81,11 @@ function parseNumstatOutput(output: string): FileChange[] {
  */
 export function getModifiedFiles(cwd?: string): FileChange[] {
   try {
-    const output = execSync("git diff --numstat", { cwd: cwd ?? process.cwd(), encoding: "utf-8", stdio: "pipe" });
+    const output = execSync("git diff --numstat", {
+      cwd: cwd ?? process.cwd(),
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
     return parseNumstatOutput(output);
   } catch {
     return [];
@@ -93,7 +97,11 @@ export function getModifiedFiles(cwd?: string): FileChange[] {
  */
 export function getStagedFiles(cwd?: string): FileChange[] {
   try {
-    const output = execSync("git diff --cached --numstat", { cwd: cwd ?? process.cwd(), encoding: "utf-8", stdio: "pipe" });
+    const output = execSync("git diff --cached --numstat", {
+      cwd: cwd ?? process.cwd(),
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
     return parseNumstatOutput(output);
   } catch {
     return [];
@@ -103,10 +111,7 @@ export function getStagedFiles(cwd?: string): FileChange[] {
 /**
  * Format a summary of changes
  */
-export function formatChangeSummary(
-  files: FileChange[],
-  options: DiffFormatOptions = {},
-): string {
+export function formatChangeSummary(files: FileChange[], options: DiffFormatOptions = {}): string {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
   if (files.length === 0) {
@@ -124,7 +129,12 @@ export function formatChangeSummary(
   const remaining = files.length - filesToShow.length;
 
   for (const file of filesToShow) {
-    const statusIcon = file.status === "added" ? chalk.green("A") : file.status === "deleted" ? chalk.red("D") : chalk.yellow("M");
+    const statusIcon =
+      file.status === "added"
+        ? chalk.green("A")
+        : file.status === "deleted"
+          ? chalk.red("D")
+          : chalk.yellow("M");
     const stats = `${chalk.green("+" + file.additions)} ${chalk.red("-" + file.deletions)}`;
     output += `  ${statusIcon} ${chalk.white(file.path)} ${chalk.gray(stats)}\n`;
   }
@@ -151,10 +161,7 @@ export function getFileDiff(filePath: string, cwd?: string, staged = false): str
 /**
  * Format a diff with syntax highlighting
  */
-export function formatDiff(
-  diff: string,
-  options: DiffFormatOptions = {},
-): string {
+export function formatDiff(diff: string, options: DiffFormatOptions = {}): string {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
   if (!diff.trim()) {
@@ -179,7 +186,12 @@ export function formatDiff(
       output += chalk.red(line) + "\n";
     } else if (line.startsWith("@@")) {
       output += chalk.cyan(line) + "\n";
-    } else if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
+    } else if (
+      line.startsWith("diff --git") ||
+      line.startsWith("index ") ||
+      line.startsWith("--- ") ||
+      line.startsWith("+++ ")
+    ) {
       output += chalk.gray(line) + "\n";
     } else {
       output += line + "\n";
@@ -217,7 +229,8 @@ export function formatFullDiff(
     // Add detailed diff for each file
     output += "\n" + chalk.bold("📝 Detailed changes:\n\n");
 
-    const filesToShow = opts.maxFiles && opts.maxFiles > 0 ? filesToProcess.slice(0, opts.maxFiles) : filesToProcess;
+    const filesToShow =
+      opts.maxFiles && opts.maxFiles > 0 ? filesToProcess.slice(0, opts.maxFiles) : filesToProcess;
 
     for (const file of filesToShow) {
       const diff = getFileDiff(file.path, cwd);
@@ -235,7 +248,9 @@ export function formatFullDiff(
 
     return output;
   } catch (error) {
-    return chalk.red(`Error getting diff: ${error instanceof Error ? error.message : String(error)}`);
+    return chalk.red(
+      `Error getting diff: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 

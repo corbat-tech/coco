@@ -197,10 +197,7 @@ describe("suggestSimilarFilesDeep", () => {
     await fs.writeFile(path.join(tempDir, "exact.txt"), "content");
     await fs.writeFile(path.join(tempDir, "exactly.txt"), "content");
 
-    const results = await suggestSimilarFilesDeep(
-      path.join(tempDir, "exact.txt"),
-      tempDir,
-    );
+    const results = await suggestSimilarFilesDeep(path.join(tempDir, "exact.txt"), tempDir);
 
     // exact.txt should have distance 0
     const exactMatch = results.find((r) => r.path.endsWith("exact.txt"));

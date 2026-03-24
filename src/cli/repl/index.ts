@@ -1161,7 +1161,11 @@ export async function startRepl(
       // If there is an original user message to replay and we still have
       // recovery budget, roll back any partial session state and re-queue the
       // message with error context so the LLM can try a different approach.
-      if (originalUserMessage !== null && consecutiveErrors < MAX_CONSECUTIVE_ERRORS && !isNonRetryableProviderError(error)) {
+      if (
+        originalUserMessage !== null &&
+        consecutiveErrors < MAX_CONSECUTIVE_ERRORS &&
+        !isNonRetryableProviderError(error)
+      ) {
         consecutiveErrors++;
 
         // Roll back any partial messages written before the throw
@@ -1191,9 +1195,7 @@ export async function startRepl(
         consecutiveErrors = 0;
         session.messages.length = preCallMessageLength;
         renderError(errorMsg);
-        console.log(
-          chalk.dim("   Recovery failed after multiple attempts. Returning to prompt."),
-        );
+        console.log(chalk.dim("   Recovery failed after multiple attempts. Returning to prompt."));
         continue;
       }
 

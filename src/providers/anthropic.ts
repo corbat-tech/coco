@@ -664,9 +664,7 @@ export class AnthropicProvider implements LLMProvider {
     if (error instanceof Error) {
       const msg = error.message.toLowerCase();
       const isQuotaError =
-        msg.includes("usage limit") ||
-        msg.includes("quota") ||
-        msg.includes("billing");
+        msg.includes("usage limit") || msg.includes("quota") || msg.includes("billing");
 
       throw new ProviderError(error.message, {
         provider: this.id,
