@@ -397,7 +397,20 @@ export async function executeAgentTurn(
       if (needsConfirmation) {
         // Notify UI to clear any spinners before showing confirmation
         options.onBeforeConfirmation?.();
-        const confirmResult = await confirmToolExecution(toolCall);
+        let confirmResult: Awaited<ReturnType<typeof confirmToolExecution>>;
+        try {
+          confirmResult = await confirmToolExecution(toolCall);
+        } catch (confirmError) {
+          // Confirmation prompt failed (e.g. terminal/readline error).
+          // Treat as declined so the agent loop continues without crashing.
+          options.onAfterConfirmation?.();
+          declinedTools.set(
+            toolCall.id,
+            `Confirmation failed: ${confirmError instanceof Error ? confirmError.message : String(confirmError)}`,
+          );
+          options.onToolSkipped?.(toolCall, "Confirmation error");
+          continue;
+        }
         options.onAfterConfirmation?.();
 
         // Handle edit result for bash_exec
