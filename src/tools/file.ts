@@ -11,8 +11,8 @@ import { defineTool, type ToolDefinition } from "./registry.js";
 import { FileSystemError, ToolError } from "../utils/errors.js";
 import { isWithinAllowedPath } from "./allowed-paths.js";
 import {
-  suggestSimilarFiles,
-  suggestSimilarPaths,
+  suggestSimilarFilesDeep,
+  suggestSimilarDirsDeep,
   formatSuggestions,
 } from "../utils/file-suggestions.js";
 import { levenshtein } from "../skills/matcher.js";
@@ -213,11 +213,11 @@ function isENOENT(error: unknown): boolean {
 }
 
 /**
- * Enrich an ENOENT error with file suggestions.
+ * Enrich an ENOENT error with file suggestions (including deep search).
  */
 async function enrichENOENT(filePath: string, operation: string): Promise<string> {
   const absPath = path.resolve(filePath);
-  const suggestions = await suggestSimilarFiles(absPath);
+  const suggestions = await suggestSimilarFilesDeep(absPath, process.cwd());
   const hint = formatSuggestions(suggestions, path.dirname(absPath));
   const action =
     operation === "read"
@@ -227,11 +227,11 @@ async function enrichENOENT(filePath: string, operation: string): Promise<string
 }
 
 /**
- * Enrich an ENOENT error for directory operations.
+ * Enrich an ENOENT error for directory operations (including deep search).
  */
 async function enrichDirENOENT(dirPath: string): Promise<string> {
   const absPath = path.resolve(dirPath);
-  const suggestions = await suggestSimilarPaths(absPath);
+  const suggestions = await suggestSimilarDirsDeep(absPath, process.cwd());
   const hint = formatSuggestions(suggestions, path.dirname(absPath));
   return `Directory not found: ${dirPath}${hint}\nUse list_dir or glob to find the correct path.`;
 }

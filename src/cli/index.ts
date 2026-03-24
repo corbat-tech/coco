@@ -85,7 +85,7 @@ program
       }
 
       // Use last used provider from preferences (falls back to env/anthropic)
-      const providerType = (options.provider as ProviderType) ?? getLastUsedProvider();
+      const providerType = (options.provider as ProviderType) ?? (await getLastUsedProvider());
 
       // Headless mode: -P or --print
       if (options.print !== undefined) {

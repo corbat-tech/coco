@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { diffCommand } from "./diff.js";
+import { diffCommand, executeDiffCommand, getDiffHelp, getQuickDiffSummary } from "./diff.js";
 import type { ReplSession } from "../types.js";
 
 // Mock chalk
@@ -15,6 +15,9 @@ vi.mock("chalk", () => ({
     red: (s: string) => s,
     yellow: (s: string) => s,
     bold: (s: string) => s,
+    gray: (s: string) => s,
+    white: (s: string) => s,
+    magenta: { bold: (s: string) => s },
   },
 }));
 
@@ -35,7 +38,7 @@ describe("diffCommand", () => {
       projectPath: "/test/project",
       config: {
         provider: { type: "anthropic", model: "claude-sonnet-4-20250514", maxTokens: 8192 },
-        ui: { theme: "dark", showTimestamps: false, maxHistorySize: 100 },
+        ui: { theme: "dark", showTimestamps: false, maxHistorySize: 100, showDiff: "on_request" },
         agent: { systemPrompt: "test", maxToolIterations: 25, confirmDestructive: true },
       },
       trustedTools: new Set(),
@@ -61,114 +64,191 @@ describe("diffCommand", () => {
     });
 
     it("should have usage", () => {
-      expect(diffCommand.usage).toBe("/diff [--staged]");
+      expect(diffCommand.usage).toBe("/diff [--summary|--staged|--unstaged|--all|--no-generated]");
     });
   });
 
-  describe("execute with unstaged changes", () => {
-    it("should show unstaged diff", async () => {
+  describe("executeDiffCommand", () => {
+    it("should show no changes message when there are no changes", async () => {
       const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue(
-        "diff --git a/file.ts b/file.ts\nindex abc..def 100644\n--- a/file.ts\n+++ b/file.ts\n@@ -1,3 +1,4 @@\n+added line\n existing line\n-removed line",
-      );
+      // git diff --quiet throws when there are changes
+      vi.mocked(execSync).mockImplementation(() => {
+        return "";
+      });
 
-      await diffCommand.execute([], mockSession);
+      const result = await executeDiffCommand(mockSession, []);
 
-      expect(execSync).toHaveBeenCalledWith(
-        "git diff",
-        expect.objectContaining({
-          cwd: "/test/project",
-        }),
-      );
-      const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("Unstaged");
+      expect(result).toContain("No uncommitted changes");
     });
 
-    it("should show no changes message when diff is empty", async () => {
+    it("should show diff summary when there are changes", async () => {
       const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("");
+      let callCount = 0;
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        callCount++;
+        if (cmd.includes("--quiet")) {
+          // Throw to indicate there are changes
+          throw new Error("changes exist");
+        }
+        if (cmd.includes("--numstat")) {
+          return "10\t5\tfile.ts\n";
+        }
+        return "";
+      });
 
-      await diffCommand.execute([], mockSession);
+      const result = await executeDiffCommand(mockSession, []);
 
-      const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("No unstaged changes");
+      expect(result).toContain("Changed files");
+      expect(result).toContain("file.ts");
     });
 
-    it("should return false (do not exit)", async () => {
+    it("should show staged changes only with --staged flag", async () => {
       const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("");
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd.includes("--quiet")) {
+          throw new Error("changes exist");
+        }
+        if (cmd.includes("--cached") && cmd.includes("--numstat")) {
+          return "5\t2\tstaged.ts\n";
+        }
+        return "";
+      });
 
-      const result = await diffCommand.execute([], mockSession);
-      expect(result).toBe(false);
-    });
-  });
+      const result = await executeDiffCommand(mockSession, ["--staged"]);
 
-  describe("execute with --staged flag", () => {
-    it("should show staged diff", async () => {
-      const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("diff --git a/file.ts b/file.ts\n+staged line");
-
-      await diffCommand.execute(["--staged"], mockSession);
-
-      expect(execSync).toHaveBeenCalledWith("git diff --staged", expect.any(Object));
-      const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("Staged");
+      expect(result).toContain("Changed files");
+      expect(result).toContain("staged.ts");
     });
 
-    it("should accept -s shorthand", async () => {
+    it("should accept -c shorthand for --staged", async () => {
       const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("diff output");
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd.includes("--quiet")) {
+          throw new Error("changes exist");
+        }
+        if (cmd.includes("--cached") && cmd.includes("--numstat")) {
+          return "3\t1\tfile.ts\n";
+        }
+        return "";
+      });
 
-      await diffCommand.execute(["-s"], mockSession);
+      const result = await executeDiffCommand(mockSession, ["-c"]);
 
-      expect(execSync).toHaveBeenCalledWith("git diff --staged", expect.any(Object));
+      expect(result).toContain("Changed files");
     });
 
-    it("should show no staged changes message", async () => {
+    it("should show summary only with --summary flag", async () => {
       const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("");
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd.includes("--quiet")) {
+          throw new Error("changes exist");
+        }
+        if (cmd.includes("--numstat")) {
+          return "10\t5\tfile.ts\n";
+        }
+        return "";
+      });
 
-      await diffCommand.execute(["--staged"], mockSession);
+      const result = await executeDiffCommand(mockSession, ["--summary"]);
 
-      const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("No staged changes");
+      expect(result).toContain("Changed files");
+      expect(result).toContain("file.ts");
+      expect(result).not.toContain("Detailed changes");
     });
-  });
 
-  describe("diff output formatting", () => {
-    it("should truncate long diff output", async () => {
+    it("should filter auto-generated files with --no-generated flag", async () => {
       const { execSync } = await import("node:child_process");
-      const longDiff = Array(150).fill("line").join("\n");
-      vi.mocked(execSync).mockReturnValue(longDiff);
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd.includes("--quiet")) {
+          throw new Error("changes exist");
+        }
+        if (cmd.includes("--numstat")) {
+          return "10\t5\tpackage-lock.json\n5\t2\tfile.ts\n";
+        }
+        return "";
+      });
 
-      await diffCommand.execute([], mockSession);
+      const result = await executeDiffCommand(mockSession, ["--no-generated"]);
 
-      const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("more lines");
+      expect(result).toContain("file.ts");
+      expect(result).not.toContain("package-lock.json");
     });
-  });
 
-  describe("error handling", () => {
-    it("should handle non-git repository", async () => {
+    it("should handle git errors gracefully", async () => {
       const { execSync } = await import("node:child_process");
       vi.mocked(execSync).mockImplementation(() => {
         throw new Error("not a git repository");
       });
 
-      await diffCommand.execute([], mockSession);
+      const result = await executeDiffCommand(mockSession, []);
 
-      const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("Not a git repository");
+      expect(result).toContain("No changes");
     });
+  });
 
-    it("should return false on error", async () => {
+  describe("diffCommand.execute", () => {
+    it("should return false (do not exit)", async () => {
       const { execSync } = await import("node:child_process");
       vi.mocked(execSync).mockImplementation(() => {
-        throw new Error("error");
+        return "";
       });
 
       const result = await diffCommand.execute([], mockSession);
+
       expect(result).toBe(false);
+    });
+
+    it("should log output to console", async () => {
+      const { execSync } = await import("node:child_process");
+      vi.mocked(execSync).mockImplementation(() => {
+        return "";
+      });
+
+      await diffCommand.execute([], mockSession);
+
+      expect(consoleLogSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe("getDiffHelp", () => {
+    it("should return help text", () => {
+      const help = getDiffHelp();
+
+      expect(help).toContain("/diff");
+      expect(help).toContain("--summary");
+      expect(help).toContain("--staged");
+      expect(help).toContain("--all");
+    });
+  });
+
+  describe("getQuickDiffSummary", () => {
+    it("should return empty string when no changes", async () => {
+      const { execSync } = await import("node:child_process");
+      vi.mocked(execSync).mockImplementation(() => {
+        return "";
+      });
+
+      const result = getQuickDiffSummary("/test/project");
+
+      expect(result).toBe("");
+    });
+
+    it("should return summary when there are changes", async () => {
+      const { execSync } = await import("node:child_process");
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd.includes("--quiet")) {
+          throw new Error("changes exist");
+        }
+        if (cmd.includes("--numstat")) {
+          return "5\t3\tfile.ts\n";
+        }
+        return "";
+      });
+
+      const result = getQuickDiffSummary("/test/project");
+
+      expect(result).toContain("1 files");
+      expect(result).toContain("+5/-3");
     });
   });
 });

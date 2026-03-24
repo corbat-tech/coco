@@ -82,5 +82,9 @@ export {
   suggestSimilarFiles,
   suggestSimilarPaths,
   formatSuggestions,
+  findFileRecursive,
+  suggestSimilarFilesDeep,
+  suggestSimilarDirsDeep,
   type FileSuggestion,
+  type FindFileOptions,
 } from "./file-suggestions.js";

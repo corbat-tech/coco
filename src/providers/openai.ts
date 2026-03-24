@@ -1062,7 +1062,26 @@ export class OpenAIProvider implements LLMProvider {
    */
   protected handleError(error: unknown): never {
     if (error instanceof OpenAI.APIError) {
-      const retryable = error.status === 429 || (error.status ?? 0) >= 500;
+      // Determine if error is retryable based on status code and message
+      const msg = error.message.toLowerCase();
+      let retryable = error.status === 429 || (error.status ?? 0) >= 500;
+
+      // Non-retryable: quota/billing errors
+      if (
+        msg.includes("exceeded your current quota") ||
+        msg.includes("insufficient_quota") ||
+        msg.includes("billing") ||
+        msg.includes("usage limit") ||
+        msg.includes("you have exceeded")
+      ) {
+        retryable = false;
+      }
+
+      // Non-retryable: auth errors
+      if (error.status === 401 || error.status === 403) {
+        retryable = false;
+      }
+
       throw new ProviderError(error.message, {
         provider: this.id,
         statusCode: error.status,
@@ -1071,9 +1090,25 @@ export class OpenAIProvider implements LLMProvider {
       });
     }
 
-    throw new ProviderError(error instanceof Error ? error.message : String(error), {
+    // Handle non-OpenAI errors (network, etc.)
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      // Check for quota/billing errors in message
+      const isQuotaError =
+        msg.includes("exceeded your current quota") ||
+        msg.includes("insufficient_quota") ||
+        msg.includes("usage limit") ||
+        msg.includes("you have exceeded");
+
+      throw new ProviderError(error.message, {
+        provider: this.id,
+        retryable: !isQuotaError,
+        cause: error,
+      });
+    }
+
+    throw new ProviderError(String(error), {
       provider: this.id,
-      cause: error instanceof Error ? error : undefined,
     });
   }
 

@@ -7,6 +7,7 @@ import stringWidth from "string-width";
 import {
   createSession,
   initializeSessionTrust,
+  initializeSessionMemory,
   initializeContextManager,
   checkAndCompactContext,
   getContextUsagePercent,
@@ -25,6 +26,14 @@ import {
 } from "./output/renderer.js";
 import { createSpinner, type Spinner } from "./output/spinner.js";
 import { executeAgentTurn, formatAbortSummary, summarizeToolResults } from "./agent-loop.js";
+import {
+  isAbortError,
+  humanizeProviderError,
+  installProcessSafetyNet,
+  MAX_CONSECUTIVE_ERRORS,
+  isNonRetryableProviderError,
+  getUserFacingProviderError,
+} from "./error-resilience.js";
 import { createProvider } from "../../providers/index.js";
 import { createFullToolRegistry } from "../../tools/index.js";
 import { setAgentProvider, setAgentToolRegistry } from "../../agents/provider-bridge.js";
@@ -98,7 +107,7 @@ export async function startRepl(
   killOrphanedTestProcesses().catch(() => {});
 
   // Create session
-  const session = createSession(projectPath, options.config);
+  const session = await createSession(projectPath, options.config);
 
   // Load persisted trust settings
   await initializeSessionTrust(session);
@@ -156,6 +165,9 @@ export async function startRepl(
     loadAllowedPaths(projectPath),
   ]);
   session.projectContext = projectContext;
+
+  // Initialize memory (AGENTS.md, COCO.md, CLAUDE.md)
+  await initializeSessionMemory(session);
 
   // Show recommended permissions suggestion for first-time users
   if (await shouldShowPermissionSuggestion()) {
@@ -331,9 +343,19 @@ export async function startRepl(
   };
   process.once("SIGTERM", sigtermHandler);
 
+  // Install process-level safety net: prevents uncaught exceptions / unhandled
+  // rejections from crashing the Coco process. The REPL loop continues after logging.
+  installProcessSafetyNet();
+
   // Track whether the 75%/90% context warnings have been shown (reset after compaction)
   let warned75 = false;
   let warned90 = false;
+
+  // Consecutive error recovery counter.
+  // Incremented on each catch-block recovery attempt; reset to 0 on any
+  // successful agent turn. After MAX_CONSECUTIVE_ERRORS the REPL gives up
+  // and shows the error to the user instead of re-queuing.
+  let consecutiveErrors = 0;
 
   // Main loop
   while (true) {
@@ -592,6 +614,11 @@ export async function startRepl(
 
     // Declared outside try so finally block can access it for restoration
     let originalSystemPrompt: string | undefined;
+
+    // Snapshot session message length before the turn starts.
+    // Used in the catch block to roll back any partial messages written by
+    // executeAgentTurn before it threw, keeping session.messages consistent.
+    const preCallMessageLength = session.messages.length;
 
     try {
       // Show contextual hint for first feature-like prompt when quality loop is off
@@ -1040,6 +1067,9 @@ export async function startRepl(
       }
 
       console.log(); // Extra spacing
+
+      // Successful turn — reset the consecutive error recovery counter
+      consecutiveErrors = 0;
     } catch (error) {
       // Always clear spinner, thinking interval, capture, echo on error
       clearThinkingInterval();
@@ -1048,14 +1078,17 @@ export async function startRepl(
       concurrentCapture.stop();
       feedbackSystem.reset();
       process.off("SIGINT", sigintHandler);
-      // Don't show error for abort
-      if (error instanceof Error && error.name === "AbortError") {
+
+      // ── Abort: silent continuation ───────────────────────────────────────
+      // Covers DOM AbortError, Anthropic/OpenAI APIUserAbortError, message
+      // fallback, and any error that occurred after the signal was already set.
+      if (isAbortError(error, abortController.signal)) {
         continue;
       }
 
       const errorMsg = error instanceof Error ? error.message : String(error);
 
-      // Check for Anthropic/Copilot context overflow error (400 prompt token count exceeds limit)
+      // ── Context overflow (Anthropic / Copilot) ───────────────────────────
       if (errorMsg.includes("prompt token count") && errorMsg.includes("exceeds the limit")) {
         renderError("Context window full — compacting conversation history...");
         try {
@@ -1080,7 +1113,7 @@ export async function startRepl(
         continue;
       }
 
-      // Check for LM Studio context length error
+      // ── LM Studio context length error ───────────────────────────────────
       if (errorMsg.includes("context length") || errorMsg.includes("tokens to keep")) {
         renderError(errorMsg);
         console.log();
@@ -1094,7 +1127,7 @@ export async function startRepl(
         continue;
       }
 
-      // Check for timeout errors
+      // ── Timeout ───────────────────────────────────────────────────────────
       if (
         errorMsg.includes("timeout") ||
         errorMsg.includes("Timeout") ||
@@ -1108,6 +1141,65 @@ export async function startRepl(
         continue;
       }
 
+      // ── Non-retryable provider errors (quota, auth, billing) ───────────────
+      // These errors won't be fixed by retrying - show immediately to user
+      const userFacingError = getUserFacingProviderError(error);
+      if (userFacingError) {
+        consecutiveErrors = 0;
+        session.messages.length = preCallMessageLength;
+        renderError(userFacingError);
+        console.log();
+        console.log(chalk.yellow("   📋 Suggestions:"));
+        console.log(chalk.dim("   • Check your subscription status and billing"));
+        console.log(chalk.dim("   • Try a different provider: /provider"));
+        console.log(chalk.dim("   • Switch to a different model: /model"));
+        console.log();
+        continue;
+      }
+
+      // ── LLM recovery path ─────────────────────────────────────────────────
+      // If there is an original user message to replay and we still have
+      // recovery budget, roll back any partial session state and re-queue the
+      // message with error context so the LLM can try a different approach.
+      if (
+        originalUserMessage !== null &&
+        consecutiveErrors < MAX_CONSECUTIVE_ERRORS &&
+        !isNonRetryableProviderError(error)
+      ) {
+        consecutiveErrors++;
+
+        // Roll back any partial messages written before the throw
+        session.messages.length = preCallMessageLength;
+
+        const humanized = humanizeProviderError(error);
+        renderError(humanized);
+        console.log(
+          chalk.dim(
+            `   ↻ Retrying automatically (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})…`,
+          ),
+        );
+
+        // Re-queue the original message with error context prepended so the
+        // LLM knows what failed and can attempt a different approach.
+        const recoveryPrefix =
+          `[System: The previous attempt failed with the following error: "${humanized}". ` +
+          `Please try a different approach, tool, or method to complete the task. ` +
+          `Do NOT repeat the exact same action that caused the error.]\n\n`;
+        pendingQueuedMessages = [recoveryPrefix + originalUserMessage];
+        continue;
+      }
+
+      // ── Recovery budget exhausted ─────────────────────────────────────────
+      // Roll back partial state, show the final error, and return to prompt.
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        consecutiveErrors = 0;
+        session.messages.length = preCallMessageLength;
+        renderError(errorMsg);
+        console.log(chalk.dim("   Recovery failed after multiple attempts. Returning to prompt."));
+        continue;
+      }
+
+      // ── Fallback ──────────────────────────────────────────────────────────
       renderError(errorMsg);
     } finally {
       // Always clean up spinner and resume input handler after agent turn

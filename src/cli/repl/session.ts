@@ -243,18 +243,22 @@ Responses are short and direct by default. Lead with the answer or action, not r
 4. Include all content in ONE block.
 
 **Use markdown block when**: multiple sections, tables, complex formatting.
-**Do NOT use when**: simple answers, short explanations, confirmations.`;
+**Do NOT use when**: simple answers, short explanations, confirmations.
+
+## File Changes
+
+**Never output raw diff or unified diff format in your responses.** Use edit_file and write_file to make changes — Coco renders a visual diff automatically. Do not quote file contents back to the user after reading them unless explicitly asked.`;
 
 /**
  * Default REPL configuration
  * Uses last used provider/model from preferences if available
  */
-export function createDefaultReplConfig(): ReplConfig {
+export async function createDefaultReplConfig(): Promise<ReplConfig> {
   // Get last used provider from preferences (falls back to env/anthropic)
-  const providerType = getLastUsedProvider();
+  const providerType = await getLastUsedProvider();
 
   // Get last used model for this provider, or fall back to default
-  const model = getLastUsedModel(providerType) ?? getDefaultModel(providerType);
+  const model = (await getLastUsedModel(providerType)) ?? getDefaultModel(providerType);
 
   return {
     provider: {
@@ -266,6 +270,7 @@ export function createDefaultReplConfig(): ReplConfig {
       theme: "auto",
       showTimestamps: false,
       maxHistorySize: 100,
+      showDiff: "on_request",
     },
     agent: {
       systemPrompt: COCO_SYSTEM_PROMPT,
@@ -278,8 +283,11 @@ export function createDefaultReplConfig(): ReplConfig {
 /**
  * Create a new REPL session
  */
-export function createSession(projectPath: string, config?: Partial<ReplConfig>): ReplSession {
-  const defaultConfig = createDefaultReplConfig();
+export async function createSession(
+  projectPath: string,
+  config?: Partial<ReplConfig>,
+): Promise<ReplSession> {
+  const defaultConfig = await createDefaultReplConfig();
   return {
     id: randomUUID(),
     startedAt: new Date(),
@@ -831,25 +839,31 @@ export async function checkAndCompactContext(
     return null;
   }
 
-  // Perform compaction
+  // Perform compaction with error handling
   const compactor = createContextCompactor({
     preserveLastN: 8,
     summaryMaxTokens: 1000,
   });
 
-  const result = await compactor.compact(session.messages, provider, signal);
+  try {
+    const result = await compactor.compact(session.messages, provider, signal);
 
-  if (result.wasCompacted) {
-    // Update session messages with compacted version
-    // Extract non-system messages from compacted result
-    const compactedNonSystem = result.messages.filter((m) => m.role !== "system");
-    session.messages = compactedNonSystem;
+    if (result.wasCompacted) {
+      // Update session messages with compacted version
+      // Extract non-system messages from compacted result
+      const compactedNonSystem = result.messages.filter((m) => m.role !== "system");
+      session.messages = compactedNonSystem;
 
-    // Update token count
-    session.contextManager!.setUsedTokens(result.compactedTokens);
+      // Update token count
+      session.contextManager!.setUsedTokens(result.compactedTokens);
+    }
+
+    return result;
+  } catch (error) {
+    // Compaction failed - log but don't stop the flow
+    // Return null to indicate compaction was not performed
+    return null;
   }
-
-  return result;
 }
 
 /**

@@ -41,6 +41,7 @@ import {
 } from "./hooks/index.js";
 import { resetLineBuffer, flushLineBuffer } from "./output/renderer.js";
 import { promptAllowPath } from "./allow-path-prompt.js";
+import { isAbortError } from "./error-resilience.js";
 
 /**
  * Options for executing an agent turn
@@ -190,85 +191,128 @@ export async function executeAgentTurn(
       { id: string; name: string; input: Record<string, unknown> }
     > = new Map();
 
-    for await (const chunk of provider.streamWithTools(messages, {
-      tools,
-      maxTokens: session.config.provider.maxTokens,
-      signal: options.signal,
-    })) {
-      // Check for abort
-      if (options.signal?.aborted) {
-        break;
+    // Wrap streaming in try/catch to handle provider errors gracefully
+    try {
+      for await (const chunk of provider.streamWithTools(messages, {
+        tools,
+        maxTokens: session.config.provider.maxTokens,
+        signal: options.signal,
+      })) {
+        // Check for abort
+        if (options.signal?.aborted) {
+          break;
+        }
+
+        // Wrap each chunk processing in try/catch to prevent single bad chunk from stopping flow
+        try {
+          // Handle text chunks - stream them immediately
+          if (chunk.type === "text" && chunk.text) {
+            // End thinking spinner on first text
+            if (!thinkingEnded) {
+              options.onThinkingEnd?.();
+              thinkingEnded = true;
+            }
+            responseContent += chunk.text;
+            finalContent += chunk.text;
+            options.onStream?.(chunk);
+          }
+
+          // Handle tool call start
+          if (chunk.type === "tool_use_start" && chunk.toolCall) {
+            // Flush any buffered text before showing spinner
+            flushLineBuffer();
+
+            // End thinking spinner when tool starts (if no text came first)
+            if (!thinkingEnded) {
+              options.onThinkingEnd?.();
+              thinkingEnded = true;
+            }
+            const id = chunk.toolCall.id ?? `tool_${toolCallBuilders.size}`;
+            const toolName = chunk.toolCall.name ?? "";
+            toolCallBuilders.set(id, {
+              id,
+              name: toolName,
+              input: {},
+            });
+            // Notify that a tool is being prepared/parsed
+            if (toolName) {
+              options.onToolPreparing?.(toolName);
+            }
+          }
+
+          // Handle tool call end - finalize the tool call
+          if (chunk.type === "tool_use_end" && chunk.toolCall) {
+            const id = chunk.toolCall.id ?? "";
+            const builder = toolCallBuilders.get(id);
+            if (builder) {
+              const finalToolCall: ToolCall = {
+                id: builder.id,
+                name: chunk.toolCall.name ?? builder.name,
+                input: chunk.toolCall.input ?? builder.input,
+              };
+              collectedToolCalls.push(finalToolCall);
+            } else if (chunk.toolCall.id && chunk.toolCall.name) {
+              // Direct tool call without builder
+              collectedToolCalls.push({
+                id: chunk.toolCall.id,
+                name: chunk.toolCall.name,
+                input: chunk.toolCall.input ?? {},
+              });
+            }
+          }
+
+          // Handle done
+          if (chunk.type === "done") {
+            // Capture stopReason from the done chunk
+            if (chunk.stopReason) {
+              lastStopReason = chunk.stopReason;
+            }
+            // Ensure thinking ended
+            if (!thinkingEnded) {
+              options.onThinkingEnd?.();
+              thinkingEnded = true;
+            }
+            break;
+          }
+        } catch (chunkError) {
+          // Log chunk processing error but continue with next chunk
+          // This prevents a single malformed chunk from stopping the entire flow
+          const errorMsg = chunkError instanceof Error ? chunkError.message : String(chunkError);
+          console.error(`[agent-loop] Error processing chunk: ${errorMsg}`);
+          // Continue to next chunk
+        }
+      }
+    } catch (streamError) {
+      // Ensure thinking ended on error
+      if (!thinkingEnded) {
+        options.onThinkingEnd?.();
+        thinkingEnded = true;
       }
 
-      // Handle text chunks - stream them immediately
-      if (chunk.type === "text" && chunk.text) {
-        // End thinking spinner on first text
-        if (!thinkingEnded) {
-          options.onThinkingEnd?.();
-          thinkingEnded = true;
-        }
-        responseContent += chunk.text;
-        finalContent += chunk.text;
-        options.onStream?.(chunk);
+      // Handle abort errors gracefully
+      if (isAbortError(streamError, options.signal)) {
+        return abortReturn();
       }
 
-      // Handle tool call start
-      if (chunk.type === "tool_use_start" && chunk.toolCall) {
-        // Flush any buffered text before showing spinner
-        flushLineBuffer();
+      // For other errors, add error message to response and re-throw
+      // so the caller can handle recovery
+      const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
 
-        // End thinking spinner when tool starts (if no text came first)
-        if (!thinkingEnded) {
-          options.onThinkingEnd?.();
-          thinkingEnded = true;
-        }
-        const id = chunk.toolCall.id ?? `tool_${toolCallBuilders.size}`;
-        const toolName = chunk.toolCall.name ?? "";
-        toolCallBuilders.set(id, {
-          id,
-          name: toolName,
-          input: {},
-        });
-        // Notify that a tool is being prepared/parsed
-        if (toolName) {
-          options.onToolPreparing?.(toolName);
-        }
-      }
+      // Add error as assistant message so LLM can see what happened
+      addMessage(session, {
+        role: "assistant",
+        content: `[Error during streaming: ${errorMsg}]`,
+      });
 
-      // Handle tool call end - finalize the tool call
-      if (chunk.type === "tool_use_end" && chunk.toolCall) {
-        const id = chunk.toolCall.id ?? "";
-        const builder = toolCallBuilders.get(id);
-        if (builder) {
-          const finalToolCall: ToolCall = {
-            id: builder.id,
-            name: chunk.toolCall.name ?? builder.name,
-            input: chunk.toolCall.input ?? builder.input,
-          };
-          collectedToolCalls.push(finalToolCall);
-        } else if (chunk.toolCall.id && chunk.toolCall.name) {
-          // Direct tool call without builder
-          collectedToolCalls.push({
-            id: chunk.toolCall.id,
-            name: chunk.toolCall.name,
-            input: chunk.toolCall.input ?? {},
-          });
-        }
-      }
-
-      // Handle done
-      if (chunk.type === "done") {
-        // Capture stopReason from the done chunk
-        if (chunk.stopReason) {
-          lastStopReason = chunk.stopReason;
-        }
-        // Ensure thinking ended
-        if (!thinkingEnded) {
-          options.onThinkingEnd?.();
-          thinkingEnded = true;
-        }
-        break;
-      }
+      // Return partial results with error info
+      return {
+        content: finalContent || `[Error: ${errorMsg}]`,
+        toolCalls: executedTools,
+        usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+        aborted: false,
+        partialContent: finalContent || undefined,
+        error: errorMsg,
+      };
     }
 
     // Estimate token usage (streaming doesn't provide exact counts)

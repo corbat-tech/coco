@@ -1,8 +1,8 @@
 /**
  * Visual diff renderer for terminal
  *
- * Parses git unified diff format and renders with box-style formatting
- * matching the existing code block rendering in renderer.ts.
+ * Parses git unified diff format and renders with clean Codex-style formatting
+ * showing removed lines with red background (-) and added lines with green background (+).
  */
 
 import chalk from "chalk";
@@ -312,11 +312,6 @@ export function highlightWordChanges(
 
 const getTerminalWidth = () => process.stdout.columns || 80;
 
-function stripAnsi(str: string): string {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*m/g, "");
-}
-
 /**
  * Detect language from file extension for syntax highlighting.
  */
@@ -371,11 +366,10 @@ export function renderDiff(diff: ParsedDiff, options?: DiffRenderOptions): void 
 }
 
 function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): void {
-  const { maxWidth, showLineNumbers, compact } = opts;
+  const { showLineNumbers, compact } = opts;
   const lang = detectLanguage(file.path);
-  const contentWidth = Math.max(1, maxWidth - 4);
 
-  // File header
+  // File header - clean Codex-style without box borders
   const typeLabel =
     file.type === "modified"
       ? "modified"
@@ -385,27 +379,19 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
           ? "deleted"
           : `renamed from ${file.oldPath}`;
   const statsLabel = ` +${file.additions} -${file.deletions}`;
-  const title = ` ${file.path} (${typeLabel}${statsLabel}) `;
+  const title = `${file.path} (${typeLabel}${statsLabel})`;
 
-  // Top border
-  const topFill = Math.max(0, maxWidth - 2 - stripAnsi(title).length);
-  console.log(
-    chalk.magenta("╭──") + chalk.cyan.bold(title) + chalk.magenta("─".repeat(topFill) + "╮"),
-  );
+  console.log(chalk.cyan.bold(title));
 
   // Hunks
   for (let h = 0; h < file.hunks.length; h++) {
     const hunk = file.hunks[h]!;
 
-    // Hunk header
+    // Hunk header - clean style without box borders
     if (!compact || h > 0) {
       const hunkLabel = hunk.heading ? ` ${chalk.dim(hunk.heading)}` : "";
       console.log(
-        chalk.magenta("│") +
-          " " +
-          chalk.cyan(
-            `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
-          ) +
+        chalk.cyan(`@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`) +
           hunkLabel,
       );
     }
@@ -426,7 +412,7 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
       wordHighlights.set(pair.deleteIdx, highlightWordChanges(delLine.content, addLine.content));
     }
 
-    // Lines
+    // Lines - clean style without box borders
     for (let li = 0; li < hunk.lines.length; li++) {
       const line = hunk.lines[li]!;
       const lineNo = formatLineNo(line, showLineNumbers);
@@ -441,15 +427,13 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
         } else {
           content = line.content;
         }
-        // Full-width background: line number + prefix + content + padding
-        const innerText = `${lineNo}${prefix} ${content}`;
-        const plainLen = stripAnsi(innerText).length + 1; // +1 for leading space
-        const pad = Math.max(0, contentWidth - plainLen);
-        console.log(
-          chalk.magenta("│") +
-            bgAddLine(` ${innerText}` + " ".repeat(pad + 2)) +
-            chalk.magenta("│"),
-        );
+        // Apply syntax highlighting to the content
+        if (lang) {
+          content = highlightLine(content, lang);
+        }
+        // Green for added lines with line number and prefix
+        const lineStr = `${lineNo}${prefix} ${content}`;
+        console.log(bgAddLine(lineStr));
       } else if (line.type === "delete") {
         const isPaired = pairedDeleteIndices.has(li);
         let content: string;
@@ -458,36 +442,26 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
         } else {
           content = line.content;
         }
-        // Full-width background: line number + prefix + content + padding
-        const innerText = `${lineNo}${prefix} ${content}`;
-        const plainLen = stripAnsi(innerText).length + 1;
-        const pad = Math.max(0, contentWidth - plainLen);
-        console.log(
-          chalk.magenta("│") +
-            bgDeleteLine(` ${innerText}` + " ".repeat(pad + 2)) +
-            chalk.magenta("│"),
-        );
+        // Apply syntax highlighting to the content
+        if (lang) {
+          content = highlightLine(content, lang);
+        }
+        // Red for deleted lines with line number and prefix
+        const lineStr = `${lineNo}${prefix} ${content}`;
+        console.log(bgDeleteLine(lineStr));
       } else {
         let content = line.content;
         if (lang) {
           content = highlightLine(content, lang);
         }
         const lineStr = `${lineNo}${prefix} ${content}`;
-        const plainLen = stripAnsi(lineStr).length;
-        const pad = Math.max(0, contentWidth - plainLen);
-        console.log(
-          chalk.magenta("│") +
-            chalk.dim(` ${lineStr}`) +
-            " ".repeat(pad) +
-            " " +
-            chalk.magenta("│"),
-        );
+        console.log(chalk.dim(lineStr));
       }
     }
   }
 
-  // Bottom border
-  console.log(chalk.magenta("╰" + "─".repeat(Math.max(0, maxWidth - 2)) + "╯"));
+  // Empty line after each file for separation
+  console.log();
 }
 
 function formatLineNo(line: DiffLine, show: boolean): string {

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.20.0] - 2026-03-24
+
+### Added
+- **Deep file search for suggestions** — `findFileRecursive` uses BFS with configurable depth (default 8), timeout (3s), and exclusion patterns to find files/directories even when the user provides partial or incorrect paths. Handles permission errors gracefully and stops early when max results found.
+- **Error resilience system** — new `error-resilience.ts` module provides robust abort detection (`isAbortError`) across Anthropic, OpenAI, and DOM AbortController types; user-friendly error messages for quota/billing/auth issues; and process safety nets for uncaught exceptions.
+- **Diff formatter utility** — `diff-formatter.ts` provides clean Codex-style diff formatting with `getModifiedFiles`, `getStagedFiles`, `formatChangeSummary`, and `formatDiff` functions. Filters auto-generated files (lockfiles, minified assets) and respects terminal width.
+- **Streaming error handling in agent loop** — individual chunk processing errors are caught and logged without stopping the flow; provider stream errors are captured in `AgentTurnResult.error` for LLM recovery prompts.
+- **Provider error classification** — `isNonRetryableProviderError` and `getUserFacingProviderError` distinguish between retryable (network, rate limit) and non-retryable (auth, quota, billing) errors with actionable user messages.
+
+### Improved
+- **Diff rendering** — removed box borders for cleaner Codex-style output; syntax highlighting preserved; hunk headers use standard `@@ -L,S +L,S @@` format without decorative borders.
+- **Code block rendering** — removed box borders from rendered code blocks for cleaner terminal output.
+- **Default models updated** — aligned with current provider offerings:
+  - `ollama`: `llama3.1` → `llama3.2`
+  - `codex`: `gpt-5.4-codex` → `codex-mini-latest`
+  - `copilot`: `claude-sonnet-4.6` → `gpt-4o-copilot`
+  - `openrouter`: `anthropic/claude-opus-4-6` → `anthropic/claude-3.5-sonnet`
+  - `mistral`: `codestral-latest` → `mistral-large-latest`
+  - `deepseek`: `deepseek-coder` → `deepseek-chat`
+  - `together`: `Qwen/Qwen2.5-Coder-32B-Instruct` → `meta-llama/Llama-3.3-70B-Instruct-Turbo`
+  - `huggingface`: `Qwen/Qwen2.5-Coder-32B-Instruct` → `meta-llama/Llama-3.1-70B-Instruct`
+  - `qwen`: `qwen-coder-plus` → `qwen-max`
+
+### Fixed
+- **Codex API parameter** — changed `max_output_tokens` to `max_tokens` to match OpenAI Responses API specification.
+- **OAuth provider mapping** — `openai` provider now correctly maps to `codex` when `OPENAI_CODEX_TOKEN` is set, enabling ChatGPT subscription authentication.
+- **Async provider preference** — `getLastUsedProvider` and `createSession` are now async to support persistent preference storage.
+- **Trust store error handling** — trust store load failures are now non-critical warnings instead of fatal errors.
+
+### Changed
+- **Provider schema** — added `copilot` and `qwen` to valid provider types.
+- **Agent turn result** — added optional `error` field for streaming error capture.
+- **Config schema** — added `showDiff` option for controlling diff display behavior.
+
 ---
 
 ## [2.19.0] - 2026-03-24

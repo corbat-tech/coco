@@ -13,6 +13,7 @@ export const ProviderConfigSchema = z.object({
       "anthropic",
       "openai",
       "codex",
+      "copilot",
       "gemini",
       "kimi",
       "kimi-code",
@@ -24,6 +25,7 @@ export const ProviderConfigSchema = z.object({
       "deepseek",
       "together",
       "huggingface",
+      "qwen",
     ])
     .default("anthropic"),
   apiKey: z.string().optional(),

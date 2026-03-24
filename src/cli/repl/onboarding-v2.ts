@@ -1312,7 +1312,7 @@ export async function saveConfiguration(result: OnboardingResult): Promise<void>
   // Copilot credentials are already saved by the device flow (copilot.json)
   // Just save the provider/model preference to config.json
   if (result.type === "copilot") {
-    await saveProviderPreference("copilot", result.model, "oauth");
+    await saveProviderPreference("copilot", result.model);
     p.log.success("✅ GitHub Copilot configured");
     p.log.message(chalk.dim("   Credentials stored in ~/.coco/tokens/copilot.json"));
     return;
@@ -1552,7 +1552,7 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
                 },
               };
               // Save the migration
-              await saveProviderPreference("openai", config.provider.model || "gpt-4o", "oauth");
+              await saveProviderPreference("openai", config.provider.model || "gpt-4o");
               return migratedConfig;
             }
             return config;
@@ -1649,7 +1649,7 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
           const provider = await createProvider("codex", { model });
           if (await provider.isAvailable()) {
             // Save as openai with oauth authMethod
-            await saveProviderPreference("openai", model, "oauth");
+            await saveProviderPreference("openai", model);
             return {
               ...config,
               provider: {

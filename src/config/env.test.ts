@@ -267,13 +267,13 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("qwen");
 
-    expect(model).toBe("qwen-coder-plus");
+    expect(model).toBe("qwen-max");
   });
 
   it("should return default for unknown provider", () => {
     const model = getDefaultModel("unknown" as ProviderType);
 
-    expect(model).toBe("gpt-5.4-codex");
+    expect(model).toBe("claude-sonnet-4-6");
   });
 });
 

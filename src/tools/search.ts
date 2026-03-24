@@ -9,6 +9,7 @@ import fs from "node:fs/promises";
 import { glob } from "glob";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
+import { suggestSimilarFilesDeep, formatSuggestions } from "../utils/file-suggestions.js";
 
 /**
  * Search match interface
@@ -256,7 +257,9 @@ Examples:
       return { matches, count: matches.length };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new ToolError(`File not found: ${file}. Use glob to find the correct path.`, {
+        const suggestions = await suggestSimilarFilesDeep(file, process.cwd());
+        const hint = formatSuggestions(suggestions, path.dirname(file));
+        throw new ToolError(`File not found: ${file}${hint}\nUse glob to find the correct path.`, {
           tool: "find_in_file",
         });
       }

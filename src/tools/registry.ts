@@ -7,6 +7,7 @@ import { z } from "zod";
 import { getLogger } from "../utils/logger.js";
 import { humanizeError } from "../utils/error-humanizer.js";
 import { isCocoError } from "../utils/errors.js";
+import { isAbortError } from "../cli/repl/error-resilience.js";
 
 /**
  * Tool definition
@@ -227,6 +228,9 @@ export class ToolRegistry {
         if (error.suggestion && !errorMessage.includes(error.suggestion)) {
           errorMessage += `\nSuggestion: ${error.suggestion}`;
         }
+      } else if (isAbortError(error, options?.signal)) {
+        // Provider abort errors (e.g., "Request was aborted") should be handled gracefully
+        errorMessage = "Operation cancelled by user or provider";
       } else {
         const rawMessage = error instanceof Error ? error.message : String(error);
         errorMessage = humanizeError(rawMessage, name);

@@ -52,6 +52,8 @@ export interface ReplConfig {
     theme: "dark" | "light" | "auto";
     showTimestamps: boolean;
     maxHistorySize: number;
+    /** When to show diff after file modifications */
+    showDiff: "never" | "on_request" | "on_complete" | "always";
   };
   agent: {
     systemPrompt: string;
@@ -75,6 +77,8 @@ export interface AgentTurnResult {
   partialContent?: string;
   /** Reason for abort if applicable */
   abortReason?: "user_cancel" | "timeout" | "error";
+  /** Error message if the turn failed */
+  error?: string;
 }
 
 /**

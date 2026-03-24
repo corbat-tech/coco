@@ -634,7 +634,24 @@ export class AnthropicProvider implements LLMProvider {
    */
   private handleError(error: unknown): never {
     if (error instanceof Anthropic.APIError) {
-      const retryable = error.status === 429 || error.status >= 500;
+      const msg = error.message.toLowerCase();
+      let retryable = error.status === 429 || error.status >= 500;
+
+      // Non-retryable: quota/billing errors
+      if (
+        msg.includes("usage limit") ||
+        msg.includes("quota") ||
+        msg.includes("billing") ||
+        msg.includes("insufficient funds")
+      ) {
+        retryable = false;
+      }
+
+      // Non-retryable: auth errors
+      if (error.status === 401 || error.status === 403) {
+        retryable = false;
+      }
+
       throw new ProviderError(error.message, {
         provider: this.id,
         statusCode: error.status,
@@ -643,9 +660,21 @@ export class AnthropicProvider implements LLMProvider {
       });
     }
 
-    throw new ProviderError(error instanceof Error ? error.message : String(error), {
+    // Handle non-Anthropic errors
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      const isQuotaError =
+        msg.includes("usage limit") || msg.includes("quota") || msg.includes("billing");
+
+      throw new ProviderError(error.message, {
+        provider: this.id,
+        retryable: !isQuotaError,
+        cause: error,
+      });
+    }
+
+    throw new ProviderError(String(error), {
       provider: this.id,
-      cause: error instanceof Error ? error : undefined,
     });
   }
 }
