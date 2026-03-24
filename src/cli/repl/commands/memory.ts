@@ -5,6 +5,7 @@
  * including their levels, paths, sizes, and sections.
  */
 
+import path from "node:path";
 import chalk from "chalk";
 import type { SlashCommand, ReplSession } from "../types.js";
 import type { MemoryContext, MemoryFile, MemoryLevel } from "../memory/types.js";
@@ -29,6 +30,8 @@ function getLevelStyle(level: MemoryLevel): { emoji: string; color: typeof chalk
       return { emoji: "👤", color: chalk.blue };
     case "project":
       return { emoji: "📁", color: chalk.cyan };
+    case "directory":
+      return { emoji: "📂", color: chalk.green };
     case "local":
       return { emoji: "📝", color: chalk.yellow };
     default:
@@ -45,6 +48,8 @@ function getLevelName(level: MemoryLevel): string {
       return "User";
     case "project":
       return "Project";
+    case "directory":
+      return "Directory";
     case "local":
       return "Local";
     default:
@@ -59,8 +64,11 @@ function displayMemoryFile(file: MemoryFile): void {
   const { emoji, color } = getLevelStyle(file.level);
   const levelName = getLevelName(file.level);
 
+  const fileName = path.basename(file.path);
   console.log();
-  console.log(`${emoji} ${color.bold(levelName)} ${chalk.dim(`(${file.path})`)}`);
+  console.log(
+    `${emoji} ${color.bold(levelName)} ${chalk.dim(`(${fileName})`)} ${chalk.dim(file.path)}`,
+  );
 
   if (!file.exists) {
     console.log(`  ${chalk.red("✗")} Not found`);
@@ -144,9 +152,9 @@ function displaySection(sectionName: string, memoryContext: MemoryContext): bool
 function createPlaceholderContext(): MemoryContext {
   const context = createEmptyMemoryContext();
   context.files = [
-    createMissingMemoryFile("~/.coco/COCO.md", "user"),
-    createMissingMemoryFile("./CLAUDE.md", "project"),
-    createMissingMemoryFile("./CLAUDE.local.md", "local"),
+    createMissingMemoryFile("~/.coco/AGENTS.md", "user"),
+    createMissingMemoryFile("./AGENTS.md", "project"),
+    createMissingMemoryFile("./AGENTS.local.md", "local"),
   ];
   return context;
 }
@@ -158,9 +166,37 @@ export const memoryCommand: SlashCommand = {
   name: "memory",
   aliases: ["mem"],
   description: "Show loaded memory files and their content",
-  usage: "/memory [section]",
+  usage: "/memory [reload|section-name]",
 
   async execute(args: string[], session: ReplSession): Promise<boolean> {
+    // Handle reload subcommand
+    if (args[0]?.toLowerCase() === "reload") {
+      const { initializeSessionMemory } = await import("../session.js");
+      await initializeSessionMemory(session);
+      const reloaded =
+        (session as unknown as { memoryContext?: MemoryContext }).memoryContext?.files.filter(
+          (f) => f.exists,
+        ) ?? [];
+      console.log();
+      if (reloaded.length > 0) {
+        console.log(
+          chalk.green(
+            `✓ Memory reloaded — ${reloaded.length} file${reloaded.length !== 1 ? "s" : ""} loaded`,
+          ),
+        );
+        for (const f of reloaded) {
+          const fileName = path.basename(f.path);
+          console.log(chalk.dim(`  ${fileName} (${formatSize(f.content?.length ?? 0)})`));
+        }
+      } else {
+        console.log(
+          chalk.yellow("  No instruction files found (AGENTS.md, COCO.md, or CLAUDE.md)"),
+        );
+      }
+      console.log();
+      return false;
+    }
+
     // Get memory context from session or create placeholder
     const memoryContext: MemoryContext =
       (session as unknown as { memoryContext?: MemoryContext }).memoryContext ??

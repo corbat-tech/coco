@@ -994,6 +994,12 @@ export async function startRepl(
             compactSpinner.stop(
               `Context compacted (${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%)`,
             );
+            // Persistent compact notice — stays in scroll history
+            console.log(
+              chalk.dim(
+                `  ⟳ Context compacted · ${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%`,
+              ),
+            );
             warned75 = false;
             warned90 = false;
           } else {

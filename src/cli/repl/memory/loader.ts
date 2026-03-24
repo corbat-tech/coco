@@ -350,11 +350,7 @@ export class MemoryLoader {
       }
 
       const importPath = atImportMatch?.[1] ?? mdLinkMatch?.[2] ?? null;
-      const originalPath = atImportMatch
-        ? `@${importPath}`
-        : mdLinkMatch
-          ? line.trim()
-          : null;
+      const originalPath = atImportMatch ? `@${importPath}` : mdLinkMatch ? line.trim() : null;
 
       if (importPath && originalPath) {
         const resolvedPath = this.resolveImportPath(importPath, basePath);

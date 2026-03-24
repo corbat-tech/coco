@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.19.0] - 2026-03-24
+
+### Added
+- **Copy-hint footer on code blocks** — every rendered code block now shows `#N · /copy N` in the bottom border, so you can see the block ID and the exact command to copy it without hunting through output.
+- **Persistent compaction line** — after context compaction completes, a `⟳ Context compacted · X% → Y%` line is printed to the scroll buffer so the reduction is visible in history (previously only an ephemeral spinner).
+
+### Improved
+- **Rich unified diff for `edit_file` previews** — `edit_file` operations now render a real unified diff with `±2` context lines, word-level change highlighting (green words added, red words removed), `⋮` separator between non-contiguous hunks, and a `… +N more lines` guard for large diffs. Replaces the previous simple before/after display.
+- **`/memory` command** — shows the winning filename per level (e.g. `📁 Project (AGENTS.md) ✓`), handles the new `directory` level with a 📂 icon, and supports `/memory reload` to hot-reload all instruction files without restarting the session.
+- **`AGENTS.md` placeholder in `/memory`** — when no instruction files are loaded, the placeholder now shows `~/.coco/AGENTS.md`, `./AGENTS.md`, and `./AGENTS.local.md` (aligned with the AGENTS.md-first priority order).
+
+### Fixed
+- **OpenAI 400 `max_output_tokens` error for `o3-mini`** — `needsResponsesApi()` was routing `o3-mini` to the Responses API (which requires `max_output_tokens`) when it should use Chat Completions (`max_completion_tokens`). The check now matches only the full `o3` model name.
+- **Default model updated to `claude-sonnet-4-6`** — config schema was still defaulting to `claude-sonnet-4-20250514`; updated to `claude-sonnet-4-6`.
+
+### Changed
+- **`o3` and `o4-mini` added to no-temperature list** — these reasoning models do not accept a `temperature` parameter; adding them prevents `400 Unsupported parameter: temperature` errors.
+
+---
+
 ## [2.18.0] - 2026-03-24
 
 ### Added
@@ -960,7 +980,15 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.13.1...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.19.0...HEAD
+[2.19.0]: https://github.com/corbat/corbat-coco/compare/v2.18.0...v2.19.0
+[2.18.0]: https://github.com/corbat/corbat-coco/compare/v2.17.1...v2.18.0
+[2.17.1]: https://github.com/corbat/corbat-coco/compare/v2.17.0...v2.17.1
+[2.17.0]: https://github.com/corbat/corbat-coco/compare/v2.15.0...v2.17.0
+[2.15.0]: https://github.com/corbat/corbat-coco/compare/v2.14.1...v2.15.0
+[2.14.1]: https://github.com/corbat/corbat-coco/compare/v2.14.0...v2.14.1
+[2.14.0]: https://github.com/corbat-tech/coco/compare/v2.13.1...v2.14.0
+[2.13.1]: https://github.com/corbat-tech/coco/compare/v2.13.0...v2.13.1
 [2.13.1]: https://github.com/corbat-tech/coco/compare/v2.13.0...v2.13.1
 [2.12.0]: https://github.com/corbat-tech/coco/compare/v2.11.1...v2.12.0
 [2.11.0]: https://github.com/corbat-tech/coco/compare/v2.10.0...v2.11.0

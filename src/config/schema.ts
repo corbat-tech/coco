@@ -27,7 +27,7 @@ export const ProviderConfigSchema = z.object({
     ])
     .default("anthropic"),
   apiKey: z.string().optional(),
-  model: z.string().default("claude-sonnet-4-20250514"),
+  model: z.string().default("claude-sonnet-4-6"),
   maxTokens: z.number().min(1).max(200000).default(8192),
   temperature: z.number().min(0).max(2).default(0),
   timeout: z.number().min(1000).default(120000),
@@ -228,7 +228,7 @@ export const CocoConfigSchema = z.object({
   project: ProjectConfigSchema,
   provider: ProviderConfigSchema.default({
     type: "anthropic",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     maxTokens: 8192,
     temperature: 0,
     timeout: 120000,
@@ -286,7 +286,7 @@ export function createDefaultConfigObject(
     },
     provider: {
       type: "anthropic",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       maxTokens: 8192,
       temperature: 0,
       timeout: 120000,

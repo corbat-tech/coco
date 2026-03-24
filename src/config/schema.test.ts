@@ -35,7 +35,7 @@ describe("CocoConfigSchema", () => {
         },
         provider: {
           type: "anthropic",
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           maxTokens: 8192,
           temperature: 0,
           timeout: 120000,
@@ -75,7 +75,7 @@ describe("CocoConfigSchema", () => {
 
       // Check provider defaults
       expect(result.provider.type).toBe("anthropic");
-      expect(result.provider.model).toBe("claude-sonnet-4-20250514");
+      expect(result.provider.model).toBe("claude-sonnet-4-6");
 
       // Check quality defaults
       expect(result.quality.minScore).toBe(85);
@@ -154,7 +154,7 @@ describe("ProviderConfigSchema", () => {
   it("should accept anthropic provider", () => {
     const config = {
       type: "anthropic",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
     };
 
     const result = ProviderConfigSchema.safeParse(config);
@@ -421,7 +421,7 @@ describe("createDefaultConfigObject", () => {
     const config = createDefaultConfigObject("test");
 
     expect(config.provider.type).toBe("anthropic");
-    expect(config.provider.model).toBe("claude-sonnet-4-20250514");
+    expect(config.provider.model).toBe("claude-sonnet-4-6");
     expect(config.provider.maxTokens).toBe(8192);
     expect(config.provider.temperature).toBe(0);
     expect(config.provider.timeout).toBe(120000);
