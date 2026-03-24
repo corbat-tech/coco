@@ -302,8 +302,17 @@ export class MemoryLoader {
   }
 
   /**
-   * Resolve import paths in content
-   * @param content - Content with potential @path imports
+   * Resolve import paths in content.
+   *
+   * Supports two import syntaxes:
+   * 1. `@path/to/file.md` — explicit import directive on its own line
+   * 2. `[text](path/to/file.md)` — standalone markdown link on its own line,
+   *    pointing to a local .md/.txt/.rst file (not a URL).
+   *
+   * Both syntaxes must appear alone on a line (no surrounding text).
+   * URL links (containing `://`) are never followed.
+   *
+   * @param content - Content with potential imports
    * @param basePath - Base directory for resolving relative paths
    * @param depth - Current recursion depth
    * @returns Processed content with imports inlined
@@ -328,15 +337,30 @@ export class MemoryLoader {
       const line = lines[i] ?? "";
       const lineNumber = i + 1;
 
-      // Check if line is an import (starts with @ and has a path)
-      const importMatch = line.match(/^@([^\s]+)\s*$/);
+      // Syntax 1: @path/to/file — explicit import directive
+      const atImportMatch = line.match(/^@([^\s]+)\s*$/);
 
-      if (importMatch && importMatch[1]) {
-        const importPath = importMatch[1];
+      // Syntax 2: [text](path/to/file.md) — standalone markdown link to local file.
+      // Conditions: line must contain ONLY a markdown link (no surrounding text),
+      // the path must end in a doc extension (.md, .txt, .rst),
+      // and it must NOT be a URL (no ://).
+      let mdLinkMatch: RegExpMatchArray | null = null;
+      if (!atImportMatch && !line.includes("://")) {
+        mdLinkMatch = line.match(/^\[([^\]]*)\]\(([^)]+\.(md|txt|rst))\)\s*$/);
+      }
+
+      const importPath = atImportMatch?.[1] ?? mdLinkMatch?.[2] ?? null;
+      const originalPath = atImportMatch
+        ? `@${importPath}`
+        : mdLinkMatch
+          ? line.trim()
+          : null;
+
+      if (importPath && originalPath) {
         const resolvedPath = this.resolveImportPath(importPath, basePath);
 
         const memoryImport: MemoryImport = {
-          originalPath: `@${importPath}`,
+          originalPath,
           resolvedPath,
           line: lineNumber,
           resolved: false,

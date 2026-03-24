@@ -50,22 +50,22 @@ describe("types.ts", () => {
   });
 
   describe("DEFAULT_FILE_PATTERNS", () => {
-    it("should include COCO.md as first pattern", async () => {
+    it("should include AGENTS.md as first pattern (universal standard, highest priority)", async () => {
       const { DEFAULT_FILE_PATTERNS } = await import("./types.js");
 
-      expect(DEFAULT_FILE_PATTERNS[0]).toBe("COCO.md");
+      expect(DEFAULT_FILE_PATTERNS[0]).toBe("AGENTS.md");
     });
 
-    it("should include CLAUDE.md as second pattern", async () => {
+    it("should include COCO.md as second pattern (Coco-specific fallback)", async () => {
       const { DEFAULT_FILE_PATTERNS } = await import("./types.js");
 
-      expect(DEFAULT_FILE_PATTERNS[1]).toBe("CLAUDE.md");
+      expect(DEFAULT_FILE_PATTERNS[1]).toBe("COCO.md");
     });
 
-    it("should include AGENTS.md as universal fallback", async () => {
+    it("should include CLAUDE.md as third pattern (Claude Code compatibility fallback)", async () => {
       const { DEFAULT_FILE_PATTERNS } = await import("./types.js");
 
-      expect(DEFAULT_FILE_PATTERNS[2]).toBe("AGENTS.md");
+      expect(DEFAULT_FILE_PATTERNS[2]).toBe("CLAUDE.md");
     });
 
     it("should have exactly 3 patterns", async () => {
@@ -315,35 +315,35 @@ describe("loader.ts", () => {
       expect(paths.project).toBe(agentsPath);
     });
 
-    it("should prefer COCO.md over AGENTS.md", async () => {
+    it("should prefer AGENTS.md over COCO.md (AGENTS.md is highest priority)", async () => {
       const { createMemoryLoader } = await import("./loader.js");
       const loader = createMemoryLoader({ includeUserLevel: false });
 
+      const agentsPath = path.join(tempDir, "AGENTS.md");
       const cocoPath = path.join(tempDir, "COCO.md");
-      const agentsPath = path.join(tempDir, "AGENTS.md");
-      await fs.writeFile(cocoPath, "# COCO Memory", "utf-8");
       await fs.writeFile(agentsPath, "# Agents Memory", "utf-8");
+      await fs.writeFile(cocoPath, "# COCO Memory", "utf-8");
 
       const paths = await loader.findMemoryFiles(tempDir);
 
-      expect(paths.project).toBe(cocoPath);
+      expect(paths.project).toBe(agentsPath);
     });
 
-    it("should prefer CLAUDE.md over AGENTS.md", async () => {
+    it("should prefer AGENTS.md over CLAUDE.md (AGENTS.md is highest priority)", async () => {
       const { createMemoryLoader } = await import("./loader.js");
       const loader = createMemoryLoader({ includeUserLevel: false });
 
-      const claudePath = path.join(tempDir, "CLAUDE.md");
       const agentsPath = path.join(tempDir, "AGENTS.md");
-      await fs.writeFile(claudePath, "# Claude Memory", "utf-8");
+      const claudePath = path.join(tempDir, "CLAUDE.md");
       await fs.writeFile(agentsPath, "# Agents Memory", "utf-8");
+      await fs.writeFile(claudePath, "# Claude Memory", "utf-8");
 
       const paths = await loader.findMemoryFiles(tempDir);
 
-      expect(paths.project).toBe(claudePath);
+      expect(paths.project).toBe(agentsPath);
     });
 
-    it("should prefer COCO.md over CLAUDE.md", async () => {
+    it("should prefer COCO.md over CLAUDE.md (COCO.md is second priority)", async () => {
       const { createMemoryLoader } = await import("./loader.js");
       const loader = createMemoryLoader({ includeUserLevel: false });
 
@@ -611,6 +611,150 @@ Line 4`;
     });
   });
 
+  describe("resolveImports() — markdown link syntax [text](path.md)", () => {
+    it("should follow a standalone markdown link to a local .md file", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader();
+
+      const refFile = path.join(tempDir, "backend.md");
+      await fs.writeFile(refFile, "Backend conventions here", "utf-8");
+
+      const content = `[Backend docs](${refFile})`;
+      const result = await loader.resolveImports(content, tempDir, 0);
+
+      expect(result.content).toContain("Backend conventions here");
+      expect(result.imports).toHaveLength(1);
+      expect(result.imports[0]?.resolved).toBe(true);
+    });
+
+    it("should follow a standalone markdown link with descriptive text", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader();
+
+      const refFile = path.join(tempDir, "api.md");
+      await fs.writeFile(refFile, "API reference content", "utf-8");
+
+      const content = `Main instructions\n\n[See API reference](${refFile})\n\nMore text`;
+      const result = await loader.resolveImports(content, tempDir, 0);
+
+      expect(result.content).toContain("API reference content");
+      expect(result.imports[0]?.resolved).toBe(true);
+    });
+
+    it("should follow a standalone relative markdown link", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader();
+
+      const docsDir = path.join(tempDir, "docs");
+      await fs.mkdir(docsDir, { recursive: true });
+      const refFile = path.join(docsDir, "style.md");
+      await fs.writeFile(refFile, "Style guide content", "utf-8");
+
+      const content = `[Style guide](./docs/style.md)`;
+      const result = await loader.resolveImports(content, tempDir, 0);
+
+      expect(result.content).toContain("Style guide content");
+      expect(result.imports[0]?.resolved).toBe(true);
+    });
+
+    it("should NOT follow a markdown link that is inline (has surrounding text)", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader();
+
+      const refFile = path.join(tempDir, "backend.md");
+      await fs.writeFile(refFile, "Should not appear", "utf-8");
+
+      // Inline link — has text before the link on the same line
+      const content = `See more about backend in [backend.md](${refFile}) for details`;
+      const result = await loader.resolveImports(content, tempDir, 0);
+
+      // Inline links are preserved as-is, content NOT inlined
+      expect(result.content).not.toContain("Should not appear");
+      expect(result.imports).toHaveLength(0);
+    });
+
+    it("should NOT follow a markdown link pointing to a URL (contains ://)", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader();
+
+      const content = `[External docs](https://example.com/guide.md)`;
+      const result = await loader.resolveImports(content, tempDir, 0);
+
+      // URL links are preserved as-is
+      expect(result.content).toContain("https://example.com/guide.md");
+      expect(result.imports).toHaveLength(0);
+    });
+
+    it("should NOT follow a markdown link to a non-doc file extension (.js, .ts, etc)", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader();
+
+      const content = `[Script](./build.sh)`;
+      const result = await loader.resolveImports(content, tempDir, 0);
+
+      // Non-doc extensions are not followed
+      expect(result.imports).toHaveLength(0);
+      expect(result.content).toContain("[Script](./build.sh)");
+    });
+
+    it("should handle missing file referenced via markdown link gracefully", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader();
+
+      const content = `[Missing file](./nonexistent.md)`;
+      const result = await loader.resolveImports(content, tempDir, 0);
+
+      expect(result.imports).toHaveLength(1);
+      expect(result.imports[0]?.resolved).toBe(false);
+      expect(result.imports[0]?.error).toContain("File not found");
+    });
+
+    it("should add comment markers around markdown-link-imported content", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader();
+
+      const refFile = path.join(tempDir, "ref.md");
+      await fs.writeFile(refFile, "Referenced content", "utf-8");
+
+      const content = `[Reference](${refFile})`;
+      const result = await loader.resolveImports(content, tempDir, 0);
+
+      expect(result.content).toContain("<!-- Imported from:");
+      expect(result.content).toContain("<!-- End import:");
+    });
+
+    it("should support .txt files via markdown link", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader();
+
+      const txtFile = path.join(tempDir, "notes.txt");
+      await fs.writeFile(txtFile, "Plain text notes", "utf-8");
+
+      const content = `[Notes](${txtFile})`;
+      const result = await loader.resolveImports(content, tempDir, 0);
+
+      expect(result.content).toContain("Plain text notes");
+      expect(result.imports[0]?.resolved).toBe(true);
+    });
+
+    it("should work alongside @path imports in the same file", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader();
+
+      const atFile = path.join(tempDir, "at-style.md");
+      const mdFile = path.join(tempDir, "md-style.md");
+      await fs.writeFile(atFile, "AT style content", "utf-8");
+      await fs.writeFile(mdFile, "MD link content", "utf-8");
+
+      const content = `@${atFile}\n[MD link](${mdFile})`;
+      const result = await loader.resolveImports(content, tempDir, 0);
+
+      expect(result.content).toContain("AT style content");
+      expect(result.content).toContain("MD link content");
+      expect(result.imports).toHaveLength(2);
+    });
+  });
+
   describe("combineMemory()", () => {
     it("should merge files in correct order", async () => {
       const { createMemoryLoader } = await import("./loader.js");
@@ -720,6 +864,58 @@ Line 4`;
   });
 
   describe("loadMemory() - Full Integration", () => {
+    it("should load AGENTS.md as primary instruction file when present", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader({ includeUserLevel: false });
+
+      const agentsPath = path.join(tempDir, "AGENTS.md");
+      const cocoPath = path.join(tempDir, "COCO.md");
+      const claudePath = path.join(tempDir, "CLAUDE.md");
+      await fs.writeFile(agentsPath, "AGENTS content", "utf-8");
+      await fs.writeFile(cocoPath, "COCO content", "utf-8");
+      await fs.writeFile(claudePath, "CLAUDE content", "utf-8");
+
+      const context = await loader.loadMemory(tempDir);
+
+      // Only one project-level file should be loaded (AGENTS.md wins)
+      const projectFile = context.files.find((f) => f.level === "project");
+      expect(projectFile?.path).toBe(agentsPath);
+      expect(context.combinedContent).toContain("AGENTS content");
+      expect(context.combinedContent).not.toContain("COCO content");
+      expect(context.combinedContent).not.toContain("CLAUDE content");
+    });
+
+    it("should fall back to COCO.md when AGENTS.md is absent", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader({ includeUserLevel: false });
+
+      const cocoPath = path.join(tempDir, "COCO.md");
+      const claudePath = path.join(tempDir, "CLAUDE.md");
+      await fs.writeFile(cocoPath, "COCO content", "utf-8");
+      await fs.writeFile(claudePath, "CLAUDE content", "utf-8");
+
+      const context = await loader.loadMemory(tempDir);
+
+      const projectFile = context.files.find((f) => f.level === "project");
+      expect(projectFile?.path).toBe(cocoPath);
+      expect(context.combinedContent).toContain("COCO content");
+      expect(context.combinedContent).not.toContain("CLAUDE content");
+    });
+
+    it("should fall back to CLAUDE.md when AGENTS.md and COCO.md are absent", async () => {
+      const { createMemoryLoader } = await import("./loader.js");
+      const loader = createMemoryLoader({ includeUserLevel: false });
+
+      const claudePath = path.join(tempDir, "CLAUDE.md");
+      await fs.writeFile(claudePath, "CLAUDE content", "utf-8");
+
+      const context = await loader.loadMemory(tempDir);
+
+      const projectFile = context.files.find((f) => f.level === "project");
+      expect(projectFile?.path).toBe(claudePath);
+      expect(context.combinedContent).toContain("CLAUDE content");
+    });
+
     it("should load complete memory context", async () => {
       const { createMemoryLoader } = await import("./loader.js");
       const loader = createMemoryLoader({ includeUserLevel: false });
@@ -811,7 +1007,7 @@ Run tests with vitest`,
 // ============================================================================
 
 describe("Integration tests", () => {
-  it("should load actual CLAUDE.md from project root", async () => {
+  it("should load instruction file from project root (AGENTS.md > COCO.md > CLAUDE.md)", async () => {
     const { createMemoryLoader } = await import("./loader.js");
     const loader = createMemoryLoader({ includeUserLevel: false });
 
@@ -821,12 +1017,14 @@ describe("Integration tests", () => {
     const projectRoot = path.resolve(currentDir, "../../../..");
     const context = await loader.loadMemory(projectRoot);
 
-    // CLAUDE.md exists in the project root
+    // At least one of AGENTS.md / COCO.md / CLAUDE.md exists in the project root
     expect(context.files.length).toBeGreaterThanOrEqual(1);
     const projectFile = context.files.find((f) => f.level === "project");
 
     if (projectFile && projectFile.exists) {
-      expect(projectFile.path).toContain("CLAUDE.md");
+      // File must be one of the supported instruction formats
+      const fileName = path.basename(projectFile.path);
+      expect(["AGENTS.md", "COCO.md", "CLAUDE.md"]).toContain(fileName);
       expect(projectFile.content).toContain("Corbat-Coco");
     }
   });

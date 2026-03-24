@@ -435,9 +435,9 @@ export function getConversationContext(
     systemPrompt = systemPrompt.replace("{TOOL_CATALOG}", generateToolCatalog(toolRegistry));
   }
 
-  // Append memory/project instructions if available
+  // Append memory/project instructions if available (from AGENTS.md / COCO.md / CLAUDE.md)
   if (session.memoryContext?.combinedContent) {
-    systemPrompt = `${systemPrompt}\n\n# Project Instructions (from COCO.md/CLAUDE.md)\n\n${session.memoryContext.combinedContent}`;
+    systemPrompt = `${systemPrompt}\n\n# Project Instructions\n\n${session.memoryContext.combinedContent}`;
   }
 
   // Append project stack context if available
@@ -867,12 +867,13 @@ export function getContextUsageFormatted(session: ReplSession): string {
 }
 
 /**
- * Initialize session memory from COCO.md/CLAUDE.md files
+ * Initialize session memory from instruction files.
  *
- * Loads memory from:
- * - User level: ~/.coco/COCO.md
- * - Project level: ./COCO.md or ./CLAUDE.md
- * - Local level: ./COCO.local.md or ./CLAUDE.local.md
+ * Loads memory in priority order (highest wins at each level):
+ * - User level:    ~/.coco/AGENTS.md > ~/.coco/COCO.md > ~/.coco/CLAUDE.md
+ * - Project level: ./AGENTS.md > ./COCO.md > ./CLAUDE.md
+ * - Directory:     subdirectory AGENTS.md/COCO.md/CLAUDE.md (path-scoped)
+ * - Local level:   ./AGENTS.local.md > ./COCO.local.md > ./CLAUDE.local.md
  */
 export async function initializeSessionMemory(session: ReplSession): Promise<void> {
   const loader = createMemoryLoader();
