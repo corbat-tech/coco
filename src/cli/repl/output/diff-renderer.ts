@@ -459,15 +459,17 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
       }
     }
   }
-
-  // Empty line after each file for separation
-  console.log();
 }
 
 function formatLineNo(line: DiffLine, show: boolean): string {
   if (!show) return "";
-  const lineNo = line.type === "delete" ? line.oldLineNo : line.newLineNo;
-  return chalk.dim(`${String(lineNo ?? "").padStart(5)} `);
+  // Show both line numbers aligned: old | new
+  // For deletes: show old line number, blank for new
+  // For adds: show blank for old, new line number
+  // For context: show both
+  const oldStr = line.oldLineNo !== undefined ? String(line.oldLineNo) : "";
+  const newStr = line.newLineNo !== undefined ? String(line.newLineNo) : "";
+  return chalk.dim(`${oldStr.padStart(4)} | ${newStr.padStart(4)} `);
 }
 
 /**

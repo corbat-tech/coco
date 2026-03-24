@@ -1015,10 +1015,7 @@ export function renderToolStart(
   if (toolName === "edit_file") {
     console.log(`\n${icon} ${chalk.yellow.bold("EDIT")} ${chalk.cyan(String(input.path || ""))}`);
     // Print diff sequentially instead of buffering for immediate feedback
-    printEditDiff(
-      String(input.oldText || ""),
-      String(input.newText || ""),
-    );
+    printEditDiff(String(input.oldText || ""), String(input.newText || ""));
     return;
   }
 
@@ -1119,8 +1116,8 @@ function wordLevelHighlight(
  * This provides immediate visual feedback instead of waiting for full render.
  */
 function printEditDiff(oldStr: string, newStr: string): void {
-  // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │ + sign1 + space1) = -14
-  const termWidth = Math.max(getTerminalWidth() - 14, 30);
+  // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │) - prefix(space1 + sign1 + space1) = -15
+  const termWidth = Math.max(getTerminalWidth() - 15, 30);
   const MAX_SHOWN = 30;
 
   // Pure insertion (empty old) — show compact green block, no line-number columns
@@ -1256,8 +1253,8 @@ function printEditDiff(oldStr: string, newStr: string): void {
  * - Max 30 lines shown, then "… +N more" guard
  */
 export function renderEditPreview(oldStr: string, newStr: string): string {
-  // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │ + sign1 + space1) = -14
-  const termWidth = Math.max(getTerminalWidth() - 14, 30);
+  // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │) - prefix(space1 + sign1 + space1) = -15
+  const termWidth = Math.max(getTerminalWidth() - 15, 30);
   const MAX_SHOWN = 30;
 
   // Pure insertion (empty old) — show compact green block, no line-number columns

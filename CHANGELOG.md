@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.21.0] - 2026-03-24
+
+### Fixed
+- **Non-retryable provider errors no longer break the flow** — auth (401/403), bad request (400), and quota errors are now re-thrown from the agent loop so the caller receives the original `ProviderError` object. Previously these were stringified, preventing correct classification and leaving the session in a broken state.
+- **Session rollback on non-retryable errors** — when a non-retryable provider error occurs, the session message history is now rolled back to pre-call state and the consecutive-error counter is reset, so the REPL returns cleanly to the prompt instead of accumulating broken state.
+- **Codex `max_output_tokens` parameter** — corrected parameter name in `codex.ts` from `max_tokens` to `max_output_tokens` to match the OpenAI Responses API specification.
+- **Diff renderer blank lines** — the terminal-width calculation for `edit_file` diff previews was off by one, causing an extra trailing space to wrap with background color active, producing a spurious blank colored line. Fixed by accounting for the 3-character prefix (` - ` / ` + `).
+- **Diff line numbers format** — `edit_file` diff previews now show `old | new` aligned line numbers instead of a single column, making it clear which side each line belongs to.
+
 ## [2.20.1] - 2026-03-24
 
 ### Fixed

@@ -57,9 +57,7 @@ describe("shouldShowPermissionSuggestion", () => {
   it("should return true when applied but trusted-tools.json does not exist", async () => {
     // First call reads config.json, second call reads trusted-tools.json
     vi.mocked(fs.readFile)
-      .mockResolvedValueOnce(
-        JSON.stringify({ recommendedAllowlistApplied: true }),
-      )
+      .mockResolvedValueOnce(JSON.stringify({ recommendedAllowlistApplied: true }))
       .mockRejectedValueOnce(new Error("File not found"));
 
     const result = await shouldShowPermissionSuggestion();
@@ -69,12 +67,8 @@ describe("shouldShowPermissionSuggestion", () => {
 
   it("should return true when applied but trusted-tools.json has empty globalTrusted", async () => {
     vi.mocked(fs.readFile)
-      .mockResolvedValueOnce(
-        JSON.stringify({ recommendedAllowlistApplied: true }),
-      )
-      .mockResolvedValueOnce(
-        JSON.stringify({ globalTrusted: [], projectTrusted: {} }),
-      );
+      .mockResolvedValueOnce(JSON.stringify({ recommendedAllowlistApplied: true }))
+      .mockResolvedValueOnce(JSON.stringify({ globalTrusted: [], projectTrusted: {} }));
 
     const result = await shouldShowPermissionSuggestion();
 
@@ -83,9 +77,7 @@ describe("shouldShowPermissionSuggestion", () => {
 
   it("should return false when applied and trusted-tools.json has tools", async () => {
     vi.mocked(fs.readFile)
-      .mockResolvedValueOnce(
-        JSON.stringify({ recommendedAllowlistApplied: true }),
-      )
+      .mockResolvedValueOnce(JSON.stringify({ recommendedAllowlistApplied: true }))
       .mockResolvedValueOnce(
         JSON.stringify({
           globalTrusted: ["read_file", "write_file"],
@@ -100,9 +92,7 @@ describe("shouldShowPermissionSuggestion", () => {
 
   it("should return true when applied but trusted-tools.json is invalid JSON", async () => {
     vi.mocked(fs.readFile)
-      .mockResolvedValueOnce(
-        JSON.stringify({ recommendedAllowlistApplied: true }),
-      )
+      .mockResolvedValueOnce(JSON.stringify({ recommendedAllowlistApplied: true }))
       .mockResolvedValueOnce("invalid json");
 
     const result = await shouldShowPermissionSuggestion();
@@ -154,10 +144,7 @@ describe("savePermissionPreference", () => {
 
     await savePermissionPreference("recommendedAllowlistApplied", true);
 
-    expect(fs.mkdir).toHaveBeenCalledWith(
-      expect.stringContaining(".coco"),
-      { recursive: true },
-    );
+    expect(fs.mkdir).toHaveBeenCalledWith(expect.stringContaining(".coco"), { recursive: true });
     expect(fs.writeFile).toHaveBeenCalledWith(
       expect.stringContaining("config.json"),
       JSON.stringify({ recommendedAllowlistApplied: true }, null, 2),
@@ -166,9 +153,7 @@ describe("savePermissionPreference", () => {
   });
 
   it("should merge with existing config", async () => {
-    vi.mocked(fs.readFile).mockResolvedValue(
-      JSON.stringify({ existingKey: "value" }),
-    );
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify({ existingKey: "value" }));
     vi.mocked(fs.mkdir).mockResolvedValue(undefined);
     vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
@@ -176,11 +161,7 @@ describe("savePermissionPreference", () => {
 
     expect(fs.writeFile).toHaveBeenCalledWith(
       expect.stringContaining("config.json"),
-      JSON.stringify(
-        { existingKey: "value", recommendedAllowlistApplied: true },
-        null,
-        2,
-      ),
+      JSON.stringify({ existingKey: "value", recommendedAllowlistApplied: true }, null, 2),
       "utf-8",
     );
   });
