@@ -18,7 +18,7 @@ import { registerCheckCommand } from "./commands/check.js";
 import { registerSwarmCommand } from "./commands/swarm.js";
 import { startRepl } from "./repl/index.js";
 import { runHeadless } from "./headless.js";
-import { runOnboardingV2 } from "./repl/onboarding-v2.js";
+import { runOnboardingV2, saveConfiguration } from "./repl/onboarding-v2.js";
 import { checkForUpdatesInteractive } from "./repl/version-check.js";
 import { getLastUsedProvider } from "../config/env.js";
 import { formatError } from "../utils/errors.js";
@@ -50,6 +50,7 @@ program
   .action(async () => {
     const result = await runOnboardingV2();
     if (result) {
+      await saveConfiguration(result);
       console.log("\n✅ Configuration saved! Run `coco` to start coding.");
     } else {
       console.log("\n❌ Setup cancelled.");
@@ -82,6 +83,7 @@ program
           console.log("\n❌ Setup cancelled.");
           return;
         }
+        await saveConfiguration(result);
       }
 
       // Use last used provider from preferences (falls back to env/anthropic)

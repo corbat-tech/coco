@@ -1014,11 +1014,8 @@ export function renderToolStart(
 
   if (toolName === "edit_file") {
     console.log(`\n${icon} ${chalk.yellow.bold("EDIT")} ${chalk.cyan(String(input.path || ""))}`);
-    const editPreview = renderEditPreview(
-      String(input.old_string || ""),
-      String(input.new_string || ""),
-    );
-    if (editPreview) console.log(editPreview);
+    // Print diff sequentially instead of buffering for immediate feedback
+    printEditDiff(String(input.oldText || ""), String(input.newText || ""));
     return;
   }
 
@@ -1115,6 +1112,137 @@ function wordLevelHighlight(
 }
 
 /**
+ * Print edit diff sequentially to console (line-by-line, no buffering).
+ * This provides immediate visual feedback instead of waiting for full render.
+ */
+function printEditDiff(oldStr: string, newStr: string): void {
+  // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │ + sign1 + space1) = -14
+  const termWidth = Math.max(getTerminalWidth() - 14, 30);
+  const MAX_SHOWN = 30;
+
+  // Pure insertion (empty old) — show compact green block, no line-number columns
+  if (!oldStr.trim()) {
+    const lines = newStr
+      .split("\n")
+      .filter((l) => l.trim().length > 0)
+      .slice(0, 6);
+    if (lines.length === 0) return;
+    const truncate = (s: string) =>
+      s.length > termWidth - 2 ? s.slice(0, termWidth - 3) + "…" : s;
+    for (const l of lines) {
+      const text = `+ ${truncate(l)}`;
+      const pad = Math.max(0, termWidth - stripAnsi(text).length + 2);
+      console.log("  " + diffBgAdd(text + " ".repeat(pad)));
+    }
+    return;
+  }
+
+  if (!newStr.trim() && !oldStr.trim()) return;
+
+  // ── Build DiffLine array ─────────────────────────────────────────────────
+  const changes = diffLines(oldStr, newStr);
+  const diffLineList: DiffLine[] = [];
+  let oldNo = 1;
+  let newNo = 1;
+
+  for (const change of changes) {
+    const value = change.value.endsWith("\n") ? change.value.slice(0, -1) : change.value;
+    for (const line of value.split("\n")) {
+      if (change.added) {
+        diffLineList.push({ type: "add", content: line, newLineNo: newNo++ });
+      } else if (change.removed) {
+        diffLineList.push({ type: "delete", content: line, oldLineNo: oldNo++ });
+      } else {
+        diffLineList.push({
+          type: "context",
+          content: line,
+          oldLineNo: oldNo++,
+          newLineNo: newNo++,
+        });
+      }
+    }
+  }
+
+  if (diffLineList.length === 0) return;
+
+  // ── Word-level highlights for adjacent delete→add pairs ──────────────────
+  const pairs = pairAdjacentDiffLines(diffLineList);
+  const pairedDeletes = new Set(pairs.map((p) => p.deleteIdx));
+  const pairedAdds = new Set(pairs.map((p) => p.addIdx));
+  const pairByAdd = new Map(pairs.map((p) => [p.addIdx, p.deleteIdx]));
+  const wordHighlights = new Map<number, { styledDelete: string; styledAdd: string }>();
+  for (const pair of pairs) {
+    const del = diffLineList[pair.deleteIdx];
+    const add = diffLineList[pair.addIdx];
+    if (del && add)
+      wordHighlights.set(pair.deleteIdx, wordLevelHighlight(del.content, add.content));
+  }
+
+  // ── Compute visible indices (changed ± 2 context lines) ──────────────────
+  const changedIndices = new Set(
+    diffLineList.map((l, i) => (l.type !== "context" ? i : -1)).filter((i) => i >= 0),
+  );
+  const visibleIndices = new Set<number>();
+  for (const idx of changedIndices) {
+    for (let d = -2; d <= 2; d++) {
+      const n = idx + d;
+      if (n >= 0 && n < diffLineList.length) visibleIndices.add(n);
+    }
+  }
+
+  // ── Render sequentially (print line by line) ─────────────────────────────
+  let shown = 0;
+  let prevIdx = -1;
+  const truncate = (s: string) => (s.length > termWidth ? s.slice(0, termWidth - 1) + "…" : s);
+
+  // Helper: two-column gutter  "  4│  5│"
+  const gutter = (oldN: number | undefined, newN: number | undefined): string => {
+    const o = oldN !== undefined ? String(oldN).padStart(4) : "    ";
+    const n = newN !== undefined ? String(newN).padStart(4) : "    ";
+    return chalk.dim(`${o}│${n}│`);
+  };
+
+  for (let i = 0; i < diffLineList.length; i++) {
+    if (!visibleIndices.has(i)) continue;
+    if (shown >= MAX_SHOWN) {
+      console.log(chalk.dim(`  … +${diffLineList.length - i} more lines`));
+      break;
+    }
+
+    // Gap separator between non-contiguous hunks
+    if (prevIdx >= 0 && i > prevIdx + 1) {
+      console.log(chalk.dim("      ⋮"));
+    }
+    prevIdx = i;
+    shown++;
+
+    const dl = diffLineList[i]!;
+
+    if (dl.type === "add") {
+      const rawContent = pairedAdds.has(i)
+        ? (wordHighlights.get(pairByAdd.get(i)!)?.styledAdd ?? truncate(dl.content))
+        : truncate(dl.content);
+      const visLen = stripAnsi(rawContent).length;
+      const pad = Math.max(0, termWidth - visLen);
+      const line = diffBgAdd(` + ${rawContent}${" ".repeat(pad)}`);
+      console.log("  " + gutter(undefined, dl.newLineNo) + line);
+    } else if (dl.type === "delete") {
+      const rawContent = pairedDeletes.has(i)
+        ? (wordHighlights.get(i)?.styledDelete ?? truncate(dl.content))
+        : truncate(dl.content);
+      const visLen = stripAnsi(rawContent).length;
+      const pad = Math.max(0, termWidth - visLen);
+      const line = diffBgDel(` - ${rawContent}${" ".repeat(pad)}`);
+      console.log("  " + gutter(dl.oldLineNo, undefined) + line);
+    } else {
+      console.log(
+        "  " + gutter(dl.oldLineNo, dl.newLineNo) + chalk.dim(`   ${truncate(dl.content)}`),
+      );
+    }
+  }
+}
+
+/**
  * Render a visual diff for edit_file / write_file (modify).
  *
  * Design (Claude Code–inspired):
@@ -1124,7 +1252,7 @@ function wordLevelHighlight(
  * - ⋮ gap separator between non-contiguous hunks
  * - Max 30 lines shown, then "… +N more" guard
  */
-function renderEditPreview(oldStr: string, newStr: string): string {
+export function renderEditPreview(oldStr: string, newStr: string): string {
   // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │ + sign1 + space1) = -14
   const termWidth = Math.max(getTerminalWidth() - 14, 30);
   const MAX_SHOWN = 30;

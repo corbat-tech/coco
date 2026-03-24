@@ -223,14 +223,22 @@ export function installProcessSafetyNet(): void {
   const debug = Boolean(process.env["COCO_DEBUG"]);
 
   process.on("uncaughtException", (error: Error) => {
+    // Skip abort/cancel errors — these are intentional and should be silent
+    if (isAbortError(error)) return;
+
     const msg = error instanceof Error ? error.message : String(error);
-    console.error(chalk.red(`\n× Unexpected error (uncaught): ${msg}`));
+    console.error(chalk.red(`\n× Unexpected error: ${msg}`));
+    console.error(chalk.dim("  The REPL continues — type your next message or /help"));
     if (debug) console.error(error.stack);
   });
 
   process.on("unhandledRejection", (reason: unknown) => {
+    // Skip abort/cancel errors — these are intentional and should be silent
+    if (isAbortError(reason)) return;
+
     const msg = reason instanceof Error ? reason.message : String(reason);
-    console.error(chalk.red(`\n× Unhandled rejection: ${msg}`));
+    console.error(chalk.red(`\n× Unhandled error: ${msg}`));
+    console.error(chalk.dim("  The REPL continues — type your next message or /help"));
     if (debug && reason instanceof Error) console.error(reason.stack);
   });
 }

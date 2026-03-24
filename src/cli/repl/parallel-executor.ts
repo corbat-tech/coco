@@ -302,12 +302,28 @@ export class ParallelToolExecutor {
     try {
       result = await registry.execute(toolCall.name, toolCall.input, { signal });
     } catch (error) {
-      // Handle unexpected errors (including provider abort errors)
+      // Handle abort errors silently
       if (isAbortError(error, signal)) {
         return null;
       }
-      // Re-throw other errors to be handled by caller
-      throw error;
+      // Convert unexpected errors to an error result instead of throwing.
+      // This ensures a single unexpected tool failure never breaks the entire
+      // agent flow — the LLM will receive the error and can try a different approach.
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const duration = performance.now() - startTime;
+      const executedCall: ExecutedToolCall = {
+        id: toolCall.id,
+        name: toolCall.name,
+        input: toolCall.input,
+        result: {
+          success: false,
+          output: `Unexpected error in ${toolCall.name}: ${errMsg}`,
+          error: errMsg,
+        },
+        duration,
+      };
+      onToolEnd?.(executedCall);
+      return executedCall;
     }
 
     // If tool failed due to path access, offer to authorize and retry.
@@ -324,8 +340,15 @@ export class ParallelToolExecutor {
           // Authorization prompt failed or was cancelled — treat as not authorized
         }
         if (authorized) {
-          // Retry the tool now that the path is authorized
-          result = await registry.execute(toolCall.name, toolCall.input, { signal });
+          // Retry the tool now that the path is authorized.
+          // Wrap retry in try/catch so an unexpected registry error never propagates.
+          try {
+            result = await registry.execute(toolCall.name, toolCall.input, { signal });
+          } catch (retryError) {
+            if (isAbortError(retryError, signal)) return null;
+            const msg = retryError instanceof Error ? retryError.message : String(retryError);
+            result = { success: false, error: `Retry failed: ${msg}`, duration: 0 };
+          }
         }
       }
     }

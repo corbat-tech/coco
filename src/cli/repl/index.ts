@@ -445,6 +445,10 @@ export async function startRepl(
       } else if (hasPendingImage()) {
         // Check if slash command queued a multimodal message (e.g., /image)
         const images = consumePendingImages();
+        // Combine user input text with image prompts
+        const imagePrompts = images.map((img) => img.prompt).join("\n");
+        const userText = input?.trim() || "";
+        const combinedText = userText ? `${userText}\n\n${imagePrompts}`.trim() : imagePrompts;
         agentMessage = [
           ...images.map(
             (img) =>
@@ -455,7 +459,7 @@ export async function startRepl(
           ),
           {
             type: "text",
-            text: images.map((img) => img.prompt).join("\n"),
+            text: combinedText,
           } as TextContent,
         ];
         // Fall through to agent turn execution below
@@ -468,6 +472,10 @@ export async function startRepl(
     // This must run before intent recognition to avoid passing empty/null input
     if (agentMessage === null && hasPendingImage()) {
       const images = consumePendingImages();
+      // Combine user input text with image prompts
+      const imagePrompts = images.map((img) => img.prompt).join("\n");
+      const userText = input?.trim() || "";
+      const combinedText = userText ? `${userText}\n\n${imagePrompts}`.trim() : imagePrompts;
       agentMessage = [
         ...images.map(
           (img) =>
@@ -478,7 +486,7 @@ export async function startRepl(
         ),
         {
           type: "text",
-          text: images.map((img) => img.prompt).join("\n"),
+          text: combinedText,
         } as TextContent,
       ];
     }
@@ -949,6 +957,44 @@ export async function startRepl(
           );
         }
 
+        console.log();
+        continue;
+      }
+
+      // ── Streaming error returned by agent-loop ────────────────────────────
+      // agent-loop catches streaming errors and returns a result with `error`
+      // set instead of throwing. We need to handle this explicitly so the LLM
+      // recovery path fires (re-queue with error context) rather than treating
+      // the error as a successful turn.
+      if (result.error) {
+        // Roll back any partial messages agent-loop added before the error
+        session.messages.length = preCallMessageLength;
+
+        if (
+          originalUserMessage !== null &&
+          consecutiveErrors < MAX_CONSECUTIVE_ERRORS &&
+          !isNonRetryableProviderError(new Error(result.error))
+        ) {
+          consecutiveErrors++;
+          const humanized = humanizeProviderError(new Error(result.error));
+          renderError(humanized);
+          console.log(
+            chalk.dim(
+              `   ↻ Retrying automatically (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})…`,
+            ),
+          );
+          const recoveryPrefix =
+            `[System: The previous attempt failed with: "${humanized}". ` +
+            `Please try a different approach, tool, or method to complete the task. ` +
+            `Do NOT repeat the exact same action that caused the error.]\n\n`;
+          pendingQueuedMessages = [recoveryPrefix + originalUserMessage];
+        } else {
+          renderError(result.error);
+          console.log(
+            chalk.dim("   Recovery failed or error is non-retryable. Returning to prompt."),
+          );
+          consecutiveErrors = 0;
+        }
         console.log();
         continue;
       }

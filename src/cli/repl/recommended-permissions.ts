@@ -498,11 +498,37 @@ export async function savePermissionPreference(
 
 /**
  * Check if the recommended permissions suggestion should be shown.
- * Returns true only if user hasn't applied or permanently dismissed.
+ * Returns true only if user hasn't applied or permanently dismissed,
+ * OR if the trusted-tools.json file doesn't exist or is empty.
  */
 export async function shouldShowPermissionSuggestion(): Promise<boolean> {
   const prefs = await loadPermissionPreferences();
-  return !prefs.recommendedAllowlistApplied && !prefs.recommendedAllowlistDismissed;
+
+  // If user dismissed, never show again
+  if (prefs.recommendedAllowlistDismissed) {
+    return false;
+  }
+
+  // If not applied, show the suggestion
+  if (!prefs.recommendedAllowlistApplied) {
+    return true;
+  }
+
+  // If marked as applied but trusted-tools.json doesn't exist or is empty,
+  // we should show the suggestion again to recreate it
+  try {
+    const content = await fs.readFile(CONFIG_PATHS.trustedTools, "utf-8");
+    const settings = JSON.parse(content) as { globalTrusted?: string[] };
+    // If file exists but has no global trusted tools, show suggestion
+    if (!settings.globalTrusted || settings.globalTrusted.length === 0) {
+      return true;
+    }
+  } catch {
+    // File doesn't exist or is invalid - show suggestion
+    return true;
+  }
+
+  return false;
 }
 
 /**

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.20.1] - 2026-03-24
+
+### Fixed
+- **Error recovery path now fires for streaming errors** — `result.error` returned by the agent loop was previously ignored, causing streaming failures to be silently treated as successful turns. Now correctly triggers LLM recovery (re-queues the task with error context) up to the configured retry budget.
+- **`coco setup` and `--setup` now persist configuration** — API key and provider/model preference were never saved when using the setup command or flag directly (`coco setup`, `coco --setup`). `saveConfiguration()` is now called, writing to `~/.coco/.env` and `config.json` as expected.
+- **Tool errors can no longer break the agent turn** — `executeSingleTool` previously re-threw unexpected exceptions, which could propagate through the parallel executor and abort the entire turn. Unexpected errors are now converted to `{ success: false }` tool results so the LLM receives the error and can retry.
+- **Confirmation dialog failures are handled gracefully** — terminal/readline errors during tool confirmation prompts now decline the tool cleanly instead of crashing the current agent turn.
+- **Process safety net skips abort errors silently** — `uncaughtException`/`unhandledRejection` handlers no longer print noise for intentional abort/cancel signals.
+- **edit_file diff shown immediately without buffering** — diffs are now printed line-by-line to the terminal as soon as the tool completes, eliminating the previous render delay.
+
 ## [2.20.0] - 2026-03-24
 
 ### Added
@@ -1014,7 +1024,9 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.19.0...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.20.1...HEAD
+[2.20.1]: https://github.com/corbat/corbat-coco/compare/v2.20.0...v2.20.1
+[2.20.0]: https://github.com/corbat/corbat-coco/compare/v2.19.0...v2.20.0
 [2.19.0]: https://github.com/corbat/corbat-coco/compare/v2.18.0...v2.19.0
 [2.18.0]: https://github.com/corbat/corbat-coco/compare/v2.17.1...v2.18.0
 [2.17.1]: https://github.com/corbat/corbat-coco/compare/v2.17.0...v2.17.1
