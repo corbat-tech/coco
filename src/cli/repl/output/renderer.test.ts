@@ -806,8 +806,8 @@ describe("Feature A: Copy hint in code block footer", () => {
   it("renderToolStart for edit_file should show diff output with + and - lines", () => {
     renderToolStart("edit_file", {
       path: "/test/file.ts",
-      old_string: "const x = 1;",
-      new_string: "const x = 2;",
+      oldText: "const x = 1;",
+      newText: "const x = 2;",
     });
 
     const allOutput = consoleLogSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
@@ -819,8 +819,8 @@ describe("Feature A: Copy hint in code block footer", () => {
   it("renderToolStart for edit_file with empty old_string shows addition preview", () => {
     renderToolStart("edit_file", {
       path: "/test/file.ts",
-      old_string: "",
-      new_string: "const newLine = true;",
+      oldText: "",
+      newText: "const newLine = true;",
     });
 
     const allOutput = consoleLogSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
@@ -832,8 +832,8 @@ describe("Feature A: Copy hint in code block footer", () => {
   it("renderToolStart for edit_file with identical strings produces no diff", () => {
     renderToolStart("edit_file", {
       path: "/test/file.ts",
-      old_string: "",
-      new_string: "",
+      oldText: "",
+      newText: "",
     });
 
     // With empty strings, no diff should be shown
@@ -861,8 +861,8 @@ describe("Feature B: renderEditPreview diff output", () => {
 
     renderToolStart("edit_file", {
       path: "/test/file.ts",
-      old_string: oldContent,
-      new_string: newContent,
+      oldText: oldContent,
+      newText: newContent,
     });
 
     const allOutput = consoleLogSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
