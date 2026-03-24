@@ -41,11 +41,13 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   "gpt-3.5-turbo": 16385,
   o1: 200000,
   "o1-mini": 128000,
+  o3: 200000,
   "o3-mini": 200000,
   "o4-mini": 200000,
   // GPT-4.1 series (Feb 2026)
   "gpt-4.1": 1048576,
   "gpt-4.1-mini": 1048576,
+  "gpt-4.1-nano": 1048576,
   // GPT-5 series (2025-2026)
   "gpt-5": 400000,
   "gpt-5.2": 400000,
@@ -123,7 +125,9 @@ const MODELS_WITHOUT_TEMPERATURE: string[] = [
   "o1",
   "o1-mini",
   "o1-preview",
+  "o3",
   "o3-mini",
+  "o4-mini",
   "kimi-k2.5",
   "kimi-k2-0324",
   "kimi-latest",
@@ -163,7 +167,7 @@ export function needsResponsesApi(model: string): boolean {
     model.includes("codex") ||
     model.startsWith("gpt-5") ||
     model.startsWith("o4-") ||
-    model.startsWith("o3-")
+    model === "o3"
   );
 }
 

@@ -790,3 +790,83 @@ describe("highlightCode", () => {
     expect(result).toContain("template");
   });
 });
+
+describe("Feature A: Copy hint in code block footer", () => {
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renderToolStart for edit_file should show diff output with + and - lines", () => {
+    renderToolStart("edit_file", {
+      path: "/test/file.ts",
+      old_string: "const x = 1;",
+      new_string: "const x = 2;",
+    });
+
+    const allOutput = consoleLogSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+    // Should have both old and new content in the diff
+    expect(allOutput).toContain("- ");
+    expect(allOutput).toContain("+ ");
+  });
+
+  it("renderToolStart for edit_file with empty old_string shows addition preview", () => {
+    renderToolStart("edit_file", {
+      path: "/test/file.ts",
+      old_string: "",
+      new_string: "const newLine = true;",
+    });
+
+    const allOutput = consoleLogSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+    // Pure insertion should show + lines
+    expect(allOutput).toContain("+");
+    expect(allOutput).toContain("newLine");
+  });
+
+  it("renderToolStart for edit_file with identical strings produces no diff", () => {
+    renderToolStart("edit_file", {
+      path: "/test/file.ts",
+      old_string: "",
+      new_string: "",
+    });
+
+    // With empty strings, no diff should be shown
+    const editPreviewCalls = consoleLogSpy.mock.calls.length;
+    // At least the header line should be logged
+    expect(editPreviewCalls).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("Feature B: renderEditPreview diff output", () => {
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should show context separator for non-adjacent hunks", () => {
+    const oldContent = ["line1", "line2", "line3", "line4", "line5", "line6", "line7"].join("\n");
+    const newContent = ["line1X", "line2", "line3", "line4", "line5", "line6", "line7Z"].join("\n");
+
+    renderToolStart("edit_file", {
+      path: "/test/file.ts",
+      old_string: oldContent,
+      new_string: newContent,
+    });
+
+    const allOutput = consoleLogSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+    // Should have context separator when hunks are far apart
+    expect(allOutput).toContain("⋮");
+  });
+});

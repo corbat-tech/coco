@@ -942,3 +942,41 @@ describe("max_tokens vs max_completion_tokens routing", () => {
     );
   });
 });
+
+describe("needsResponsesApi", () => {
+  it("should return true for o3 model", async () => {
+    const { needsResponsesApi } = await import("./openai.js");
+    expect(needsResponsesApi("o3")).toBe(true);
+  });
+
+  it("should return false for o3-mini (Fix 0: o3-mini must NOT route to Responses API)", async () => {
+    const { needsResponsesApi } = await import("./openai.js");
+    expect(needsResponsesApi("o3-mini")).toBe(false);
+  });
+
+  it("should return true for o4- prefix models", async () => {
+    const { needsResponsesApi } = await import("./openai.js");
+    expect(needsResponsesApi("o4-mini")).toBe(true);
+    expect(needsResponsesApi("o4-preview")).toBe(true);
+  });
+
+  it("should return true for gpt-5 models", async () => {
+    const { needsResponsesApi } = await import("./openai.js");
+    expect(needsResponsesApi("gpt-5")).toBe(true);
+    expect(needsResponsesApi("gpt-5.4-codex")).toBe(true);
+  });
+
+  it("should return true for codex models", async () => {
+    const { needsResponsesApi } = await import("./openai.js");
+    expect(needsResponsesApi("codex-mini")).toBe(true);
+    expect(needsResponsesApi("gpt-5.2-codex")).toBe(true);
+  });
+
+  it("should return false for standard models", async () => {
+    const { needsResponsesApi } = await import("./openai.js");
+    expect(needsResponsesApi("gpt-4o")).toBe(false);
+    expect(needsResponsesApi("gpt-4.1")).toBe(false);
+    expect(needsResponsesApi("o1")).toBe(false);
+    expect(needsResponsesApi("o1-mini")).toBe(false);
+  });
+});
