@@ -18,9 +18,17 @@
 
 /**
  * Default file patterns to search for memory files.
- * Files are checked in order; the first match is used.
+ * Files are checked in order; the first match wins.
+ *
+ * Priority (highest first):
+ * 1. AGENTS.md — universal standard (OpenAI Codex, GitHub Copilot, Coco)
+ * 2. COCO.md   — Coco-specific project instructions
+ * 3. CLAUDE.md — Claude Code fallback (read by Coco for compatibility)
+ *
+ * Using AGENTS.md as primary ensures a single instruction file works
+ * across all AI agents (Copilot, Codex, Claude Code, Coco) without changes.
  */
-export const DEFAULT_FILE_PATTERNS = ["COCO.md", "CLAUDE.md", "AGENTS.md"] as const;
+export const DEFAULT_FILE_PATTERNS = ["AGENTS.md", "COCO.md", "CLAUDE.md"] as const;
 
 /**
  * Suffix for local override files that should not be committed.
@@ -362,7 +370,7 @@ export interface MemoryContext {
  * const config: MemoryConfig = {
  *   maxImportDepth: 3,
  *   maxTotalSize: 50_000,
- *   filePatterns: ["COCO.md"],
+ *   filePatterns: ["AGENTS.md", "COCO.md"],
  *   includeUserLevel: true
  * };
  * ```
@@ -392,9 +400,10 @@ export interface MemoryConfig {
    * File patterns to search for when loading memory.
    *
    * Patterns are checked in order; the first existing file is used.
-   * Supports both COCO.md (Corbat-Coco) and CLAUDE.md (Claude Code) formats.
+   * AGENTS.md takes priority as the universal multi-agent standard.
+   * COCO.md and CLAUDE.md are supported as Coco/Claude Code fallbacks.
    *
-   * @default ["COCO.md", "CLAUDE.md"]
+   * @default ["AGENTS.md", "COCO.md", "CLAUDE.md"]
    */
   filePatterns: string[];
 

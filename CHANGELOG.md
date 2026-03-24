@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.18.0] - 2026-03-24
+
+### Added
+- **Universal `AGENTS.md` instruction file support** — `AGENTS.md` is now the primary instruction file, taking precedence over `COCO.md` and `CLAUDE.md`. This is the emerging standard adopted by OpenAI Codex, GitHub Copilot, and other AI agents. A single `AGENTS.md` file in your repo now works across all AI coding tools without changes.
+- **`AGENTS.md` priority hierarchy** — file resolution order at every level is now `AGENTS.md` → `COCO.md` → `CLAUDE.md`, ensuring forward compatibility while maintaining full backward compatibility for existing projects using `COCO.md` or `CLAUDE.md`.
+- **Markdown link reference following** — instruction files can reference other docs using standard markdown link syntax on its own line: `[Backend conventions](docs/ai/backend.md)`. Coco automatically inlines the referenced file's content, just like `@path/to/file.md` imports. URL links (`://`) and inline links (with surrounding text) are never followed. Supports `.md`, `.txt`, and `.rst` extensions.
+- **`AGENTS.local.md` local override** — alongside the existing `COCO.local.md` and `CLAUDE.local.md`, you can now use `AGENTS.local.md` as a gitignored local override for the universal instruction format.
+
+---
+
 ## [2.17.1] - 2026-03-24
 
 ### Fixed
