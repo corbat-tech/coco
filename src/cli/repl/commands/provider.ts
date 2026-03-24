@@ -563,11 +563,7 @@ async function switchProvider(
       });
     } else {
       // Using existing credentials (OAuth or pre-existing API key): just save provider/model
-      await saveProviderPreference(
-        userFacingProviderId as ProviderType,
-        newModel,
-        selectedAuthMethod,
-      );
+      await saveProviderPreference(userFacingProviderId as ProviderType, newModel);
     }
 
     console.log(chalk.green(`\n✓ Switched to ${newProvider.emoji} ${newProvider.name}`));
