@@ -1108,6 +1108,13 @@ export function createInputHandler(_session: ReplSession): InputHandler {
         // Disable bracketed paste mode on close
         process.stdout.write("\x1b[?2004l");
         saveHistory(sessionHistory);
+        // Release stdin so the event loop can exit naturally after the REPL loop breaks.
+        // prompt() calls process.stdin.resume() — without a matching pause() the process
+        // hangs waiting for more input even after "Goodbye!" is printed.
+        if (process.stdin.isTTY) {
+          process.stdin.setRawMode(false);
+        }
+        process.stdin.pause();
       }
     },
 
