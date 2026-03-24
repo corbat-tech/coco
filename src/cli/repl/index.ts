@@ -448,9 +448,7 @@ export async function startRepl(
         // Combine user input text with image prompts
         const imagePrompts = images.map((img) => img.prompt).join("\n");
         const userText = input?.trim() || "";
-        const combinedText = userText
-          ? `${userText}\n\n${imagePrompts}`.trim()
-          : imagePrompts;
+        const combinedText = userText ? `${userText}\n\n${imagePrompts}`.trim() : imagePrompts;
         agentMessage = [
           ...images.map(
             (img) =>
@@ -477,9 +475,7 @@ export async function startRepl(
       // Combine user input text with image prompts
       const imagePrompts = images.map((img) => img.prompt).join("\n");
       const userText = input?.trim() || "";
-      const combinedText = userText
-        ? `${userText}\n\n${imagePrompts}`.trim()
-        : imagePrompts;
+      const combinedText = userText ? `${userText}\n\n${imagePrompts}`.trim() : imagePrompts;
       agentMessage = [
         ...images.map(
           (img) =>

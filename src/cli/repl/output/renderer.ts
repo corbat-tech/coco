@@ -1015,10 +1015,7 @@ export function renderToolStart(
   if (toolName === "edit_file") {
     console.log(`\n${icon} ${chalk.yellow.bold("EDIT")} ${chalk.cyan(String(input.path || ""))}`);
     // Print diff sequentially instead of buffering for immediate feedback
-    printEditDiff(
-      String(input.oldText || ""),
-      String(input.newText || ""),
-    );
+    printEditDiff(String(input.oldText || ""), String(input.newText || ""));
     return;
   }
 
