@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.17.1] - 2026-03-24
+
+### Fixed
+- **REPL hangs after "Goodbye!" — requires Ctrl+C to close** — `inputHandler.close()` was not calling `process.stdin.pause()` after the main loop exited. stdin remained an active event-loop handle, preventing Node.js from terminating naturally. Typing `exit`, `quit`, `/exit`, or Ctrl+D now cleanly closes the process.
+
+---
+
 ## [2.17.0] - 2026-03-23
 
 ### Added
