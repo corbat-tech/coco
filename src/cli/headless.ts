@@ -123,7 +123,7 @@ export async function runHeadless(options: HeadlessOptions): Promise<HeadlessRes
 
   try {
     // Create session
-    const session = createSession(options.projectPath, options.config);
+    const session = await createSession(options.projectPath, options.config);
     await initializeSessionTrust(session);
 
     // Create provider

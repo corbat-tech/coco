@@ -12,6 +12,7 @@ import type {
   HookContext,
   HookExecutionResult,
 } from "./hooks/index.js";
+import { isAbortError } from "./error-resilience.js";
 
 /**
  * Options for parallel tool execution
@@ -230,8 +231,36 @@ export class ParallelToolExecutor {
     // Start initial batch of tasks
     startNextTask();
 
-    // Wait for all to complete
-    await Promise.all(processingPromises);
+    // Wait for all to complete with a safety timeout
+    // This prevents the flow from hanging indefinitely if a tool never resolves
+    const TOOL_EXECUTION_TIMEOUT_MS = 300000; // 5 minutes max for all tools
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error(`Tool execution timeout after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s`));
+      }, TOOL_EXECUTION_TIMEOUT_MS);
+      // Clean up timeout if signal is aborted
+      signal?.addEventListener('abort', () => {
+        clearTimeout(timeoutId);
+      });
+    });
+
+    try {
+      await Promise.race([Promise.all(processingPromises), timeoutPromise]);
+    } catch (error) {
+      // If timeout or other error, mark remaining tasks as failed
+      for (const task of tasks) {
+        if (!task.completed) {
+          task.completed = true;
+          const reason = error instanceof Error ? error.message : "Execution failed";
+          skipped.push({ toolCall: task.toolCall, reason });
+          onToolSkipped?.(task.toolCall, reason);
+        }
+      }
+      // Re-throw abort errors but swallow timeout errors to continue flow
+      if (isAbortError(error, signal)) {
+        throw error;
+      }
+    }
 
     // Collect executed results in order, filtering nulls
     for (const result of results) {
@@ -268,7 +297,18 @@ export class ParallelToolExecutor {
     onToolStart?.(toolCall, index, total);
 
     const startTime = performance.now();
-    let result: ToolResult = await registry.execute(toolCall.name, toolCall.input, { signal });
+    let result: ToolResult;
+
+    try {
+      result = await registry.execute(toolCall.name, toolCall.input, { signal });
+    } catch (error) {
+      // Handle unexpected errors (including provider abort errors)
+      if (isAbortError(error, signal)) {
+        return null;
+      }
+      // Re-throw other errors to be handled by caller
+      throw error;
+    }
 
     // If tool failed due to path access, offer to authorize and retry.
     // The try/catch wraps ONLY the callback so that a thrown prompt (e.g. user

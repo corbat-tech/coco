@@ -102,8 +102,14 @@ export async function saveTrustStore(
   store: TrustStoreConfig,
   storePath: string = TRUST_STORE_PATH,
 ): Promise<void> {
-  await ensureDir(storePath);
-  await writeFile(storePath, JSON.stringify(store, null, 2), "utf-8");
+  try {
+    await ensureDir(storePath);
+    await writeFile(storePath, JSON.stringify(store, null, 2), "utf-8");
+  } catch (error) {
+    // Log but don't throw - trust store is not critical for operation
+    const logger = (await import("../../utils/logger.js")).getLogger();
+    logger.warn(`[TrustStore] Failed to save: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /**

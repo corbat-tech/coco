@@ -13,15 +13,15 @@ vi.mock("node:crypto", () => ({
 vi.mock("../../config/env.js", () => ({
   getDefaultProvider: vi.fn().mockReturnValue("anthropic"),
   getDefaultModel: vi.fn().mockReturnValue("claude-opus-4-6"),
-  getLastUsedProvider: vi.fn().mockReturnValue("anthropic"),
-  getLastUsedModel: vi.fn().mockReturnValue(undefined),
+  getLastUsedProvider: vi.fn().mockResolvedValue("anthropic"),
+  getLastUsedModel: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("createDefaultReplConfig", () => {
   it("should create config with provider settings", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
 
-    const config = createDefaultReplConfig();
+    const config = await createDefaultReplConfig();
 
     expect(config.provider.type).toBe("anthropic");
     expect(config.provider.model).toBe("claude-opus-4-6");
@@ -31,7 +31,7 @@ describe("createDefaultReplConfig", () => {
   it("should create config with UI settings", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
 
-    const config = createDefaultReplConfig();
+    const config = await createDefaultReplConfig();
 
     expect(config.ui.theme).toBe("auto");
     expect(config.ui.showTimestamps).toBe(false);
@@ -41,7 +41,7 @@ describe("createDefaultReplConfig", () => {
   it("should create config with agent settings", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
 
-    const config = createDefaultReplConfig();
+    const config = await createDefaultReplConfig();
 
     expect(config.agent.systemPrompt).toContain("Corbat-Coco");
     expect(config.agent.maxToolIterations).toBe(25);
@@ -57,7 +57,7 @@ describe("createSession", () => {
   it("should create session with unique ID", async () => {
     const { createSession } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
 
     expect(session.id).toBe("test-uuid-1234");
   });
@@ -66,7 +66,7 @@ describe("createSession", () => {
     const { createSession } = await import("./session.js");
 
     const before = new Date();
-    const session = createSession("/project");
+    const session = await createSession("/project");
     const after = new Date();
 
     expect(session.startedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
@@ -76,7 +76,7 @@ describe("createSession", () => {
   it("should create session with empty messages", async () => {
     const { createSession } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
 
     expect(session.messages).toEqual([]);
   });
@@ -84,7 +84,7 @@ describe("createSession", () => {
   it("should set project path", async () => {
     const { createSession } = await import("./session.js");
 
-    const session = createSession("/my/project");
+    const session = await createSession("/my/project");
 
     expect(session.projectPath).toBe("/my/project");
   });
@@ -92,7 +92,7 @@ describe("createSession", () => {
   it("should create session with default config", async () => {
     const { createSession } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
 
     expect(session.config.provider.type).toBe("anthropic");
     expect(session.config.ui.theme).toBe("auto");
@@ -102,7 +102,7 @@ describe("createSession", () => {
   it("should merge custom config", async () => {
     const { createSession } = await import("./session.js");
 
-    const session = createSession("/project", {
+    const session = await createSession("/project", {
       provider: { maxTokens: 4096 },
       ui: { showTimestamps: true },
     });
@@ -116,7 +116,7 @@ describe("createSession", () => {
   it("should initialize empty trusted tools set", async () => {
     const { createSession } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
 
     expect(session.trustedTools).toBeInstanceOf(Set);
     expect(session.trustedTools.size).toBe(0);
@@ -127,7 +127,7 @@ describe("addMessage", () => {
   it("should add message to session", async () => {
     const { createSession, addMessage } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
     addMessage(session, { role: "user", content: "Hello" });
 
     expect(session.messages.length).toBe(1);
@@ -137,7 +137,7 @@ describe("addMessage", () => {
   it("should add multiple messages", async () => {
     const { createSession, addMessage } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
     addMessage(session, { role: "user", content: "Hello" });
     addMessage(session, { role: "assistant", content: "Hi there!" });
     addMessage(session, { role: "user", content: "How are you?" });
@@ -148,7 +148,7 @@ describe("addMessage", () => {
   it("should trim history when exceeding max", async () => {
     const { createSession, addMessage } = await import("./session.js");
 
-    const session = createSession("/project", {
+    const session = await createSession("/project", {
       ui: { maxHistorySize: 5 },
     });
 
@@ -168,7 +168,7 @@ describe("getConversationContext", () => {
   it("should include system prompt", async () => {
     const { createSession, getConversationContext } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
     const context = getConversationContext(session);
 
     expect(context[0]?.role).toBe("system");
@@ -178,7 +178,7 @@ describe("getConversationContext", () => {
   it("should include all messages", async () => {
     const { createSession, addMessage, getConversationContext } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
     addMessage(session, { role: "user", content: "Hello" });
     addMessage(session, { role: "assistant", content: "Hi!" });
 
@@ -262,7 +262,7 @@ describe("getConversationContext with toolRegistry", () => {
   it("should inject tool catalog when registry is provided", async () => {
     const { createSession, getConversationContext } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
 
     const mockRegistry = {
       getAll: () => [
@@ -285,7 +285,7 @@ describe("getConversationContext with toolRegistry", () => {
   it("should work without registry (backward compatible)", async () => {
     const { createSession, getConversationContext } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
     const context = getConversationContext(session);
 
     // Should still have system prompt with placeholder unreplaced
@@ -456,7 +456,7 @@ describe("clearSession", () => {
   it("should clear all messages", async () => {
     const { createSession, addMessage, clearSession } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
     addMessage(session, { role: "user", content: "Hello" });
     addMessage(session, { role: "assistant", content: "Hi!" });
 
@@ -471,7 +471,7 @@ describe("clearSession", () => {
   it("should not affect other session properties", async () => {
     const { createSession, clearSession } = await import("./session.js");
 
-    const session = createSession("/project");
+    const session = await createSession("/project");
     session.trustedTools.add("bash_exec");
 
     clearSession(session);
@@ -492,39 +492,39 @@ describe("clearSession", () => {
 describe("COCO_SYSTEM_PROMPT — agent behaviour contracts", () => {
   it("instructs the agent to use tools instead of asking the user", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
-    const { agent } = createDefaultReplConfig();
+    const { agent } = await createDefaultReplConfig();
     // The canonical phrase ensuring action over hesitation
     expect(agent.systemPrompt).toMatch(/JUST DO IT/i);
   });
 
   it("instructs the agent never to claim it lacks real-time data access", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
-    const { agent } = createDefaultReplConfig();
+    const { agent } = await createDefaultReplConfig();
     expect(agent.systemPrompt).toMatch(/NEVER say.*don'?t have access to real-time/i);
   });
 
   it("instructs the agent never to claim it lacks credentials or environment access", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
-    const { agent } = createDefaultReplConfig();
+    const { agent } = await createDefaultReplConfig();
     // Guards against the kubectl/gcloud hallucination pattern
     expect(agent.systemPrompt).toMatch(/credential|kubeconfig|shell environment/i);
   });
 
   it("mentions kubectl explicitly to pre-empt refusal of kubernetes commands", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
-    const { agent } = createDefaultReplConfig();
+    const { agent } = await createDefaultReplConfig();
     expect(agent.systemPrompt).toMatch(/kubectl/i);
   });
 
   it("instructs the agent to attempt commands before claiming inability", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
-    const { agent } = createDefaultReplConfig();
+    const { agent } = await createDefaultReplConfig();
     expect(agent.systemPrompt).toMatch(/attempt|ALWAYS attempt/i);
   });
 
   it("contains the tool catalog placeholder for dynamic injection", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
-    const { agent } = createDefaultReplConfig();
+    const { agent } = await createDefaultReplConfig();
     // After injection the placeholder is replaced — the raw prompt before injection
     // is not accessible here, but the resulting prompt must reference tool names
     expect(agent.systemPrompt).toMatch(/bash_exec|write_file|read_file/i);
