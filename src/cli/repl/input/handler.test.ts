@@ -5,7 +5,7 @@
  * We test the pure utility functions and logic patterns instead.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { buildImageIndicator } from "./handler.js";
 import * as path from "node:path";
 import * as os from "node:os";
