@@ -1101,63 +1101,81 @@ function pairAdjacentDiffLines(lines: DiffLine[]): Array<{ deleteIdx: number; ad
   return pairs;
 }
 
+// ── Diff color palette (Claude Code–inspired) ────────────────────────────────
+// Lazy helpers evaluated at call time so they work in test environments (no TTY).
+// bgRgb returns a Chalk builder; we call it as a function directly on the string
+// rather than chaining .white (which may not be callable in all environments).
+function diffBgDel(s: string): string {
+  return chalk.bgRgb ? chalk.bgRgb(60, 0, 0)(s) : chalk.bgRed(s);
+}
+function diffBgAdd(s: string): string {
+  return chalk.bgRgb ? chalk.bgRgb(0, 50, 0)(s) : chalk.bgGreen(s);
+}
+function diffBgDelWord(s: string): string {
+  return chalk.bgRgb ? chalk.bgRgb(140, 30, 30)(s) : chalk.bgRed.bold(s);
+}
+function diffBgAddWord(s: string): string {
+  return chalk.bgRgb ? chalk.bgRgb(30, 120, 30)(s) : chalk.bgGreen.bold(s);
+}
+
 /** Word-level diff highlighting using diffWords from the diff package */
 function wordLevelHighlight(
   deletedContent: string,
   addedContent: string,
 ): { styledDelete: string; styledAdd: string } {
   const changes = diffWords(deletedContent, addedContent);
-
-  // Gracefully degrade when chalk.bgRgb is unavailable (e.g. in test environments)
-  const bgDelLine = chalk.bgRgb ? chalk.bgRgb(80, 20, 20) : chalk.red;
-  const bgAddLine = chalk.bgRgb ? chalk.bgRgb(20, 60, 20) : chalk.green;
-  const bgDelWord = chalk.bgRgb ? chalk.bgRgb(160, 40, 40) : chalk.red;
-  const bgAddWord = chalk.bgRgb ? chalk.bgRgb(40, 120, 40) : chalk.green;
-
   let styledDelete = "";
   let styledAdd = "";
 
   for (const change of changes) {
     if (change.added) {
-      styledAdd += bgAddWord(change.value);
+      styledAdd += diffBgAddWord(change.value);
     } else if (change.removed) {
-      styledDelete += bgDelWord(change.value);
+      styledDelete += diffBgDelWord(change.value);
     } else {
-      styledDelete += bgDelLine(change.value);
-      styledAdd += bgAddLine(change.value);
+      styledDelete += diffBgDel(change.value);
+      styledAdd += diffBgAdd(change.value);
     }
   }
 
   return { styledDelete, styledAdd };
 }
 
-/** Show a proper unified diff for edit_file using diffLines */
+/**
+ * Render a visual diff for edit_file / write_file (modify).
+ *
+ * Design (Claude Code–inspired):
+ * - Two-column line numbers: old│new, right-aligned in 4 chars each
+ * - Full-width red/green background on changed lines
+ * - Brighter word-level accent for changed words within a line
+ * - ⋮ gap separator between non-contiguous hunks
+ * - Max 30 lines shown, then "… +N more" guard
+ */
 function renderEditPreview(oldStr: string, newStr: string): string {
-  const maxWidth = Math.max(getTerminalWidth() - 8, 30);
+  // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │ + sign1 + space1) = -14
+  const termWidth = Math.max(getTerminalWidth() - 14, 30);
   const MAX_SHOWN = 30;
 
-  const bgDelLine = chalk.bgRgb ? chalk.bgRgb(80, 20, 20) : chalk.red;
-  const bgAddLine = chalk.bgRgb ? chalk.bgRgb(20, 60, 20) : chalk.green;
-
-  // Handle pure insertion (empty old string) — show added lines in green
+  // Pure insertion (empty old) — show compact green block, no line-number columns
   if (!oldStr.trim()) {
     const lines = newStr
       .split("\n")
       .filter((l) => l.trim().length > 0)
       .slice(0, 6);
     if (lines.length === 0) return "";
-    const truncate = (s: string) => (s.length > maxWidth - 2 ? s.slice(0, maxWidth - 3) + "…" : s);
+    const truncate = (s: string) => (s.length > termWidth - 2 ? s.slice(0, termWidth - 3) + "…" : s);
     return lines
       .map((l) => {
         const text = `+ ${truncate(l)}`;
-        return "   " + bgAddLine(text + " ".repeat(Math.max(0, maxWidth - text.length)));
+        const pad = Math.max(0, termWidth - stripAnsi(text).length + 2);
+        return "  " + diffBgAdd(text + " ".repeat(pad));
       })
       .join("\n");
   }
 
   if (!newStr.trim() && !oldStr.trim()) return "";
 
-  // Build DiffLine array from diffLines()
+  // ── Build DiffLine array ─────────────────────────────────────────────────
   const changes = diffLines(oldStr, newStr);
   const diffLineList: DiffLine[] = [];
   let oldNo = 1;
@@ -1165,27 +1183,20 @@ function renderEditPreview(oldStr: string, newStr: string): string {
 
   for (const change of changes) {
     const value = change.value.endsWith("\n") ? change.value.slice(0, -1) : change.value;
-    const changeLines = value.split("\n");
-
-    for (const line of changeLines) {
+    for (const line of value.split("\n")) {
       if (change.added) {
         diffLineList.push({ type: "add", content: line, newLineNo: newNo++ });
       } else if (change.removed) {
         diffLineList.push({ type: "delete", content: line, oldLineNo: oldNo++ });
       } else {
-        diffLineList.push({
-          type: "context",
-          content: line,
-          oldLineNo: oldNo++,
-          newLineNo: newNo++,
-        });
+        diffLineList.push({ type: "context", content: line, oldLineNo: oldNo++, newLineNo: newNo++ });
       }
     }
   }
 
   if (diffLineList.length === 0) return "";
 
-  // Apply word-level highlighting for adjacent delete→add pairs
+  // ── Word-level highlights for adjacent delete→add pairs ──────────────────
   const pairs = pairAdjacentDiffLines(diffLineList);
   const pairedDeletes = new Set(pairs.map((p) => p.deleteIdx));
   const pairedAdds = new Set(pairs.map((p) => p.addIdx));
@@ -1194,68 +1205,69 @@ function renderEditPreview(oldStr: string, newStr: string): string {
   for (const pair of pairs) {
     const del = diffLineList[pair.deleteIdx];
     const add = diffLineList[pair.addIdx];
-    if (del && add) {
-      wordHighlights.set(pair.deleteIdx, wordLevelHighlight(del.content, add.content));
-    }
+    if (del && add) wordHighlights.set(pair.deleteIdx, wordLevelHighlight(del.content, add.content));
   }
 
-  // Filter to only changed lines + 2 context lines around them
+  // ── Compute visible indices (changed ± 2 context lines) ──────────────────
   const changedIndices = new Set(
     diffLineList.map((l, i) => (l.type !== "context" ? i : -1)).filter((i) => i >= 0),
   );
   const visibleIndices = new Set<number>();
   for (const idx of changedIndices) {
     for (let d = -2; d <= 2; d++) {
-      const neighbor = idx + d;
-      if (neighbor >= 0 && neighbor < diffLineList.length) {
-        visibleIndices.add(neighbor);
-      }
+      const n = idx + d;
+      if (n >= 0 && n < diffLineList.length) visibleIndices.add(n);
     }
   }
 
+  // ── Render ───────────────────────────────────────────────────────────────
   const result: string[] = [];
   let shown = 0;
   let prevIdx = -1;
+  const truncate = (s: string) => (s.length > termWidth ? s.slice(0, termWidth - 1) + "…" : s);
+
+  // Helper: two-column gutter  "  4│  5│"
+  const gutter = (oldN: number | undefined, newN: number | undefined): string => {
+    const o = oldN !== undefined ? String(oldN).padStart(4) : "    ";
+    const n = newN !== undefined ? String(newN).padStart(4) : "    ";
+    return chalk.dim(`${o}│${n}│`);
+  };
 
   for (let i = 0; i < diffLineList.length; i++) {
     if (!visibleIndices.has(i)) continue;
     if (shown >= MAX_SHOWN) {
-      result.push(chalk.dim(`   … +${diffLineList.length - i} more lines`));
+      result.push(chalk.dim(`  … +${diffLineList.length - i} more lines`));
       break;
     }
 
-    // Separator for gaps in context
+    // Gap separator between non-contiguous hunks
     if (prevIdx >= 0 && i > prevIdx + 1) {
-      result.push(chalk.dim("   ⋮"));
+      result.push(chalk.dim("      ⋮"));
     }
     prevIdx = i;
+    shown++;
 
     const dl = diffLineList[i]!;
-    const lineNo = chalk.dim(
-      String(dl.type === "delete" ? dl.oldLineNo : dl.newLineNo).padStart(4) + " ",
-    );
-    const prefix = dl.type === "add" ? "+" : dl.type === "delete" ? "-" : " ";
-    const truncate = (s: string) => (s.length > maxWidth - 6 ? s.slice(0, maxWidth - 7) + "…" : s);
 
     if (dl.type === "add") {
-      const content = pairedAdds.has(i)
+      const rawContent = pairedAdds.has(i)
         ? (wordHighlights.get(pairByAdd.get(i)!)?.styledAdd ?? truncate(dl.content))
         : truncate(dl.content);
-      const innerText = `${prefix} ${content}`;
-      const pad = Math.max(0, maxWidth - stripAnsi(innerText).length - 6);
-      result.push("   " + lineNo + bgAddLine(" " + innerText + " ".repeat(pad)));
+      const visLen = stripAnsi(rawContent).length;
+      const pad = Math.max(0, termWidth - visLen);
+      const line = diffBgAdd(` + ${rawContent}${" ".repeat(pad)}`);
+      result.push("  " + gutter(undefined, dl.newLineNo) + line);
     } else if (dl.type === "delete") {
-      const content = pairedDeletes.has(i)
+      const rawContent = pairedDeletes.has(i)
         ? (wordHighlights.get(i)?.styledDelete ?? truncate(dl.content))
         : truncate(dl.content);
-      const innerText = `${prefix} ${content}`;
-      const pad = Math.max(0, maxWidth - stripAnsi(innerText).length - 6);
-      result.push("   " + lineNo + bgDelLine(" " + innerText + " ".repeat(pad)));
+      const visLen = stripAnsi(rawContent).length;
+      const pad = Math.max(0, termWidth - visLen);
+      const line = diffBgDel(` - ${rawContent}${" ".repeat(pad)}`);
+      result.push("  " + gutter(dl.oldLineNo, undefined) + line);
     } else {
-      const innerText = `${prefix} ${truncate(dl.content)}`;
-      result.push("   " + lineNo + chalk.dim(innerText));
+      result.push("  " + gutter(dl.oldLineNo, dl.newLineNo) + chalk.dim(`   ${truncate(dl.content)}`));
     }
-    shown++;
   }
 
   return result.join("\n");

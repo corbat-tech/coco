@@ -604,7 +604,25 @@ export class GeminiProvider implements LLMProvider {
    */
   private handleError(error: unknown): never {
     const message = error instanceof Error ? error.message : String(error);
-    const retryable = message.includes("429") || message.includes("500");
+    const msg = message.toLowerCase();
+
+    // Determine if retryable based on status codes and message content
+    let retryable = message.includes("429") || message.includes("500");
+
+    // Non-retryable: quota/billing errors
+    if (
+      msg.includes("quota") ||
+      msg.includes("billing") ||
+      msg.includes("usage limit") ||
+      msg.includes("insufficient quota")
+    ) {
+      retryable = false;
+    }
+
+    // Non-retryable: auth errors
+    if (message.includes("401") || message.includes("403")) {
+      retryable = false;
+    }
 
     throw new ProviderError(message, {
       provider: this.id,
