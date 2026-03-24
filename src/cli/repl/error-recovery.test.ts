@@ -23,16 +23,9 @@ describe("ParallelToolExecutor.executeSingleTool — unexpected error handling",
     const toolCall = { id: "tc1", name: "read_file", input: { path: "/tmp/test.txt" } };
 
     // Cast to access private method for testing
-    const result = await (executor as unknown as Record<string, Function>)["executeSingleTool"](
-      toolCall,
-      1,
-      1,
-      registry,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-    );
+    const result = await (executor as unknown as Record<string, Function>)[
+      "executeSingleTool"
+    ](toolCall, 1, 1, registry, undefined, undefined, undefined, undefined);
 
     expect(result).not.toBeNull();
     expect(result!.result.success).toBe(false);
@@ -52,16 +45,9 @@ describe("ParallelToolExecutor.executeSingleTool — unexpected error handling",
 
     const toolCall = { id: "tc2", name: "bash_exec", input: { command: "sleep 10" } };
 
-    const result = await (executor as unknown as Record<string, Function>)["executeSingleTool"](
-      toolCall,
-      1,
-      1,
-      registry,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-    );
+    const result = await (executor as unknown as Record<string, Function>)[
+      "executeSingleTool"
+    ](toolCall, 1, 1, registry, undefined, undefined, undefined, undefined);
 
     expect(result).toBeNull();
   });
