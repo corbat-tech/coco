@@ -217,15 +217,22 @@ export class ToolRegistry {
             ". All parameters are missing — this is likely a JSON serialization error on our side. Please retry with the same arguments.";
         }
       } else if (isCocoError(error)) {
-        // Surface the cause chain (e.g., ENOENT hidden inside FileSystemError)
         const causeMsg = error.cause instanceof Error ? error.cause.message : "";
+        // Skip bare OS ENOENT causes: they only add an absolute path that duplicates
+        // what enrichENOENT() already surfaced in the FileSystemError message.
+        const isRawEnoent = causeMsg.startsWith("ENOENT:");
         const combined =
-          causeMsg && !error.message.includes(causeMsg)
+          causeMsg && !isRawEnoent && !error.message.includes(causeMsg)
             ? `${error.message} — ${causeMsg}`
             : error.message;
         errorMessage = humanizeError(combined, name);
-        // Append suggestion if present and not redundant
-        if (error.suggestion && !errorMessage.includes(error.suggestion)) {
+        // Append suggestion only when it adds information beyond what the message already covers.
+        // Skip if the message already has recovery hints (e.g. enrichENOENT output includes
+        // "Did you mean?" + "Use glob or list_dir" making the generic suggestion redundant).
+        const hasRecoveryHint = /Did you mean\?|Use glob|Check that the parent directory/.test(
+          errorMessage,
+        );
+        if (error.suggestion && !hasRecoveryHint && !errorMessage.includes(error.suggestion)) {
           errorMessage += `\nSuggestion: ${error.suggestion}`;
         }
       } else if (isAbortError(error, options?.signal)) {

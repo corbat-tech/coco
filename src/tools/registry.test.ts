@@ -356,9 +356,11 @@ describe("execute with CocoError", () => {
     const result = await registry.execute("coco_error_tool", {});
 
     expect(result.success).toBe(false);
-    // Should surface the cause as humanized + suggestion from FileSystemError
-    expect(result.error).toContain("not found");
-    expect(result.error).toContain("/test/missing.ts");
+    // Raw ENOENT causes (starting with "ENOENT:") are suppressed to avoid leaking
+    // absolute paths — enrichENOENT() already surfaces the relevant info in the message.
+    expect(result.error).toContain("Failed to read file: missing.ts");
+    expect(result.error).not.toContain("/test/missing.ts");
+    // Suggestion from FileSystemError is still shown
     expect(result.error).toContain("Suggestion");
   });
 
