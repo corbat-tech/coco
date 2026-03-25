@@ -407,9 +407,10 @@ describe("executeAgentTurn", () => {
       mockToolRegistry,
     );
 
-    // Should stop after 3 iterations
+    // Should stop after 3 iterations + 1 final summary turn
     expect(result.toolCalls.length).toBe(3);
-    expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(3);
+    // 3 agent iterations + 1 final text-only summary call = 4 total
+    expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(4);
   });
 
   it("should handle multiple tool calls in one response", async () => {
@@ -1156,11 +1157,14 @@ describe("max_tokens auto-continue", () => {
       { onStream },
     );
 
-    // Should have called LLM exactly 3 times (the iteration limit)
+    // max_tokens auto-continue path exits via collectedToolCalls.length === 0 (no tools),
+    // so the isLastIteration handler (which requires toolResults.length > 0) does NOT fire.
+    // The loop exits naturally after 3 max_tokens continuations.
+    // No extra summary call is made because there were no tool calls on the last iteration.
     expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(3);
 
-    // Should show iteration limit notice
-    expect(result.content).toContain("Reached the iteration limit");
+    // Content is the accumulated partial responses
+    expect(result.content).toContain("partial...");
   });
 });
 
@@ -1228,12 +1232,24 @@ describe("iteration limit notice", () => {
     vi.restoreAllMocks();
   });
 
-  it("should show iteration limit notice when tool loop exhausts iterations", async () => {
+  it("should give LLM a final summary turn when tool loop exhausts iterations", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
     const toolCall: ToolCall = { id: "tool-1", name: "read_file", input: { path: "/file.ts" } };
 
-    (mockProvider.streamWithTools as Mock).mockImplementation(createToolStreamMock("", [toolCall]));
+    // maxToolIterations = 3 in the mock session config
+    // Calls 1–3: LLM keeps making tool calls (hitting the limit)
+    // Call 4: final text-only summary turn (tools=[])
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount <= 3) {
+        return createToolStreamMock("", [toolCall])();
+      }
+      // Final summary turn — LLM summarises what happened
+      return createTextStreamMock("Task incomplete. The file was read 3 times. Type continue to proceed.")();
+    });
+
     (mockToolRegistry.execute as Mock).mockResolvedValue({
       success: true,
       data: "content",
@@ -1249,16 +1265,19 @@ describe("iteration limit notice", () => {
       { onStream },
     );
 
-    // Should contain the iteration limit notice
-    expect(result.content).toContain("Reached the iteration limit (3)");
-    expect(result.content).toContain('You can say "continue" to resume');
+    // The final summary from the LLM should appear in the result
+    expect(result.content).toContain("Task incomplete");
+    expect(result.content).toContain("continue");
 
-    // The notice should also have been streamed
+    // The summary text should have been streamed (not a static notice)
     const streamCalls = onStream.mock.calls.map((c: [StreamChunk]) => c[0]);
-    const noticeCalls = streamCalls.filter(
-      (c: StreamChunk) => c.type === "text" && c.text?.includes("iteration limit"),
+    const summaryChunks = streamCalls.filter(
+      (c: StreamChunk) => c.type === "text" && c.text?.includes("Task incomplete"),
     );
-    expect(noticeCalls.length).toBe(1);
+    expect(summaryChunks.length).toBeGreaterThan(0);
+
+    // streamWithTools should have been called 4 times (3 iterations + 1 final summary)
+    expect(callCount).toBe(4);
   });
 
   it("should NOT show iteration limit notice when loop ends normally", async () => {
@@ -1365,5 +1384,159 @@ describe("iteration limit notice", () => {
       return typeof msg.content === "string" && msg.content.includes("Mid-task steering");
     });
     expect(steeringCalls).toHaveLength(0);
+  });
+});
+
+describe("streaming text suppression during tool iterations", () => {
+  let mockProvider: LLMProvider;
+  let mockToolRegistry: ToolRegistry;
+  let mockSession: ReplSession;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    mockProvider = {
+      id: "mock",
+      name: "Mock Provider",
+      initialize: vi.fn(),
+      chat: vi.fn(),
+      chatWithTools: vi.fn(),
+      stream: vi.fn(),
+      streamWithTools: vi.fn(),
+      countTokens: vi.fn(() => 10),
+      getContextWindow: vi.fn(() => 100000),
+      isAvailable: vi.fn().mockResolvedValue(true),
+    };
+
+    mockToolRegistry = {
+      getToolDefinitionsForLLM: vi.fn(() => [
+        { name: "read_file", description: "Read a file", input_schema: { type: "object" } },
+      ]),
+      execute: vi.fn(),
+      register: vi.fn(),
+      unregister: vi.fn(),
+      get: vi.fn(),
+      has: vi.fn(),
+      getAll: vi.fn(),
+      getByCategory: vi.fn(),
+    } as unknown as ToolRegistry;
+
+    mockSession = {
+      id: "test-session-suppression",
+      startedAt: new Date(),
+      messages: [],
+      projectPath: "/test/project",
+      config: {
+        provider: { type: "anthropic", model: "claude-sonnet-4-20250514", maxTokens: 8192 },
+        ui: { theme: "auto", showTimestamps: false, maxHistorySize: 100 },
+        agent: { systemPrompt: "You are a helpful assistant", maxToolIterations: 25, confirmDestructive: true },
+      },
+      trustedTools: new Set<string>(),
+    };
+
+    const { getConversationContext } = await import("./session.js");
+    (getConversationContext as Mock).mockReturnValue([{ role: "system", content: "System prompt" }]);
+
+    const { requiresConfirmation } = await import("./confirmation.js");
+    (requiresConfirmation as Mock).mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shows text normally when the turn has no tool calls (final response)", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    (mockProvider.streamWithTools as Mock).mockImplementation(
+      createTextStreamMock("Here is a direct answer."),
+    );
+
+    const streamedChunks: StreamChunk[] = [];
+    await executeAgentTurn(mockSession, "What is 2+2?", mockProvider, mockToolRegistry, {
+      onStream: (chunk) => streamedChunks.push(chunk),
+    });
+
+    const text = streamedChunks
+      .filter((c) => c.type === "text")
+      .map((c) => c.text)
+      .join("");
+    expect(text).toContain("direct answer");
+  });
+
+  it("suppresses intermediate text when the turn ends with tool calls", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    const toolCall: ToolCall = { id: "t1", name: "read_file", input: { path: "/f.ts" } };
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return createToolStreamMock("I will read the file now.", [toolCall])();
+      return createTextStreamMock("The file is empty.")();
+    });
+
+    (mockToolRegistry.execute as Mock).mockResolvedValue({ success: true, data: {}, duration: 1 });
+
+    const streamedChunks: StreamChunk[] = [];
+    await executeAgentTurn(mockSession, "Read the file", mockProvider, mockToolRegistry, {
+      onStream: (chunk) => streamedChunks.push(chunk),
+    });
+
+    const allText = streamedChunks
+      .filter((c) => c.type === "text")
+      .map((c) => c.text)
+      .join("");
+
+    // Intermediate reasoning must NOT appear
+    expect(allText).not.toContain("I will read the file now");
+    // Final response must appear
+    expect(allText).toContain("The file is empty");
+  });
+
+  it("suppresses text across multiple tool iterations but flushes the final response", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    const tc1: ToolCall = { id: "t1", name: "read_file", input: { path: "/a.ts" } };
+    const tc2: ToolCall = { id: "t2", name: "read_file", input: { path: "/b.ts" } };
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return createToolStreamMock("Step 1 reasoning.", [tc1])();
+      if (callCount === 2) return createToolStreamMock("Step 2 reasoning.", [tc2])();
+      return createTextStreamMock("Done! Both files processed.")();
+    });
+
+    (mockToolRegistry.execute as Mock).mockResolvedValue({ success: true, data: {}, duration: 1 });
+
+    const streamedChunks: StreamChunk[] = [];
+    await executeAgentTurn(mockSession, "Process files", mockProvider, mockToolRegistry, {
+      onStream: (chunk) => streamedChunks.push(chunk),
+    });
+
+    const allText = streamedChunks
+      .filter((c) => c.type === "text")
+      .map((c) => c.text)
+      .join("");
+
+    expect(allText).not.toContain("Step 1 reasoning");
+    expect(allText).not.toContain("Step 2 reasoning");
+    expect(allText).toContain("Done! Both files processed");
+  });
+
+  it("still passes done chunk through to onStream on final turn", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    (mockProvider.streamWithTools as Mock).mockImplementation(
+      createTextStreamMock("Final answer."),
+    );
+
+    const doneChunks: StreamChunk[] = [];
+    await executeAgentTurn(mockSession, "Hi", mockProvider, mockToolRegistry, {
+      onStream: (chunk) => {
+        if (chunk.type === "done") doneChunks.push(chunk);
+      },
+    });
+
+    expect(doneChunks.length).toBeGreaterThan(0);
   });
 });

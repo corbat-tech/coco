@@ -133,6 +133,23 @@ export async function executeAgentTurn(
   const toolErrorCounts = new Map<string, number>();
   const MAX_CONSECUTIVE_TOOL_ERRORS = 3;
 
+  /**
+   * Fraction of maxIterations at which to inject a budget-warning into the LLM's
+   * tool results so it starts wrapping up before hitting the hard limit.
+   */
+  const ITERATION_LIMIT_WARNING_RATIO = 0.75;
+
+  /**
+   * Message appended to the last tool result on the final iteration.
+   * Instructs the LLM to stop calling tools and write a proper summary/handoff.
+   */
+  const ITERATION_LIMIT_SUMMARY_PROMPT =
+    `[System: You have now used all allowed iterations and tool calls are no longer available. ` +
+    `Write your final response immediately: ` +
+    `(1) briefly state what was completed, ` +
+    `(2) describe what still needs to be done, ` +
+    `(3) give specific next steps so the user can continue. Be concise and direct.]`;
+
   // ---------------------------------------------------------------------------
   // Inline tool-result size cap
   // ---------------------------------------------------------------------------
@@ -167,6 +184,16 @@ export async function executeAgentTurn(
 
   while (iteration < maxIterations) {
     iteration++;
+
+    // True when this is the last iteration the agent is allowed to run.
+    // Used to give the LLM one final text-only summary turn instead of cutting off.
+    const isLastIteration = iteration === maxIterations;
+
+    // Buffer text chunks for this iteration.
+    // Flushed to onStream only if the turn ends without tool calls (final response).
+    // If tool calls follow, the text is intermediate reasoning — discard it to
+    // keep the terminal clean.
+    const iterationTextChunks: StreamChunk[] = [];
 
     // Check for abort at start of each iteration
     if (options.signal?.aborted) {
@@ -214,7 +241,7 @@ export async function executeAgentTurn(
             }
             responseContent += chunk.text;
             finalContent += chunk.text;
-            options.onStream?.(chunk);
+            iterationTextChunks.push(chunk);
           }
 
           // Handle tool call start
@@ -320,6 +347,15 @@ export async function executeAgentTurn(
         partialContent: finalContent || undefined,
         error: errorMsg,
       };
+    }
+
+    // Flush buffered text only if this turn produced no tool calls.
+    // A turn with tool calls is an intermediate reasoning step — suppress its text.
+    // The final turn (no tool calls) always flushes so the user sees the reply.
+    if (collectedToolCalls.length === 0) {
+      for (const bufferedChunk of iterationTextChunks) {
+        options.onStream?.(bufferedChunk);
+      }
     }
 
     // Estimate token usage (streaming doesn't provide exact counts)
@@ -567,10 +603,29 @@ export async function executeAgentTurn(
       // Check if this tool was declined
       const declineReason = declinedTools.get(toolCall.id);
       if (declineReason) {
+        // Give the LLM actionable context about WHY the tool was skipped so it can
+        // choose a better strategy instead of retrying the same approach.
+        let skipContent: string;
+        if (declineReason === "User declined") {
+          skipContent =
+            "The user explicitly declined this tool call. " +
+            "You MUST find a different approach — do not retry the same action or parameters.";
+        } else if (
+          declineReason.toLowerCase().includes("timeout") ||
+          declineReason.toLowerCase().includes("timed out")
+        ) {
+          skipContent =
+            `Tool execution timed out: ${declineReason}. ` +
+            "Try a simpler or faster alternative, or break the task into smaller steps.";
+        } else if (declineReason.toLowerCase().includes("abort")) {
+          skipContent = "Tool execution was cancelled.";
+        } else {
+          skipContent = `Tool execution was skipped: ${declineReason}`;
+        }
         toolResults.push({
           type: "tool_result",
           tool_use_id: toolCall.id,
-          content: `Tool execution was declined: ${declineReason}`,
+          content: skipContent,
           is_error: true,
         });
         continue;
@@ -641,6 +696,35 @@ export async function executeAgentTurn(
       }
     }
 
+    // Inject iteration-budget feedback into the last tool result so the LLM can adapt.
+    // This runs AFTER the stuckInErrorLoop detection so both messages never overlap.
+    if (toolResults.length > 0) {
+      const warningThreshold = Math.ceil(maxIterations * ITERATION_LIMIT_WARNING_RATIO);
+      const lastIdx = toolResults.length - 1;
+      const last = toolResults[lastIdx]!;
+
+      if (isLastIteration && !stuckInErrorLoop) {
+        // Final iteration: ask for a proper summary handoff
+        toolResults[lastIdx] = {
+          ...last,
+          content:
+            typeof last.content === "string"
+              ? last.content + `\n\n${ITERATION_LIMIT_SUMMARY_PROMPT}`
+              : ITERATION_LIMIT_SUMMARY_PROMPT,
+        };
+      } else if (iteration === warningThreshold) {
+        // 75% of budget used: nudge to start wrapping up
+        const remaining = maxIterations - iteration;
+        const warning =
+          `\n\n[System: Iteration budget warning — ${iteration} of ${maxIterations} iterations used, ` +
+          `${remaining} remaining. Begin wrapping up your task. Prioritize the most critical remaining steps.]`;
+        toolResults[lastIdx] = {
+          ...last,
+          content: typeof last.content === "string" ? last.content + warning : warning,
+        };
+      }
+    }
+
     // Add assistant message with tool uses
     const assistantContent = response.content
       ? [{ type: "text" as const, text: response.content }, ...toolUses]
@@ -700,13 +784,44 @@ export async function executeAgentTurn(
       }
       break;
     }
-  }
 
-  // Notify user when the iteration limit was reached
-  if (iteration >= maxIterations) {
-    const notice = `\n\n---\n_Reached the iteration limit (${maxIterations}). The task may be incomplete. You can say "continue" to resume._`;
-    finalContent += notice;
-    options.onStream?.({ type: "text", text: notice });
+    // Final iteration with tool calls: give the LLM one more text-only turn to
+    // summarise progress and hand off to the user instead of cutting off abruptly.
+    // The summary prompt was already injected into the last tool result above.
+    if (isLastIteration && toolResults.length > 0) {
+      let summaryThinkingEnded = false;
+      options.onThinkingStart?.();
+      try {
+        const finalMessages = getConversationContext(session, toolRegistry);
+        for await (const chunk of provider.streamWithTools(finalMessages, {
+          tools: [],
+          maxTokens: session.config.provider.maxTokens,
+          signal: options.signal,
+        })) {
+          if (options.signal?.aborted) break;
+          if (chunk.type === "text" && chunk.text) {
+            if (!summaryThinkingEnded) {
+              options.onThinkingEnd?.();
+              summaryThinkingEnded = true;
+            }
+            finalContent += chunk.text;
+            options.onStream?.(chunk);
+          }
+          if (chunk.type === "done") break;
+        }
+      } catch {
+        // If the summary call fails, show a static notice so the user is never left in the dark
+        const notice =
+          `\n\nI have reached the maximum iteration limit (${maxIterations}). ` +
+          `The task may be incomplete. Type "continue" to give me more iterations, ` +
+          `or describe what you'd like me to focus on next.`;
+        finalContent += notice;
+        options.onStream?.({ type: "text", text: notice });
+      } finally {
+        if (!summaryThinkingEnded) options.onThinkingEnd?.();
+      }
+      break;
+    }
   }
 
   // Signal completion

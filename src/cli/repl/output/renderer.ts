@@ -61,6 +61,18 @@ const STREAMING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"
 /** Terminal width for box rendering */
 const getTerminalWidth = () => process.stdout.columns || 80;
 
+// ============================================================================
+// Code Block Display Limits
+// ============================================================================
+
+/**
+ * Maximum lines to display for a streaming code block.
+ * Blocks over this limit are truncated to prevent file-echoing noise.
+ * Diff blocks are never truncated — they need full context for review.
+ */
+export const MAX_STREAMING_CODE_LINES = 50;
+const STREAMING_CODE_HEAD_LINES = 40;
+
 /** Start streaming indicator when buffering code blocks */
 function startStreamingIndicator(): void {
   if (streamingIndicatorActive) return;
@@ -552,6 +564,15 @@ function renderSimpleCodeBlock(lang: string, lines: string[], blockId: number): 
   const title = lang || "Code";
   console.log(chalk.dim(`${title} · #${blockId}`));
 
+  // Cap non-diff blocks to avoid file-echoing noise in streaming responses.
+  // Diff blocks always render in full — truncating a diff destroys review context.
+  let displayLines = lines;
+  let truncatedCount = 0;
+  if (!isDiff && lines.length > MAX_STREAMING_CODE_LINES) {
+    displayLines = lines.slice(0, STREAMING_CODE_HEAD_LINES);
+    truncatedCount = lines.length - STREAMING_CODE_HEAD_LINES;
+  }
+
   const bgDel = chalk.bgRgb(80, 20, 20);
   const bgAdd = chalk.bgRgb(20, 60, 20);
 
@@ -559,7 +580,7 @@ function renderSimpleCodeBlock(lang: string, lines: string[], blockId: number): 
   let oldLineNo = 0;
   let newLineNo = 0;
 
-  for (const line of lines) {
+  for (const line of displayLines) {
     // Parse @@ headers to update line counters
     if (isDiff) {
       const hunkMatch = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
@@ -598,6 +619,11 @@ function renderSimpleCodeBlock(lang: string, lines: string[], blockId: number): 
         newLineNo++;
       }
     }
+  }
+
+  // Show truncation notice when lines were omitted
+  if (truncatedCount > 0) {
+    console.log(chalk.dim(`  … ${truncatedCount} more lines · /copy ${blockId} for full content`));
   }
 
   // Show copy hint at the end

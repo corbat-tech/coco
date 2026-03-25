@@ -15,6 +15,7 @@ import {
   renderWarning,
   highlightCode,
   resetTypewriter,
+  MAX_STREAMING_CODE_LINES,
 } from "./renderer.js";
 import type { StreamChunk } from "../../../providers/types.js";
 import type { ExecutedToolCall } from "../types.js";
@@ -867,5 +868,86 @@ describe("Feature B: renderEditPreview diff output", () => {
     const allOutput = consoleLogSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
     // Should have context separator when hunks are far apart
     expect(allOutput).toContain("⋮");
+  });
+});
+
+describe("code block size cap (MAX_STREAMING_CODE_LINES)", () => {
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    resetTypewriter();
+    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    resetTypewriter();
+    vi.restoreAllMocks();
+  });
+
+  function feedCodeBlock(lang: string, lineCount: number): void {
+    renderStreamChunk({ type: "text", text: "```" + lang + "\n" });
+    for (let i = 1; i <= lineCount; i++) {
+      renderStreamChunk({ type: "text", text: `line ${i}\n` });
+    }
+    renderStreamChunk({ type: "text", text: "```\n" });
+    renderStreamChunk({ type: "done" });
+  }
+
+  function allOutput(): string {
+    return consoleLogSpy.mock.calls.map((c) => String(c[0] ?? "")).join("\n");
+  }
+
+  it("exports MAX_STREAMING_CODE_LINES as a positive number", () => {
+    expect(typeof MAX_STREAMING_CODE_LINES).toBe("number");
+    expect(MAX_STREAMING_CODE_LINES).toBeGreaterThan(0);
+  });
+
+  it("renders all lines when block is within the limit", () => {
+    feedCodeBlock("typescript", MAX_STREAMING_CODE_LINES - 1);
+    const out = allOutput();
+    // No truncation footer should appear
+    expect(out).not.toContain("more lines");
+  });
+
+  it("renders all lines when block is exactly at the limit", () => {
+    feedCodeBlock("typescript", MAX_STREAMING_CODE_LINES);
+    const out = allOutput();
+    // No truncation footer should appear
+    expect(out).not.toContain("more lines");
+  });
+
+  it("truncates and shows footer with correct omitted count when block exceeds the limit", () => {
+    // STREAMING_CODE_HEAD_LINES = MAX - 10 = 40
+    const STREAMING_CODE_HEAD_LINES = MAX_STREAMING_CODE_LINES - 10;
+    const extra = 20;
+    const totalLines = MAX_STREAMING_CODE_LINES + extra;
+    feedCodeBlock("typescript", totalLines);
+    const out = allOutput();
+    // Footer must appear and state the correct number of omitted lines
+    const omitted = totalLines - STREAMING_CODE_HEAD_LINES;
+    expect(out).toContain(`${omitted} more lines`);
+  });
+
+  it("never truncates diff blocks regardless of size", () => {
+    const lineCount = MAX_STREAMING_CODE_LINES + 30;
+    renderStreamChunk({ type: "text", text: "```diff\n" });
+    renderStreamChunk({ type: "text", text: "--- a/file.ts\n" });
+    renderStreamChunk({ type: "text", text: "+++ b/file.ts\n" });
+    for (let i = 1; i <= lineCount; i++) {
+      renderStreamChunk({ type: "text", text: `+context line ${i}\n` });
+    }
+    renderStreamChunk({ type: "text", text: "```\n" });
+    renderStreamChunk({ type: "done" });
+
+    const out = allOutput();
+    // Diff blocks must never show a truncation footer
+    expect(out).not.toContain("more lines");
+  });
+
+  it("truncation footer includes /copy hint for retrieving full content", () => {
+    feedCodeBlock("java", MAX_STREAMING_CODE_LINES + 5);
+    const out = allOutput();
+    expect(out).toContain("/copy");
   });
 });
