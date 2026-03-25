@@ -20,6 +20,10 @@ Coco is a CLI coding agent for real projects. It can plan work, edit files, run 
 
 Core idea: instead of a single "here is some code" response, Coco runs an implementation loop with validation and fixes.
 
+Best fit:
+- Teams and solo developers working on existing repos (not only greenfield demos).
+- Workflows that require multi-step execution and verification, not just text generation.
+
 ## What Coco Does
 
 - Multi-step execution in one run: explore -> implement -> test -> refine.
@@ -89,6 +93,7 @@ Quality mode is configurable and can be turned on/off per session.
 - Tool-call handling is normalized across OpenAI/Codex-style streaming events to reduce malformed argument regressions.
 - Agent turns include quality telemetry (`score`, iteration usage, tool success/failure, repeated-output suppression).
 - Repeated identical tool outputs are suppressed in context to reduce token waste in multi-iteration loops.
+- Release readiness can be gated with `pnpm check:release` (typecheck + lint + stable provider/agent suites).
 
 ## Commands (REPL)
 
@@ -210,6 +215,7 @@ Release gate (`pnpm check:release`) runs the stable typecheck/lint/provider+agen
 - Quality scores depend on project testability and model/tool quality.
 - Provider behavior can vary by endpoint/model generation.
 - Some advanced flows require external tooling (git, CI, MCP servers) to be installed/configured.
+- No agent can guarantee zero regressions; Coco is designed to reduce risk with verification loops, not to remove it entirely.
 
 ## Privacy
 
