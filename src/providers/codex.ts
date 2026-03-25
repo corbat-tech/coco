@@ -522,6 +522,7 @@ export class CodexProvider implements LLMProvider {
       // Track function call builders for streaming assembly
       const fnCallBuilders: Map<string, { callId: string; name: string; arguments: string }> =
         new Map();
+      const outputIndexToBuilderKey: Map<number, string> = new Map();
 
       await this.readSSEStream(response, (event) => {
         if (event.id) responseId = event.id as string;
@@ -542,27 +543,53 @@ export class CodexProvider implements LLMProvider {
               fnCallBuilders.set(itemKey, {
                 callId: item.call_id as string,
                 name: item.name as string,
-                arguments: "",
+                arguments: (item.arguments as string) ?? "",
               });
+              if (typeof event.output_index === "number") {
+                outputIndexToBuilderKey.set(event.output_index, itemKey);
+              }
             }
             break;
           }
 
           case "response.function_call_arguments.delta": {
-            const builder = fnCallBuilders.get(event.item_id as string);
+            const builderKey =
+              ((event.item_id as string | undefined) &&
+              fnCallBuilders.has(event.item_id as string)
+                ? (event.item_id as string)
+                : null) ??
+              (typeof event.output_index === "number"
+                ? outputIndexToBuilderKey.get(event.output_index) ?? null
+                : null) ??
+              (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
+            if (!builderKey) break;
+            const builder = fnCallBuilders.get(builderKey);
             if (builder) builder.arguments += (event.delta as string) ?? "";
             break;
           }
 
           case "response.function_call_arguments.done": {
-            const builder = fnCallBuilders.get(event.item_id as string);
+            const builderKey =
+              ((event.item_id as string | undefined) &&
+              fnCallBuilders.has(event.item_id as string)
+                ? (event.item_id as string)
+                : null) ??
+              (typeof event.output_index === "number"
+                ? outputIndexToBuilderKey.get(event.output_index) ?? null
+                : null) ??
+              (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
+            if (!builderKey) break;
+            const builder = fnCallBuilders.get(builderKey);
             if (builder) {
               toolCalls.push({
                 id: builder.callId,
                 name: builder.name,
-                input: parseArguments(event.arguments as string),
+                input: parseArguments((event.arguments as string) ?? builder.arguments),
               });
-              fnCallBuilders.delete(event.item_id as string);
+              fnCallBuilders.delete(builderKey);
+              for (const [idx, key] of outputIndexToBuilderKey.entries()) {
+                if (key === builderKey) outputIndexToBuilderKey.delete(idx);
+              }
             }
             break;
           }
@@ -701,6 +728,7 @@ export class CodexProvider implements LLMProvider {
     // Track function call builders — keyed by output item ID (NOT call_id)
     const fnCallBuilders: Map<string, { callId: string; name: string; arguments: string }> =
       new Map();
+    const outputIndexToBuilderKey: Map<number, string> = new Map();
 
     // Activity-based timeout using AbortController (safe for async generators)
     let lastActivityTime = Date.now();
@@ -750,8 +778,11 @@ export class CodexProvider implements LLMProvider {
                 fnCallBuilders.set(itemKey, {
                   callId: item.call_id as string,
                   name: item.name as string,
-                  arguments: "",
+                  arguments: (item.arguments as string) ?? "",
                 });
+                if (typeof event.output_index === "number") {
+                  outputIndexToBuilderKey.set(event.output_index, itemKey);
+                }
                 yield {
                   type: "tool_use_start",
                   toolCall: { id: item.call_id as string, name: item.name as string },
@@ -761,7 +792,17 @@ export class CodexProvider implements LLMProvider {
             }
 
             case "response.function_call_arguments.delta": {
-              const builder = fnCallBuilders.get(event.item_id as string);
+              const builderKey =
+                ((event.item_id as string | undefined) &&
+                fnCallBuilders.has(event.item_id as string)
+                  ? (event.item_id as string)
+                  : null) ??
+                (typeof event.output_index === "number"
+                  ? outputIndexToBuilderKey.get(event.output_index) ?? null
+                  : null) ??
+                (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
+              if (!builderKey) break;
+              const builder = fnCallBuilders.get(builderKey);
               if (builder) {
                 builder.arguments += (event.delta as string) ?? "";
               }
@@ -769,7 +810,17 @@ export class CodexProvider implements LLMProvider {
             }
 
             case "response.function_call_arguments.done": {
-              const builder = fnCallBuilders.get(event.item_id as string);
+              const builderKey =
+                ((event.item_id as string | undefined) &&
+                fnCallBuilders.has(event.item_id as string)
+                  ? (event.item_id as string)
+                  : null) ??
+                (typeof event.output_index === "number"
+                  ? outputIndexToBuilderKey.get(event.output_index) ?? null
+                  : null) ??
+                (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
+              if (!builderKey) break;
+              const builder = fnCallBuilders.get(builderKey);
               if (builder) {
                 yield {
                   type: "tool_use_end",
@@ -779,7 +830,10 @@ export class CodexProvider implements LLMProvider {
                     input: parseArguments((event.arguments as string) ?? builder.arguments),
                   },
                 };
-                fnCallBuilders.delete(event.item_id as string);
+                fnCallBuilders.delete(builderKey);
+                for (const [idx, key] of outputIndexToBuilderKey.entries()) {
+                  if (key === builderKey) outputIndexToBuilderKey.delete(idx);
+                }
               }
               break;
             }

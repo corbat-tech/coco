@@ -684,6 +684,93 @@ describe("CodexProvider", () => {
       expect(response.toolCalls[0].input).toEqual({ path: "a.txt" });
       expect(response.toolCalls[1].input).toEqual({ path: "b.txt" });
     });
+
+    it("should fallback to accumulated args when done event omits arguments", async () => {
+      const provider = await initProvider();
+      const events = [
+        { id: "resp-tools", type: "response.created" },
+        {
+          type: "response.output_item.added",
+          item: {
+            type: "function_call",
+            id: "item_call_1",
+            call_id: "call_1",
+            name: "write_file",
+            arguments: '{"path":"src/a.ts"',
+          },
+        },
+        {
+          type: "response.function_call_arguments.delta",
+          item_id: "item_call_1",
+          delta: ',"content":"hello"}',
+        },
+        {
+          type: "response.function_call_arguments.done",
+          item_id: "item_call_1",
+        },
+        {
+          type: "response.completed",
+          response: {
+            id: "resp-tools",
+            status: "completed",
+            output: [{ type: "function_call", call_id: "call_1", name: "write_file" }],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          },
+        },
+      ];
+      mockFetch.mockResolvedValue({ ok: true, body: buildSSEStream(events) });
+
+      const response = await provider.chatWithTools([{ role: "user", content: "Write file" }], {
+        tools: [{ name: "write_file", description: "Write", input_schema: { type: "object" } }],
+      });
+
+      expect(response.toolCalls).toHaveLength(1);
+      expect(response.toolCalls[0]?.input).toEqual({ path: "src/a.ts", content: "hello" });
+    });
+
+    it("should resolve argument deltas by output_index when item_id is missing", async () => {
+      const provider = await initProvider();
+      const events = [
+        { id: "resp-tools", type: "response.created" },
+        {
+          type: "response.output_item.added",
+          output_index: 0,
+          item: {
+            type: "function_call",
+            id: "item_call_1",
+            call_id: "call_1",
+            name: "write_file",
+            arguments: '{"path":"src/a.ts"',
+          },
+        },
+        {
+          type: "response.function_call_arguments.delta",
+          output_index: 0,
+          delta: ',"content":"hello"}',
+        },
+        {
+          type: "response.function_call_arguments.done",
+          output_index: 0,
+        },
+        {
+          type: "response.completed",
+          response: {
+            id: "resp-tools",
+            status: "completed",
+            output: [{ type: "function_call", call_id: "call_1", name: "write_file" }],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          },
+        },
+      ];
+      mockFetch.mockResolvedValue({ ok: true, body: buildSSEStream(events) });
+
+      const response = await provider.chatWithTools([{ role: "user", content: "Write file" }], {
+        tools: [{ name: "write_file", description: "Write", input_schema: { type: "object" } }],
+      });
+
+      expect(response.toolCalls).toHaveLength(1);
+      expect(response.toolCalls[0]?.input).toEqual({ path: "src/a.ts", content: "hello" });
+    });
   });
 
   describe("stream", () => {
@@ -832,6 +919,105 @@ describe("CodexProvider", () => {
           }
         })(),
       ).rejects.toThrow(/No response body/);
+    });
+
+    it("should fallback to accumulated args when stream done event omits arguments", async () => {
+      const provider = await initProvider();
+      const events = [
+        { id: "resp-stream-tools", type: "response.created" },
+        {
+          type: "response.output_item.added",
+          item: {
+            type: "function_call",
+            id: "item_call_1",
+            call_id: "call_1",
+            name: "write_file",
+            arguments: '{"path":"src/a.ts"',
+          },
+        },
+        {
+          type: "response.function_call_arguments.delta",
+          item_id: "item_call_1",
+          delta: ',"content":"hello"}',
+        },
+        {
+          type: "response.function_call_arguments.done",
+          item_id: "item_call_1",
+        },
+        {
+          type: "response.completed",
+          response: {
+            id: "resp-stream-tools",
+            status: "completed",
+            output: [{ type: "function_call", call_id: "call_1", name: "write_file" }],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          },
+        },
+      ];
+      mockFetch.mockResolvedValue({ ok: true, body: buildSSEStream(events) });
+
+      const chunks: Array<Record<string, unknown>> = [];
+      for await (const chunk of provider.streamWithTools([{ role: "user", content: "Write" }], {
+        tools: [{ name: "write_file", description: "Write", input_schema: { type: "object" } }],
+      })) {
+        chunks.push(chunk);
+      }
+
+      const toolEnd = chunks.find((c) => c.type === "tool_use_end");
+      expect((toolEnd?.toolCall as Record<string, unknown>)?.input).toEqual({
+        path: "src/a.ts",
+        content: "hello",
+      });
+    });
+
+    it("should resolve stream argument deltas by output_index when item_id is missing", async () => {
+      const provider = await initProvider();
+      const events = [
+        { id: "resp-stream-tools", type: "response.created" },
+        {
+          type: "response.output_item.added",
+          output_index: 0,
+          item: {
+            type: "function_call",
+            id: "item_call_1",
+            call_id: "call_1",
+            name: "write_file",
+            arguments: '{"path":"src/a.ts"',
+          },
+        },
+        {
+          type: "response.function_call_arguments.delta",
+          output_index: 0,
+          delta: ',"content":"hello"}',
+        },
+        {
+          type: "response.function_call_arguments.done",
+          output_index: 0,
+        },
+        {
+          type: "response.completed",
+          response: {
+            id: "resp-stream-tools",
+            status: "completed",
+            output: [{ type: "function_call", call_id: "call_1", name: "write_file" }],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          },
+        },
+      ];
+      mockFetch.mockResolvedValue({ ok: true, body: buildSSEStream(events) });
+
+      const chunks: Array<Record<string, unknown>> = [];
+      for await (const chunk of provider.streamWithTools([{ role: "user", content: "Write" }], {
+        tools: [{ name: "write_file", description: "Write", input_schema: { type: "object" } }],
+      })) {
+        chunks.push(chunk);
+      }
+
+      const toolEnd = chunks.find((c) => c.type === "tool_use_end");
+      expect((toolEnd?.toolCall as Record<string, unknown>)?.input).toEqual({
+        path: "src/a.ts",
+        content: "hello",
+      });
     });
   });
 });

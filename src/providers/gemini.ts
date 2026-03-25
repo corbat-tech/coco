@@ -279,9 +279,8 @@ export class GeminiProvider implements LLMProvider {
       const chat = model.startChat({ history });
       const result = await chat.sendMessageStream(lastMessage);
 
-      // Track emitted tool calls to avoid duplicates
-      const emittedToolCalls = new Set<string>();
       let streamStopReason: StreamChunk["stopReason"];
+      let streamToolCallCounter = 0;
 
       for await (const chunk of result.stream) {
         // Handle text content
@@ -302,42 +301,27 @@ export class GeminiProvider implements LLMProvider {
           for (const part of candidate.content.parts) {
             if ("functionCall" in part && part.functionCall) {
               const funcCall = part.functionCall;
-              const sortedArgs = funcCall.args
-                ? Object.keys(funcCall.args)
-                    .sort()
-                    .map(
-                      (k) =>
-                        `${k}:${JSON.stringify((funcCall.args as Record<string, unknown>)[k])}`,
-                    )
-                    .join(",")
-                : "";
-              const callKey = `${funcCall.name}-${sortedArgs}`;
+              // Gemini emits complete function calls per chunk (non-delta).
+              // Keep repeated calls and assign stable unique IDs.
+              streamToolCallCounter++;
+              const toolCall: ToolCall = {
+                id: `gemini_call_${streamToolCallCounter}`,
+                name: funcCall.name,
+                input: (funcCall.args ?? {}) as Record<string, unknown>,
+              };
 
-              // Only emit if we haven't seen this exact call before
-              if (!emittedToolCalls.has(callKey)) {
-                emittedToolCalls.add(callKey);
+              yield {
+                type: "tool_use_start",
+                toolCall: {
+                  id: toolCall.id,
+                  name: toolCall.name,
+                },
+              };
 
-                // For Gemini, function calls come complete in a single chunk
-                // We emit start, then immediately end with the full data
-                const toolCall: ToolCall = {
-                  id: funcCall.name, // Gemini uses name as ID
-                  name: funcCall.name,
-                  input: (funcCall.args ?? {}) as Record<string, unknown>,
-                };
-
-                yield {
-                  type: "tool_use_start",
-                  toolCall: {
-                    id: toolCall.id,
-                    name: toolCall.name,
-                  },
-                };
-
-                yield {
-                  type: "tool_use_end",
-                  toolCall,
-                };
-              }
+              yield {
+                type: "tool_use_end",
+                toolCall,
+              };
             }
           }
         }
@@ -428,16 +412,14 @@ export class GeminiProvider implements LLMProvider {
     history: Content[];
     lastMessage: string | Part[];
   } {
+    const toolNameByUseId = this.buildToolUseNameMap(messages);
+    const conversation = messages.filter((m) => m.role !== "system");
     const history: Content[] = [];
     let lastUserMessage: string | Part[] = "";
 
-    for (const msg of messages) {
-      if (msg.role === "system") {
-        // System messages are handled via systemInstruction
-        continue;
-      }
-
-      const parts = this.convertContent(msg.content);
+    for (let i = 0; i < conversation.length; i++) {
+      const msg = conversation[i]!;
+      const isLastMessage = i === conversation.length - 1;
 
       if (msg.role === "user") {
         // Check if this contains tool results
@@ -448,25 +430,50 @@ export class GeminiProvider implements LLMProvider {
               const toolResult = block as ToolResultContent;
               functionResponses.push({
                 functionResponse: {
-                  name: toolResult.tool_use_id, // Gemini uses name, we store it in tool_use_id
+                  // Gemini expects the function name in functionResponse.name.
+                  // Recover it from prior assistant tool_use blocks when possible.
+                  name: toolNameByUseId.get(toolResult.tool_use_id) ?? toolResult.tool_use_id,
                   response: { result: toolResult.content },
                 },
               });
             }
           }
-          history.push({ role: "user", parts: functionResponses });
+          if (isLastMessage) {
+            lastUserMessage = functionResponses;
+          } else {
+            history.push({ role: "user", parts: functionResponses });
+          }
         } else {
-          lastUserMessage = parts;
+          const parts = this.convertContent(msg.content);
+          if (isLastMessage) {
+            lastUserMessage = parts;
+          } else {
+            history.push({ role: "user", parts });
+          }
         }
       } else if (msg.role === "assistant") {
+        const parts = this.convertContent(msg.content);
         history.push({ role: "model", parts });
       }
     }
 
-    // Add last user message to history if it was followed by assistant
-    // This handles multi-turn properly
-
     return { history, lastMessage: lastUserMessage };
+  }
+
+  /**
+   * Build a map from tool_use IDs to function names from assistant history.
+   */
+  private buildToolUseNameMap(messages: Message[]): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const msg of messages) {
+      if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+      for (const block of msg.content) {
+        if (block.type === "tool_use") {
+          map.set(block.id, block.name);
+        }
+      }
+    }
+    return map;
   }
 
   /**
@@ -554,13 +561,15 @@ export class GeminiProvider implements LLMProvider {
     const toolCalls: ToolCall[] = [];
 
     if (candidate?.content?.parts) {
+      let toolIndex = 0;
       for (const part of candidate.content.parts) {
         if ("text" in part && part.text) {
           textContent += part.text;
         }
         if ("functionCall" in part && part.functionCall) {
+          toolIndex++;
           toolCalls.push({
-            id: part.functionCall.name, // Use name as ID for Gemini
+            id: `gemini_call_${toolIndex}`,
             name: part.functionCall.name,
             input: (part.functionCall.args ?? {}) as Record<string, unknown>,
           });

@@ -479,9 +479,11 @@ export class OpenAIProvider implements LLMProvider {
         requestParams as unknown as OpenAI.ChatCompletionCreateParamsStreaming,
       );
 
-      // Track tool calls being built (OpenAI can stream multiple tool calls)
-      const toolCallBuilders: Map<number, { id: string; name: string; arguments: string }> =
+      // Track tool calls being built (OpenAI can stream multiple tool calls).
+      // Keying strategy is resilient to providers that omit `index` in some deltas.
+      const toolCallBuilders: Map<string, { id: string; name: string; arguments: string }> =
         new Map();
+      let lastToolCallKey: string | null = null;
 
       // Activity-based timeout: abort the stream if no events for streamTimeout ms.
       // IMPORTANT: We use AbortController instead of throwing from setInterval,
@@ -555,14 +557,20 @@ export class OpenAIProvider implements LLMProvider {
           // Handle tool calls
           if (delta?.tool_calls) {
             for (const toolCallDelta of delta.tool_calls) {
-              // index is guaranteed by the OpenAI spec but some compatible
-              // providers (e.g. custom endpoints) may omit it.  Fall back to
-              // the current map size so each new tool call gets a unique slot.
-              const index = toolCallDelta.index ?? toolCallBuilders.size;
+              // Resolve a stable key for this delta. OpenAI provides `index`,
+              // but compatible APIs may omit it on follow-up chunks.
+              const key: string =
+                typeof toolCallDelta.index === "number"
+                  ? `index:${toolCallDelta.index}`
+                  : typeof toolCallDelta.id === "string" && toolCallDelta.id.length > 0
+                    ? `id:${toolCallDelta.id}`
+                    : toolCallBuilders.size === 1
+                      ? (Array.from(toolCallBuilders.keys())[0] ?? `fallback:${toolCallBuilders.size}`)
+                      : (lastToolCallKey ?? `fallback:${toolCallBuilders.size}`);
 
-              if (!toolCallBuilders.has(index)) {
+              if (!toolCallBuilders.has(key)) {
                 // New tool call starting
-                toolCallBuilders.set(index, {
+                toolCallBuilders.set(key, {
                   id: toolCallDelta.id ?? "",
                   name: toolCallDelta.function?.name ?? "",
                   arguments: "",
@@ -576,7 +584,8 @@ export class OpenAIProvider implements LLMProvider {
                 };
               }
 
-              const builder = toolCallBuilders.get(index)!;
+              const builder = toolCallBuilders.get(key)!;
+              lastToolCallKey = key;
 
               // Update id if provided
               if (toolCallDelta.id) {
@@ -1332,6 +1341,7 @@ export class OpenAIProvider implements LLMProvider {
       // Track function call builders — keyed by output item ID (NOT call_id)
       const fnCallBuilders: Map<string, { callId: string; name: string; arguments: string }> =
         new Map();
+      const outputIndexToBuilderKey: Map<number, string> = new Map();
 
       // Activity-based timeout using AbortController (safe for async generators)
       const streamTimeout = this.config.timeout ?? 120000;
@@ -1370,8 +1380,11 @@ export class OpenAIProvider implements LLMProvider {
                 fnCallBuilders.set(itemKey, {
                   callId: fc.call_id,
                   name: fc.name,
-                  arguments: "",
+                  arguments: fc.arguments ?? "",
                 });
+                if (typeof event.output_index === "number") {
+                  outputIndexToBuilderKey.set(event.output_index, itemKey);
+                }
                 yield {
                   type: "tool_use_start",
                   toolCall: { id: fc.call_id, name: fc.name },
@@ -1381,7 +1394,14 @@ export class OpenAIProvider implements LLMProvider {
 
             case "response.function_call_arguments.delta":
               {
-                const builder = fnCallBuilders.get(event.item_id);
+                const builderKey =
+                  (event.item_id && fnCallBuilders.has(event.item_id) ? event.item_id : null) ??
+                  (typeof event.output_index === "number"
+                    ? outputIndexToBuilderKey.get(event.output_index) ?? null
+                    : null) ??
+                  (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
+                if (!builderKey) break;
+                const builder = fnCallBuilders.get(builderKey);
                 if (builder) {
                   builder.arguments += event.delta;
                 }
@@ -1390,17 +1410,27 @@ export class OpenAIProvider implements LLMProvider {
 
             case "response.function_call_arguments.done":
               {
-                const builder = fnCallBuilders.get(event.item_id);
+                const builderKey =
+                  (event.item_id && fnCallBuilders.has(event.item_id) ? event.item_id : null) ??
+                  (typeof event.output_index === "number"
+                    ? outputIndexToBuilderKey.get(event.output_index) ?? null
+                    : null) ??
+                  (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
+                if (!builderKey) break;
+                const builder = fnCallBuilders.get(builderKey);
                 if (builder) {
                   yield {
                     type: "tool_use_end",
                     toolCall: {
                       id: builder.callId,
                       name: builder.name,
-                      input: this.parseResponsesArguments(event.arguments),
+                      input: this.parseResponsesArguments(event.arguments ?? builder.arguments),
                     },
                   };
-                  fnCallBuilders.delete(event.item_id);
+                  fnCallBuilders.delete(builderKey);
+                  for (const [idx, key] of outputIndexToBuilderKey.entries()) {
+                    if (key === builderKey) outputIndexToBuilderKey.delete(idx);
+                  }
                 }
               }
               break;

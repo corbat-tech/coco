@@ -397,26 +397,23 @@ describe("message conversion", () => {
       {
         role: "assistant",
         content: [
-          { type: "tool_use", id: "read_file", name: "read_file", input: { path: "/test" } },
+          { type: "tool_use", id: "call_1", name: "read_file", input: { path: "/test" } },
         ],
       },
       {
         role: "user",
-        content: [{ type: "tool_result", tool_use_id: "read_file", content: "file contents" }],
+        content: [{ type: "tool_result", tool_use_id: "call_1", content: "file contents" }],
       },
     ]);
 
-    expect(mockStartChat).toHaveBeenCalledWith(
-      expect.objectContaining({
-        history: expect.arrayContaining([
-          expect.objectContaining({
-            role: "user",
-            parts: expect.arrayContaining([
-              expect.objectContaining({ functionResponse: expect.anything() }),
-            ]),
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          functionResponse: expect.objectContaining({
+            name: "read_file",
           }),
-        ]),
-      }),
+        }),
+      ]),
     );
   });
 
@@ -436,6 +433,44 @@ describe("message conversion", () => {
     await provider.chat([{ role: "user", content: [] }]);
 
     expect(mockSendMessage).toHaveBeenCalled();
+  });
+
+  it("should preserve previous user turns in history and send only the last user turn as input", async () => {
+    mockSendMessage.mockResolvedValue({
+      response: {
+        text: () => "OK",
+        usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 2 },
+        candidates: [{ finishReason: "STOP" }],
+      },
+    });
+
+    const { GeminiProvider } = await import("./gemini.js");
+    const provider = new GeminiProvider();
+    await provider.initialize({ apiKey: "test" });
+
+    await provider.chat([
+      { role: "user", content: "First user turn" },
+      { role: "assistant", content: "Assistant answer" },
+      { role: "user", content: "Final user turn" },
+    ]);
+
+    expect(mockStartChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        history: expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            parts: expect.arrayContaining([expect.objectContaining({ text: "First user turn" })]),
+          }),
+          expect.objectContaining({
+            role: "model",
+            parts: expect.arrayContaining([expect.objectContaining({ text: "Assistant answer" })]),
+          }),
+        ]),
+      }),
+    );
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ text: "Final user turn" })]),
+    );
   });
 });
 
@@ -709,6 +744,85 @@ describe("chatWithTools response parsing", () => {
     });
 
     expect(response.toolCalls[0]?.input).toEqual({});
+  });
+
+  it("should assign unique tool call IDs even for repeated function names", async () => {
+    mockSendMessage.mockResolvedValue({
+      response: {
+        text: () => "",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 5 },
+        candidates: [
+          {
+            content: {
+              parts: [
+                { functionCall: { name: "read_file", args: { path: "a.txt" } } },
+                { functionCall: { name: "read_file", args: { path: "b.txt" } } },
+              ],
+            },
+            finishReason: "STOP",
+          },
+        ],
+      },
+    });
+
+    const { GeminiProvider } = await import("./gemini.js");
+    const provider = new GeminiProvider();
+    await provider.initialize({ apiKey: "test" });
+
+    const response = await provider.chatWithTools([{ role: "user", content: "Read files" }], {
+      tools: [],
+    });
+
+    expect(response.toolCalls).toHaveLength(2);
+    expect(response.toolCalls[0]?.id).toBe("gemini_call_1");
+    expect(response.toolCalls[1]?.id).toBe("gemini_call_2");
+  });
+});
+
+describe("streamWithTools", () => {
+  it("should emit repeated function calls instead of de-duplicating by name+args", async () => {
+    mockSendMessageStream.mockResolvedValue({
+      stream: (async function* () {
+        yield {
+          text: () => "",
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [{ functionCall: { name: "read_file", args: { path: "a.txt" } } }],
+              },
+            },
+          ],
+        };
+        yield {
+          text: () => "",
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [{ functionCall: { name: "read_file", args: { path: "a.txt" } } }],
+              },
+            },
+          ],
+        };
+      })(),
+    });
+
+    const { GeminiProvider } = await import("./gemini.js");
+    const provider = new GeminiProvider();
+    await provider.initialize({ apiKey: "test" });
+
+    const chunks: Array<Record<string, unknown>> = [];
+    for await (const chunk of provider.streamWithTools([{ role: "user", content: "Read file" }], {
+      tools: [{ name: "read_file", description: "Read", input_schema: { type: "object" } }],
+    })) {
+      chunks.push(chunk as Record<string, unknown>);
+    }
+
+    const toolEnds = chunks.filter((c) => c.type === "tool_use_end");
+    expect(toolEnds).toHaveLength(2);
+    expect((toolEnds[0]?.toolCall as Record<string, unknown>)?.id).toBe("gemini_call_1");
+    expect((toolEnds[1]?.toolCall as Record<string, unknown>)?.id).toBe("gemini_call_2");
   });
 });
 
