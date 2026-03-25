@@ -32,6 +32,7 @@
     "test:watch": "NODE_OPTIONS='--max-old-space-size=4096' vitest",
     "test:coverage": "NODE_OPTIONS='--max-old-space-size=4096' vitest run --coverage",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "check:release": "node scripts/release-gate.mjs",
     "benchmark": "tsx test/benchmarks/quality-benchmark.ts",
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",

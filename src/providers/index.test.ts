@@ -146,6 +146,7 @@ describe("Providers module exports", () => {
 
       expect(provider).toBeDefined();
       expect(typeof provider.chat).toBe("function");
+      expect(provider.id).toBe("anthropic");
     });
 
     it("should create openai provider", async () => {
@@ -155,6 +156,7 @@ describe("Providers module exports", () => {
 
       expect(provider).toBeDefined();
       expect(typeof provider.chat).toBe("function");
+      expect(provider.id).toBe("openai");
     });
 
     it("should create gemini provider", async () => {
@@ -189,6 +191,23 @@ describe("Providers module exports", () => {
       await expect(ProviderExports.createProvider("unknown")).rejects.toThrow(
         "Unknown provider type",
       );
+    });
+
+    it("should allow disabling resilience wrapper via env flag", async () => {
+      const original = process.env["COCO_PROVIDER_RESILIENCE"];
+      process.env["COCO_PROVIDER_RESILIENCE"] = "0";
+      try {
+        const provider = await ProviderExports.createProvider("openai", {
+          apiKey: "test-key",
+        });
+        expect(provider.constructor.name).toBe("OpenAIProvider");
+      } finally {
+        if (original === undefined) {
+          delete process.env["COCO_PROVIDER_RESILIENCE"];
+        } else {
+          process.env["COCO_PROVIDER_RESILIENCE"] = original;
+        }
+      }
     });
   });
 

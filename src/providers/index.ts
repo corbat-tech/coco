@@ -76,6 +76,12 @@ export {
   createProviderFallback,
   type ProviderFallbackConfig,
 } from "./fallback.js";
+export {
+  ResilientProvider,
+  createResilientProvider,
+  getDefaultResilienceConfig,
+  type ResilientProviderConfig,
+} from "./resilient.js";
 
 // Provider registry
 import { accessSync } from "node:fs";
@@ -88,6 +94,7 @@ import { CodexProvider } from "./codex.js";
 import { CopilotProvider } from "./copilot.js";
 import { ProviderError } from "../utils/errors.js";
 import { getApiKey, getBaseUrl, getDefaultModel } from "../config/env.js";
+import { createResilientProvider } from "./resilient.js";
 
 /**
  * Supported provider types
@@ -153,13 +160,11 @@ export async function createProvider(
 
     case "kimi":
       provider = createKimiProvider(mergedConfig);
-      await provider.initialize(mergedConfig);
-      return provider;
+      break;
 
     case "kimi-code":
       provider = createKimiCodeProvider(mergedConfig);
-      await provider.initialize(mergedConfig);
-      return provider;
+      break;
 
     case "lmstudio":
       // LM Studio uses OpenAI-compatible API
@@ -221,7 +226,11 @@ export async function createProvider(
   }
 
   await provider.initialize(mergedConfig);
-  return provider;
+
+  const resilienceEnabled = !["0", "false", "off"].includes(
+    (process.env["COCO_PROVIDER_RESILIENCE"] ?? "1").toLowerCase(),
+  );
+  return resilienceEnabled ? createResilientProvider(provider) : provider;
 }
 
 /**
