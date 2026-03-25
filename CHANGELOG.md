@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.2] - 2026-03-25
+
+### Fixed
+- **Stream timeout no longer silently cancels the task** — when the LLM took over 120s to respond, the activity-based timeout called `stream.controller.abort()`, which caused the SDK to throw an `AbortError`. This was misclassified as a user cancellation, silently showing "Completed X tools before cancellation" and returning to the prompt without retrying. The timeout is now correctly surfaced as a retryable error, triggering automatic retry with error context.
+  - Affects all streaming paths: `anthropic.ts` (`stream`, `streamWithTools`), `openai.ts` (`streamWithTools`, `streamViaResponses`, `streamWithToolsViaResponses`).
+- **REPL flow never stops abruptly without feedback** — several paths returned to the prompt with little or no explanation:
+  - After exhausting retries: now shows an actionable tip suggesting `/provider` or `/model` to switch.
+  - Context compaction failure: was silently clearing the spinner; now shows a yellow warning so the user knows context was not compacted and can use `/clear` if needed.
+  - After a cancelled turn with partial work: now shows a hint to retype the request to resume.
+
+## [2.22.1] - 2026-03-25
+
+### Fixed
+- **Codex `truncation` parameter removed** — `chatgpt.com/backend-api/codex/responses` rejects `truncation: "auto"` with a 400 error despite it being valid on the standard `api.openai.com/v1/responses` endpoint. The ChatGPT backend is a private subset of the Responses API that manages context internally and does not accept any token-limit or truncation parameters.
+
 ## [2.22.0] - 2026-03-25
 
 ### Improved
@@ -1052,7 +1067,12 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.20.1...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.22.2...HEAD
+[2.22.2]: https://github.com/corbat/corbat-coco/compare/v2.22.1...v2.22.2
+[2.22.1]: https://github.com/corbat/corbat-coco/compare/v2.22.0...v2.22.1
+[2.22.0]: https://github.com/corbat/corbat-coco/compare/v2.21.1...v2.22.0
+[2.21.1]: https://github.com/corbat/corbat-coco/compare/v2.21.0...v2.21.1
+[2.21.0]: https://github.com/corbat/corbat-coco/compare/v2.20.1...v2.21.0
 [2.20.1]: https://github.com/corbat/corbat-coco/compare/v2.20.0...v2.20.1
 [2.20.0]: https://github.com/corbat/corbat-coco/compare/v2.19.0...v2.20.0
 [2.19.0]: https://github.com/corbat/corbat-coco/compare/v2.18.0...v2.19.0
