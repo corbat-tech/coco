@@ -1087,7 +1087,9 @@ export async function startRepl(
         } catch {
           compactSpinner.stop("⚠ Context compaction failed");
           console.log(
-            chalk.yellow("  ⚠ Context compaction failed — context unchanged. Use /clear if needed."),
+            chalk.yellow(
+              "  ⚠ Context compaction failed — context unchanged. Use /clear if needed.",
+            ),
           );
         } finally {
           clearTimeout(compactTimeout);
@@ -1266,9 +1268,7 @@ export async function startRepl(
       session.messages.length = preCallMessageLength;
       consecutiveErrors = 0;
       renderError(errorMsg);
-      console.log(
-        chalk.dim("   Tip: Try /provider or /model to switch, then rephrase and retry."),
-      );
+      console.log(chalk.dim("   Tip: Try /provider or /model to switch, then rephrase and retry."));
     } finally {
       // Always clean up spinner and resume input handler after agent turn
       clearSpinner();
