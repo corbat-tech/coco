@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.1] - 2026-03-25
+
+### Fixed
+- **Provider preference persistence is now truly global** — `getLastUsedProvider`, `getLastUsedModel`, and `saveProviderPreference` now read/write `~/.coco/config.json` explicitly, avoiding project-level config overrides that caused intermittent provider/model resets.
+- **OpenAI OAuth startup path in REPL** — `ensureConfiguredV2` now correctly handles preferred `openai` with saved OAuth tokens, routes internal availability checks through `codex`, and avoids false onboarding loops.
+- **Silent provider switching reduced** — when a configured preferred provider is unavailable, startup no longer silently jumps to another provider before giving the user control.
+
+### Changed
+- **Configured provider detection normalized** — provider detection now accounts for OpenAI OAuth token envs and only treats local providers as preconfigured when there is explicit local configuration evidence.
+- **Project init provider defaults** — new `.coco/config.json` now uses dynamic defaults from current global provider/model logic instead of hardcoded legacy Anthropic defaults.
+
 ## [2.24.0] - 2026-03-25
 
 ### Added

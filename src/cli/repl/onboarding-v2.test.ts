@@ -738,7 +738,10 @@ describe("onboarding-v2", () => {
       mockedGetConfiguredProviders.mockReturnValue([anthropicDef]);
       process.env["ANTHROPIC_API_KEY"] = "sk-ant-existing-key";
 
-      const unavailableAnthropic = { isAvailable: vi.fn().mockResolvedValue(false), id: "anthropic" };
+      const unavailableAnthropic = {
+        isAvailable: vi.fn().mockResolvedValue(false),
+        id: "anthropic",
+      };
       const availableOpenAI = { isAvailable: vi.fn().mockResolvedValue(true), id: "openai" };
 
       mockedCreateProvider

@@ -57,8 +57,12 @@ export const tutorialCommand: SlashCommand = {
     console.log(
       `  ${chalk.yellow("/quality")}    ${chalk.dim("Toggle quality mode (auto-iteration)")}`,
     );
-    console.log(`  ${chalk.yellow("/provider")}   ${chalk.dim("Add/switch provider and auth method")}`);
-    console.log(`  ${chalk.yellow("/model")}      ${chalk.dim("Select the active model for current provider")}`);
+    console.log(
+      `  ${chalk.yellow("/provider")}   ${chalk.dim("Add/switch provider and auth method")}`,
+    );
+    console.log(
+      `  ${chalk.yellow("/model")}      ${chalk.dim("Select the active model for current provider")}`,
+    );
     console.log(`  ${chalk.yellow("/init")}       ${chalk.dim("Initialize a new project")}`);
     console.log(`  ${chalk.yellow("/help")}       ${chalk.dim("See all available commands")}`);
     console.log(`  ${chalk.yellow("/help tools")} ${chalk.dim("See available agent tools")}`);

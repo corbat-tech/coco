@@ -396,9 +396,7 @@ describe("message conversion", () => {
       { role: "user", content: "Read file" },
       {
         role: "assistant",
-        content: [
-          { type: "tool_use", id: "call_1", name: "read_file", input: { path: "/test" } },
-        ],
+        content: [{ type: "tool_use", id: "call_1", name: "read_file", input: { path: "/test" } }],
       },
       {
         role: "user",

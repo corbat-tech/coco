@@ -301,10 +301,7 @@ async function selectModelInteractively(
   });
 }
 
-async function persistModelPreference(
-  provider: ProviderType,
-  model: string,
-): Promise<void> {
+async function persistModelPreference(provider: ProviderType, model: string): Promise<void> {
   try {
     await saveProviderPreference(provider, model);
   } catch (error) {

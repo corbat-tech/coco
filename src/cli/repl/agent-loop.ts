@@ -648,7 +648,10 @@ export async function executeAgentTurn(
       const executedCall = executedTools.find((e) => e.id === toolCall.id);
       if (executedCall) {
         const truncatedOutput = truncateInlineResult(executedCall.result.output, toolCall.name);
-        const transformedOutput = repeatedOutputSuppressor.transform(toolCall.name, truncatedOutput);
+        const transformedOutput = repeatedOutputSuppressor.transform(
+          toolCall.name,
+          truncatedOutput,
+        );
         if (transformedOutput.suppressed) {
           repeatedOutputsSuppressed++;
         }
