@@ -54,6 +54,7 @@ vi.mock("./providers-config.js", () => ({
   getProviderDefinition: vi.fn(),
   getRecommendedModel: vi.fn(),
   getConfiguredProviders: vi.fn(),
+  isProviderConfigured: vi.fn(),
   formatModelInfo: vi.fn(),
 }));
 
@@ -78,18 +79,24 @@ vi.mock("../../config/paths.js", () => ({
 
 vi.mock("../../config/env.js", () => ({
   saveProviderPreference: vi.fn().mockResolvedValue(undefined),
-  getAuthMethod: vi.fn().mockReturnValue(undefined),
 }));
 
 // ─── Imports ─────────────────────────────────────────────────────────
 
 import * as p from "@clack/prompts";
 import * as fs from "node:fs/promises";
-import { runOnboardingV2, saveConfiguration, setupLMStudioProvider } from "./onboarding-v2.js";
+import {
+  runOnboardingV2,
+  saveConfiguration,
+  setupLMStudioProvider,
+  ensureConfiguredV2,
+} from "./onboarding-v2.js";
 import {
   getAllProviders,
   getProviderDefinition,
+  getRecommendedModel,
   getConfiguredProviders,
+  isProviderConfigured,
   formatModelInfo,
 } from "./providers-config.js";
 import {
@@ -98,6 +105,8 @@ import {
   isGcloudInstalled,
   isADCConfigured,
   getADCAccessToken,
+  isOAuthConfigured,
+  getOrRefreshOAuthToken,
 } from "../../auth/index.js";
 import { createProvider } from "../../providers/index.js";
 import { saveProviderPreference } from "../../config/env.js";
@@ -113,9 +122,13 @@ const mockedIsCancel = vi.mocked(p.isCancel);
 const mockedGetAllProviders = vi.mocked(getAllProviders);
 const mockedGetProviderDefinition = vi.mocked(getProviderDefinition);
 const mockedGetConfiguredProviders = vi.mocked(getConfiguredProviders);
+const mockedGetRecommendedModel = vi.mocked(getRecommendedModel);
+const mockedIsProviderConfigured = vi.mocked(isProviderConfigured);
 const mockedFormatModelInfo = vi.mocked(formatModelInfo);
 const mockedSupportsOAuth = vi.mocked(supportsOAuth);
 const mockedRunOAuthFlow = vi.mocked(runOAuthFlow);
+const mockedIsOAuthConfigured = vi.mocked(isOAuthConfigured);
+const mockedGetOrRefreshOAuthToken = vi.mocked(getOrRefreshOAuthToken);
 const mockedCreateProvider = vi.mocked(createProvider);
 const _mockedIsGcloudInstalled = vi.mocked(isGcloudInstalled);
 const _mockedIsADCConfigured = vi.mocked(isADCConfigured);
@@ -156,6 +169,18 @@ describe("onboarding-v2", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     mockedIsCancel.mockReturnValue(false);
     mockedFormatModelInfo.mockImplementation((m) => m.name || m.id);
+    mockedGetRecommendedModel.mockImplementation((providerId: any) => {
+      const prov = makeProviderDef({ id: providerId as any });
+      return prov.models[0];
+    });
+    mockedIsProviderConfigured.mockReturnValue(false);
+    mockedIsOAuthConfigured.mockResolvedValue(false);
+    mockedGetOrRefreshOAuthToken.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    delete process.env["ANTHROPIC_API_KEY"];
+    delete process.env["OPENAI_CODEX_TOKEN"];
   });
 
   // ─── runOnboardingV2 ────────────────────────────────────────────
@@ -668,6 +693,73 @@ describe("onboarding-v2", () => {
       } else {
         delete process.env["ANTHROPIC_API_KEY"];
       }
+    });
+  });
+
+  describe("ensureConfiguredV2", () => {
+    it("uses OpenAI OAuth when preferred provider is openai with saved OAuth tokens", async () => {
+      const openaiDef = makeProviderDef({
+        id: "openai" as any,
+        name: "OpenAI",
+        envVar: "OPENAI_API_KEY",
+      });
+      mockedGetAllProviders.mockReturnValue([openaiDef]);
+      mockedIsOAuthConfigured.mockResolvedValue(true);
+      mockedGetOrRefreshOAuthToken.mockResolvedValue({
+        accessToken: "oauth-token-123",
+        expiresAt: Date.now() + 3600000,
+      } as any);
+
+      const codexProvider = { isAvailable: vi.fn().mockResolvedValue(true), id: "codex" };
+      mockedCreateProvider.mockResolvedValue(codexProvider as any);
+
+      const config = {
+        provider: { type: "openai", model: "gpt-5.4-codex", maxTokens: 8192 },
+      } as any;
+
+      const result = await ensureConfiguredV2(config);
+
+      expect(result).toEqual(config);
+      expect(mockedCreateProvider).toHaveBeenCalledWith("codex", { model: "gpt-5.4-codex" });
+    });
+
+    it("does not silently switch provider when preferred configured provider is unavailable", async () => {
+      const anthropicDef = makeProviderDef({
+        id: "anthropic" as any,
+        envVar: "ANTHROPIC_API_KEY",
+      });
+      const openaiDef = makeProviderDef({
+        id: "openai" as any,
+        name: "OpenAI",
+        envVar: "OPENAI_API_KEY",
+      });
+
+      mockedGetAllProviders.mockReturnValue([anthropicDef, openaiDef]);
+      mockedGetConfiguredProviders.mockReturnValue([anthropicDef]);
+      process.env["ANTHROPIC_API_KEY"] = "sk-ant-existing-key";
+
+      const unavailableAnthropic = { isAvailable: vi.fn().mockResolvedValue(false), id: "anthropic" };
+      const availableOpenAI = { isAvailable: vi.fn().mockResolvedValue(true), id: "openai" };
+
+      mockedCreateProvider
+        .mockResolvedValueOnce(unavailableAnthropic as any)
+        .mockResolvedValueOnce(availableOpenAI as any);
+
+      mockedSelect.mockResolvedValueOnce("exit");
+
+      const config = {
+        provider: { type: "anthropic", model: "claude-sonnet-4-20250514", maxTokens: 8192 },
+      } as any;
+
+      const result = await ensureConfiguredV2(config);
+
+      expect(result?.provider.type).toBe("anthropic");
+      // No silent switch to openai/codex should happen while resolving fallback.
+      expect(
+        mockedCreateProvider.mock.calls.every(
+          ([providerId]) => providerId !== "openai" && providerId !== "codex",
+        ),
+      ).toBe(true);
     });
   });
 });

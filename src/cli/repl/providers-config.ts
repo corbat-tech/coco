@@ -1220,6 +1220,24 @@ function hasCopilotCredentials(): boolean {
 }
 
 /**
+ * Detect whether a local provider was explicitly configured by the user.
+ */
+function hasLocalProviderConfig(type: "lmstudio" | "ollama"): boolean {
+  if (type === "lmstudio") {
+    return (
+      process.env["COCO_PROVIDER"] === "lmstudio" ||
+      !!process.env["LMSTUDIO_MODEL"] ||
+      !!process.env["LMSTUDIO_BASE_URL"]
+    );
+  }
+  return (
+    process.env["COCO_PROVIDER"] === "ollama" ||
+    !!process.env["OLLAMA_MODEL"] ||
+    !!process.env["OLLAMA_BASE_URL"]
+  );
+}
+
+/**
  * Get all available providers that have API keys configured.
  *
  * For most providers, checks env vars. For copilot, checks the
@@ -1229,6 +1247,16 @@ export function getConfiguredProviders(): ProviderDefinition[] {
   return getAllProviders().filter((p) => {
     if (p.id === "copilot") {
       return !!process.env["GITHUB_TOKEN"] || !!process.env["GH_TOKEN"] || hasCopilotCredentials();
+    }
+    if (p.id === "openai") {
+      return (
+        !!process.env[p.envVar] ||
+        !!process.env["OPENAI_CODEX_TOKEN"] ||
+        !!process.env["OPENAI_ACCESS_TOKEN"]
+      );
+    }
+    if (p.id === "lmstudio" || p.id === "ollama") {
+      return hasLocalProviderConfig(p.id);
     }
     return !!process.env[p.envVar];
   });
@@ -1240,6 +1268,16 @@ export function getConfiguredProviders(): ProviderDefinition[] {
 export function isProviderConfigured(type: ProviderType): boolean {
   if (type === "copilot") {
     return !!process.env["GITHUB_TOKEN"] || !!process.env["GH_TOKEN"] || hasCopilotCredentials();
+  }
+  if (type === "openai") {
+    return (
+      !!process.env["OPENAI_API_KEY"] ||
+      !!process.env["OPENAI_CODEX_TOKEN"] ||
+      !!process.env["OPENAI_ACCESS_TOKEN"]
+    );
+  }
+  if (type === "lmstudio" || type === "ollama") {
+    return hasLocalProviderConfig(type);
   }
   return !!process.env[PROVIDER_DEFINITIONS[type].envVar];
 }

@@ -18,6 +18,11 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
+vi.mock("../config/env.js", () => ({
+  getDefaultProvider: vi.fn().mockReturnValue("openai"),
+  getDefaultModel: vi.fn().mockReturnValue("gpt-5.4-codex"),
+}));
+
 describe("createProjectStructure", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -166,7 +171,7 @@ describe("createProjectStructure", () => {
     const configCall = writeFileCalls.find((call) => String(call[0]).includes("config.json"));
 
     const configContent = JSON.parse(String(configCall![1]));
-    expect(configContent.provider.type).toBe("anthropic");
-    expect(configContent.provider.model).toBe("claude-sonnet-4-20250514");
+    expect(configContent.provider.type).toBe("openai");
+    expect(configContent.provider.model).toBe("gpt-5.4-codex");
   });
 });

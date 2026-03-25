@@ -34,7 +34,7 @@ import {
   getOrRefreshOAuthToken,
 } from "../../auth/index.js";
 import { CONFIG_PATHS } from "../../config/paths.js";
-import { saveProviderPreference, getAuthMethod } from "../../config/env.js";
+import { saveProviderPreference } from "../../config/env.js";
 
 /**
  * Resultado del onboarding
@@ -74,6 +74,8 @@ export async function runOnboardingV2(): Promise<OnboardingResult | null> {
     console.log(chalk.magenta("  ╰───────────────────────────────────────────────────────────╯"));
     console.log();
     console.log(chalk.dim("  🌐 Open source project • corbat.tech"));
+    console.log(chalk.dim("  💡 Quick start: choose a provider now, then use /provider later to add or switch."));
+    console.log(chalk.dim("     You can run /tutorial inside Coco for a 1-minute guide."));
     console.log();
 
     // Elegir proveedor directamente (sin lista redundante)
@@ -1518,49 +1520,46 @@ async function handleLocalProviderUnavailable(
  */
 export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig | null> {
   const providers = getAllProviders();
-  const authMethod = getAuthMethod(config.provider.type as ProviderType);
+  const hasOpenAIOAuthTokens = await isOAuthConfigured("openai").catch(() => false);
 
   // 1a. Check if preferred provider uses OAuth (e.g., openai with OAuth)
   // Also handle legacy "codex" provider which always uses OAuth
   // NOTE: Copilot is excluded — it manages its own tokens via CopilotProvider.initialize()
-  const usesOpenAIOAuth =
-    (authMethod === "oauth" || config.provider.type === "codex") &&
-    config.provider.type !== "copilot";
+  const preferredWantsOpenAIOAuth =
+    config.provider.type === "codex" ||
+    (config.provider.type === "openai" && hasOpenAIOAuthTokens);
 
-  if (usesOpenAIOAuth) {
+  if (preferredWantsOpenAIOAuth) {
     // For OpenAI OAuth, check openai tokens (codex maps to openai internally)
-    const hasOAuthTokens = await isOAuthConfigured("openai");
-    if (hasOAuthTokens) {
-      try {
-        const tokenResult = await getOrRefreshOAuthToken("openai");
-        if (tokenResult) {
-          // Set token in env for the session (codex provider reads from here)
-          process.env["OPENAI_CODEX_TOKEN"] = tokenResult.accessToken;
+    try {
+      const tokenResult = await getOrRefreshOAuthToken("openai");
+      if (tokenResult) {
+        // Set token in env for the session (codex provider reads from here)
+        process.env["OPENAI_CODEX_TOKEN"] = tokenResult.accessToken;
 
-          // Use codex provider internally for OAuth
-          const provider = await createProvider("codex", {
-            model: config.provider.model,
-          });
-          if (await provider.isAvailable()) {
-            // Migrate legacy "codex" to "openai" with oauth authMethod
-            if (config.provider.type === "codex") {
-              const migratedConfig = {
-                ...config,
-                provider: {
-                  ...config.provider,
-                  type: "openai" as ProviderType,
-                },
-              };
-              // Save the migration
-              await saveProviderPreference("openai", config.provider.model || "gpt-4o");
-              return migratedConfig;
-            }
-            return config;
+        // Use codex provider internally for OAuth
+        const provider = await createProvider("codex", {
+          model: config.provider.model,
+        });
+        if (await provider.isAvailable()) {
+          // Migrate legacy "codex" to "openai" with oauth authMethod
+          if (config.provider.type === "codex") {
+            const migratedConfig = {
+              ...config,
+              provider: {
+                ...config.provider,
+                type: "openai" as ProviderType,
+              },
+            };
+            // Save the migration
+            await saveProviderPreference("openai", config.provider.model || "gpt-4o");
+            return migratedConfig;
           }
+          return config;
         }
-      } catch {
-        // OAuth token failed, try other providers
       }
+    } catch {
+      // OAuth token failed, try other providers
     }
   }
 
@@ -1575,13 +1574,18 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
   const preferredHasApiKey = preferredProviderDef
     ? !!process.env[preferredProviderDef.envVar]
     : false;
+  const preferredHasOpenAIOAuth = preferredProviderDef?.id === "openai" && hasOpenAIOAuthTokens;
   const preferredHasCopilotCreds =
     preferredProviderDef?.id === "copilot" && isProviderConfigured("copilot");
-  const preferredIsConfigured = preferredIsLocal || preferredHasApiKey || preferredHasCopilotCreds;
+  const preferredIsConfigured =
+    preferredIsLocal || preferredHasApiKey || preferredHasOpenAIOAuth || preferredHasCopilotCreds;
+  let preferredWasConfiguredButUnavailable = false;
 
   if (preferredProviderDef && preferredIsConfigured) {
     try {
-      const provider = await createProvider(preferredProviderDef.id, {
+      const preferredInternalProviderId =
+        preferredProviderDef.id === "openai" && preferredHasOpenAIOAuth ? "codex" : preferredProviderDef.id;
+      const provider = await createProvider(preferredInternalProviderId, {
         model: config.provider.model,
       });
       if (await provider.isAvailable()) {
@@ -1600,43 +1604,59 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
       if (retryResult !== null) return retryResult;
       // User chose to exit or switch provider — fall through to onboarding
     }
+
+    preferredWasConfiguredButUnavailable = true;
   }
 
   // 2. Find any configured provider (silently use the first available)
+  // Only do this when the preferred provider was not configured.
+  // If the preferred provider was configured but failed, avoid silent provider switches.
   // Include local providers (requiresApiKey: false) even without env vars,
   // but copilot requires device flow credentials, not just requiresApiKey === false
-  const configuredProviders = providers.filter((p) => {
-    if (p.id === "copilot") return isProviderConfigured("copilot");
-    return p.requiresApiKey === false || !!process.env[p.envVar];
-  });
-
-  for (const prov of configuredProviders) {
-    try {
-      const recommended = getRecommendedModel(prov.id);
-      const model = recommended?.id || prov.models[0]?.id || "";
-
-      const provider = await createProvider(prov.id, { model });
-      if (await provider.isAvailable()) {
-        // Silently use this provider - no warning needed
-        return {
-          ...config,
-          provider: {
-            ...config.provider,
-            type: prov.id,
-            model,
-          },
-        };
+  if (!preferredWasConfiguredButUnavailable) {
+    const configuredProviders = providers.filter((p) => {
+      if (p.id === "copilot") return isProviderConfigured("copilot");
+      if (p.id === "openai") {
+        return hasOpenAIOAuthTokens || !!process.env[p.envVar];
       }
-    } catch {
-      // This provider also failed, try next
-      continue;
+      return p.requiresApiKey === false || !!process.env[p.envVar];
+    });
+
+    for (const prov of configuredProviders) {
+      try {
+        const recommended = getRecommendedModel(prov.id);
+        const model = recommended?.id || prov.models[0]?.id || "";
+        const providerId =
+          prov.id === "openai" && hasOpenAIOAuthTokens && !process.env[prov.envVar]
+            ? "codex"
+            : prov.id;
+
+        const provider = await createProvider(providerId, { model });
+        if (await provider.isAvailable()) {
+          // Silently use this provider - no warning needed
+          return {
+            ...config,
+            provider: {
+              ...config.provider,
+              type: prov.id,
+              model,
+            },
+          };
+        }
+      } catch {
+        // This provider also failed, try next
+        continue;
+      }
     }
   }
 
   // 2b. Check for OAuth-configured OpenAI (if not already the preferred provider)
-  if (config.provider.type !== "openai" && config.provider.type !== "codex") {
-    const hasOAuthTokens = await isOAuthConfigured("openai");
-    if (hasOAuthTokens) {
+  if (
+    config.provider.type !== "openai" &&
+    config.provider.type !== "codex" &&
+    hasOpenAIOAuthTokens &&
+    !preferredWasConfiguredButUnavailable
+  ) {
       try {
         const tokenResult = await getOrRefreshOAuthToken("openai");
         if (tokenResult) {
@@ -1663,7 +1683,6 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
       } catch {
         // OAuth failed, continue to onboarding
       }
-    }
   }
 
   // 3. No providers configured or all failed → run onboarding

@@ -15,6 +15,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadConfig, saveConfig } from "./loader.js";
+import { CONFIG_PATHS } from "./paths.js";
 import type { CocoConfig } from "./schema.js";
 
 // Load ~/.coco/.env (env vars still take precedence)
@@ -129,6 +130,12 @@ export function getAuthMethod(provider: ProviderType): AuthMethod | undefined {
     case "codex":
     case "copilot":
       return "oauth";
+    case "openai":
+      // OpenAI can use API keys or ChatGPT OAuth tokens
+      if (process.env["OPENAI_CODEX_TOKEN"] || process.env["OPENAI_ACCESS_TOKEN"]) {
+        return "oauth";
+      }
+      return "apikey";
     case "lmstudio":
     case "ollama":
       return "none";
@@ -307,7 +314,8 @@ export function getDefaultProvider(): ProviderType {
  */
 export async function getLastUsedProvider(): Promise<ProviderType> {
   try {
-    const config = await loadConfig();
+    // Read global preferences only (do not let project config override user defaults)
+    const config = await loadConfig(CONFIG_PATHS.config);
     const provider = config.provider.type;
     if (VALID_PROVIDERS.includes(provider as ProviderType)) {
       return provider as ProviderType;
@@ -323,7 +331,8 @@ export async function getLastUsedProvider(): Promise<ProviderType> {
  */
 export async function getLastUsedModel(provider: ProviderType): Promise<string | undefined> {
   try {
-    const config = await loadConfig();
+    // Read global preferences only (do not let project config override user defaults)
+    const config = await loadConfig(CONFIG_PATHS.config);
     // If the current provider matches, return its model
     if (config.provider.type === provider) {
       return config.provider.model;
@@ -345,7 +354,8 @@ export async function saveProviderPreference(
   // Load current global config
   let config: CocoConfig;
   try {
-    config = await loadConfig();
+    // Load global config only to avoid merging any project-level provider values
+    config = await loadConfig(CONFIG_PATHS.config);
   } catch {
     // If no config exists, create a minimal one
     config = {

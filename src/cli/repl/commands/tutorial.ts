@@ -27,16 +27,21 @@ export const tutorialCommand: SlashCommand = {
       },
       {
         step: "3",
+        title: "Set your provider",
+        desc: "Use /provider to add or switch providers, then /model to pick the model you want",
+      },
+      {
+        step: "4",
         title: "Enable quality mode",
         desc: "Type /quality to enable auto-iteration: test → analyze → fix → repeat until score ≥ 85",
       },
       {
-        step: "4",
+        step: "5",
         title: "Review changes",
         desc: "Use /diff to see what changed, /status for project state",
       },
       {
-        step: "5",
+        step: "6",
         title: "Save your work",
         desc: "Use /commit to commit changes with a descriptive message",
       },
@@ -52,6 +57,8 @@ export const tutorialCommand: SlashCommand = {
     console.log(
       `  ${chalk.yellow("/quality")}    ${chalk.dim("Toggle quality mode (auto-iteration)")}`,
     );
+    console.log(`  ${chalk.yellow("/provider")}   ${chalk.dim("Add/switch provider and auth method")}`);
+    console.log(`  ${chalk.yellow("/model")}      ${chalk.dim("Select the active model for current provider")}`);
     console.log(`  ${chalk.yellow("/init")}       ${chalk.dim("Initialize a new project")}`);
     console.log(`  ${chalk.yellow("/help")}       ${chalk.dim("See all available commands")}`);
     console.log(`  ${chalk.yellow("/help tools")} ${chalk.dim("See available agent tools")}`);

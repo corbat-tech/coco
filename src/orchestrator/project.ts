@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { getDefaultModel, getDefaultProvider } from "../config/env.js";
 
 /**
  * Project information for initialization
@@ -54,6 +55,9 @@ export async function createProjectStructure(
  * Create initial configuration file
  */
 async function createInitialConfig(cocoPath: string, info: ProjectInfo): Promise<void> {
+  const defaultProvider = getDefaultProvider();
+  const defaultModel = getDefaultModel(defaultProvider);
+
   const config = {
     project: {
       name: info.name,
@@ -65,8 +69,8 @@ async function createInitialConfig(cocoPath: string, info: ProjectInfo): Promise
       framework: info.framework,
     },
     provider: {
-      type: "anthropic",
-      model: "claude-sonnet-4-20250514",
+      type: defaultProvider,
+      model: defaultModel,
     },
     quality: {
       minScore: 85,
