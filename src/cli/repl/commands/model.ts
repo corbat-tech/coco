@@ -301,6 +301,19 @@ async function selectModelInteractively(
   });
 }
 
+async function persistModelPreference(
+  provider: ProviderType,
+  model: string,
+): Promise<void> {
+  try {
+    await saveProviderPreference(provider, model);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.log(chalk.yellow(`⚠ Could not persist model preference: ${reason}`));
+    console.log(chalk.dim("  Model changed for this session only.\n"));
+  }
+}
+
 export const modelCommand: SlashCommand = {
   name: "model",
   aliases: ["m"],
@@ -362,7 +375,7 @@ export const modelCommand: SlashCommand = {
       session.config.provider.model = selectedModel;
 
       // Save preference for next session
-      await saveProviderPreference(currentProvider, selectedModel);
+      await persistModelPreference(currentProvider, selectedModel);
 
       const modelInfo = providerDef.models.find((m) => m.id === selectedModel);
       console.log(chalk.green(`✓ Switched to ${modelInfo?.name ?? selectedModel}\n`));
@@ -394,7 +407,7 @@ export const modelCommand: SlashCommand = {
       session.config.provider.model = newModel;
 
       // Save preference for next session
-      await saveProviderPreference(currentProvider, newModel);
+      await persistModelPreference(currentProvider, newModel);
 
       console.log(chalk.green(`✓ Model set to: ${newModel}\n`));
       return false;
@@ -411,7 +424,7 @@ export const modelCommand: SlashCommand = {
     session.config.provider.model = newModel;
 
     // Save preference for next session
-    await saveProviderPreference(currentProvider, newModel);
+    await persistModelPreference(currentProvider, newModel);
 
     const modelInfo = providerDef.models.find((m) => m.id === newModel);
     console.log(chalk.green(`✓ Switched to ${modelInfo?.name ?? newModel}\n`));
