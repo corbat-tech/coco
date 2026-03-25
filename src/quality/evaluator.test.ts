@@ -425,15 +425,13 @@ async function createTestProject(): Promise<string> {
   );
   await mkdir(tempDir, { recursive: true });
 
-  // Create package.json for framework detection
+  // Create minimal package.json.
+  // Do not declare test frameworks here: evaluator E2E should remain deterministic
+  // and must not trigger external `npx vitest` execution in temp dirs on CI.
   await writeFile(
     join(tempDir, "package.json"),
     JSON.stringify({
       name: "test-project",
-      devDependencies: {
-        vitest: "^1.0.0",
-        "@vitest/coverage-v8": "^1.0.0",
-      },
     }),
   );
 
