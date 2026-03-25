@@ -72,6 +72,8 @@ export interface AgentTurnResult {
     inputTokens: number;
     outputTokens: number;
   };
+  /** Heuristic quality score and execution metrics for this turn */
+  quality?: AgentTurnQuality;
   aborted: boolean;
   /** Partial content preserved if aborted mid-stream */
   partialContent?: string;
@@ -79,6 +81,17 @@ export interface AgentTurnResult {
   abortReason?: "user_cancel" | "timeout" | "error";
   /** Error message if the turn failed */
   error?: string;
+}
+
+export interface AgentTurnQuality {
+  score: number;
+  iterationsUsed: number;
+  maxIterations: number;
+  executedToolCalls: number;
+  successfulToolCalls: number;
+  failedToolCalls: number;
+  hadError: boolean;
+  repeatedOutputsSuppressed: number;
 }
 
 /**

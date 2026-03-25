@@ -83,9 +83,7 @@ describe("diffCommand", () => {
 
     it("should show diff summary when there are changes", async () => {
       const { execSync } = await import("node:child_process");
-      let callCount = 0;
       vi.mocked(execSync).mockImplementation((cmd: string) => {
-        callCount++;
         if (cmd.includes("--quiet")) {
           // Throw to indicate there are changes
           throw new Error("changes exist");

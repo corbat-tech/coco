@@ -1,7 +1,7 @@
 /**
  * Tests for error handling in tool registry, specifically for provider abort errors
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { ToolRegistry, defineTool } from "./registry.js";
 import { z } from "zod";
 

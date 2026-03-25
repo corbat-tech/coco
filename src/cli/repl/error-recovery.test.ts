@@ -6,7 +6,7 @@
  * - Phase 1 (confirmations) errors don't break the agent turn
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 // ─── Tests for executeSingleTool error handling ──────────────────────────────
 

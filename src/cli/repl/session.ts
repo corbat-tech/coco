@@ -867,7 +867,7 @@ export async function checkAndCompactContext(
     }
 
     return result;
-  } catch (error) {
+  } catch {
     // Compaction failed - log but don't stop the flow
     // Return null to indicate compaction was not performed
     return null;

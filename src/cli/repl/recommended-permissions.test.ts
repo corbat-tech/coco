@@ -11,7 +11,6 @@ import {
   RECOMMENDED_GLOBAL,
   RECOMMENDED_PROJECT,
 } from "./recommended-permissions.js";
-import { CONFIG_PATHS } from "../../config/paths.js";
 
 // Mock fs
 vi.mock("node:fs/promises", () => ({

@@ -29,6 +29,7 @@ const checks = [
       "src/cli/repl/agent-loop-error-handling.test.ts",
       "src/cli/repl/error-resilience.test.ts",
       "src/cli/repl/replay-harness.test.ts",
+      "src/cli/repl/turn-quality.test.ts",
     ],
   },
 ];

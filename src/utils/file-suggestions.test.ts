@@ -11,7 +11,6 @@ import {
   suggestSimilarFilesDeep,
   suggestSimilarDirsDeep,
   formatSuggestions,
-  type FindFileOptions,
 } from "./file-suggestions.js";
 
 // Helper to create temp directories
@@ -105,7 +104,7 @@ describe("findFileRecursive", () => {
 
     // With very short timeout, should return quickly
     const start = Date.now();
-    const results = await findFileRecursive(tempDir, "nonexistent.txt", {
+    await findFileRecursive(tempDir, "nonexistent.txt", {
       timeoutMs: 1,
       maxResults: 10,
     });

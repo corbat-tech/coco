@@ -186,6 +186,8 @@ describe("executeAgentTurn", () => {
     // Token usage is now estimated, so just check they're > 0
     expect(result.usage.inputTokens).toBeGreaterThan(0);
     expect(result.usage.outputTokens).toBeGreaterThan(0);
+    expect(result.quality?.score).toBeGreaterThanOrEqual(0);
+    expect(result.quality?.score).toBeLessThanOrEqual(100);
     expect(result.aborted).toBe(false);
     expect(addMessage).toHaveBeenCalledTimes(2); // user message + assistant response
   });

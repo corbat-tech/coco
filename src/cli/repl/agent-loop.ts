@@ -42,6 +42,11 @@ import {
 import { resetLineBuffer, flushLineBuffer } from "./output/renderer.js";
 import { promptAllowPath } from "./allow-path-prompt.js";
 import { classifyAgentLoopError } from "./error-resilience.js";
+import {
+  computeTurnQualityMetrics,
+  RepeatedOutputSuppressor,
+  type TurnQualityMetrics,
+} from "./turn-quality.js";
 
 /**
  * Options for executing an agent turn
@@ -101,6 +106,18 @@ export async function executeAgentTurn(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let finalContent = "";
+  let hadTurnError = false;
+  let repeatedOutputsSuppressed = 0;
+  const repeatedOutputSuppressor = new RepeatedOutputSuppressor();
+
+  const buildQualityMetrics = (): TurnQualityMetrics =>
+    computeTurnQualityMetrics({
+      iterationsUsed: iteration,
+      maxIterations,
+      executedTools,
+      hadError: hadTurnError,
+      repeatedOutputsSuppressed,
+    });
 
   // Helper: abort return with rollback
   const abortReturn = (): AgentTurnResult => {
@@ -110,6 +127,7 @@ export async function executeAgentTurn(
       content: finalContent,
       toolCalls: executedTools,
       usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+      quality: buildQualityMetrics(),
       aborted: true,
       partialContent: finalContent || undefined,
       abortReason: "user_cancel",
@@ -323,6 +341,7 @@ export async function executeAgentTurn(
       if (classification.kind === "provider_non_retryable") {
         throw classification.original;
       }
+      hadTurnError = true;
       const errorMsg = classification.message;
 
       // Add error as assistant message so LLM can see what happened
@@ -336,6 +355,7 @@ export async function executeAgentTurn(
         content: finalContent || `[Error: ${errorMsg}]`,
         toolCalls: executedTools,
         usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+        quality: buildQualityMetrics(),
         aborted: false,
         partialContent: finalContent || undefined,
         error: errorMsg,
@@ -627,10 +647,15 @@ export async function executeAgentTurn(
       // Find the executed result
       const executedCall = executedTools.find((e) => e.id === toolCall.id);
       if (executedCall) {
+        const truncatedOutput = truncateInlineResult(executedCall.result.output, toolCall.name);
+        const transformedOutput = repeatedOutputSuppressor.transform(toolCall.name, truncatedOutput);
+        if (transformedOutput.suppressed) {
+          repeatedOutputsSuppressed++;
+        }
         toolResults.push({
           type: "tool_result",
           tool_use_id: toolCall.id,
-          content: truncateInlineResult(executedCall.result.output, toolCall.name),
+          content: transformedOutput.content,
           is_error: !executedCall.result.success,
         });
       } else {
@@ -824,6 +849,7 @@ export async function executeAgentTurn(
     content: finalContent,
     toolCalls: executedTools,
     usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+    quality: buildQualityMetrics(),
     aborted: false,
   };
 }

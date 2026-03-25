@@ -5,7 +5,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { executeAgentTurn } from "./agent-loop.js";
 import type { ReplSession } from "./types.js";
-import type { LLMProvider, ToolCall } from "../../providers/types.js";
+import type { LLMProvider } from "../../providers/types.js";
 import type { ToolRegistry } from "../../tools/registry.js";
 
 describe("agent-loop error handling", () => {
@@ -26,12 +26,17 @@ describe("agent-loop error handling", () => {
   describe("Provider streaming errors", () => {
     it("should handle AbortError gracefully", async () => {
       const session = createMockSession();
-      const mockProvider = {
-        streamWithTools: vi.fn().mockImplementation(async function* () {
-          const error = new Error("Request was aborted.");
-          error.name = "AbortError";
-          throw error;
+      const abortStream = {
+        [Symbol.asyncIterator]: () => ({
+          next: async () => {
+            const error = new Error("Request was aborted.");
+            error.name = "AbortError";
+            throw error;
+          },
         }),
+      };
+      const mockProvider = {
+        streamWithTools: vi.fn().mockImplementation(() => abortStream),
         countTokens: vi.fn().mockReturnValue(100),
       } as unknown as LLMProvider;
 
@@ -52,12 +57,17 @@ describe("agent-loop error handling", () => {
 
     it("should handle APIUserAbortError gracefully", async () => {
       const session = createMockSession();
-      const mockProvider = {
-        streamWithTools: vi.fn().mockImplementation(async function* () {
-          const error = new Error("Request was aborted.");
-          error.name = "APIUserAbortError";
-          throw error;
+      const abortStream = {
+        [Symbol.asyncIterator]: () => ({
+          next: async () => {
+            const error = new Error("Request was aborted.");
+            error.name = "APIUserAbortError";
+            throw error;
+          },
         }),
+      };
+      const mockProvider = {
+        streamWithTools: vi.fn().mockImplementation(() => abortStream),
         countTokens: vi.fn().mockReturnValue(100),
       } as unknown as LLMProvider;
 
@@ -77,10 +87,15 @@ describe("agent-loop error handling", () => {
 
     it("should handle provider errors with error field in result", async () => {
       const session = createMockSession();
-      const mockProvider = {
-        streamWithTools: vi.fn().mockImplementation(async function* () {
-          throw new Error("Network error: Connection refused");
+      const errorStream = {
+        [Symbol.asyncIterator]: () => ({
+          next: async () => {
+            throw new Error("Network error: Connection refused");
+          },
         }),
+      };
+      const mockProvider = {
+        streamWithTools: vi.fn().mockImplementation(() => errorStream),
         countTokens: vi.fn().mockReturnValue(100),
       } as unknown as LLMProvider;
 
@@ -166,10 +181,15 @@ describe("agent-loop error handling", () => {
   describe("Flow continuity", () => {
     it("should never throw - always return a result", async () => {
       const session = createMockSession();
-      const mockProvider = {
-        streamWithTools: vi.fn().mockImplementation(async function* () {
-          throw new Error("Unexpected catastrophic error");
+      const catastrophicStream = {
+        [Symbol.asyncIterator]: () => ({
+          next: async () => {
+            throw new Error("Unexpected catastrophic error");
+          },
         }),
+      };
+      const mockProvider = {
+        streamWithTools: vi.fn().mockImplementation(() => catastrophicStream),
         countTokens: vi.fn().mockReturnValue(100),
       } as unknown as LLMProvider;
 
