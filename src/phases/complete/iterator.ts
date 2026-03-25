@@ -128,8 +128,11 @@ export class TaskIterator {
                 suggestion: issue.suggestion,
               });
             }
-          } catch {
+          } catch (evalError) {
             // If real evaluation fails, continue with LLM-only scores
+            if (process.env["COCO_DEBUG"]) {
+              console.error("[iterator] Real evaluation failed, using LLM-only scores:", evalError);
+            }
           }
         }
 
