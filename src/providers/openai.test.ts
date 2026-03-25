@@ -364,6 +364,154 @@ describe("stream", () => {
   });
 });
 
+describe("streamWithTools regressions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should keep accumulating tool arguments when follow-up deltas omit index and id", async () => {
+    const streamIterator = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_1",
+                    function: { name: "write_file", arguments: '{"path":"src/a.ts"' },
+                  },
+                ],
+              },
+            },
+          ],
+        };
+        yield {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    function: { arguments: ',"content":"hello"}' },
+                  },
+                ],
+              },
+            },
+          ],
+        };
+        yield { choices: [{ delta: {}, finish_reason: "tool_calls" }] };
+      },
+    };
+    mockCreate.mockResolvedValue(streamIterator);
+
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "gpt-4o" });
+
+    const chunks: Array<{ type: string; toolCall?: { input?: Record<string, unknown> } }> = [];
+    for await (const chunk of provider.streamWithTools([{ role: "user", content: "Hi" }], {
+      tools: [{ name: "write_file", description: "Write", input_schema: { type: "object" } }],
+    })) {
+      chunks.push(chunk as { type: string; toolCall?: { input?: Record<string, unknown> } });
+    }
+
+    const toolEnd = chunks.find((c) => c.type === "tool_use_end");
+    expect(toolEnd?.toolCall?.input).toEqual({ path: "src/a.ts", content: "hello" });
+  });
+
+  it("should fall back to accumulated args when Responses done event omits arguments", async () => {
+    const responsesStream = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: "response.output_item.added",
+          item: {
+            type: "function_call",
+            id: "item_1",
+            call_id: "call_1",
+            name: "write_file",
+            arguments: '{"path":"src/a.ts"',
+          },
+        };
+        yield {
+          type: "response.function_call_arguments.delta",
+          item_id: "item_1",
+          delta: ',"content":"hello"}',
+        };
+        yield {
+          type: "response.function_call_arguments.done",
+          item_id: "item_1",
+        };
+        yield {
+          type: "response.completed",
+          response: { output: [{ type: "function_call" }] },
+        };
+      },
+    };
+    mockResponsesCreate.mockResolvedValue(responsesStream);
+
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "gpt-5.4-codex" });
+
+    const chunks: Array<{ type: string; toolCall?: { input?: Record<string, unknown> } }> = [];
+    for await (const chunk of provider.streamWithTools([{ role: "user", content: "Hi" }], {
+      tools: [{ name: "write_file", description: "Write", input_schema: { type: "object" } }],
+    })) {
+      chunks.push(chunk as { type: string; toolCall?: { input?: Record<string, unknown> } });
+    }
+
+    const toolEnd = chunks.find((c) => c.type === "tool_use_end");
+    expect(toolEnd?.toolCall?.input).toEqual({ path: "src/a.ts", content: "hello" });
+  });
+
+  it("should resolve Responses argument deltas by output_index when item_id is missing", async () => {
+    const responsesStream = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: "response.output_item.added",
+          output_index: 0,
+          item: {
+            type: "function_call",
+            id: "item_1",
+            call_id: "call_1",
+            name: "write_file",
+            arguments: '{"path":"src/a.ts"',
+          },
+        };
+        yield {
+          type: "response.function_call_arguments.delta",
+          output_index: 0,
+          delta: ',"content":"hello"}',
+        };
+        yield {
+          type: "response.function_call_arguments.done",
+          output_index: 0,
+        };
+        yield {
+          type: "response.completed",
+          response: { output: [{ type: "function_call" }] },
+        };
+      },
+    };
+    mockResponsesCreate.mockResolvedValue(responsesStream);
+
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "gpt-5.4-codex" });
+
+    const chunks: Array<{ type: string; toolCall?: { input?: Record<string, unknown> } }> = [];
+    for await (const chunk of provider.streamWithTools([{ role: "user", content: "Hi" }], {
+      tools: [{ name: "write_file", description: "Write", input_schema: { type: "object" } }],
+    })) {
+      chunks.push(chunk as { type: string; toolCall?: { input?: Record<string, unknown> } });
+    }
+
+    const toolEnd = chunks.find((c) => c.type === "tool_use_end");
+    expect(toolEnd?.toolCall?.input).toEqual({ path: "src/a.ts", content: "hello" });
+  });
+});
+
 describe("message conversion", () => {
   it("should handle system messages in conversation", async () => {
     mockCreate.mockResolvedValue({
