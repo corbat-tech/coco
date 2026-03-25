@@ -424,12 +424,11 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
         if (isPaired) {
           const delIdx = pairByAdd.get(li)!;
           content = wordHighlights.get(delIdx)!.styledAdd;
+          // Skip syntax highlighting — content already has word-level chalk ANSI codes;
+          // running highlightLine on pre-styled text corrupts the escape sequences.
         } else {
           content = line.content;
-        }
-        // Apply syntax highlighting to the content
-        if (lang) {
-          content = highlightLine(content, lang);
+          if (lang) content = highlightLine(content, lang);
         }
         // Green for added lines with line number and prefix
         const lineStr = `${lineNo}${prefix} ${content}`;
@@ -439,12 +438,10 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
         let content: string;
         if (isPaired) {
           content = wordHighlights.get(li)!.styledDelete;
+          // Skip syntax highlighting — same reason as above.
         } else {
           content = line.content;
-        }
-        // Apply syntax highlighting to the content
-        if (lang) {
-          content = highlightLine(content, lang);
+          if (lang) content = highlightLine(content, lang);
         }
         // Red for deleted lines with line number and prefix
         const lineStr = `${lineNo}${prefix} ${content}`;
