@@ -16,6 +16,18 @@ import { ProviderError } from "../../utils/errors.js";
 /** Maximum consecutive failed recovery attempts before giving up. */
 export const MAX_CONSECUTIVE_ERRORS = 2;
 
+export type AgentLoopErrorKind =
+  | "abort"
+  | "provider_non_retryable"
+  | "provider_retryable"
+  | "unexpected";
+
+export interface AgentLoopErrorClassification {
+  kind: AgentLoopErrorKind;
+  message: string;
+  original: unknown;
+}
+
 // ─── Abort detection ─────────────────────────────────────────────────────────
 
 /**
@@ -53,6 +65,49 @@ export function isAbortError(error: unknown, signal?: AbortSignal): boolean {
   if (error.message.endsWith("Request was aborted.")) return true;
 
   return false;
+}
+
+/**
+ * Classify errors from the agent loop into stable handling buckets.
+ *
+ * This keeps the main loop policy simple:
+ * - abort: rollback + mark turn aborted
+ * - provider_non_retryable: bubble up unchanged
+ * - provider_retryable/unexpected: return partial turn with error metadata
+ */
+export function classifyAgentLoopError(
+  error: unknown,
+  signal?: AbortSignal,
+): AgentLoopErrorClassification {
+  if (isAbortError(error, signal)) {
+    return {
+      kind: "abort",
+      message: "Request was aborted.",
+      original: error,
+    };
+  }
+
+  if (isNonRetryableProviderError(error)) {
+    return {
+      kind: "provider_non_retryable",
+      message: error instanceof Error ? error.message : String(error),
+      original: error,
+    };
+  }
+
+  if (error instanceof ProviderError) {
+    return {
+      kind: "provider_retryable",
+      message: error.message,
+      original: error,
+    };
+  }
+
+  return {
+    kind: "unexpected",
+    message: error instanceof Error ? error.message : String(error),
+    original: error,
+  };
 }
 
 // ─── Error humanization ───────────────────────────────────────────────────────

@@ -5,7 +5,6 @@
 
 import OpenAI from "openai";
 import type { Responses } from "openai/resources/responses/responses.js";
-import { jsonrepair } from "jsonrepair";
 import type {
   LLMProvider,
   ProviderConfig,
@@ -23,6 +22,11 @@ import type {
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
 import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import {
+  ChatToolCallAssembler,
+  ResponsesToolCallAssembler,
+  parseToolCallArguments,
+} from "./tool-call-normalizer.js";
 
 /**
  * Default model - Updated February 2026
@@ -479,11 +483,7 @@ export class OpenAIProvider implements LLMProvider {
         requestParams as unknown as OpenAI.ChatCompletionCreateParamsStreaming,
       );
 
-      // Track tool calls being built (OpenAI can stream multiple tool calls).
-      // Keying strategy is resilient to providers that omit `index` in some deltas.
-      const toolCallBuilders: Map<string, { id: string; name: string; arguments: string }> =
-        new Map();
-      let lastToolCallKey: string | null = null;
+      const toolCallAssembler = new ChatToolCallAssembler();
 
       // Activity-based timeout: abort the stream if no events for streamTimeout ms.
       // IMPORTANT: We use AbortController instead of throwing from setInterval,
@@ -506,38 +506,6 @@ export class OpenAIProvider implements LLMProvider {
         once: true,
       });
 
-      // Helper: parse accumulated JSON arguments with jsonrepair fallback.
-      // Captured as a local const to avoid `this` capture issues inside the loop.
-      const providerName = this.name;
-      const parseArguments = (builder: {
-        id: string;
-        name: string;
-        arguments: string;
-      }): Record<string, unknown> => {
-        let input: Record<string, unknown> = {};
-        try {
-          input = builder.arguments ? JSON.parse(builder.arguments) : {};
-        } catch (error) {
-          // Try to repair malformed JSON automatically
-          console.warn(
-            `[${providerName}] Failed to parse tool call arguments for ${builder.name}: ${builder.arguments?.slice(0, 300)}`,
-          );
-          try {
-            if (builder.arguments) {
-              const repaired = jsonrepair(builder.arguments);
-              input = JSON.parse(repaired);
-              console.log(`[${providerName}] ✓ Successfully repaired JSON for ${builder.name}`);
-            }
-          } catch {
-            console.error(
-              `[${providerName}] Cannot repair JSON for ${builder.name}, using empty object`,
-            );
-            console.error(`[${providerName}] Original error:`, error);
-          }
-        }
-        return input;
-      };
-
       try {
         let streamStopReason: StreamChunk["stopReason"];
 
@@ -557,56 +525,32 @@ export class OpenAIProvider implements LLMProvider {
           // Handle tool calls
           if (delta?.tool_calls) {
             for (const toolCallDelta of delta.tool_calls) {
-              // Resolve a stable key for this delta. OpenAI provides `index`,
-              // but compatible APIs may omit it on follow-up chunks.
-              const key: string =
-                typeof toolCallDelta.index === "number"
-                  ? `index:${toolCallDelta.index}`
-                  : typeof toolCallDelta.id === "string" && toolCallDelta.id.length > 0
-                    ? `id:${toolCallDelta.id}`
-                    : toolCallBuilders.size === 1
-                      ? (Array.from(toolCallBuilders.keys())[0] ?? `fallback:${toolCallBuilders.size}`)
-                      : (lastToolCallKey ?? `fallback:${toolCallBuilders.size}`);
+              const consumed = toolCallAssembler.consume({
+                index: toolCallDelta.index,
+                id: toolCallDelta.id ?? undefined,
+                function: {
+                  name: toolCallDelta.function?.name ?? undefined,
+                  arguments: toolCallDelta.function?.arguments ?? undefined,
+                },
+              });
 
-              if (!toolCallBuilders.has(key)) {
-                // New tool call starting
-                toolCallBuilders.set(key, {
-                  id: toolCallDelta.id ?? "",
-                  name: toolCallDelta.function?.name ?? "",
-                  arguments: "",
-                });
+              if (consumed.started) {
                 yield {
                   type: "tool_use_start",
                   toolCall: {
-                    id: toolCallDelta.id,
-                    name: toolCallDelta.function?.name,
+                    id: consumed.started.id,
+                    name: consumed.started.name,
                   },
                 };
               }
-
-              const builder = toolCallBuilders.get(key)!;
-              lastToolCallKey = key;
-
-              // Update id if provided
-              if (toolCallDelta.id) {
-                builder.id = toolCallDelta.id;
-              }
-
-              // Update name if provided
-              if (toolCallDelta.function?.name) {
-                builder.name = toolCallDelta.function.name;
-              }
-
-              // Accumulate arguments
-              if (toolCallDelta.function?.arguments) {
-                builder.arguments += toolCallDelta.function.arguments;
+              if (consumed.argumentDelta) {
                 yield {
                   type: "tool_use_delta",
                   toolCall: {
-                    id: builder.id,
-                    name: builder.name,
+                    id: consumed.argumentDelta.id,
+                    name: consumed.argumentDelta.name,
                   },
-                  text: toolCallDelta.function.arguments,
+                  text: consumed.argumentDelta.text,
                 };
               }
             }
@@ -620,30 +564,29 @@ export class OpenAIProvider implements LLMProvider {
           if (finishReason) {
             streamStopReason = this.mapFinishReason(finishReason);
           }
-          if (finishReason && toolCallBuilders.size > 0) {
-            for (const [, builder] of toolCallBuilders) {
+          if (finishReason) {
+            for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
               yield {
                 type: "tool_use_end",
                 toolCall: {
-                  id: builder.id,
-                  name: builder.name,
-                  input: parseArguments(builder),
+                  id: toolCall.id,
+                  name: toolCall.name,
+                  input: toolCall.input,
                 },
               };
             }
-            toolCallBuilders.clear();
           }
         }
 
         // Fallback: finalize any remaining tool calls not yet emitted.
         // Handles providers that omit finish_reason in the last chunk.
-        for (const [, builder] of toolCallBuilders) {
+        for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
           yield {
             type: "tool_use_end",
             toolCall: {
-              id: builder.id,
-              name: builder.name,
-              input: parseArguments(builder),
+              id: toolCall.id,
+              name: toolCall.name,
+              input: toolCall.input,
             },
           };
         }
@@ -1209,7 +1152,7 @@ export class OpenAIProvider implements LLMProvider {
             toolCalls.push({
               id: item.call_id,
               name: item.name,
-              input: this.parseResponsesArguments(item.arguments),
+              input: parseToolCallArguments(item.arguments, this.name),
             });
           }
         }
@@ -1338,10 +1281,7 @@ export class OpenAIProvider implements LLMProvider {
         requestParams as unknown as Responses.ResponseCreateParamsStreaming,
       );
 
-      // Track function call builders — keyed by output item ID (NOT call_id)
-      const fnCallBuilders: Map<string, { callId: string; name: string; arguments: string }> =
-        new Map();
-      const outputIndexToBuilderKey: Map<number, string> = new Map();
+      const toolCallAssembler = new ResponsesToolCallAssembler();
 
       // Activity-based timeout using AbortController (safe for async generators)
       const streamTimeout = this.config.timeout ?? 120000;
@@ -1372,65 +1312,59 @@ export class OpenAIProvider implements LLMProvider {
               break;
 
             case "response.output_item.added":
-              if (event.item.type === "function_call") {
-                const fc = event.item;
-                // Key by item ID — event.item_id in delta/done events matches this.
-                // Fall back to call_id if id is not provided (optional in SDK types).
-                const itemKey = fc.id ?? fc.call_id;
-                fnCallBuilders.set(itemKey, {
-                  callId: fc.call_id,
-                  name: fc.name,
-                  arguments: fc.arguments ?? "",
+              {
+                const item = event.item as {
+                  type?: string;
+                  id?: string;
+                  call_id?: string;
+                  name?: string;
+                  arguments?: string;
+                };
+                const start = toolCallAssembler.onOutputItemAdded({
+                  output_index: event.output_index,
+                  item: {
+                    type: item.type,
+                    id: item.id,
+                    call_id: item.call_id,
+                    name: item.name,
+                    arguments: item.arguments,
+                  },
                 });
-                if (typeof event.output_index === "number") {
-                  outputIndexToBuilderKey.set(event.output_index, itemKey);
-                }
+                if (!start) break;
                 yield {
                   type: "tool_use_start",
-                  toolCall: { id: fc.call_id, name: fc.name },
+                  toolCall: { id: start.id, name: start.name },
                 };
               }
               break;
 
             case "response.function_call_arguments.delta":
-              {
-                const builderKey =
-                  (event.item_id && fnCallBuilders.has(event.item_id) ? event.item_id : null) ??
-                  (typeof event.output_index === "number"
-                    ? outputIndexToBuilderKey.get(event.output_index) ?? null
-                    : null) ??
-                  (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
-                if (!builderKey) break;
-                const builder = fnCallBuilders.get(builderKey);
-                if (builder) {
-                  builder.arguments += event.delta;
-                }
-              }
+              toolCallAssembler.onArgumentsDelta({
+                item_id: event.item_id,
+                output_index: event.output_index,
+                delta: event.delta,
+              });
               break;
 
             case "response.function_call_arguments.done":
               {
-                const builderKey =
-                  (event.item_id && fnCallBuilders.has(event.item_id) ? event.item_id : null) ??
-                  (typeof event.output_index === "number"
-                    ? outputIndexToBuilderKey.get(event.output_index) ?? null
-                    : null) ??
-                  (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
-                if (!builderKey) break;
-                const builder = fnCallBuilders.get(builderKey);
-                if (builder) {
+                const toolCall = toolCallAssembler.onArgumentsDone(
+                  {
+                    item_id: event.item_id,
+                    output_index: event.output_index,
+                    arguments: event.arguments,
+                  },
+                  this.name,
+                );
+                if (toolCall) {
                   yield {
                     type: "tool_use_end",
                     toolCall: {
-                      id: builder.callId,
-                      name: builder.name,
-                      input: this.parseResponsesArguments(event.arguments ?? builder.arguments),
+                      id: toolCall.id,
+                      name: toolCall.name,
+                      input: toolCall.input,
                     },
                   };
-                  fnCallBuilders.delete(builderKey);
-                  for (const [idx, key] of outputIndexToBuilderKey.entries()) {
-                    if (key === builderKey) outputIndexToBuilderKey.delete(idx);
-                  }
                 }
               }
               break;
@@ -1438,17 +1372,16 @@ export class OpenAIProvider implements LLMProvider {
             case "response.completed":
               {
                 // Emit any remaining function calls not finalized via done events
-                for (const [, builder] of fnCallBuilders) {
+                for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
                   yield {
                     type: "tool_use_end",
                     toolCall: {
-                      id: builder.callId,
-                      name: builder.name,
-                      input: this.parseResponsesArguments(builder.arguments),
+                      id: toolCall.id,
+                      name: toolCall.name,
+                      input: toolCall.input,
                     },
                   };
                 }
-                fnCallBuilders.clear();
 
                 const hasToolCalls = event.response.output.some(
                   (i: { type: string }) => i.type === "function_call",
@@ -1584,25 +1517,6 @@ export class OpenAIProvider implements LLMProvider {
       parameters: tool.input_schema ?? null,
       strict: false,
     }));
-  }
-
-  /**
-   * Parse tool call arguments with jsonrepair fallback (Responses API)
-   */
-  protected parseResponsesArguments(args: string): Record<string, unknown> {
-    try {
-      return args ? JSON.parse(args) : {};
-    } catch {
-      try {
-        if (args) {
-          const repaired = jsonrepair(args);
-          return JSON.parse(repaired);
-        }
-      } catch {
-        console.error(`[${this.name}] Cannot parse tool arguments: ${args.slice(0, 200)}`);
-      }
-      return {};
-    }
   }
 }
 

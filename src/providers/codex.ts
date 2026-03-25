@@ -11,7 +11,6 @@
  * - Supports automatic token refresh
  */
 
-import { jsonrepair } from "jsonrepair";
 import type {
   LLMProvider,
   ProviderConfig,
@@ -28,6 +27,7 @@ import type {
 import { ProviderError } from "../utils/errors.js";
 import { getValidAccessToken } from "../auth/index.js";
 import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import { ResponsesToolCallAssembler } from "./tool-call-normalizer.js";
 
 /**
  * Codex API endpoint (ChatGPT backend)
@@ -88,25 +88,6 @@ function extractAccountId(accessToken: string): string | undefined {
     (auth?.["chatgpt_account_id"] as string) ||
     (claims["organizations"] as Array<{ id: string }> | undefined)?.[0]?.id
   );
-}
-
-/**
- * Parse JSON arguments with jsonrepair fallback
- */
-function parseArguments(args: string): Record<string, unknown> {
-  try {
-    return args ? JSON.parse(args) : {};
-  } catch {
-    try {
-      if (args) {
-        const repaired = jsonrepair(args);
-        return JSON.parse(repaired);
-      }
-    } catch {
-      console.error(`[Codex] Cannot parse tool arguments: ${args.slice(0, 200)}`);
-    }
-    return {};
-  }
 }
 
 // --- Responses API input types (raw fetch, no SDK) ---
@@ -519,10 +500,7 @@ export class CodexProvider implements LLMProvider {
       let outputTokens = 0;
       const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
 
-      // Track function call builders for streaming assembly
-      const fnCallBuilders: Map<string, { callId: string; name: string; arguments: string }> =
-        new Map();
-      const outputIndexToBuilderKey: Map<number, string> = new Map();
+      const toolCallAssembler = new ResponsesToolCallAssembler();
 
       await this.readSSEStream(response, (event) => {
         if (event.id) responseId = event.id as string;
@@ -537,59 +515,43 @@ export class CodexProvider implements LLMProvider {
             break;
 
           case "response.output_item.added": {
-            const item = event.item as Record<string, unknown>;
-            if (item.type === "function_call") {
-              const itemKey = (item.id as string) ?? (item.call_id as string);
-              fnCallBuilders.set(itemKey, {
-                callId: item.call_id as string,
-                name: item.name as string,
-                arguments: (item.arguments as string) ?? "",
-              });
-              if (typeof event.output_index === "number") {
-                outputIndexToBuilderKey.set(event.output_index, itemKey);
-              }
-            }
+            toolCallAssembler.onOutputItemAdded({
+              output_index: event.output_index as number | undefined,
+              item: event.item as {
+                type?: string;
+                id?: string;
+                call_id?: string;
+                name?: string;
+                arguments?: string;
+              },
+            });
             break;
           }
 
           case "response.function_call_arguments.delta": {
-            const builderKey =
-              ((event.item_id as string | undefined) &&
-              fnCallBuilders.has(event.item_id as string)
-                ? (event.item_id as string)
-                : null) ??
-              (typeof event.output_index === "number"
-                ? outputIndexToBuilderKey.get(event.output_index) ?? null
-                : null) ??
-              (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
-            if (!builderKey) break;
-            const builder = fnCallBuilders.get(builderKey);
-            if (builder) builder.arguments += (event.delta as string) ?? "";
+            toolCallAssembler.onArgumentsDelta({
+              item_id: event.item_id as string | undefined,
+              output_index: event.output_index as number | undefined,
+              delta: event.delta as string | undefined,
+            });
             break;
           }
 
           case "response.function_call_arguments.done": {
-            const builderKey =
-              ((event.item_id as string | undefined) &&
-              fnCallBuilders.has(event.item_id as string)
-                ? (event.item_id as string)
-                : null) ??
-              (typeof event.output_index === "number"
-                ? outputIndexToBuilderKey.get(event.output_index) ?? null
-                : null) ??
-              (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
-            if (!builderKey) break;
-            const builder = fnCallBuilders.get(builderKey);
-            if (builder) {
+            const toolCall = toolCallAssembler.onArgumentsDone(
+              {
+                item_id: event.item_id as string | undefined,
+                output_index: event.output_index as number | undefined,
+                arguments: event.arguments as string | undefined,
+              },
+              this.name,
+            );
+            if (toolCall) {
               toolCalls.push({
-                id: builder.callId,
-                name: builder.name,
-                input: parseArguments((event.arguments as string) ?? builder.arguments),
+                id: toolCall.id,
+                name: toolCall.name,
+                input: toolCall.input,
               });
-              fnCallBuilders.delete(builderKey);
-              for (const [idx, key] of outputIndexToBuilderKey.entries()) {
-                if (key === builderKey) outputIndexToBuilderKey.delete(idx);
-              }
             }
             break;
           }
@@ -601,15 +563,13 @@ export class CodexProvider implements LLMProvider {
               inputTokens = usage.input_tokens ?? 0;
               outputTokens = usage.output_tokens ?? 0;
             }
-            // Finalize any remaining builders
-            for (const [, builder] of fnCallBuilders) {
+            for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
               toolCalls.push({
-                id: builder.callId,
-                name: builder.name,
-                input: parseArguments(builder.arguments),
+                id: toolCall.id,
+                name: toolCall.name,
+                input: toolCall.input,
               });
             }
-            fnCallBuilders.clear();
             break;
           }
         }
@@ -725,10 +685,7 @@ export class CodexProvider implements LLMProvider {
     const decoder = new TextDecoder();
     let buffer = "";
 
-    // Track function call builders — keyed by output item ID (NOT call_id)
-    const fnCallBuilders: Map<string, { callId: string; name: string; arguments: string }> =
-      new Map();
-    const outputIndexToBuilderKey: Map<number, string> = new Map();
+    const toolCallAssembler = new ResponsesToolCallAssembler();
 
     // Activity-based timeout using AbortController (safe for async generators)
     let lastActivityTime = Date.now();
@@ -771,86 +728,68 @@ export class CodexProvider implements LLMProvider {
               break;
 
             case "response.output_item.added": {
-              const item = event.item as Record<string, unknown>;
-              if (item.type === "function_call") {
-                // Key by item ID — event.item_id in delta/done events matches this.
-                const itemKey = (item.id as string) ?? (item.call_id as string);
-                fnCallBuilders.set(itemKey, {
-                  callId: item.call_id as string,
-                  name: item.name as string,
-                  arguments: (item.arguments as string) ?? "",
-                });
-                if (typeof event.output_index === "number") {
-                  outputIndexToBuilderKey.set(event.output_index, itemKey);
-                }
+              const start = toolCallAssembler.onOutputItemAdded({
+                output_index: event.output_index as number | undefined,
+                item: event.item as {
+                  type?: string;
+                  id?: string;
+                  call_id?: string;
+                  name?: string;
+                  arguments?: string;
+                },
+              });
+              if (start) {
                 yield {
                   type: "tool_use_start",
-                  toolCall: { id: item.call_id as string, name: item.name as string },
+                  toolCall: { id: start.id, name: start.name },
                 };
               }
               break;
             }
 
             case "response.function_call_arguments.delta": {
-              const builderKey =
-                ((event.item_id as string | undefined) &&
-                fnCallBuilders.has(event.item_id as string)
-                  ? (event.item_id as string)
-                  : null) ??
-                (typeof event.output_index === "number"
-                  ? outputIndexToBuilderKey.get(event.output_index) ?? null
-                  : null) ??
-                (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
-              if (!builderKey) break;
-              const builder = fnCallBuilders.get(builderKey);
-              if (builder) {
-                builder.arguments += (event.delta as string) ?? "";
-              }
+              toolCallAssembler.onArgumentsDelta({
+                item_id: event.item_id as string | undefined,
+                output_index: event.output_index as number | undefined,
+                delta: event.delta as string | undefined,
+              });
               break;
             }
 
             case "response.function_call_arguments.done": {
-              const builderKey =
-                ((event.item_id as string | undefined) &&
-                fnCallBuilders.has(event.item_id as string)
-                  ? (event.item_id as string)
-                  : null) ??
-                (typeof event.output_index === "number"
-                  ? outputIndexToBuilderKey.get(event.output_index) ?? null
-                  : null) ??
-                (fnCallBuilders.size === 1 ? Array.from(fnCallBuilders.keys())[0] : null);
-              if (!builderKey) break;
-              const builder = fnCallBuilders.get(builderKey);
-              if (builder) {
+              const toolCall = toolCallAssembler.onArgumentsDone(
+                {
+                  item_id: event.item_id as string | undefined,
+                  output_index: event.output_index as number | undefined,
+                  arguments: event.arguments as string | undefined,
+                },
+                this.name,
+              );
+              if (toolCall) {
                 yield {
                   type: "tool_use_end",
                   toolCall: {
-                    id: builder.callId,
-                    name: builder.name,
-                    input: parseArguments((event.arguments as string) ?? builder.arguments),
+                    id: toolCall.id,
+                    name: toolCall.name,
+                    input: toolCall.input,
                   },
                 };
-                fnCallBuilders.delete(builderKey);
-                for (const [idx, key] of outputIndexToBuilderKey.entries()) {
-                  if (key === builderKey) outputIndexToBuilderKey.delete(idx);
-                }
               }
               break;
             }
 
             case "response.completed": {
               // Emit any remaining function calls not finalized via done events
-              for (const [, builder] of fnCallBuilders) {
+              for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
                 yield {
                   type: "tool_use_end",
                   toolCall: {
-                    id: builder.callId,
-                    name: builder.name,
-                    input: parseArguments(builder.arguments),
+                    id: toolCall.id,
+                    name: toolCall.name,
+                    input: toolCall.input,
                   },
                 };
               }
-              fnCallBuilders.clear();
 
               const resp = event.response as Record<string, unknown> | undefined;
               const output = (resp?.output as Array<{ type: string }>) ?? [];

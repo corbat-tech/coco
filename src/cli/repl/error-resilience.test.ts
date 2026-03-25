@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   isAbortError,
+  classifyAgentLoopError,
   humanizeProviderError,
   installProcessSafetyNet,
   MAX_CONSECUTIVE_ERRORS,
@@ -64,6 +65,35 @@ describe("isAbortError", () => {
     const ctrl = new AbortController();
     const err = new Error("Something went wrong");
     expect(isAbortError(err, ctrl.signal)).toBe(false);
+  });
+});
+
+describe("classifyAgentLoopError", () => {
+  it("classifies abort errors as abort", () => {
+    const err = Object.assign(new Error("Request was aborted."), { name: "AbortError" });
+    const result = classifyAgentLoopError(err);
+    expect(result.kind).toBe("abort");
+  });
+
+  it("classifies non-retryable provider errors", () => {
+    const err = new ProviderError("Unauthorized", { provider: "openai", statusCode: 401 });
+    const result = classifyAgentLoopError(err);
+    expect(result.kind).toBe("provider_non_retryable");
+    expect(result.message).toContain("Unauthorized");
+  });
+
+  it("classifies retryable provider errors", () => {
+    const err = new ProviderError("Server error", { provider: "openai", statusCode: 500 });
+    const result = classifyAgentLoopError(err);
+    expect(result.kind).toBe("provider_retryable");
+    expect(result.message).toContain("Server error");
+  });
+
+  it("classifies unknown errors as unexpected", () => {
+    const err = new Error("Boom");
+    const result = classifyAgentLoopError(err);
+    expect(result.kind).toBe("unexpected");
+    expect(result.message).toBe("Boom");
   });
 });
 
