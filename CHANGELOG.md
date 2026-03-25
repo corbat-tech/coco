@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.2] - 2026-03-25
+
+### Fixed
+- **OpenAI OAuth fallback startup regression** — when OpenAI was selected through silent fallback with OAuth configured (without `OPENAI_API_KEY`), REPL startup could still initialize the plain OpenAI provider and fail with `OpenAI API key not provided`. The fallback path now refreshes OAuth token and exports `OPENAI_CODEX_TOKEN` so startup resolves to internal `codex` consistently.
+- **Regression coverage for provider fallback** — added a targeted test to ensure OAuth fallback sets `OPENAI_CODEX_TOKEN` and prevents the startup auth mismatch path.
+
 ## [2.24.1] - 2026-03-25
 
 ### Fixed
