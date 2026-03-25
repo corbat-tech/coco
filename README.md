@@ -27,6 +27,8 @@ Core idea: instead of a single "here is some code" response, Coco runs an implem
 - Native tool use: files, git, shell, search/web, review, diff, build/test, MCP servers.
 - Multi-provider support (API, subscription, and local models).
 - Session-oriented REPL with slash commands, context compaction, and resumable workflows.
+- Reliability features for long sessions: provider retry/circuit-breaker, robust tool-call parsing, and safer stream error handling.
+- Replay harness support to reproduce agent-loop behaviors from fixtures for regression testing.
 
 Coco is designed to be useful on medium and large repos, not only toy examples.
 
@@ -80,6 +82,13 @@ On first run, Coco guides provider/model setup.
 5. Coco returns summary + diffs/results.
 
 Quality mode is configurable and can be turned on/off per session.
+
+## Reliability and Quality
+
+- Provider calls use retry and circuit-breaker protection by default (can be disabled with `COCO_PROVIDER_RESILIENCE=0`).
+- Tool-call handling is normalized across OpenAI/Codex-style streaming events to reduce malformed argument regressions.
+- Agent turns include quality telemetry (`score`, iteration usage, tool success/failure, repeated-output suppression).
+- Repeated identical tool outputs are suppressed in context to reduce token waste in multi-iteration loops.
 
 ## Commands (REPL)
 
@@ -182,6 +191,7 @@ pnpm install
 pnpm build
 pnpm test
 pnpm check
+pnpm check:release
 ```
 
 Tech stack:
@@ -191,6 +201,8 @@ Tech stack:
 - oxlint / oxfmt
 - Zod
 - Commander
+
+Release gate (`pnpm check:release`) runs the stable typecheck/lint/provider+agent suites used for release readiness.
 
 ## Current Scope and Limitations
 
