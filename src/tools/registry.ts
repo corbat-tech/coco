@@ -217,10 +217,12 @@ export class ToolRegistry {
             ". All parameters are missing — this is likely a JSON serialization error on our side. Please retry with the same arguments.";
         }
       } else if (isCocoError(error)) {
-        // Surface the cause chain (e.g., ENOENT hidden inside FileSystemError)
         const causeMsg = error.cause instanceof Error ? error.cause.message : "";
+        // Skip bare OS ENOENT causes: they only add an absolute path that duplicates
+        // what enrichENOENT() already surfaced in the FileSystemError message.
+        const isRawEnoent = causeMsg.startsWith("ENOENT:");
         const combined =
-          causeMsg && !error.message.includes(causeMsg)
+          causeMsg && !isRawEnoent && !error.message.includes(causeMsg)
             ? `${error.message} — ${causeMsg}`
             : error.message;
         errorMessage = humanizeError(combined, name);
