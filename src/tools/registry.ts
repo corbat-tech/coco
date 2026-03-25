@@ -226,8 +226,13 @@ export class ToolRegistry {
             ? `${error.message} — ${causeMsg}`
             : error.message;
         errorMessage = humanizeError(combined, name);
-        // Append suggestion if present and not redundant
-        if (error.suggestion && !errorMessage.includes(error.suggestion)) {
+        // Append suggestion only when it adds information beyond what the message already covers.
+        // Skip if the message already has recovery hints (e.g. enrichENOENT output includes
+        // "Did you mean?" + "Use glob or list_dir" making the generic suggestion redundant).
+        const hasRecoveryHint = /Did you mean\?|Use glob|Check that the parent directory/.test(
+          errorMessage,
+        );
+        if (error.suggestion && !hasRecoveryHint && !errorMessage.includes(error.suggestion)) {
           errorMessage += `\nSuggestion: ${error.suggestion}`;
         }
       } else if (isAbortError(error, options?.signal)) {
