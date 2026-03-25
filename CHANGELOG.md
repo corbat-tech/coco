@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.0] - 2026-03-25
+
+### Added
+- **Resilient provider wrapper** (`ResilientProvider`) with provider-level retry + circuit-breaker policies and safe streaming retries (only before first emitted chunk to avoid duplicate partial output).
+- **Provider resilience defaults by provider type** (remote vs local) with env kill-switch: `COCO_PROVIDER_RESILIENCE=0`.
+- **Replay harness for agent-loop sessions** — deterministic fixtures for replaying streaming turns (including multi-iteration tool loops) without interactive prompts.
+- **Release quality gate script** — `pnpm check:release` now runs stable typecheck/lint/test suites used as release criteria.
+- **Turn quality metrics** in `AgentTurnResult` with score + execution telemetry (iterations, tool success/failure, error state, repeated-output suppression count).
+
+### Changed
+- **Unified tool-call assembly internals** — OpenAI/Codex streaming tool-call parsing now uses shared normalizers/builders instead of duplicated ad-hoc logic.
+- **Agent-loop error handling policy** centralized via error classification (`abort`, `provider_non_retryable`, `provider_retryable`, `unexpected`) for clearer control flow and safer propagation.
+- **Context efficiency improvement** — repeated identical tool outputs are suppressed in subsequent iterations to reduce context bloat and token waste.
+
+### Fixed
+- **OpenAI/Codex tool-call argument edge cases** (missing `index`, missing `item_id`, missing final `arguments`) now resolved by shared fallback strategy.
+- **Model command persistence robustness** — `/model` no longer hard-fails the session when writing provider/model preference file fails.
+- **Lint technical debt in core test paths** — removed/rewired recurrent warnings in release-critical suites; release gate now runs with zero lint warnings.
+
 ## [2.23.1] - 2026-03-25
 
 ### Fixed
