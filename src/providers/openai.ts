@@ -559,13 +559,14 @@ export class OpenAIProvider implements LLMProvider {
             for (const toolCallDelta of delta.tool_calls) {
               // Resolve a stable key for this delta. OpenAI provides `index`,
               // but compatible APIs may omit it on follow-up chunks.
-              const key =
-                (typeof toolCallDelta.index === "number" && `index:${toolCallDelta.index}`) ||
-                (toolCallDelta.id && `id:${toolCallDelta.id}`) ||
-                (toolCallBuilders.size === 1
-                  ? Array.from(toolCallBuilders.keys())[0]
-                  : lastToolCallKey) ||
-                `fallback:${toolCallBuilders.size}`;
+              const key: string =
+                typeof toolCallDelta.index === "number"
+                  ? `index:${toolCallDelta.index}`
+                  : typeof toolCallDelta.id === "string" && toolCallDelta.id.length > 0
+                    ? `id:${toolCallDelta.id}`
+                    : toolCallBuilders.size === 1
+                      ? (Array.from(toolCallBuilders.keys())[0] ?? `fallback:${toolCallBuilders.size}`)
+                      : (lastToolCallKey ?? `fallback:${toolCallBuilders.size}`);
 
               if (!toolCallBuilders.has(key)) {
                 // New tool call starting
