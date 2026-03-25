@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.0] - 2026-03-25
+
+### Improved
+- **Verb-first tool display** — tool calls now show human-readable verbs (`Read`, `Run`, `Fetch`, `Search`, `List`, `Git commit`, etc.) instead of snake_case technical names, matching the signal-rich style of Claude Code.
+- **Clean URL display for web tools** — `web_fetch` and `web_search` now show `hostname › path` instead of the full URL with query parameters, reducing noise in agentic sessions.
+- **Shorter bash output preview** — inline stdout preview threshold reduced from 6 to 3 lines, keeping the terminal clean for longer command output.
+
+### Fixed
+- **ENOENT absolute path no longer shown in file errors** — when a file is not found, the raw OS error (`ENOENT: no such file or directory, stat '/absolute/path'`) was being concatenated to the already-enriched error message. Now suppressed — the "File not found" + suggestions are sufficient.
+- **Redundant `Suggestion:` line removed from file errors** — when `enrichENOENT` already provides "Did you mean?" suggestions and an action hint, the generic fallback suggestion is no longer appended.
+- **Codex API request body** — removed `max_tokens` and `temperature` parameters which the `chatgpt.com/backend-api/codex/responses` endpoint rejects (confirmed from OpenAI Codex CLI source and LiteLLM issue #21193). Added `truncation: "auto"` to prevent 400 errors when the context window fills up.
+- **Quality evaluator silent catch** — evaluation failures in the COCO Complete phase are now logged when `COCO_DEBUG=1`, preserving the LLM-only fallback behavior but aiding debugging.
+
 ## [2.21.1] - 2026-03-25
 
 ### Fixed
