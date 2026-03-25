@@ -59,13 +59,15 @@ export function isAbortError(error: unknown, signal?: AbortSignal): boolean {
 
 /**
  * Check if an error is a non-retryable provider error.
- * These are configuration/auth/quota errors that won't be fixed by retrying.
+ * These are configuration/auth/quota/errors that won't be fixed by retrying.
  */
 export function isNonRetryableProviderError(error: unknown): boolean {
   if (error instanceof ProviderError) {
     const code = error.statusCode;
     // Auth errors - won't be fixed by retrying
     if (code === 401 || code === 403) return true;
+    // Bad request (invalid parameters) - won't be fixed by retrying
+    if (code === 400) return true;
     // Specific non-retryable messages
     const msg = error.message.toLowerCase();
     if (
@@ -77,7 +79,8 @@ export function isNonRetryableProviderError(error: unknown): boolean {
       msg.includes("invalid_api_key") ||
       msg.includes("incorrect api key") ||
       msg.includes("bad credentials") ||
-      msg.includes("not authorized")
+      msg.includes("not authorized") ||
+      msg.includes("unsupported parameter")
     ) {
       return true;
     }

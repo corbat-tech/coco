@@ -448,9 +448,7 @@ export async function startRepl(
         // Combine user input text with image prompts
         const imagePrompts = images.map((img) => img.prompt).join("\n");
         const userText = input?.trim() || "";
-        const combinedText = userText
-          ? `${userText}\n\n${imagePrompts}`.trim()
-          : imagePrompts;
+        const combinedText = userText ? `${userText}\n\n${imagePrompts}`.trim() : imagePrompts;
         agentMessage = [
           ...images.map(
             (img) =>
@@ -477,9 +475,7 @@ export async function startRepl(
       // Combine user input text with image prompts
       const imagePrompts = images.map((img) => img.prompt).join("\n");
       const userText = input?.trim() || "";
-      const combinedText = userText
-        ? `${userText}\n\n${imagePrompts}`.trim()
-        : imagePrompts;
+      const combinedText = userText ? `${userText}\n\n${imagePrompts}`.trim() : imagePrompts;
       agentMessage = [
         ...images.map(
           (img) =>
@@ -1250,6 +1246,11 @@ export async function startRepl(
       }
 
       // ── Fallback ──────────────────────────────────────────────────────────
+      // Non-retryable error with no user-facing message and budget not yet
+      // exhausted (e.g. 400 "unsupported parameter"). Roll back partial state
+      // and return to prompt without retrying.
+      session.messages.length = preCallMessageLength;
+      consecutiveErrors = 0;
       renderError(errorMsg);
     } finally {
       // Always clean up spinner and resume input handler after agent turn

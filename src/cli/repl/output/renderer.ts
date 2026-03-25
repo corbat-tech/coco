@@ -975,6 +975,7 @@ const TOOL_ICONS: Record<string, string> = {
   grep: "🔍",
   bash_exec: "⚡",
   web_search: "🌐",
+  web_fetch: "🌐",
   git_status: "📊",
   git_commit: "💾",
   git_push: "⬆️",
@@ -982,6 +983,31 @@ const TOOL_ICONS: Record<string, string> = {
   run_tests: "🧪",
   run_linter: "🔎",
   default: "🔧",
+};
+
+const TOOL_VERBS: Record<string, string> = {
+  read_file: "Read",
+  delete_file: "Delete",
+  list_directory: "List",
+  list_dir: "List",
+  grep: "Search",
+  search_files: "Search",
+  bash_exec: "Run",
+  web_search: "Search",
+  web_fetch: "Fetch",
+  git_status: "Git status",
+  git_commit: "Git commit",
+  git_add: "Git add",
+  git_push: "Git push",
+  git_pull: "Git pull",
+  git_diff: "Git diff",
+  git_log: "Git log",
+  git_branch: "Git branch",
+  git_checkout: "Git checkout",
+  git_init: "Git init",
+  run_tests: "Test",
+  run_linter: "Lint",
+  run_script: "Run",
 };
 
 function getToolIcon(toolName: string, input?: Record<string, unknown>): string {
@@ -1015,14 +1041,12 @@ export function renderToolStart(
   if (toolName === "edit_file") {
     console.log(`\n${icon} ${chalk.yellow.bold("EDIT")} ${chalk.cyan(String(input.path || ""))}`);
     // Print diff sequentially instead of buffering for immediate feedback
-    printEditDiff(
-      String(input.oldText || ""),
-      String(input.newText || ""),
-    );
+    printEditDiff(String(input.oldText || ""), String(input.newText || ""));
     return;
   }
 
-  console.log(`\n${icon} ${chalk.cyan.bold(toolName)} ${chalk.dim(summary)}`);
+  const verb = TOOL_VERBS[toolName] ?? toolName.replace(/_/g, " ");
+  console.log(`\n${icon} ${chalk.bold(verb)} ${chalk.dim(summary)}`);
 }
 
 /** Show first N non-empty lines of file content, indented and dimmed */
@@ -1119,8 +1143,8 @@ function wordLevelHighlight(
  * This provides immediate visual feedback instead of waiting for full render.
  */
 function printEditDiff(oldStr: string, newStr: string): void {
-  // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │ + sign1 + space1) = -14
-  const termWidth = Math.max(getTerminalWidth() - 14, 30);
+  // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │) - prefix(space1 + sign1 + space1) = -15
+  const termWidth = Math.max(getTerminalWidth() - 15, 30);
   const MAX_SHOWN = 30;
 
   // Pure insertion (empty old) — show compact green block, no line-number columns
@@ -1256,8 +1280,8 @@ function printEditDiff(oldStr: string, newStr: string): void {
  * - Max 30 lines shown, then "… +N more" guard
  */
 export function renderEditPreview(oldStr: string, newStr: string): string {
-  // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │ + sign1 + space1) = -14
-  const termWidth = Math.max(getTerminalWidth() - 14, 30);
+  // Content width = terminal - indent(2) - gutter(old4 + │ + new4 + │) - prefix(space1 + sign1 + space1) = -15
+  const termWidth = Math.max(getTerminalWidth() - 15, 30);
   const MAX_SHOWN = 30;
 
   // Pure insertion (empty old) — show compact green block, no line-number columns
@@ -1421,8 +1445,28 @@ function formatToolSummary(toolName: string, input: Record<string, unknown>): st
       const max = Math.max(getTerminalWidth() - 20, 50);
       return cmd.length > max ? cmd.slice(0, max - 1) + "…" : cmd;
     }
+    case "web_fetch": {
+      const url = String(input.url || input.path || "");
+      return formatUrl(url);
+    }
+    case "web_search": {
+      return String(input.query || "");
+    }
     default:
       return formatToolInput(input);
+  }
+}
+
+function formatUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.replace(/\/$/, "");
+    const display = path ? `${u.hostname} › ${path.slice(1)}` : u.hostname;
+    const max = Math.max(getTerminalWidth() - 20, 50);
+    return display.length > max ? display.slice(0, max - 1) + "…" : display;
+  } catch {
+    const max = Math.max(getTerminalWidth() - 20, 50);
+    return url.length > max ? url.slice(0, max - 1) + "…" : url;
   }
 }
 
@@ -1507,14 +1551,14 @@ function formatResultDetails(result: ExecutedToolCall): string {
       if (!stdout) return "";
       const outputLines = stdout.split("\n").filter((l: string) => l.trim());
       // Only show inline preview if output is short enough to be meaningful
-      if (outputLines.length > 6) return "";
-      const shown = outputLines.slice(0, 4);
+      if (outputLines.length > 3) return "";
+      const shown = outputLines.slice(0, 3);
       const lines = shown.map((l: string) => {
         const truncated = l.length > maxWidth ? l.slice(0, maxWidth - 1) + "…" : l;
         return `  ${chalk.dim("│")} ${chalk.dim(truncated)}`;
       });
-      if (outputLines.length > 4) {
-        lines.push(`  ${chalk.dim(`│ … +${outputLines.length - 4} more`)}`);
+      if (outputLines.length > 3) {
+        lines.push(`  ${chalk.dim(`│ … +${outputLines.length - 3} more`)}`);
       }
       return lines.join("\n");
     }

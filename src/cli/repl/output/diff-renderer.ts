@@ -424,12 +424,11 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
         if (isPaired) {
           const delIdx = pairByAdd.get(li)!;
           content = wordHighlights.get(delIdx)!.styledAdd;
+          // Skip syntax highlighting — content already has word-level chalk ANSI codes;
+          // running highlightLine on pre-styled text corrupts the escape sequences.
         } else {
           content = line.content;
-        }
-        // Apply syntax highlighting to the content
-        if (lang) {
-          content = highlightLine(content, lang);
+          if (lang) content = highlightLine(content, lang);
         }
         // Green for added lines with line number and prefix
         const lineStr = `${lineNo}${prefix} ${content}`;
@@ -439,12 +438,10 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
         let content: string;
         if (isPaired) {
           content = wordHighlights.get(li)!.styledDelete;
+          // Skip syntax highlighting — same reason as above.
         } else {
           content = line.content;
-        }
-        // Apply syntax highlighting to the content
-        if (lang) {
-          content = highlightLine(content, lang);
+          if (lang) content = highlightLine(content, lang);
         }
         // Red for deleted lines with line number and prefix
         const lineStr = `${lineNo}${prefix} ${content}`;
@@ -459,15 +456,17 @@ function renderFileBlock(file: DiffFile, opts: Required<DiffRenderOptions>): voi
       }
     }
   }
-
-  // Empty line after each file for separation
-  console.log();
 }
 
 function formatLineNo(line: DiffLine, show: boolean): string {
   if (!show) return "";
-  const lineNo = line.type === "delete" ? line.oldLineNo : line.newLineNo;
-  return chalk.dim(`${String(lineNo ?? "").padStart(5)} `);
+  // Show both line numbers aligned: old | new
+  // For deletes: show old line number, blank for new
+  // For adds: show blank for old, new line number
+  // For context: show both
+  const oldStr = line.oldLineNo !== undefined ? String(line.oldLineNo) : "";
+  const newStr = line.newLineNo !== undefined ? String(line.newLineNo) : "";
+  return chalk.dim(`${oldStr.padStart(4)} | ${newStr.padStart(4)} `);
 }
 
 /**

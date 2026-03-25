@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.0] - 2026-03-25
+
+### Improved
+- **Verb-first tool display** — tool calls now show human-readable verbs (`Read`, `Run`, `Fetch`, `Search`, `List`, `Git commit`, etc.) instead of snake_case technical names, matching the signal-rich style of Claude Code.
+- **Clean URL display for web tools** — `web_fetch` and `web_search` now show `hostname › path` instead of the full URL with query parameters, reducing noise in agentic sessions.
+- **Shorter bash output preview** — inline stdout preview threshold reduced from 6 to 3 lines, keeping the terminal clean for longer command output.
+
+### Fixed
+- **ENOENT absolute path no longer shown in file errors** — when a file is not found, the raw OS error (`ENOENT: no such file or directory, stat '/absolute/path'`) was being concatenated to the already-enriched error message. Now suppressed — the "File not found" + suggestions are sufficient.
+- **Redundant `Suggestion:` line removed from file errors** — when `enrichENOENT` already provides "Did you mean?" suggestions and an action hint, the generic fallback suggestion is no longer appended.
+- **Codex API request body** — removed `max_tokens` and `temperature` parameters which the `chatgpt.com/backend-api/codex/responses` endpoint rejects (confirmed from OpenAI Codex CLI source and LiteLLM issue #21193). Added `truncation: "auto"` to prevent 400 errors when the context window fills up.
+- **Quality evaluator silent catch** — evaluation failures in the COCO Complete phase are now logged when `COCO_DEBUG=1`, preserving the LLM-only fallback behavior but aiding debugging.
+
+## [2.21.1] - 2026-03-25
+
+### Fixed
+- **Codex API `max_tokens` parameter** — reverted incorrect `max_output_tokens` back to `max_tokens`. The Codex endpoint (`chatgpt.com/backend-api/codex/responses`) uses `max_tokens`, unlike the standard OpenAI Responses API which uses `max_output_tokens`.
+- **Diff renderer raw ANSI codes visible in output** — syntax highlighting (`highlightLine`) was being applied to lines that already contained chalk ANSI escape sequences from word-level diff highlighting. This corrupted the existing sequences, causing them to appear as literal text (e.g. `[48;2;80;20;20m`). Syntax highlighting is now skipped for word-highlighted lines.
+
+## [2.21.0] - 2026-03-24
+
+### Fixed
+- **Non-retryable provider errors no longer break the flow** — auth (401/403), bad request (400), and quota errors are now re-thrown from the agent loop so the caller receives the original `ProviderError` object. Previously these were stringified, preventing correct classification and leaving the session in a broken state.
+- **Session rollback on non-retryable errors** — when a non-retryable provider error occurs, the session message history is now rolled back to pre-call state and the consecutive-error counter is reset, so the REPL returns cleanly to the prompt instead of accumulating broken state.
+- **Codex `max_output_tokens` parameter** — corrected parameter name in `codex.ts` from `max_tokens` to `max_output_tokens` to match the OpenAI Responses API specification.
+- **Diff renderer blank lines** — the terminal-width calculation for `edit_file` diff previews was off by one, causing an extra trailing space to wrap with background color active, producing a spurious blank colored line. Fixed by accounting for the 3-character prefix (` - ` / ` + `).
+- **Diff line numbers format** — `edit_file` diff previews now show `old | new` aligned line numbers instead of a single column, making it clear which side each line belongs to.
+
+## [2.20.1] - 2026-03-24
+
+### Fixed
+- **Error recovery path now fires for streaming errors** — `result.error` returned by the agent loop was previously ignored, causing streaming failures to be silently treated as successful turns. Now correctly triggers LLM recovery (re-queues the task with error context) up to the configured retry budget.
+- **`coco setup` and `--setup` now persist configuration** — API key and provider/model preference were never saved when using the setup command or flag directly (`coco setup`, `coco --setup`). `saveConfiguration()` is now called, writing to `~/.coco/.env` and `config.json` as expected.
+- **Tool errors can no longer break the agent turn** — `executeSingleTool` previously re-threw unexpected exceptions, which could propagate through the parallel executor and abort the entire turn. Unexpected errors are now converted to `{ success: false }` tool results so the LLM receives the error and can retry.
+- **Confirmation dialog failures are handled gracefully** — terminal/readline errors during tool confirmation prompts now decline the tool cleanly instead of crashing the current agent turn.
+- **Process safety net skips abort errors silently** — `uncaughtException`/`unhandledRejection` handlers no longer print noise for intentional abort/cancel signals.
+- **edit_file diff shown immediately without buffering** — diffs are now printed line-by-line to the terminal as soon as the tool completes, eliminating the previous render delay.
+
 ## [2.20.0] - 2026-03-24
 
 ### Added
@@ -1014,7 +1052,9 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.19.0...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.20.1...HEAD
+[2.20.1]: https://github.com/corbat/corbat-coco/compare/v2.20.0...v2.20.1
+[2.20.0]: https://github.com/corbat/corbat-coco/compare/v2.19.0...v2.20.0
 [2.19.0]: https://github.com/corbat/corbat-coco/compare/v2.18.0...v2.19.0
 [2.18.0]: https://github.com/corbat/corbat-coco/compare/v2.17.1...v2.18.0
 [2.17.1]: https://github.com/corbat/corbat-coco/compare/v2.17.0...v2.17.1
