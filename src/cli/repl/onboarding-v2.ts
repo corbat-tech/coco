@@ -1631,10 +1631,16 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
       try {
         const recommended = getRecommendedModel(prov.id);
         const model = recommended?.id || prov.models[0]?.id || "";
-        const providerId =
-          prov.id === "openai" && hasOpenAIOAuthTokens && !process.env[prov.envVar]
-            ? "codex"
-            : prov.id;
+        let providerId = prov.id;
+
+        if (prov.id === "openai" && hasOpenAIOAuthTokens && !process.env[prov.envVar]) {
+          // OpenAI OAuth path: materialize a fresh token in env so later startup
+          // resolves openai -> codex consistently and doesn't demand OPENAI_API_KEY.
+          const tokenResult = await getOrRefreshOAuthToken("openai");
+          if (!tokenResult) continue;
+          process.env["OPENAI_CODEX_TOKEN"] = tokenResult.accessToken;
+          providerId = "codex";
+        }
 
         const provider = await createProvider(providerId, { model });
         if (await provider.isAvailable()) {

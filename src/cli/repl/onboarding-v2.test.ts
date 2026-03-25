@@ -764,5 +764,52 @@ describe("onboarding-v2", () => {
         ),
       ).toBe(true);
     });
+
+    it("sets OPENAI_CODEX_TOKEN when selecting openai OAuth from fallback providers", async () => {
+      const previousCodexToken = process.env["OPENAI_CODEX_TOKEN"];
+      delete process.env["OPENAI_CODEX_TOKEN"];
+      delete process.env["OPENAI_API_KEY"];
+      delete process.env["ANTHROPIC_API_KEY"];
+
+      const anthropicDef = makeProviderDef({
+        id: "anthropic" as any,
+        envVar: "ANTHROPIC_API_KEY",
+      });
+      const openaiDef = makeProviderDef({
+        id: "openai" as any,
+        name: "OpenAI",
+        envVar: "OPENAI_API_KEY",
+      });
+
+      mockedGetAllProviders.mockReturnValue([anthropicDef, openaiDef]);
+      mockedGetConfiguredProviders.mockReturnValue([openaiDef]);
+      mockedIsOAuthConfigured.mockResolvedValue(true);
+      mockedGetOrRefreshOAuthToken.mockResolvedValue({
+        accessToken: "oauth-token-fallback",
+        expiresAt: Date.now() + 3600000,
+      } as any);
+
+      const codexProvider = { isAvailable: vi.fn().mockResolvedValue(true), id: "codex" };
+      mockedCreateProvider.mockResolvedValue(codexProvider as any);
+
+      const config = {
+        provider: { type: "anthropic", model: "claude-sonnet-4-20250514", maxTokens: 8192 },
+      } as any;
+
+      const result = await ensureConfiguredV2(config);
+
+      expect(result?.provider.type).toBe("openai");
+      expect(mockedCreateProvider).toHaveBeenCalledWith(
+        "codex",
+        expect.objectContaining({ model: expect.any(String) }),
+      );
+      expect(process.env["OPENAI_CODEX_TOKEN"]).toBe("oauth-token-fallback");
+
+      if (previousCodexToken !== undefined) {
+        process.env["OPENAI_CODEX_TOKEN"] = previousCodexToken;
+      } else {
+        delete process.env["OPENAI_CODEX_TOKEN"];
+      }
+    });
   });
 });
