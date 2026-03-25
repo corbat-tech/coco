@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Codex API `max_tokens` parameter** — reverted incorrect `max_output_tokens` back to `max_tokens`. The Codex endpoint (`chatgpt.com/backend-api/codex/responses`) uses `max_tokens`, unlike the standard OpenAI Responses API which uses `max_output_tokens`.
+- **Diff renderer raw ANSI codes visible in output** — syntax highlighting (`highlightLine`) was being applied to lines that already contained chalk ANSI escape sequences from word-level diff highlighting. This corrupted the existing sequences, causing them to appear as literal text (e.g. `[48;2;80;20;20m`). Syntax highlighting is now skipped for word-highlighted lines.
 
 ## [2.21.0] - 2026-03-24
 
