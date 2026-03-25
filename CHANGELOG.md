@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.23.1] - 2026-03-25
+
+### Fixed
+- **OpenAI tool-call streaming argument assembly** — hardened Chat Completions streaming parsing for function/tool calls when compatible endpoints omit `index`/`id` in follow-up deltas, preventing malformed or empty tool inputs from reaching tools like `write_file`.
+- **OpenAI Responses streaming correlation fallback** — improved function-call argument accumulation by supporting `item_id`, `output_index`, and single-builder fallback paths, and by preserving arguments already present in `response.output_item.added`.
+- **Codex subscription provider tool-call parsing** — aligned `chatWithTools` and `streamWithTools` with robust Responses event handling (`item_id` + `output_index` fallbacks, missing `done.arguments` fallback to accumulated args), fixing empty argument payloads observed under browser-authenticated subscription flows.
+- **Gemini multi-turn conversation conversion** — previous user turns are now preserved in history while only the final user turn is sent as the active message, improving context continuity in longer sessions.
+- **Gemini function response mapping** — `functionResponse.name` now resolves to the original function name (when available) instead of blindly using `tool_use_id`, improving tool round-trip compatibility.
+- **Gemini tool-call identifiers** — tool-call IDs are now unique and stable per response/stream event, avoiding collisions when the same function is called multiple times.
+
+### Changed
+- **README rewrite for technical accuracy** — replaced over-claiming language with a capability-focused, externally credible README aligned with implemented features, supported providers, and realistic limitations.
+
 ## [2.23.0] - 2026-03-25
 
 ### Added
