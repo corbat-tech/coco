@@ -1249,7 +1249,9 @@ describe("iteration limit notice", () => {
         return createToolStreamMock("", [toolCall])();
       }
       // Final summary turn — LLM summarises what happened
-      return createTextStreamMock("Task incomplete. The file was read 3 times. Type continue to proceed.")();
+      return createTextStreamMock(
+        "Task incomplete. The file was read 3 times. Type continue to proceed.",
+      )();
     });
 
     (mockToolRegistry.execute as Mock).mockResolvedValue({
@@ -1431,13 +1433,19 @@ describe("streaming text suppression during tool iterations", () => {
       config: {
         provider: { type: "anthropic", model: "claude-sonnet-4-20250514", maxTokens: 8192 },
         ui: { theme: "auto", showTimestamps: false, maxHistorySize: 100 },
-        agent: { systemPrompt: "You are a helpful assistant", maxToolIterations: 25, confirmDestructive: true },
+        agent: {
+          systemPrompt: "You are a helpful assistant",
+          maxToolIterations: 25,
+          confirmDestructive: true,
+        },
       },
       trustedTools: new Set<string>(),
     };
 
     const { getConversationContext } = await import("./session.js");
-    (getConversationContext as Mock).mockReturnValue([{ role: "system", content: "System prompt" }]);
+    (getConversationContext as Mock).mockReturnValue([
+      { role: "system", content: "System prompt" },
+    ]);
 
     const { requiresConfirmation } = await import("./confirmation.js");
     (requiresConfirmation as Mock).mockReturnValue(false);
