@@ -12,6 +12,9 @@
 
 </div>
 
+**Coco is an open-source CLI coding agent for real repositories.**  
+It plans work, edits files, runs tools/tests, and iterates until quality checks pass.
+
 ---
 
 ## What Is Coco?
