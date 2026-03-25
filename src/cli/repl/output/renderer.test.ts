@@ -164,12 +164,12 @@ describe("renderToolStart", () => {
     vi.restoreAllMocks();
   });
 
-  it("should render tool name with icon", () => {
+  it("should render tool verb with icon", () => {
     renderToolStart("read_file", { path: "/test/file.ts" });
 
     const output = consoleLogSpy.mock.calls[0][0];
     expect(output).toContain("📄");
-    expect(output).toContain("read_file");
+    expect(output).toContain("Read");
   });
 
   it("should show file path for file tools", () => {
@@ -652,8 +652,7 @@ describe("renderToolStart with formatToolSummary edge cases", () => {
 
     const output = consoleLogSpy.mock.calls[0][0];
     expect(output).toContain("🌐");
-    // Uses formatToolInput for unknown tools
-    expect(output).toContain("query=");
+    expect(output).toContain("typescript tutorial");
   });
 
   it("should format unknown tool with multiple inputs", () => {
@@ -675,7 +674,7 @@ describe("renderToolStart with formatToolSummary edge cases", () => {
 
     const output = consoleLogSpy.mock.calls[0][0];
     expect(output).toContain("🔧");
-    expect(output).toContain("custom_tool");
+    expect(output).toContain("custom tool");
   });
 
   it("should truncate long string values in input", () => {

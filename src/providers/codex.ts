@@ -367,8 +367,7 @@ export class CodexProvider implements LLMProvider {
       model,
       input,
       instructions: instructions ?? "You are a helpful coding assistant.",
-      max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-      temperature: options?.temperature ?? this.config.temperature ?? 0,
+      truncation: "auto",
       store: false,
       stream: true, // Codex API requires streaming
     };
