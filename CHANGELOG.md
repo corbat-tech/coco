@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.1] - 2026-03-25
+
+### Fixed
+- **Codex `truncation` parameter removed** — `chatgpt.com/backend-api/codex/responses` rejects `truncation: "auto"` with a 400 error despite it being valid on the standard `api.openai.com/v1/responses` endpoint. The ChatGPT backend is a private subset of the Responses API that manages context internally and does not accept any token-limit or truncation parameters.
+
 ## [2.22.0] - 2026-03-25
 
 ### Improved
