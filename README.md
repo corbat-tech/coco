@@ -8,7 +8,7 @@
 [![Node](https://img.shields.io/badge/Node.js-22+-22c55e?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-5738_passing-22c55e?style=flat-square)](https://github.com/corbat-tech/coco/actions)
+[![Tests](https://img.shields.io/badge/tests-6158_passing-22c55e?style=flat-square)](https://github.com/corbat-tech/coco/actions)
 
 <br/>
 
@@ -66,8 +66,10 @@ $ coco "Add JWT authentication to the Express API"
 | Write code, run tests manually, fix, repeat | Autonomous iterate-until-quality loop |
 | Hope your reviewer catches security issues | OWASP pattern analysis on every iteration |
 | Guess at test coverage | c8/v8 instrumentation, measured per task |
-| One model, one provider, take it or leave it | 12 providers, switch any time |
+| One model, one provider, take it or leave it | 13+ providers, switch any time |
 | Workflows live in your head or Confluence | Reusable skills committed to the repo |
+| Agent hangs or dies on errors | Retries with LLM guidance, never cuts off abruptly |
+| Wall of text during long operations | Clean output — only final results, no noise |
 
 ### How Coco compares
 
@@ -75,12 +77,14 @@ $ coco "Add JWT authentication to the Express API"
 |---|---|---|---|---|
 | Quality convergence loop | ✅ | ❌ | ❌ | ❌ |
 | Runs tests + measures coverage | ✅ | ❌ | ❌ | ❌ |
-| Provider-agnostic (12 providers) | ✅ | ✅ | ❌ Anthropic only | Partial |
+| Provider-agnostic (13+ providers) | ✅ | ✅ | ❌ Anthropic only | Partial |
 | Works in terminal | ✅ | ✅ | ✅ | ❌ IDE only |
 | Reusable team workflows (Skills) | ✅ | ❌ | ✅ CLAUDE.md | ❌ |
 | MCP tool integration | ✅ | ❌ | ✅ | ✅ |
 | Local models (Ollama, LM Studio) | ✅ | ✅ | ❌ | Partial |
-| Subscription-based providers | ✅ ChatGPT, Kimi Code | ❌ | ✅ Claude Max | ✅ |
+| Subscription providers (ChatGPT, Copilot, Kimi) | ✅ | ❌ | ✅ Claude Max | ❌ |
+| Parallel tool execution | ✅ | ❌ | ✅ | ❌ |
+| Auto context compaction | ✅ | ❌ | ✅ | ❌ |
 
 ---
 
@@ -196,6 +200,16 @@ Coco uses the **COCO methodology** — four phases, fully automated:
 4. Generates a targeted fix and repeats
 5. Stops when the score meets your threshold (default: **85/100**)
 
+### Built for reliability
+
+Coco is designed to keep running, not to crash and leave you hanging:
+
+- **Parallel tool execution** — reads, searches, and shell commands run concurrently (up to 5 at a time), so multi-file tasks complete in seconds instead of minutes
+- **Auto context compaction** — when the conversation grows long, Coco compresses its own context automatically and keeps working without losing track of the task
+- **Intelligent error recovery** — on provider errors, timeouts, or transient failures, Coco retries with the error context prepended so the LLM can choose a different approach
+- **Graceful iteration handoff** — if the iteration budget is almost exhausted, Coco warns itself at the 75% mark to start wrapping up; at the limit it writes a proper summary of what's done and what remains, instead of cutting off mid-task
+- **Mid-task steering** — type a message while Coco is working and it will incorporate your feedback without aborting the current turn
+
 **[Architecture deep dive →](docs/architecture/ARCHITECTURE.md)**
 
 ---
@@ -243,6 +257,8 @@ Type `/help` inside the REPL to see everything. The most useful ones day-to-day:
 | `/compact` | Compress context when the conversation grows long |
 | `/copy [N]` or `/cp [N]` | Copy code block #N to clipboard (omit N for last block) |
 | `/image [prompt]` | Paste clipboard image and send to agent with optional prompt |
+| `/model` | Switch model mid-session |
+| `/provider` | Switch provider mid-session |
 
 **Keyboard shortcuts:**
 
@@ -270,12 +286,13 @@ Bilingual: English and Spanish both work out of the box.
 
 ## Providers
 
-Coco is provider-agnostic. Bring your own key or run fully local:
+Coco is provider-agnostic. Bring your own key, use a subscription, or run fully local:
 
 | Provider | Models | Auth |
 |----------|--------|------|
-| **Anthropic** ⭐ | Claude Opus, Sonnet, Haiku | API key / OAuth |
-| **OpenAI** | GPT-4.1, o4-mini, Codex | API key / OAuth |
+| **Anthropic** ⭐ | Claude Opus, Sonnet, Haiku | API key |
+| **OpenAI** | GPT-4.1, o4-mini, o3, Codex | API key |
+| **GitHub Copilot** | GPT-4.1, o4-mini, Claude Sonnet | Copilot subscription |
 | **Google** | Gemini 2.5 Pro/Flash | API key / gcloud |
 | **Groq** | Llama 4, Mixtral, Gemma | API key |
 | **OpenRouter** | 200+ models | API key |
@@ -284,10 +301,11 @@ Coco is provider-agnostic. Bring your own key or run fully local:
 | **Together AI** | Llama 4, Qwen, Falcon | API key |
 | **xAI** | Grok-2, Grok-2-vision | API key |
 | **Cohere** | Command R+ | API key |
+| **Kimi Code** | kimi-for-coding | Kimi subscription |
 | **Ollama** | Any local model | Local |
 | **LM Studio** | Any GGUF model | Local |
 
-Switch provider mid-session: `coco config set provider groq`
+Switch provider mid-session: `/provider`
 
 **[Provider guide + compatibility matrix →](docs/guides/PROVIDERS.md)**
 
@@ -387,7 +405,7 @@ coco config set provider deepseek
 
 ## Multi-Agent Architecture
 
-Six specialized agents route automatically based on the task:
+For complex tasks, Coco spawns and coordinates specialized subagents:
 
 - **Researcher** — codebase exploration, context gathering
 - **Coder** — implementation (default for most tasks)
@@ -396,7 +414,7 @@ Six specialized agents route automatically based on the task:
 - **Optimizer** — refactoring, performance improvements
 - **Planner** — architecture, task decomposition
 
-For complex tasks, agents run in parallel where dependencies allow.
+Independent subtasks run in parallel. Each agent uses its own context window, so large projects don't hit limits.
 
 ---
 
@@ -423,9 +441,9 @@ git clone https://github.com/corbat-tech/coco
 cd coco
 pnpm install
 
-pnpm dev          # run with tsx (hot reload)
+pnpm dev          # run with tsx (restart to pick up changes)
 pnpm check        # typecheck + lint + test
-pnpm test         # 5604 tests
+pnpm test         # 6158 tests
 pnpm format:fix   # fix formatting
 ```
 
@@ -436,8 +454,8 @@ pnpm format:fix   # fix formatting
 ## Known Limitations
 
 - **CLI only** — no VS Code extension yet
-- **Convergence takes time** — expect 2–5 min per task depending on complexity
-- **Quality depends on the model** — Claude Opus gives the best results; smaller models score lower
+- **Convergence takes time** — expect 2–5 min per task depending on model and complexity
+- **Quality depends on the model** — Claude Opus and GPT-4.1 give the best results; smaller models score lower
 - **Not yet battle-tested at enterprise scale** — production use at medium-scale projects, feedback welcome
 
 ---

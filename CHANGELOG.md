@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.23.0] - 2026-03-25
+
+### Added
+- **Graceful iteration limit handoff** — when the agent reaches `maxToolIterations` mid-task, it now gives the LLM one final text-only turn to summarise what was completed, what remains, and what the user should do next. Previously the loop cut off with a static notice, leaving the user with no actionable context.
+- **75% iteration budget warning** — at 75% of the iteration limit, a context message is injected into the last tool result telling the LLM to begin wrapping up. This allows the agent to finish cleanly before hitting the hard limit instead of being cut off mid-step.
+
+### Improved
+- **Streaming output noise suppression** — LLM text emitted during tool-calling iterations (intermediate reasoning, step narration) is now buffered and discarded. Only the final response — the one that contains no further tool calls — is streamed to the user. Agentic sessions are now significantly quieter and easier to follow.
+- **Code block size cap** — streaming code blocks from LLM responses are capped at 50 lines (`MAX_STREAMING_CODE_LINES`). Blocks over the limit show the first 40 lines followed by `… N more lines · /copy X for full content`. Diff blocks are always shown in full.
+- **System prompt output discipline** — added an explicit `Output Discipline` section to the system prompt with concrete rules: do not echo file contents, keep tool-iteration text minimal, only use code blocks when the code is the actual deliverable.
+- **Tool skip messages now actionable for the LLM** — tool result messages for skipped/declined tools now distinguish the reason:
+  - User declined → "You MUST find a different approach — do not retry the same action."
+  - Timeout → "Try a simpler or faster alternative, or break into smaller steps."
+  - Aborted → "Tool execution was cancelled."
+  - Previously all skipped tools produced the generic "Tool execution was declined: …" message.
+
 ## [2.22.2] - 2026-03-25
 
 ### Fixed
