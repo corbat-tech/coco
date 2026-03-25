@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.21.1] - 2026-03-25
+
+### Fixed
+- **Codex API `max_tokens` parameter** — reverted incorrect `max_output_tokens` back to `max_tokens`. The Codex endpoint (`chatgpt.com/backend-api/codex/responses`) uses `max_tokens`, unlike the standard OpenAI Responses API which uses `max_output_tokens`.
+
 ## [2.21.0] - 2026-03-24
 
 ### Fixed
