@@ -450,6 +450,7 @@ export class OpenAIProvider implements LLMProvider {
       return;
     }
 
+    let timeoutTriggered = false;
     try {
       const supportsTemp = this.supportsTemperature(model);
       const extraBody = this.getExtraBody(model);
@@ -493,6 +494,7 @@ export class OpenAIProvider implements LLMProvider {
       const timeoutInterval = setInterval(() => {
         if (Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
+          timeoutTriggered = true;
           timeoutController.abort();
         }
       }, 5000);
@@ -647,6 +649,11 @@ export class OpenAIProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      if (timeoutTriggered) {
+        throw new Error(
+          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+        );
+      }
       throw this.handleError(error);
     }
   }
@@ -1224,6 +1231,7 @@ export class OpenAIProvider implements LLMProvider {
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
 
+    let timeoutTriggered = false;
     try {
       const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
@@ -1246,6 +1254,7 @@ export class OpenAIProvider implements LLMProvider {
       const timeoutInterval = setInterval(() => {
         if (Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
+          timeoutTriggered = true;
           timeoutController.abort();
         }
       }, 5000);
@@ -1273,6 +1282,11 @@ export class OpenAIProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      if (timeoutTriggered) {
+        throw new Error(
+          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+        );
+      }
       throw this.handleError(error);
     }
   }
@@ -1290,6 +1304,7 @@ export class OpenAIProvider implements LLMProvider {
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
 
+    let timeoutTriggered = false;
     try {
       const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
@@ -1326,6 +1341,7 @@ export class OpenAIProvider implements LLMProvider {
       const timeoutInterval = setInterval(() => {
         if (Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
+          timeoutTriggered = true;
           timeoutController.abort();
         }
       }, 5000);
@@ -1423,6 +1439,11 @@ export class OpenAIProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      if (timeoutTriggered) {
+        throw new Error(
+          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+        );
+      }
       throw this.handleError(error);
     }
   }

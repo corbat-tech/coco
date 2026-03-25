@@ -175,6 +175,7 @@ export class AnthropicProvider implements LLMProvider {
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
 
+    let timeoutTriggered = false;
     try {
       const stream = await this.client!.messages.stream(
         {
@@ -198,6 +199,7 @@ export class AnthropicProvider implements LLMProvider {
       const timeoutInterval = setInterval(() => {
         if (Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
+          timeoutTriggered = true;
           timeoutController.abort();
         }
       }, 5000);
@@ -236,6 +238,11 @@ export class AnthropicProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      if (timeoutTriggered) {
+        throw new Error(
+          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+        );
+      }
       throw this.handleError(error);
     }
   }
@@ -249,6 +256,7 @@ export class AnthropicProvider implements LLMProvider {
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
 
+    let timeoutTriggered = false;
     try {
       const stream = await this.client!.messages.stream(
         {
@@ -276,6 +284,7 @@ export class AnthropicProvider implements LLMProvider {
       const timeoutInterval = setInterval(() => {
         if (Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
+          timeoutTriggered = true;
           timeoutController.abort();
         }
       }, 5000);
@@ -393,6 +402,11 @@ export class AnthropicProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      if (timeoutTriggered) {
+        throw new Error(
+          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+        );
+      }
       throw this.handleError(error);
     }
   }
