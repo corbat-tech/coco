@@ -957,6 +957,9 @@ export async function startRepl(
           );
         }
 
+        if (result.toolCalls.length > 0) {
+          console.log(chalk.dim("   Type your request again to resume where you left off."));
+        }
         console.log();
         continue;
       }
@@ -992,6 +995,9 @@ export async function startRepl(
           renderError(result.error);
           console.log(
             chalk.dim("   Recovery failed or error is non-retryable. Returning to prompt."),
+          );
+          console.log(
+            chalk.dim("   Tip: Try /provider or /model to switch, then rephrase and retry."),
           );
           consecutiveErrors = 0;
         }
@@ -1079,13 +1085,18 @@ export async function startRepl(
             compactSpinner.clear();
           }
         } catch {
-          compactSpinner.clear(); // silently ignore compaction errors
+          compactSpinner.stop("⚠ Context compaction failed");
+          console.log(
+            chalk.yellow("  ⚠ Context compaction failed — context unchanged. Use /clear if needed."),
+          );
         } finally {
           clearTimeout(compactTimeout);
           process.off("SIGINT", compactSigint);
         }
       } catch {
-        // Silently ignore compaction errors
+        console.log(
+          chalk.yellow("  ⚠ Context compaction failed — context unchanged. Use /clear if needed."),
+        );
       }
 
       // Render status bar with post-compaction context usage
@@ -1242,6 +1253,9 @@ export async function startRepl(
         session.messages.length = preCallMessageLength;
         renderError(errorMsg);
         console.log(chalk.dim("   Recovery failed after multiple attempts. Returning to prompt."));
+        console.log(
+          chalk.dim("   Tip: Try /provider or /model to switch, then rephrase and retry."),
+        );
         continue;
       }
 
@@ -1252,6 +1266,9 @@ export async function startRepl(
       session.messages.length = preCallMessageLength;
       consecutiveErrors = 0;
       renderError(errorMsg);
+      console.log(
+        chalk.dim("   Tip: Try /provider or /model to switch, then rephrase and retry."),
+      );
     } finally {
       // Always clean up spinner and resume input handler after agent turn
       clearSpinner();
