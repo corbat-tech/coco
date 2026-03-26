@@ -284,6 +284,7 @@ export async function createDefaultReplConfig(): Promise<ReplConfig> {
       systemPrompt: COCO_SYSTEM_PROMPT,
       maxToolIterations: 25,
       confirmDestructive: true,
+      enableAutoSwitchProvider: false,
     },
   };
 }

@@ -101,10 +101,11 @@ export {
 // Config loader
 export {
   loadMCPConfigFile,
+  loadProjectMCPFile,
   mergeMCPConfigs,
   loadMCPServersFromCOCOConfig,
 } from "./config-loader.js";
-export type { MCPConfigFile } from "./config-loader.js";
+export type { MCPConfigFile, CocoMCPConfigFile } from "./config-loader.js";
 
 // Schema to Zod converter
 export { jsonSchemaToZod } from "./tools.js";

@@ -226,6 +226,35 @@ pnpm update
 
 ## Recovery Issues
 
+### "Flow stops and waits for me to type continue"
+
+**Problem:** The agent appears to pause unexpectedly between steps.
+
+**What Coco does now:**
+- Retries when a provider reports `tool_use` but no tool calls can be reconstructed.
+- Retries empty `max_tokens` turns.
+- Re-prompts the model when it outputs planning text without executing tools.
+- Auto-extends iteration budget when progress is still being made.
+- Replays multimodal turns (image + text / image-only) with recovery context instead of dropping auto-retry.
+- Treats unexpected hook execution failures as recoverable (tool flow continues; hook failure is surfaced in tool output).
+
+**What to check if it still happens:**
+1. Switch provider/model:
+   ```bash
+   /provider
+   /model
+   ```
+2. If you want automatic provider failover, enable:
+   ```json
+   {
+     "agent": {
+       "enableAutoSwitchProvider": true
+     }
+   }
+   ```
+   Default is `false` to avoid unexpected cost/provider changes.
+3. Check hooks (if configured) that may block tool calls in `PreToolUse`.
+
 ### "Checkpoint corrupted"
 
 **Problem:** Cannot resume from checkpoint.
