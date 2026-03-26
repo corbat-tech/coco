@@ -246,8 +246,7 @@ export async function executeAgentTurn(
     if (planningOnly) {
       return {
         recover: true,
-        reason:
-          "Do not only describe the next step. Execute it now with concrete tool calls.",
+        reason: "Do not only describe the next step. Execute it now with concrete tool calls.",
       };
     }
 
@@ -930,9 +929,7 @@ export async function executeAgentTurn(
     // Final iteration with tool calls:
     // Prefer auto-extending the budget when there's clear progress so users
     // don't have to manually type "continue" in the middle of active work.
-    if (
-      canAutoExtendNow
-    ) {
+    if (canAutoExtendNow) {
       autoIterationExtensionsUsed++;
       const oldMax = maxIterations;
       maxIterations = Math.min(maxIterations + AUTO_ITERATION_EXTENSION_SIZE, HARD_MAX_ITERATIONS);

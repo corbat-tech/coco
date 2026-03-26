@@ -132,7 +132,6 @@ function convertStandardEntry(name: string, entry: StandardMCPServerEntry): MCPS
     };
   }
 
-
   throw new Error(`Server "${name}" must have either "command" (stdio) or "url" (http) defined`);
 }
 
@@ -184,10 +183,7 @@ export async function loadMCPConfigFile(configPath: string): Promise<MCPServerCo
   );
 }
 
-function loadStandardFormat(
-  config: StandardMCPConfigFile,
-  configPath: string,
-): MCPServerConfig[] {
+function loadStandardFormat(config: StandardMCPConfigFile, configPath: string): MCPServerConfig[] {
   const validServers: MCPServerConfig[] = [];
   const errors: string[] = [];
 

@@ -535,11 +535,16 @@ describe("streamWithTools regressions", () => {
     const provider = new OpenAIProvider();
     await provider.initialize({ apiKey: "test", model: "gpt-5.4-codex" });
 
-    const chunks: Array<{ type: string; toolCall?: { id?: string; input?: Record<string, unknown> } }> = [];
+    const chunks: Array<{
+      type: string;
+      toolCall?: { id?: string; input?: Record<string, unknown> };
+    }> = [];
     for await (const chunk of provider.streamWithTools([{ role: "user", content: "Hi" }], {
       tools: [{ name: "write_file", description: "Write", input_schema: { type: "object" } }],
     })) {
-      chunks.push(chunk as { type: string; toolCall?: { id?: string; input?: Record<string, unknown> } });
+      chunks.push(
+        chunk as { type: string; toolCall?: { id?: string; input?: Record<string, unknown> } },
+      );
     }
 
     const toolEnd = chunks.find((c) => c.type === "tool_use_end");

@@ -234,7 +234,10 @@ export async function startRepl(
     // Also load project-level .mcp.json (standard cross-agent format — Claude Code, Cursor, Windsurf)
     const { loadProjectMCPFile, mergeMCPConfigs } = await import("../../mcp/config-loader.js");
     const projectServers = await loadProjectMCPFile(process.cwd());
-    const enabledServers = mergeMCPConfigs(registryServers, projectServers.filter((s) => s.enabled !== false));
+    const enabledServers = mergeMCPConfigs(
+      registryServers,
+      projectServers.filter((s) => s.enabled !== false),
+    );
 
     if (enabledServers.length > 0) {
       mcpManager = getMCPServerManager();

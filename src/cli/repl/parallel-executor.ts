@@ -463,7 +463,11 @@ export class ParallelToolExecutor {
         return { executed: null, skipped: true, reason: "Operation cancelled" };
       }
       const msg = error instanceof Error ? error.message : String(error);
-      result = { success: false, error: `Unexpected error in ${toolCall.name}: ${msg}`, duration: 0 };
+      result = {
+        success: false,
+        error: `Unexpected error in ${toolCall.name}: ${msg}`,
+        duration: 0,
+      };
     }
     const duration = performance.now() - startTime;
 

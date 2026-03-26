@@ -1165,12 +1165,7 @@ describe("max_tokens auto-continue", () => {
       duration: 1,
     } as ToolResult);
 
-    const result = await executeAgentTurn(
-      mockSession,
-      "Hazlo",
-      mockProvider,
-      mockToolRegistry,
-    );
+    const result = await executeAgentTurn(mockSession, "Hazlo", mockProvider, mockToolRegistry);
 
     expect(callCount).toBeGreaterThanOrEqual(2);
     expect(result.toolCalls.length).toBeGreaterThan(0);
