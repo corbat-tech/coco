@@ -469,6 +469,95 @@ describe("ParallelToolExecutor hooks integration", () => {
     expect(result.executed).toHaveLength(1);
     expect(mockExecute).toHaveBeenCalledOnce();
   });
+
+  it("should continue tool execution when PreToolUse hook throws", async () => {
+    const { ParallelToolExecutor } = await import("./parallel-executor.js");
+
+    mockExecute.mockResolvedValue({
+      success: true,
+      data: { ok: true },
+      duration: 10,
+    } as import("../../tools/registry.js").ToolResult);
+
+    const hookRegistry = { size: 1 } as unknown as import("./hooks/index.js").HookRegistryInterface;
+    const hookExecutor = {
+      executeHooks: vi.fn().mockRejectedValueOnce(new Error("pre hook boom")).mockResolvedValue({
+        shouldContinue: true,
+      }),
+    } as unknown as import("./hooks/index.js").HookExecutor;
+
+    const executor = new ParallelToolExecutor();
+    const result = await executor.executeParallel(
+      [{ id: "call-1", name: "test_tool", input: {} }],
+      mockRegistry,
+      {
+        hookRegistry,
+        hookExecutor,
+      },
+    );
+
+    expect(result.executed).toHaveLength(1);
+    expect(result.executed[0]?.result.success).toBe(true);
+    expect(result.executed[0]?.result.output).toContain("PreToolUse hook failed");
+    expect(mockExecute).toHaveBeenCalledOnce();
+  });
+
+  it("should continue when PostToolUse hook throws", async () => {
+    const { ParallelToolExecutor } = await import("./parallel-executor.js");
+
+    mockExecute.mockResolvedValue({
+      success: true,
+      data: { ok: true },
+      duration: 10,
+    } as import("../../tools/registry.js").ToolResult);
+
+    const hookRegistry = { size: 1 } as unknown as import("./hooks/index.js").HookRegistryInterface;
+    const hookExecutor = {
+      executeHooks: vi
+        .fn()
+        .mockResolvedValueOnce({ shouldContinue: true })
+        .mockRejectedValueOnce(new Error("post hook boom")),
+    } as unknown as import("./hooks/index.js").HookExecutor;
+
+    const executor = new ParallelToolExecutor();
+    const result = await executor.executeParallel(
+      [{ id: "call-1", name: "test_tool", input: {} }],
+      mockRegistry,
+      {
+        hookRegistry,
+        hookExecutor,
+      },
+    );
+
+    expect(result.executed).toHaveLength(1);
+    expect(result.executed[0]?.result.success).toBe(true);
+    expect(result.executed[0]?.result.output).toContain("PostToolUse hook failed");
+  });
+
+  it("should convert unexpected registry exceptions into tool error results with hooks", async () => {
+    const { ParallelToolExecutor } = await import("./parallel-executor.js");
+
+    mockExecute.mockRejectedValue(new Error("registry explosion"));
+
+    const hookRegistry = { size: 1 } as unknown as import("./hooks/index.js").HookRegistryInterface;
+    const hookExecutor = {
+      executeHooks: vi.fn().mockResolvedValue({ shouldContinue: true }),
+    } as unknown as import("./hooks/index.js").HookExecutor;
+
+    const executor = new ParallelToolExecutor();
+    const result = await executor.executeParallel(
+      [{ id: "call-1", name: "unstable_tool", input: {} }],
+      mockRegistry,
+      {
+        hookRegistry,
+        hookExecutor,
+      },
+    );
+
+    expect(result.executed).toHaveLength(1);
+    expect(result.executed[0]?.result.success).toBe(false);
+    expect(result.executed[0]?.result.error).toContain("Unexpected error in unstable_tool");
+  });
 });
 
 describe("createParallelExecutor", () => {

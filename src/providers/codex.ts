@@ -27,7 +27,7 @@ import type {
 import { ProviderError } from "../utils/errors.js";
 import { getValidAccessToken } from "../auth/index.js";
 import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
-import { ResponsesToolCallAssembler } from "./tool-call-normalizer.js";
+import { ResponsesToolCallAssembler, parseToolCallArguments } from "./tool-call-normalizer.js";
 
 /**
  * Codex API endpoint (ChatGPT backend)
@@ -686,6 +686,8 @@ export class CodexProvider implements LLMProvider {
     let buffer = "";
 
     const toolCallAssembler = new ResponsesToolCallAssembler();
+    const emittedToolCallIds = new Set<string>();
+    const emittedToolCallSignatures = new Set<string>();
 
     // Activity-based timeout using AbortController (safe for async generators)
     let lastActivityTime = Date.now();
@@ -766,6 +768,9 @@ export class CodexProvider implements LLMProvider {
                 this.name,
               );
               if (toolCall) {
+                if (toolCall.id) emittedToolCallIds.add(toolCall.id);
+                const signature = `${toolCall.name}:${JSON.stringify(toolCall.input ?? {})}`;
+                emittedToolCallSignatures.add(signature);
                 yield {
                   type: "tool_use_end",
                   toolCall: {
@@ -781,6 +786,9 @@ export class CodexProvider implements LLMProvider {
             case "response.completed": {
               // Emit any remaining function calls not finalized via done events
               for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
+                if (toolCall.id) emittedToolCallIds.add(toolCall.id);
+                const signature = `${toolCall.name}:${JSON.stringify(toolCall.input ?? {})}`;
+                emittedToolCallSignatures.add(signature);
                 yield {
                   type: "tool_use_end",
                   toolCall: {
@@ -791,8 +799,48 @@ export class CodexProvider implements LLMProvider {
                 };
               }
 
-              const resp = event.response as Record<string, unknown> | undefined;
-              const output = (resp?.output as Array<{ type: string }>) ?? [];
+              const responsePayload = event.response as
+                | {
+                    output?: Array<{
+                      type?: string;
+                      call_id?: string;
+                      name?: string;
+                      arguments?: string;
+                    }>;
+                  }
+                | undefined;
+              const output =
+                (responsePayload?.output as Array<{
+                  type?: string;
+                  call_id?: string;
+                  name?: string;
+                  arguments?: string;
+                }>) ?? [];
+
+              // Fallback: some compatible backends include function calls in
+              // response.completed.output but may skip the granular done events.
+              for (const item of output) {
+                if (item.type !== "function_call" || !item.call_id || !item.name) continue;
+                const parsedInput = parseToolCallArguments(item.arguments ?? "{}", this.name);
+                const signature = `${item.name}:${JSON.stringify(parsedInput ?? {})}`;
+                if (
+                  emittedToolCallIds.has(item.call_id) ||
+                  emittedToolCallSignatures.has(signature)
+                ) {
+                  continue;
+                }
+                emittedToolCallIds.add(item.call_id);
+                emittedToolCallSignatures.add(signature);
+                yield {
+                  type: "tool_use_end",
+                  toolCall: {
+                    id: item.call_id,
+                    name: item.name,
+                    input: parsedInput,
+                  },
+                };
+              }
+
               const hasToolCalls = output.some((i) => i.type === "function_call");
               yield {
                 type: "done",

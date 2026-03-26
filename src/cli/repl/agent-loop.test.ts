@@ -1119,13 +1119,19 @@ describe("max_tokens auto-continue", () => {
     );
   });
 
-  it("should NOT auto-continue when max_tokens fires with empty content", async () => {
+  it("should auto-continue when max_tokens fires with empty content", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
-    // Emit done(max_tokens) with no text content
-    (mockProvider.streamWithTools as Mock).mockImplementation(
-      createTextStreamMock("", "max_tokens"),
-    );
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        // First call: done(max_tokens) with no text content
+        return createTextStreamMock("", "max_tokens")();
+      }
+      // Second call: continuation produces content
+      return createTextStreamMock("Recovered after empty max_tokens.")();
+    });
 
     const result = await executeAgentTurn(
       mockSession,
@@ -1134,9 +1140,35 @@ describe("max_tokens auto-continue", () => {
       mockToolRegistry,
     );
 
-    // Should call LLM exactly once — no continuation
-    expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(1);
-    expect(result.content).toBe("");
+    expect(callCount).toBe(2);
+    expect(result.content).toContain("Recovered after empty max_tokens.");
+    expect(result.aborted).toBe(false);
+  });
+
+  it("should recover when stopReason is tool_use but no tool calls were reconstructed", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        // Simulates provider drift: announces tool_use but no tool events arrive
+        return createTextStreamMock("Voy a ejecutar los pasos ahora.", "tool_use")();
+      }
+      // Next attempt actually emits a tool call
+      return createToolStreamMock("", [{ id: "t1", name: "read_file", input: { path: "a.ts" } }])();
+    });
+
+    (mockToolRegistry.execute as Mock).mockResolvedValue({
+      success: true,
+      data: "ok",
+      duration: 1,
+    } as ToolResult);
+
+    const result = await executeAgentTurn(mockSession, "Hazlo", mockProvider, mockToolRegistry);
+
+    expect(callCount).toBeGreaterThanOrEqual(2);
+    expect(result.toolCalls.length).toBeGreaterThan(0);
     expect(result.aborted).toBe(false);
   });
 
@@ -1282,6 +1314,40 @@ describe("iteration limit notice", () => {
 
     // streamWithTools should have been called 4 times (3 iterations + 1 final summary)
     expect(callCount).toBe(4);
+  });
+
+  it("should auto-extend iteration budget when tools are still making progress", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    mockSession.config.agent.maxToolIterations = 2;
+    const toolCall: ToolCall = { id: "tool-progress", name: "read_file", input: { path: "/x.ts" } };
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount <= 2) {
+        return createToolStreamMock("", [toolCall])();
+      }
+      // After auto-extension, model can finish normally without explicit handoff
+      return createTextStreamMock("Completed after auto-extension.")();
+    });
+
+    (mockToolRegistry.execute as Mock).mockResolvedValue({
+      success: true,
+      data: "ok",
+      duration: 1,
+    });
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "continue work",
+      mockProvider,
+      mockToolRegistry,
+    );
+
+    expect(callCount).toBe(3);
+    expect(result.content).toContain("Completed after auto-extension.");
+    expect(result.content).not.toContain('Type "continue"');
   });
 
   it("should NOT show iteration limit notice when loop ends normally", async () => {

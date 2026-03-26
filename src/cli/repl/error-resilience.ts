@@ -14,7 +14,7 @@ import { ProviderError } from "../../utils/errors.js";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Maximum consecutive failed recovery attempts before giving up. */
-export const MAX_CONSECUTIVE_ERRORS = 2;
+export const MAX_CONSECUTIVE_ERRORS = 5;
 
 export type AgentLoopErrorKind =
   | "abort"

@@ -60,6 +60,22 @@ Corbat-Coco uses a JSON configuration file stored at `.coco/config.json` in your
 | `provider.maxTokens` | number | 16384 | Maximum tokens per request |
 | `provider.temperature` | number | 0.7 | Temperature for generation (0-1) |
 
+### REPL Agent Runtime Settings
+
+These keys apply to the interactive REPL agent loop (`~/.coco/config.json` / runtime config):
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `agent.maxToolIterations` | number | 25 | Base maximum tool-call iterations per turn |
+| `agent.confirmDestructive` | boolean | true | Ask before destructive operations |
+| `agent.enableAutoSwitchProvider` | boolean | false | Allow automatic provider switching after repeated provider failures |
+
+Notes:
+- `agent.enableAutoSwitchProvider` is disabled by default to avoid unexpected cost/provider changes.
+- Even with auto-switch disabled, Coco suggests `/provider` and `/model` when repeated provider errors are detected.
+- The agent loop includes recovery for non-productive turns (e.g. `tool_use` without reconstructed tool calls, empty `max_tokens` output) before ending a turn.
+- Recovery also reconstructs retry prompts for multimodal inputs, so image-driven turns are not excluded from automatic retry logic.
+
 **Available Models:**
 - `claude-sonnet-4-20250514` - Fast, good for most tasks
 - `claude-opus-4-20250514` - Most capable, best for complex tasks

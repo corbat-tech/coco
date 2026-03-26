@@ -224,8 +224,8 @@ describe("MAX_CONSECUTIVE_ERRORS", () => {
     expect(Number.isInteger(MAX_CONSECUTIVE_ERRORS)).toBe(true);
   });
 
-  it("is 2 (matching plan specification)", () => {
-    expect(MAX_CONSECUTIVE_ERRORS).toBe(2);
+  it("is 5 (resilient recovery budget)", () => {
+    expect(MAX_CONSECUTIVE_ERRORS).toBe(5);
   });
 });
 

@@ -96,6 +96,10 @@ Quality mode is configurable and can be turned on/off per session.
 - Tool-call handling is normalized across OpenAI/Codex-style streaming events to reduce malformed argument regressions.
 - Agent turns include quality telemetry (`score`, iteration usage, tool success/failure, repeated-output suppression).
 - Repeated identical tool outputs are suppressed in context to reduce token waste in multi-iteration loops.
+- Agent loop now recovers from common "silent stop" cases (e.g. `tool_use` without reconstructed tool calls, empty `max_tokens` turns, short planning-only replies) before giving control back.
+- Recovery replay also covers multimodal prompts (image + text / image-only) by rebuilding a retryable task prompt when possible.
+- Iteration budget can auto-extend when the task is still making real progress to reduce manual `continue` prompts.
+- Automatic provider switching is **opt-in** via `agent.enableAutoSwitchProvider` (default: `false`).
 - Release readiness can be gated with `pnpm check:release` (typecheck + lint + stable provider/agent suites).
 
 ## Commands (REPL)
@@ -145,18 +149,95 @@ For setup details and model matrix:
 
 - [Provider Guide](docs/guides/PROVIDERS.md)
 
-## Skills and MCP
+## Skills
 
-Coco supports:
+Skills are instruction files (SKILL.md) that Coco injects into its context to follow project-specific conventions or workflows. They activate automatically by context or manually via `/skill-name`.
 
-- Built-in skills (for example `/review`, `/ship`, `/open`, `/diff`).
-- Project/user skills loaded from skill files.
-- MCP servers for external tools and systems.
+**Where to place skills:**
 
-References:
+| Location | Scope |
+|----------|-------|
+| `.agents/skills/<skill-name>/SKILL.md` | Project — native, highest priority |
+| `~/.coco/skills/<skill-name>/SKILL.md` | Global — personal, all projects |
 
-- [MCP Guide](docs/MCP.md)
-- [Cookbook](docs/guides/COOKBOOK.md)
+Coco also reads skills from other agents automatically, so you can bring skills you already have:
+
+| Directory | Agent |
+|-----------|-------|
+| `.agents/skills/` | Native (Coco, shared standard) |
+| `.claude/skills/` | Claude Code |
+| `.codex/skills/` | Codex CLI |
+| `.gemini/skills/` | Gemini CLI |
+| `.opencode/skills/` | OpenCode |
+
+**Create your first skill:**
+
+```bash
+coco skills create my-conventions
+# → creates .agents/skills/my-conventions/SKILL.md
+```
+
+**List all skills (including imported from other agents):**
+
+```bash
+coco skills list
+```
+
+See [Skills Guide](docs/guides/SKILLS.md) for full documentation.
+
+## MCP Servers
+
+MCP (Model Context Protocol) lets Coco use external tools: GitHub, databases, APIs, web search, and more.
+
+**Quick setup — create `.mcp.json` in your project root:**
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "your-token" }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/your/path"]
+    }
+  }
+}
+```
+
+This format is compatible with Claude Code, Cursor, and Windsurf — if you already have a `.mcp.json`, Coco reads it automatically.
+
+**Check MCP status inside the REPL:**
+
+```
+/mcp list      — show configured servers
+/mcp status    — show connected servers and available tools
+/mcp health    — run health check on all servers
+```
+
+**Authenticate with environment variables** (recommended — never hardcode tokens):
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}" }
+    },
+    "my-api": {
+      "url": "https://api.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${MY_API_TOKEN}" }
+    }
+  }
+}
+```
+
+Set the variables in your shell environment (or in `~/.coco/.env` for Coco-managed global secrets).
+
+See [MCP Guide](docs/MCP.md) for full documentation, authentication options, and troubleshooting.
 
 ## Configuration
 

@@ -108,7 +108,7 @@ async function runList(options: { scope?: string; kind?: string }): Promise<void
   const scopeLabels: Record<string, string> = {
     builtin: "Builtin",
     global: `Global (${CONFIG_PATHS.skills})`,
-    project: `Project (${projectPath}/.coco/skills/)`,
+    project: `Project (.agents/skills/, .claude/skills/, ...)`,
   };
 
   for (const [scope, skills] of byScope) {
@@ -143,7 +143,7 @@ async function runAdd(source: string, options: { global?: boolean }): Promise<vo
     // Copy local skill directory
     const targetDir = options.global
       ? CONFIG_PATHS.skills
-      : path.join(process.cwd(), ".coco", "skills");
+      : path.join(process.cwd(), ".agents", "skills");
 
     const sourcePath = path.resolve(source);
     const skillName = path.basename(sourcePath);
@@ -178,16 +178,17 @@ async function runAdd(source: string, options: { global?: boolean }): Promise<vo
       spinner.stop("Skill installed successfully");
     } catch (error) {
       spinner.stop("Installation failed");
-      const stderr = (error as any)?.stderr?.toString()?.trim();
+      const spawnError = error as Error & { stderr?: Buffer | string | null };
+      const stderr = spawnError.stderr?.toString().trim();
       const msg = stderr || (error instanceof Error ? error.message : String(error));
       p.log.error(`Failed to install skill: ${msg}`);
-      p.log.info("Try installing manually: git clone the repo into .coco/skills/");
+      p.log.info("Try installing manually: git clone the repo into .agents/skills/");
     }
   } else if (isGitUrl) {
     // Git clone for direct URLs
     const targetDir = options.global
       ? CONFIG_PATHS.skills
-      : path.join(process.cwd(), ".coco", "skills");
+      : path.join(process.cwd(), ".agents", "skills");
 
     await fs.mkdir(targetDir, { recursive: true });
     const skillName = source.split("/").pop()?.replace(".git", "") ?? "skill";
@@ -204,7 +205,8 @@ async function runAdd(source: string, options: { global?: boolean }): Promise<vo
       spinner.stop(`Skill cloned to ${skillDir}`);
     } catch (error) {
       spinner.stop("Clone failed");
-      const stderr = (error as any)?.stderr?.toString()?.trim();
+      const spawnError = error as Error & { stderr?: Buffer | string | null };
+      const stderr = spawnError.stderr?.toString().trim();
       const msg = stderr || (error instanceof Error ? error.message : String(error));
       p.log.error(`Failed to clone skill: ${msg}`);
     }
@@ -229,9 +231,17 @@ async function runRemove(
 
   const targetDir = options.global
     ? CONFIG_PATHS.skills
-    : path.join(process.cwd(), ".coco", "skills");
+    : path.join(process.cwd(), ".agents", "skills");
 
-  const skillPath = path.join(targetDir, name);
+  const skillPath = path.resolve(targetDir, name);
+
+  // Guard against path traversal (e.g. name = "../../.ssh").
+  // Append path.sep to avoid prefix-confusion attacks (e.g. /skills-evil starts with /skills).
+  if (!skillPath.startsWith(path.resolve(targetDir) + path.sep)) {
+    p.log.error(`Invalid skill name: "${name}"`);
+    p.outro("");
+    return;
+  }
 
   try {
     await fs.access(skillPath);
@@ -333,7 +343,7 @@ async function runCreate(name: string, options: { global?: boolean }): Promise<v
 
   const targetDir = options.global
     ? CONFIG_PATHS.skills
-    : path.join(process.cwd(), ".coco", "skills");
+    : path.join(process.cwd(), ".agents", "skills");
 
   const skillDir = path.join(targetDir, name);
 

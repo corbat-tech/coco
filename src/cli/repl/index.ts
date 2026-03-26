@@ -34,7 +34,7 @@ import {
   isNonRetryableProviderError,
   getUserFacingProviderError,
 } from "./error-resilience.js";
-import { createProvider } from "../../providers/index.js";
+import { createProvider, type ProviderType } from "../../providers/index.js";
 import { createFullToolRegistry } from "../../tools/index.js";
 import { setAgentProvider, setAgentToolRegistry } from "../../agents/provider-bridge.js";
 import {
@@ -59,7 +59,7 @@ import { createTrustStore, type TrustLevel } from "./trust-store.js";
 import * as p from "@clack/prompts";
 import { createIntentRecognizer, type Intent } from "./intent/index.js";
 import { ensureConfiguredV2 } from "./onboarding-v2.js";
-import { getInternalProviderId } from "../../config/env.js";
+import { getDefaultModel, getInternalProviderId } from "../../config/env.js";
 import { loadAllowedPaths } from "../../tools/allowed-paths.js";
 import {
   shouldShowPermissionSuggestion,
@@ -155,7 +155,7 @@ export async function startRepl(
   // Initialize context manager and LLM classifier for concurrent input
   initializeContextManager(session, provider);
   const { createLLMClassifier } = await import("./interruptions/llm-classifier.js");
-  const llmClassifier = createLLMClassifier(provider);
+  let llmClassifier = createLLMClassifier(provider);
 
   // Detect project stack and load allowed paths in parallel — both depend only
   // on projectPath and have no shared writes between them or with the steps above.
@@ -229,7 +229,15 @@ export async function startRepl(
 
     const mcpRegistry = new MCPRegistryImpl();
     await mcpRegistry.load();
-    const enabledServers = mcpRegistry.listEnabledServers();
+    const registryServers = mcpRegistry.listEnabledServers();
+
+    // Also load project-level .mcp.json (standard cross-agent format — Claude Code, Cursor, Windsurf)
+    const { loadProjectMCPFile, mergeMCPConfigs } = await import("../../mcp/config-loader.js");
+    const projectServers = await loadProjectMCPFile(process.cwd());
+    const enabledServers = mergeMCPConfigs(
+      registryServers,
+      projectServers.filter((s) => s.enabled !== false),
+    );
 
     if (enabledServers.length > 0) {
       mcpManager = getMCPServerManager();
@@ -356,6 +364,153 @@ export async function startRepl(
   // successful agent turn. After MAX_CONSECUTIVE_ERRORS the REPL gives up
   // and shows the error to the user instead of re-queuing.
   let consecutiveErrors = 0;
+  const AUTO_SWITCH_THRESHOLD = 2;
+  const autoSwitchHistory = new Set<string>();
+  const enableAutoSwitchProvider = session.config.agent.enableAutoSwitchProvider === true;
+
+  const buildReplayMessage = (message: string | MessageContent): string | null => {
+    if (typeof message === "string") {
+      const trimmed = message.trim();
+      return trimmed.length > 0 ? message : null;
+    }
+
+    const textParts: string[] = [];
+    let imageCount = 0;
+    for (const block of message) {
+      if (block.type === "text" && typeof block.text === "string" && block.text.trim().length > 0) {
+        textParts.push(block.text.trim());
+      } else if (block.type === "image") {
+        imageCount++;
+      }
+    }
+
+    const text = textParts.join("\n\n").trim();
+    if (text.length > 0) {
+      if (imageCount > 0) {
+        return (
+          `${text}\n\n` +
+          `[System: The original request included ${imageCount} image(s). ` +
+          `Use the image context already provided in this conversation.]`
+        );
+      }
+      return text;
+    }
+
+    if (imageCount > 0) {
+      return (
+        `[System: Retry the previous image-based user request (${imageCount} image(s)). ` +
+        `Use the existing image context in the conversation and do not repeat the same failed action.]`
+      );
+    }
+
+    return null;
+  };
+
+  const showRecoveryAlternatives = (): void => {
+    console.log(chalk.yellow("   Choose how to continue:"));
+    console.log(chalk.dim("   1. /provider  → switch provider"));
+    console.log(chalk.dim("   2. /model     → switch model"));
+    console.log(chalk.dim("   3. Retry with a narrower scope/task"));
+    console.log(chalk.dim("   4. If needed, share constraints so Coco can adapt strategy"));
+    if (!enableAutoSwitchProvider) {
+      console.log(chalk.dim("   5. (Optional) enable `agent.enableAutoSwitchProvider` in config"));
+    }
+  };
+
+  const getAutoSwitchCandidates = (current: ProviderType): ProviderType[] => {
+    const ordered: ProviderType[] = [];
+    const push = (p: ProviderType): void => {
+      if (p !== current && !ordered.includes(p)) ordered.push(p);
+    };
+
+    // First, try closely-related providers.
+    if (current === "openai") {
+      push("codex");
+      push("kimi");
+      push("openrouter");
+    } else if (current === "codex") {
+      push("openai");
+      push("openrouter");
+      push("anthropic");
+    } else if (current === "anthropic") {
+      push("openai");
+      push("codex");
+      push("gemini");
+    } else if (current === "gemini") {
+      push("openai");
+      push("codex");
+      push("anthropic");
+    } else if (current === "kimi") {
+      push("openai");
+      push("codex");
+      push("openrouter");
+    }
+
+    // Then, generic fallback order.
+    const genericOrder: ProviderType[] = [
+      "codex",
+      "openai",
+      "anthropic",
+      "gemini",
+      "kimi",
+      "openrouter",
+      "deepseek",
+      "groq",
+      "mistral",
+      "together",
+      "qwen",
+      "lmstudio",
+      "ollama",
+    ];
+    for (const p of genericOrder) push(p);
+    return ordered;
+  };
+
+  const attemptAutoProviderSwitch = async (
+    reason: string,
+    originalMessage: string | null,
+  ): Promise<boolean> => {
+    if (!originalMessage) return false;
+
+    const currentType = session.config.provider.type;
+    const candidates = getAutoSwitchCandidates(currentType);
+
+    for (const candidate of candidates) {
+      const edge = `${currentType}->${candidate}`;
+      if (autoSwitchHistory.has(edge)) continue;
+
+      try {
+        const nextInternalId = getInternalProviderId(candidate);
+        const nextProvider = await createProvider(nextInternalId, {
+          maxTokens: session.config.provider.maxTokens,
+        });
+        const ok = await nextProvider.isAvailable();
+        if (!ok) {
+          autoSwitchHistory.add(edge);
+          continue;
+        }
+
+        provider = nextProvider;
+        session.config.provider.type = candidate;
+        session.config.provider.model = getDefaultModel(candidate);
+        setAgentProvider(provider);
+        initializeContextManager(session, provider);
+        llmClassifier = createLLMClassifier(provider);
+        autoSwitchHistory.add(edge);
+
+        console.log(
+          chalk.cyan(
+            `   ↺ Auto-switched provider: ${currentType} → ${candidate} (${reason.slice(0, 80)})`,
+          ),
+        );
+        return true;
+      } catch {
+        autoSwitchHistory.add(edge);
+      }
+    }
+
+    return false;
+  };
 
   // Main loop
   while (true) {
@@ -521,6 +676,7 @@ export async function startRepl(
     // Save the original user message before any context injection.
     // Used to re-send the task when user modifies during execution.
     const originalUserMessage = typeof agentMessage === "string" ? agentMessage : null;
+    const replayUserMessage = buildReplayMessage(agentMessage);
 
     // Auto-activate relevant skills based on user message
     if (
@@ -915,14 +1071,14 @@ export async function startRepl(
           "\n\n## The user interrupted and modified the task:",
           `- ${modParts}`,
           toolSummary,
-          `Apply the user's modification to the original task: "${originalUserMessage || ""}"`,
+          `Apply the user's modification to the original task: "${replayUserMessage || ""}"`,
         ].join("\n");
         pendingInterruptionContext = ctx;
         pendingModificationPreview = modParts;
 
         // Re-send the original task so the agent retries with the modification applied.
-        if (originalUserMessage) {
-          pendingQueuedMessages = [originalUserMessage, ...turnQueuedMessages];
+        if (replayUserMessage) {
+          pendingQueuedMessages = [replayUserMessage, ...turnQueuedMessages];
         } else {
           pendingQueuedMessages = turnQueuedMessages;
         }
@@ -974,31 +1130,40 @@ export async function startRepl(
         session.messages.length = preCallMessageLength;
 
         if (
-          originalUserMessage !== null &&
+          replayUserMessage !== null &&
           consecutiveErrors < MAX_CONSECUTIVE_ERRORS &&
           !isNonRetryableProviderError(new Error(result.error))
         ) {
           consecutiveErrors++;
           const humanized = humanizeProviderError(new Error(result.error));
           renderError(humanized);
+          let switched = false;
+          if (enableAutoSwitchProvider && consecutiveErrors >= AUTO_SWITCH_THRESHOLD) {
+            switched = await attemptAutoProviderSwitch(humanized, replayUserMessage);
+          } else if (!enableAutoSwitchProvider && consecutiveErrors >= AUTO_SWITCH_THRESHOLD) {
+            console.log(
+              chalk.dim(
+                "   Tip: repeated provider errors detected. Use /provider, or enable `agent.enableAutoSwitchProvider`.",
+              ),
+            );
+          }
           console.log(
             chalk.dim(
               `   ↻ Retrying automatically (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})…`,
             ),
           );
           const recoveryPrefix =
+            (switched
+              ? `[System: Provider auto-switched to "${session.config.provider.type}" after repeated failures. Adapt your strategy to this provider and continue.]\n\n`
+              : "") +
             `[System: The previous attempt failed with: "${humanized}". ` +
             `Please try a different approach, tool, or method to complete the task. ` +
             `Do NOT repeat the exact same action that caused the error.]\n\n`;
-          pendingQueuedMessages = [recoveryPrefix + originalUserMessage];
+          pendingQueuedMessages = [recoveryPrefix + replayUserMessage];
         } else {
           renderError(result.error);
-          console.log(
-            chalk.dim("   Recovery failed or error is non-retryable. Returning to prompt."),
-          );
-          console.log(
-            chalk.dim("   Tip: Try /provider or /model to switch, then rephrase and retry."),
-          );
+          console.log(chalk.dim("   Automatic recovery stopped for this turn."));
+          showRecoveryAlternatives();
           consecutiveErrors = 0;
         }
         console.log();
@@ -1212,6 +1377,12 @@ export async function startRepl(
         console.log(chalk.dim("   • Check your subscription status and billing"));
         console.log(chalk.dim("   • Try a different provider: /provider"));
         console.log(chalk.dim("   • Switch to a different model: /model"));
+        if (!enableAutoSwitchProvider) {
+          console.log(
+            chalk.dim("   • Optional: enable `agent.enableAutoSwitchProvider` for auto-failover"),
+          );
+        }
+        showRecoveryAlternatives();
         console.log();
         continue;
       }
@@ -1221,7 +1392,7 @@ export async function startRepl(
       // recovery budget, roll back any partial session state and re-queue the
       // message with error context so the LLM can try a different approach.
       if (
-        originalUserMessage !== null &&
+        replayUserMessage !== null &&
         consecutiveErrors < MAX_CONSECUTIVE_ERRORS &&
         !isNonRetryableProviderError(error)
       ) {
@@ -1232,6 +1403,16 @@ export async function startRepl(
 
         const humanized = humanizeProviderError(error);
         renderError(humanized);
+        let switched = false;
+        if (enableAutoSwitchProvider && consecutiveErrors >= AUTO_SWITCH_THRESHOLD) {
+          switched = await attemptAutoProviderSwitch(humanized, replayUserMessage);
+        } else if (!enableAutoSwitchProvider && consecutiveErrors >= AUTO_SWITCH_THRESHOLD) {
+          console.log(
+            chalk.dim(
+              "   Tip: repeated provider errors detected. Use /provider, or enable `agent.enableAutoSwitchProvider`.",
+            ),
+          );
+        }
         console.log(
           chalk.dim(
             `   ↻ Retrying automatically (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})…`,
@@ -1241,10 +1422,13 @@ export async function startRepl(
         // Re-queue the original message with error context prepended so the
         // LLM knows what failed and can attempt a different approach.
         const recoveryPrefix =
+          (switched
+            ? `[System: Provider auto-switched to "${session.config.provider.type}" after repeated failures. Adapt your strategy to this provider and continue.]\n\n`
+            : "") +
           `[System: The previous attempt failed with the following error: "${humanized}". ` +
           `Please try a different approach, tool, or method to complete the task. ` +
           `Do NOT repeat the exact same action that caused the error.]\n\n`;
-        pendingQueuedMessages = [recoveryPrefix + originalUserMessage];
+        pendingQueuedMessages = [recoveryPrefix + replayUserMessage];
         continue;
       }
 
@@ -1254,10 +1438,8 @@ export async function startRepl(
         consecutiveErrors = 0;
         session.messages.length = preCallMessageLength;
         renderError(errorMsg);
-        console.log(chalk.dim("   Recovery failed after multiple attempts. Returning to prompt."));
-        console.log(
-          chalk.dim("   Tip: Try /provider or /model to switch, then rephrase and retry."),
-        );
+        console.log(chalk.dim("   Recovery exhausted after multiple attempts."));
+        showRecoveryAlternatives();
         continue;
       }
 
@@ -1268,7 +1450,7 @@ export async function startRepl(
       session.messages.length = preCallMessageLength;
       consecutiveErrors = 0;
       renderError(errorMsg);
-      console.log(chalk.dim("   Tip: Try /provider or /model to switch, then rephrase and retry."));
+      showRecoveryAlternatives();
     } finally {
       // Always clean up spinner and resume input handler after agent turn
       clearSpinner();

@@ -1,359 +1,342 @@
-# MCP (Model Context Protocol) Support
+# MCP (Model Context Protocol) Guide
 
-Corbat-Coco supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), enabling integration with 100+ external tools and services.
+MCP lets Coco connect to external tools and services: GitHub, databases, web search, file systems, APIs, and more. Over 100 MCP servers are available in the [official registry](https://github.com/modelcontextprotocol/servers).
 
-## Overview
+---
 
-The MCP module provides:
+## First 5 minutes
 
-- **MCP Client**: Connect to MCP servers via stdio or HTTP
-- **Registry**: Manage multiple MCP server configurations
-- **Tools Wrapper**: Use MCP tools as native COCO tools
-- **CLI Commands**: Manage servers via `coco mcp` commands
+### 1. Create `.mcp.json` in your project root
 
-## Quick Start
-
-### 1. Add an MCP Server
-
-```bash
-# Add a stdio-based server
-coco mcp add filesystem \
-  --command "npx" \
-  --args "-y,@modelcontextprotocol/server-filesystem,/home/user" \
-  --description "Filesystem access"
-
-# Add an HTTP-based server with authentication
-coco mcp add remote-api \
-  --transport http \
-  --url "https://api.example.com/mcp" \
-  --description "Remote API"
-```
-
-### 2. List Servers
-
-```bash
-# List enabled servers
-coco mcp list
-
-# List all servers including disabled
-coco mcp list --all
-```
-
-### 3. Use MCP Tools in Code
-
-```typescript
-import { createMCPClient, StdioTransport, registerMCPTools } from 'corbat-coco/mcp';
-import { createFullToolRegistry } from 'corbat-coco/tools';
-
-// Create client
-const transport = new StdioTransport({
-  command: 'npx',
-  args: ['-y', '@modelcontextprotocol/server-filesystem', '/home/user'],
-});
-
-const client = createMCPClient(transport);
-
-// Register MCP tools in COCO registry
-const registry = createFullToolRegistry();
-const wrappedTools = await registerMCPTools(registry, 'filesystem', client);
-
-// Now use the tools
-const result = await registry.execute('mcp_filesystem_read_file', {
-  path: '/home/user/document.txt',
-});
-
-console.log(result.data); // File content
-```
-
-## Configuration
-
-### Config File Format
-
-Create an `mcp.json` file:
+This is the standard cross-agent MCP config format, compatible with Claude Code, Cursor, and Windsurf.
 
 ```json
 {
-  "version": "1.0",
-  "servers": [
-    {
-      "name": "filesystem",
-      "description": "Filesystem access",
-      "transport": "stdio",
-      "stdio": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem"]
-      }
-    },
-    {
-      "name": "remote-api",
-      "description": "Remote API",
-      "transport": "http",
-      "http": {
-        "url": "https://api.example.com/mcp",
-        "auth": {
-          "type": "bearer",
-          "tokenEnv": "API_TOKEN"
-        }
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
       }
     }
-  ]
+  }
 }
 ```
 
-Load it programmatically:
+Coco reads `.mcp.json` automatically when you start a session. No extra configuration needed.
 
-```typescript
-import { loadMCPConfigFile, createMCPRegistry } from 'corbat-coco/mcp';
+### 2. Set your environment variables
 
-const servers = await loadMCPConfigFile('./mcp.json');
-const registry = createMCPRegistry();
+Never hardcode tokens in `.mcp.json`. Use environment variables instead:
 
-for (const server of servers) {
-  await registry.addServer(server);
-}
+```bash
+# In your shell profile (.zshrc, .bashrc), or store it in ~/.coco/.env
+export GITHUB_TOKEN="ghp_your_token_here"
 ```
 
-### COCO Config Integration
+### 3. Start Coco and verify
 
-Add MCP servers to your `coco.config.json`:
+```bash
+coco
+```
+
+Inside the REPL:
+
+```
+/mcp status
+```
+
+You should see your server listed as connected with its available tools.
+
+---
+
+## Configuration formats
+
+### Standard format (recommended)
+
+The `mcpServers` format is the cross-agent standard. Use this in `.mcp.json`:
 
 ```json
 {
-  "project": {
-    "name": "my-project"
-  },
+  "mcpServers": {
+    "<server-name>": {
+      "command": "...",
+      "args": [...],
+      "env": { "KEY": "value" }
+    }
+  }
+}
+```
+
+Transport is auto-detected:
+- `command` present → stdio (local process)
+- `url` present → HTTP/SSE (remote server)
+
+### Coco config integration
+
+You can also declare servers inside `coco.config.json` for project-specific settings:
+
+```json
+{
   "mcp": {
     "enabled": true,
     "servers": [
       {
-        "name": "filesystem",
+        "name": "my-db",
         "transport": "stdio",
         "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem"]
+        "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
       }
     ]
   }
 }
 ```
 
-## Transports
+---
 
-### Stdio Transport
+## Authentication
 
-For local command-based MCP servers:
+### Environment variables (recommended)
 
-```typescript
-import { StdioTransport } from 'corbat-coco/mcp';
+Reference env vars in `env` (stdio) or `headers` (HTTP):
 
-const transport = new StdioTransport({
-  command: 'python',
-  args: ['-m', 'mcp_server'],
-  env: { API_KEY: 'secret' },
-  cwd: '/path/to/workdir',
-  timeout: 60000,
-});
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
 ```
 
-### HTTP Transport
+Set them in your shell profile or in `~/.coco/.env` (Coco's global env file).
 
-For remote MCP servers with authentication:
+### Bearer token (HTTP servers)
 
-```typescript
-import { HTTPTransport } from 'corbat-coco/mcp';
-
-// Bearer token
-const transport = new HTTPTransport({
-  url: 'https://api.example.com/mcp',
-  auth: {
-    type: 'bearer',
-    token: 'your-token',
-    // or tokenEnv: 'API_TOKEN'
-  },
-  timeout: 60000,
-  retries: 3,
-});
-
-// API Key
-const transport = new HTTPTransport({
-  url: 'https://api.example.com/mcp',
-  auth: {
-    type: 'apikey',
-    token: 'your-api-key',
-    headerName: 'X-API-Key',
-  },
-});
-
-// OAuth
-const transport = new HTTPTransport({
-  url: 'https://api.example.com/mcp',
-  auth: {
-    type: 'oauth',
-    token: 'oauth-token',
-  },
-});
+```json
+{
+  "mcpServers": {
+    "my-api": {
+      "url": "https://api.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MY_API_TOKEN}"
+      }
+    }
+  }
+}
 ```
 
-## CLI Commands
+### API key with custom header
+
+```json
+{
+  "mcpServers": {
+    "my-service": {
+      "url": "https://service.example.com/mcp",
+      "headers": {
+        "X-API-Key": "${SERVICE_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+### OAuth (via Coco extended format in `coco.config.json`)
+
+```json
+{
+  "mcp": {
+    "servers": [
+      {
+        "name": "oauth-service",
+        "transport": "http",
+        "url": "https://service.example.com/mcp",
+        "auth": {
+          "type": "oauth",
+          "tokenEnv": "OAUTH_ACCESS_TOKEN"
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Common servers
+
+### GitHub
+
+```json
+"github": {
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-github"],
+  "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}" }
+}
+```
+
+Required: [Create a GitHub Personal Access Token](https://github.com/settings/tokens) with `repo` scope.
+
+### Filesystem
+
+```json
+"filesystem": {
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/your/project/path"]
+}
+```
+
+Replace `/your/project/path` with the root directory you want Coco to access. This path is machine-specific — do not commit it to source control if the path is personal.
+
+### PostgreSQL
+
+```json
+"postgres": {
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"]
+}
+```
+
+### Memory (persistent context)
+
+```json
+"memory": {
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-memory"]
+}
+```
+
+### Context7 (live library docs)
+
+```json
+"context7": {
+  "command": "npx",
+  "args": ["-y", "@upstash/context7-mcp@latest"]
+}
+```
+
+### Web search / Firecrawl
+
+```json
+"firecrawl": {
+  "command": "npx",
+  "args": ["-y", "firecrawl-mcp"],
+  "env": { "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}" }
+}
+```
+
+### Vercel
+
+```json
+"vercel": {
+  "url": "https://mcp.vercel.com/api",
+  "headers": { "Authorization": "Bearer ${VERCEL_TOKEN}" }
+}
+```
+
+---
+
+## REPL commands
+
+These commands are available inside the Coco interactive session:
 
 | Command | Description |
 |---------|-------------|
-| `coco mcp add <name>` | Add a new MCP server |
-| `coco mcp remove <name>` | Remove an MCP server |
-| `coco mcp list` | List registered servers |
-| `coco mcp enable <name>` | Enable a server |
-| `coco mcp disable <name>` | Disable a server |
+| `/mcp list` | List all configured servers |
+| `/mcp status` | Show connected servers and tool counts |
+| `/mcp health` | Health check on all servers |
+| `/mcp health <name>` | Health check on a specific server |
+| `/mcp restart <name>` | Restart a specific server |
 
-### Add Command Options
+---
 
-```bash
-coco mcp add <name> \
-  --transport <stdio|http> \
-  --command <cmd> \
-  --args <arg1,arg2,...> \
-  --url <url> \
-  --env <KEY=value,...> \
-  --description <desc>
-```
-
-## Tool Naming
-
-MCP tools are prefixed when registered in COCO:
-
-- Format: `mcp_<server-name>_<tool-name>`
-- Example: `mcp_filesystem_read_file`
-
-## Error Handling
-
-The MCP module provides specific error types:
-
-```typescript
-import { MCPError, MCPConnectionError, MCPTimeoutError } from 'corbat-coco/mcp';
-
-try {
-  await client.callTool({ name: 'read_file', arguments: { path: '/test' } });
-} catch (error) {
-  if (error instanceof MCPTimeoutError) {
-    console.log('Request timed out');
-  } else if (error instanceof MCPConnectionError) {
-    console.log('Connection failed');
-  }
-}
-```
-
-## Advanced Usage
-
-### Custom Tool Wrapper Options
-
-```typescript
-import { wrapMCPTools } from 'corbat-coco/mcp';
-
-const { tools, wrapped } = wrapMCPTools(
-  mcpTools,
-  'my-server',
-  client,
-  {
-    namePrefix: 'custom',     // Default: 'mcp'
-    category: 'file',         // Default: 'deploy'
-    requestTimeout: 30000,    // Default: 60000
-  }
-);
-```
-
-### Manual Registry Management
-
-```typescript
-import { createMCPRegistry } from 'corbat-coco/mcp';
-
-const registry = createMCPRegistry();
-await registry.load();
-
-// Add server
-await registry.addServer({
-  name: 'custom-server',
-  transport: 'stdio',
-  stdio: { command: 'my-command' },
-  enabled: true,
-});
-
-// Check if exists
-if (registry.hasServer('custom-server')) {
-  const config = registry.getServer('custom-server');
-  console.log(config);
-}
-
-// List enabled servers
-const enabled = registry.listEnabledServers();
-```
-
-## API Reference
-
-### Types
-
-- `MCPClient` - Client interface for MCP servers
-- `MCPTransport` - Transport interface (stdio/http)
-- `MCPServerConfig` - Server configuration
-- `MCPTool` - MCP tool definition
-- `MCPWrappedTool` - Wrapped tool information
-
-### Functions
-
-- `createMCPClient(transport, timeout?)` - Create MCP client
-- `createMCPRegistry(path?)` - Create server registry
-- `registerMCPTools(registry, serverName, client, options?)` - Register MCP tools
-- `loadMCPConfigFile(path)` - Load config from JSON file
-- `loadMCPServersFromCOCOConfig(path?)` - Load from COCO config
-
-## Examples
-
-### Filesystem Server
+## CLI commands
 
 ```bash
-coco mcp add filesystem \
+coco mcp add <name> --command "npx" --args "-y,@server/package"
+coco mcp add <name> --transport http --url "https://..."
+coco mcp remove <name>
+coco mcp list
+coco mcp list --all      # includes disabled servers
+coco mcp enable <name>
+coco mcp disable <name>
+```
+
+---
+
+## Tool naming
+
+MCP tools registered in Coco are prefixed:
+
+```
+mcp_<server-name>_<tool-name>
+```
+
+Examples:
+- `mcp_github_create_pull_request`
+- `mcp_filesystem_read_file`
+- `mcp_postgres_query`
+
+You can reference them in tasks: "use `mcp_github_create_pull_request` to open a PR".
+
+---
+
+## Global MCP config
+
+For servers you want available in all projects, register them via the CLI:
+
+```bash
+coco mcp add memory \
   --command "npx" \
-  --args "-y,@modelcontextprotocol/server-filesystem,/home/user" \
-  --description "Local filesystem access"
+  --args "-y,@modelcontextprotocol/server-memory" \
+  --description "Persistent memory across sessions"
 ```
 
-### GitHub Server
+Global registrations are stored in `~/.coco/mcp-registry.json` and loaded automatically in every session.
+
+To see all globally registered servers:
 
 ```bash
-coco mcp add github \
-  --command "npx" \
-  --args "-y,@modelcontextprotocol/server-github" \
-  --env "GITHUB_TOKEN=$GITHUB_TOKEN"
+coco mcp list --all
 ```
 
-### PostgreSQL Server
-
-```bash
-coco mcp add postgres \
-  --command "npx" \
-  --args "-y,@modelcontextprotocol/server-postgres,postgresql://localhost/mydb"
-```
+---
 
 ## Troubleshooting
 
-### Connection Issues
+### Server does not appear in `/mcp status`
 
-1. Verify the server command exists: `which <command>`
-2. Check server logs for errors
-3. Ensure required environment variables are set
-4. Verify network connectivity for HTTP servers
+1. Check `.mcp.json` is valid JSON: `cat .mcp.json | node -e "process.stdin.resume();process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{JSON.parse(d);console.log('valid')})"`
+2. Verify the command exists: `which npx`
+3. Test the server manually: `npx -y @modelcontextprotocol/server-github` (should start without error)
 
-### Tool Not Found
+### Authentication errors
 
-1. Check server is enabled: `coco mcp list --all`
-2. Verify tool name with prefix: `mcp_<server>_<tool>`
-3. Check server capabilities: `client.listTools()`
+1. Verify the env var is set: `echo $GITHUB_TOKEN`
+2. Make sure the token has the right permissions for the server
+3. For HTTP servers, check the Authorization header format matches what the server expects
 
-### Authentication Errors
+### Server starts but no tools appear
 
-1. For stdio: Check environment variables in `--env`
-2. For HTTP: Verify token or use `tokenEnv` to load from env
-3. Check token permissions with the server provider
+1. Run `/mcp health <name>` to see the error
+2. Some servers require specific env vars before they expose tools — check the server's README
+3. Check server logs: run the command manually in a terminal
+
+### `.mcp.json` in source control
+
+It is safe to commit `.mcp.json` as long as it uses `${ENV_VAR}` references and not hardcoded tokens. Machine-specific paths (like filesystem server paths) should be registered globally via `coco mcp add` instead of committed to `.mcp.json`.
+
+---
 
 ## Resources
 
 - [MCP Specification](https://modelcontextprotocol.io/)
-- [MCP Servers Repository](https://github.com/modelcontextprotocol/servers)
-- [COCO Tools Documentation](./TOOLS.md)
+- [Official MCP Servers](https://github.com/modelcontextprotocol/servers)
+- [Skills Guide](guides/SKILLS.md)
+- [Configuration Guide](guides/CONFIGURATION.md)

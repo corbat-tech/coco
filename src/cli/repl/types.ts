@@ -59,6 +59,8 @@ export interface ReplConfig {
     systemPrompt: string;
     maxToolIterations: number;
     confirmDestructive: boolean;
+    /** If true, Coco may switch provider automatically after repeated provider failures */
+    enableAutoSwitchProvider?: boolean;
   };
 }
 

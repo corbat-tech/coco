@@ -301,6 +301,26 @@ export HUGGINGFACE_API_KEY=your-key  # also works
 | Local (Qwen/DeepSeek) | ⚠️ Variable | ⚠️ Variable | ⚠️ Variable | Test First |
 | Kimi/Moonshot | ❌ Poor | ❌ Poor | ❌ Poor | **NOT RECOMMENDED** |
 
+## Provider Auto-Switch (Opt-In)
+
+Corbat-Coco can switch providers automatically after repeated provider failures, but this is **disabled by default**.
+
+Why default is off:
+- Avoid unexpected cost changes (different providers/models have different pricing).
+- Preserve explicit user control over routing and compliance requirements.
+
+Enable explicitly only if desired:
+
+```json
+{
+  "agent": {
+    "enableAutoSwitchProvider": true
+  }
+}
+```
+
+When disabled (default), Coco will suggest `/provider` or `/model` after repeated provider errors instead of switching automatically.
+
 ## Testing Your Provider
 
 After configuring a new provider, test with this simple task:

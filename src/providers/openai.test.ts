@@ -510,6 +510,47 @@ describe("streamWithTools regressions", () => {
     const toolEnd = chunks.find((c) => c.type === "tool_use_end");
     expect(toolEnd?.toolCall?.input).toEqual({ path: "src/a.ts", content: "hello" });
   });
+
+  it("should recover function calls from response.completed.output when argument events are missing", async () => {
+    const responsesStream = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: "response.completed",
+          response: {
+            output: [
+              {
+                type: "function_call",
+                call_id: "call_done_only",
+                name: "write_file",
+                arguments: '{"path":"src/fallback.ts","content":"ok"}',
+              },
+            ],
+          },
+        };
+      },
+    };
+    mockResponsesCreate.mockResolvedValue(responsesStream);
+
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "gpt-5.4-codex" });
+
+    const chunks: Array<{
+      type: string;
+      toolCall?: { id?: string; input?: Record<string, unknown> };
+    }> = [];
+    for await (const chunk of provider.streamWithTools([{ role: "user", content: "Hi" }], {
+      tools: [{ name: "write_file", description: "Write", input_schema: { type: "object" } }],
+    })) {
+      chunks.push(
+        chunk as { type: string; toolCall?: { id?: string; input?: Record<string, unknown> } },
+      );
+    }
+
+    const toolEnd = chunks.find((c) => c.type === "tool_use_end");
+    expect(toolEnd?.toolCall?.id).toBe("call_done_only");
+    expect(toolEnd?.toolCall?.input).toEqual({ path: "src/fallback.ts", content: "ok" });
+  });
 });
 
 describe("message conversion", () => {

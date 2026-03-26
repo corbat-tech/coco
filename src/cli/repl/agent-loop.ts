@@ -141,7 +141,14 @@ export async function executeAgentTurn(
 
   // Agentic loop - continue until no more tool calls
   let iteration = 0;
-  const maxIterations = session.config.agent.maxToolIterations;
+  let maxIterations = session.config.agent.maxToolIterations;
+  const HARD_MAX_ITERATIONS = 100;
+  const MAX_AUTO_ITERATION_EXTENSIONS = 2;
+  const AUTO_ITERATION_EXTENSION_SIZE = Math.max(
+    5,
+    Math.ceil(session.config.agent.maxToolIterations * 0.4),
+  );
+  let autoIterationExtensionsUsed = 0;
 
   // Repeated-error loop detection:
   // key = "toolName:errorPrefix" → consecutive failure count.
@@ -150,6 +157,10 @@ export async function executeAgentTurn(
   // of retrying indefinitely.
   const toolErrorCounts = new Map<string, number>();
   const MAX_CONSECUTIVE_TOOL_ERRORS = 3;
+  const MAX_NO_TOOL_RECOVERY_ATTEMPTS = 3;
+  let noToolRecoveryAttempts = 0;
+  let lastSuccessIterationSignature = "";
+  let repeatedSuccessIterationCount = 0;
 
   /**
    * Fraction of maxIterations at which to inject a budget-warning into the LLM's
@@ -198,6 +209,63 @@ export async function executeAgentTurn(
       `use read_file with offset/limit to retrieve more of '${toolName}' output ...]\n` +
       `${tail}`
     );
+  }
+
+  function shouldRecoverNoToolTurn(
+    stopReason: StreamChunk["stopReason"] | undefined,
+    content: string,
+  ): { recover: boolean; reason: string } {
+    const trimmed = content.trim();
+
+    // Model says it is in tool-use mode but no tool call reached the loop.
+    // This usually means provider stream shape drift or dropped tool events.
+    if (stopReason === "tool_use") {
+      return {
+        recover: true,
+        reason:
+          "The previous response indicated tool use, but no tool calls were received. Re-emit the tool call(s) now.",
+      };
+    }
+
+    // Empty/truncated model output should be retried instead of ending the turn.
+    if (stopReason === "max_tokens" && trimmed.length === 0) {
+      return {
+        recover: true,
+        reason:
+          "The previous response was cut off before producing any usable output. Continue immediately.",
+      };
+    }
+
+    // Short planning-only text often appears right before a missing tool call.
+    const planningOnly =
+      trimmed.length > 0 &&
+      trimmed.length < 320 &&
+      /^(voy a|ahora voy|i('| )?ll|i will|let me|starting|preparing|activating|continuo|contin[uú]o|de acuerdo[, ]+voy)\b/i.test(
+        trimmed,
+      );
+    if (planningOnly) {
+      return {
+        recover: true,
+        reason: "Do not only describe the next step. Execute it now with concrete tool calls.",
+      };
+    }
+
+    return { recover: false, reason: "" };
+  }
+
+  function shouldAutoExtendIterationBudget(
+    latestExecuted: ExecutedToolCall[],
+    latestToolResults: ToolResultContent[],
+    isInErrorLoop: boolean,
+  ): boolean {
+    if (isInErrorLoop) return false;
+    if (latestExecuted.length === 0) return false;
+    if (latestToolResults.length === 0) return false;
+    if (repeatedSuccessIterationCount >= 2) return false;
+
+    // Extend only if there was at least one successful concrete tool result
+    // in this cycle; avoids extending on pure failure/denial loops.
+    return latestExecuted.some((c) => c.result.success);
   }
 
   while (iteration < maxIterations) {
@@ -414,10 +482,33 @@ export async function executeAgentTurn(
         continue;
       }
 
+      // Recovery path: don't end the turn immediately when the model likely
+      // intended to call tools but none were reconstructed from the stream.
+      const noToolRecovery = shouldRecoverNoToolTurn(lastStopReason, responseContent);
+      if (
+        noToolRecovery.recover &&
+        noToolRecoveryAttempts < MAX_NO_TOOL_RECOVERY_ATTEMPTS &&
+        iteration < maxIterations
+      ) {
+        noToolRecoveryAttempts++;
+        addMessage(session, {
+          role: "assistant",
+          content: responseContent || "[No output returned in previous step.]",
+        });
+        addMessage(session, {
+          role: "user",
+          content: `[System: ${noToolRecovery.reason}]`,
+        });
+        continue;
+      }
+      noToolRecoveryAttempts = 0;
+
       // No more tool calls, we're done
       addMessage(session, { role: "assistant", content: responseContent });
       break;
     }
+
+    noToolRecoveryAttempts = 0;
 
     // Use collected tool calls for execution
     const response = {
@@ -429,6 +520,7 @@ export async function executeAgentTurn(
     const toolResults: ToolResultContent[] = [];
     const toolUses: ToolUseContent[] = [];
     let turnAborted = false;
+    let currentIterationExecuted: ExecutedToolCall[] = [];
     const totalTools = response.toolCalls.length;
 
     // Phase 1: Handle confirmations sequentially (user interaction required)
@@ -550,6 +642,7 @@ export async function executeAgentTurn(
       // Collect executed tools and apply side-effects
       for (const executed of parallelResult.executed) {
         executedTools.push(executed);
+        currentIterationExecuted.push(executed);
 
         // Apply manage_permissions side-effects after successful execution
         if (executed.name === "manage_permissions" && executed.result.success) {
@@ -717,6 +810,33 @@ export async function executeAgentTurn(
       }
     }
 
+    // Detect repeated successful no-op loops (same tool pattern each iteration).
+    // This prevents auto-extensions from prolonging cycles with no real forward progress.
+    if (
+      currentIterationExecuted.length > 0 &&
+      currentIterationExecuted.every((c) => c.result.success)
+    ) {
+      const iterationSignature = currentIterationExecuted
+        .map((c) => `${c.name}:${JSON.stringify(c.input)}`)
+        .join("|");
+      if (iterationSignature === lastSuccessIterationSignature) {
+        repeatedSuccessIterationCount++;
+      } else {
+        lastSuccessIterationSignature = iterationSignature;
+        repeatedSuccessIterationCount = 0;
+      }
+    } else {
+      lastSuccessIterationSignature = "";
+      repeatedSuccessIterationCount = 0;
+    }
+
+    const canAutoExtendNow =
+      isLastIteration &&
+      toolResults.length > 0 &&
+      autoIterationExtensionsUsed < MAX_AUTO_ITERATION_EXTENSIONS &&
+      maxIterations < HARD_MAX_ITERATIONS &&
+      shouldAutoExtendIterationBudget(executedTools, toolResults, stuckInErrorLoop);
+
     // Inject iteration-budget feedback into the last tool result so the LLM can adapt.
     // This runs AFTER the stuckInErrorLoop detection so both messages never overlap.
     if (toolResults.length > 0) {
@@ -724,7 +844,7 @@ export async function executeAgentTurn(
       const lastIdx = toolResults.length - 1;
       const last = toolResults[lastIdx]!;
 
-      if (isLastIteration && !stuckInErrorLoop) {
+      if (isLastIteration && !stuckInErrorLoop && !canAutoExtendNow) {
         // Final iteration: ask for a proper summary handoff
         toolResults[lastIdx] = {
           ...last,
@@ -806,7 +926,23 @@ export async function executeAgentTurn(
       break;
     }
 
-    // Final iteration with tool calls: give the LLM one more text-only turn to
+    // Final iteration with tool calls:
+    // Prefer auto-extending the budget when there's clear progress so users
+    // don't have to manually type "continue" in the middle of active work.
+    if (canAutoExtendNow) {
+      autoIterationExtensionsUsed++;
+      const oldMax = maxIterations;
+      maxIterations = Math.min(maxIterations + AUTO_ITERATION_EXTENSION_SIZE, HARD_MAX_ITERATIONS);
+      addMessage(session, {
+        role: "user",
+        content:
+          `[System: Iteration budget auto-extended from ${oldMax} to ${maxIterations} because progress is being made. ` +
+          `Continue execution and prioritize completing the remaining critical work.]`,
+      });
+      continue;
+    }
+
+    // If no extension is possible, give the LLM one more text-only turn to
     // summarise progress and hand off to the user instead of cutting off abruptly.
     // The summary prompt was already injected into the last tool result above.
     if (isLastIteration && toolResults.length > 0) {

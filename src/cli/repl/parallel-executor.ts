@@ -402,6 +402,8 @@ export class ParallelToolExecutor {
       return { executed: null, skipped: true, reason: "Operation cancelled" };
     }
 
+    let hookWarning: string | null = null;
+
     // Execute PreToolUse hooks if hooks are configured
     if (hookRegistry && hookExecutor) {
       const preContext: HookContext = {
@@ -413,7 +415,23 @@ export class ParallelToolExecutor {
         timestamp: new Date(),
       };
 
-      const preResult = await hookExecutor.executeHooks(hookRegistry, preContext);
+      let preResult: HookExecutionResult;
+      try {
+        preResult = await hookExecutor.executeHooks(hookRegistry, preContext);
+      } catch (error) {
+        if (isAbortError(error, signal)) {
+          return { executed: null, skipped: true, reason: "Operation cancelled" };
+        }
+        const msg = error instanceof Error ? error.message : String(error);
+        hookWarning = `PreToolUse hook failed: ${msg}`;
+        preResult = {
+          event: "PreToolUse",
+          results: [],
+          allSucceeded: false,
+          shouldContinue: true,
+          duration: 0,
+        };
+      }
       onHookExecuted?.("PreToolUse", preResult);
 
       // Check if hooks denied the tool execution
@@ -437,12 +455,28 @@ export class ParallelToolExecutor {
     onToolStart?.(toolCall, index, total);
 
     const startTime = performance.now();
-    const result: ToolResult = await registry.execute(toolCall.name, toolCall.input, { signal });
+    let result: ToolResult;
+    try {
+      result = await registry.execute(toolCall.name, toolCall.input, { signal });
+    } catch (error) {
+      if (isAbortError(error, signal)) {
+        return { executed: null, skipped: true, reason: "Operation cancelled" };
+      }
+      const msg = error instanceof Error ? error.message : String(error);
+      result = {
+        success: false,
+        error: `Unexpected error in ${toolCall.name}: ${msg}`,
+        duration: 0,
+      };
+    }
     const duration = performance.now() - startTime;
 
-    const output = result.success
-      ? JSON.stringify(result.data, null, 2)
-      : (result.error ?? "Unknown error");
+    const outputParts: string[] = [];
+    if (hookWarning) outputParts.push(hookWarning);
+    outputParts.push(
+      result.success ? JSON.stringify(result.data, null, 2) : (result.error ?? "Unknown error"),
+    );
+    const output = outputParts.filter(Boolean).join("\n");
 
     const executedCall: ExecutedToolCall = {
       id: toolCall.id,
@@ -474,8 +508,24 @@ export class ParallelToolExecutor {
         timestamp: new Date(),
       };
 
-      const postResult = await hookExecutor.executeHooks(hookRegistry, postContext);
-      onHookExecuted?.("PostToolUse", postResult);
+      try {
+        const postResult = await hookExecutor.executeHooks(hookRegistry, postContext);
+        onHookExecuted?.("PostToolUse", postResult);
+      } catch (error) {
+        if (isAbortError(error, signal)) {
+          return { executed: null, skipped: true, reason: "Operation cancelled" };
+        }
+        const msg = error instanceof Error ? error.message : String(error);
+        const warningResult: HookExecutionResult = {
+          event: "PostToolUse",
+          results: [],
+          allSucceeded: false,
+          shouldContinue: true,
+          duration: 0,
+        };
+        onHookExecuted?.("PostToolUse", warningResult);
+        executedCall.result.output = `${executedCall.result.output}\nPostToolUse hook failed: ${msg}`;
+      }
     }
 
     onToolEnd?.(executedCall);

@@ -1371,8 +1371,11 @@ export class OpenAIProvider implements LLMProvider {
 
             case "response.completed":
               {
+                const emittedCallIds = new Set<string>();
+
                 // Emit any remaining function calls not finalized via done events
                 for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
+                  if (toolCall.id) emittedCallIds.add(toolCall.id);
                   yield {
                     type: "tool_use_end",
                     toolCall: {
@@ -1383,9 +1386,31 @@ export class OpenAIProvider implements LLMProvider {
                   };
                 }
 
-                const hasToolCalls = event.response.output.some(
-                  (i: { type: string }) => i.type === "function_call",
-                );
+                const outputItems =
+                  (event.response?.output as Array<{
+                    type?: string;
+                    call_id?: string;
+                    name?: string;
+                    arguments?: string;
+                  }>) ?? [];
+
+                // Fallback: some OpenAI-compatible providers only include
+                // function calls in response.completed.output and may omit
+                // fine-grained function_call_arguments.done events.
+                for (const item of outputItems) {
+                  if (item.type !== "function_call" || !item.call_id || !item.name) continue;
+                  if (emittedCallIds.has(item.call_id)) continue;
+                  yield {
+                    type: "tool_use_end",
+                    toolCall: {
+                      id: item.call_id,
+                      name: item.name,
+                      input: parseToolCallArguments(item.arguments ?? "{}", this.name),
+                    },
+                  };
+                }
+
+                const hasToolCalls = outputItems.some((i) => i.type === "function_call");
                 yield {
                   type: "done",
                   stopReason: hasToolCalls ? "tool_use" : "end_turn",

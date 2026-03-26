@@ -4,7 +4,7 @@
  * Discovers skills across three scopes:
  * - builtin: Native skills compiled into Coco
  * - global: ~/.coco/skills/
- * - project: <project>/.coco/skills/, .agents/skills/, .claude/skills/
+ * - project: .agents/skills/ (native), .claude/skills/, .codex/skills/, .gemini/skills/, .opencode/skills/ (compat)
  *
  * Higher-priority scopes override lower-priority ones for the same skill ID.
  * For project skills, directories are scanned in ascending priority order:
@@ -24,11 +24,26 @@ import path from "node:path";
 /** Default global skills directory */
 const GLOBAL_SKILLS_DIR = path.join(COCO_HOME, "skills");
 
-/** Project skills directory names (scanned in ascending priority; later entries override earlier) */
+/**
+ * Project skills directory names (scanned in ascending priority; later entries override earlier).
+ *
+ * Priority rationale:
+ *  - .claude/skills   — Claude Code compatibility (lowest)
+ *  - .codex/skills    — Codex CLI (OpenAI) compatibility
+ *  - .gemini/skills   — Gemini CLI (Google) compatibility
+ *  - .opencode/skills — OpenCode compatibility
+ *  - .agents/skills   — Native: the cross-agent standard Coco writes to (highest)
+ *
+ * When the same skill ID appears in multiple directories, the later entry wins.
+ * .agents/skills/ is authoritative because it is the shared, agent-neutral standard
+ * (same reason Coco uses AGENTS.md as the primary instruction file).
+ */
 const PROJECT_SKILLS_DIRNAMES = [
-  ".claude/skills", // Claude compat — read for migration/interop (lowest project priority)
-  ".agents/skills", // Shared cross-agent standard (medium priority)
-  ".coco/skills", // Coco native — authoritative (highest project priority)
+  ".claude/skills", // Claude Code compat — read for migration/interop
+  ".codex/skills", // Codex CLI (OpenAI) compat
+  ".gemini/skills", // Gemini CLI (Google) compat
+  ".opencode/skills", // OpenCode compat
+  ".agents/skills", // Native — cross-agent standard, authoritative (highest priority)
 ];
 
 /** Options for skill discovery */
@@ -75,8 +90,8 @@ export async function discoverAllSkills(
   }
 
   // 3. Scan project skills directories (highest priority)
-  // Scans in ascending priority: .claude/skills/ < .agents/skills/ < .coco/skills/
-  // .coco/skills/ is Coco's native dir and always wins for the same skill ID
+  // Scans in ascending priority: .claude/ < .codex/ < .gemini/ < .opencode/ < .agents/
+  // .agents/skills/ is the native dir and always wins for the same skill ID
   const projectDirs = opts.projectDir
     ? [opts.projectDir]
     : PROJECT_SKILLS_DIRNAMES.map((d) => path.join(projectPath, d));
@@ -190,10 +205,16 @@ async function scanNestedSkills(
   }
 }
 
-/** Apply a skill to the map, respecting scope priority */
+/**
+ * Apply a skill to the map, respecting scope priority.
+ *
+ * Uses >= so that within the same scope, later-scanned directories override
+ * earlier ones. PROJECT_SKILLS_DIRNAMES is ordered ascending by priority, so
+ * the last directory scanned (.agents/skills/) wins over the first (.claude/skills/).
+ */
 function applyWithPriority(map: Map<string, SkillMetadata>, meta: SkillMetadata): void {
   const existing = map.get(meta.id);
-  if (!existing || SCOPE_PRIORITY[meta.scope] > SCOPE_PRIORITY[existing.scope]) {
+  if (!existing || SCOPE_PRIORITY[meta.scope] >= SCOPE_PRIORITY[existing.scope]) {
     map.set(meta.id, meta);
   }
 }
