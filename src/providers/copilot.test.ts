@@ -91,6 +91,18 @@ describe("CopilotProvider", () => {
 
       expect(provider.getContextWindow()).toBe(128000);
     });
+
+    it("should fall back to default model when config model is empty", async () => {
+      mockedGetValidCopilotToken.mockResolvedValueOnce({
+        token: "tid=token",
+        baseUrl: "https://api.githubcopilot.com",
+        isNew: false,
+      });
+
+      await provider.initialize({ model: "   " });
+
+      expect(provider.getContextWindow()).toBe(168000);
+    });
   });
 
   describe("isAvailable", () => {

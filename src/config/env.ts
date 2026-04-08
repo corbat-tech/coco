@@ -273,7 +273,7 @@ export function getDefaultModel(provider: ProviderType): string {
     case "codex":
       return process.env["CODEX_MODEL"] ?? "codex-mini-latest";
     case "copilot":
-      return process.env["COPILOT_MODEL"] ?? "gpt-4o-copilot";
+      return process.env["COPILOT_MODEL"] ?? "claude-sonnet-4.6";
     case "groq":
       return process.env["GROQ_MODEL"] ?? "llama-3.3-70b-versatile";
     case "openrouter":
@@ -291,6 +291,12 @@ export function getDefaultModel(provider: ProviderType): string {
     default:
       return "claude-sonnet-4-6";
   }
+}
+
+function normalizeConfiguredModel(model: string | undefined): string | undefined {
+  if (typeof model !== "string") return undefined;
+  const trimmed = model.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 /**
@@ -335,7 +341,7 @@ export async function getLastUsedModel(provider: ProviderType): Promise<string |
     const config = await loadConfig(CONFIG_PATHS.config);
     // If the current provider matches, return its model
     if (config.provider.type === provider) {
-      return config.provider.model;
+      return normalizeConfiguredModel(config.provider.model);
     }
   } catch {
     // Fall through to default
@@ -386,8 +392,9 @@ export async function saveProviderPreference(
 
   // Update provider and model
   config.provider.type = provider;
-  if (model) {
-    config.provider.model = model;
+  const normalizedModel = normalizeConfiguredModel(model);
+  if (normalizedModel) {
+    config.provider.model = normalizedModel;
   } else {
     config.provider.model = getDefaultModel(provider);
   }

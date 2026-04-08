@@ -70,9 +70,21 @@ function normalizePath(filePath: string): string {
   // Remove null bytes
   // oxlint-disable-next-line no-control-regex -- Intentional: sanitizing null bytes from file paths
   let normalized = filePath.replace(/\0/g, "");
+  const home = process.env.HOME || process.env.USERPROFILE;
+  if (home && normalized.startsWith("~")) {
+    if (normalized === "~") {
+      normalized = home;
+    } else if (normalized.startsWith("~/") || normalized.startsWith(`~${path.sep}`)) {
+      normalized = path.join(home, normalized.slice(2));
+    }
+  }
   // Normalize path separators and resolve .. and .
   normalized = path.normalize(normalized);
   return normalized;
+}
+
+function resolveUserPath(filePath: string): string {
+  return path.resolve(normalizePath(filePath));
 }
 
 function isWithinDirectory(targetPath: string, baseDir: string): boolean {
@@ -124,7 +136,7 @@ function isPathAllowed(
   }
 
   const normalized = normalizePath(filePath);
-  const absolute = path.resolve(normalized);
+  const absolute = resolveUserPath(normalized);
   const cwd = process.cwd();
 
   // Check for system paths (use normalized comparison)
@@ -196,7 +208,7 @@ export async function resolvePathSecurely(
   operation: "read" | "write" | "delete",
 ): Promise<string> {
   const normalized = normalizePath(filePath);
-  const absolute = path.resolve(normalized);
+  const absolute = resolveUserPath(normalized);
 
   // First check the requested path
   const preCheck = isPathAllowed(absolute, operation);
@@ -267,7 +279,7 @@ function isENOENT(error: unknown): boolean {
  * Enrich an ENOENT error with file suggestions (including deep search).
  */
 async function enrichENOENT(filePath: string, operation: string): Promise<string> {
-  const absPath = path.resolve(filePath);
+  const absPath = resolveUserPath(filePath);
   const suggestions = await suggestSimilarFilesDeep(absPath, process.cwd());
   const hint = formatSuggestions(suggestions, path.dirname(absPath));
   const action =
@@ -281,7 +293,7 @@ async function enrichENOENT(filePath: string, operation: string): Promise<string
  * Enrich an ENOENT error for directory operations (including deep search).
  */
 async function enrichDirENOENT(dirPath: string): Promise<string> {
-  const absPath = path.resolve(dirPath);
+  const absPath = resolveUserPath(dirPath);
   const suggestions = await suggestSimilarDirsDeep(absPath, process.cwd());
   const hint = formatSuggestions(suggestions, path.dirname(absPath));
   return `Directory not found: ${dirPath}${hint}\nUse list_dir or glob to find the correct path.`;
@@ -310,7 +322,7 @@ Examples:
   async execute({ path: filePath, encoding, maxSize }) {
     validatePath(filePath, "read");
     try {
-      const absolutePath = path.resolve(filePath);
+      const absolutePath = resolveUserPath(filePath);
       const stats = await fs.stat(absolutePath);
       const maxBytes = maxSize ?? DEFAULT_MAX_FILE_SIZE;
       let truncated = false;
@@ -387,7 +399,7 @@ Examples:
   async execute({ path: filePath, content, createDirs, dryRun }) {
     validatePath(filePath, "write");
     try {
-      const absolutePath = path.resolve(filePath);
+      const absolutePath = resolveUserPath(filePath);
 
       // Check if file exists
       let wouldCreate = false;
@@ -463,7 +475,7 @@ Examples:
   async execute({ path: filePath, oldText, newText, all, dryRun }) {
     validatePath(filePath, "write");
     try {
-      const absolutePath = path.resolve(filePath);
+      const absolutePath = resolveUserPath(filePath);
       let content = await fs.readFile(absolutePath, "utf-8");
 
       // Count replacements
@@ -610,7 +622,7 @@ Examples:
   }),
   async execute({ path: filePath }) {
     try {
-      const absolutePath = path.resolve(filePath);
+      const absolutePath = resolveUserPath(filePath);
       const stats = await fs.stat(absolutePath);
 
       return {
@@ -649,7 +661,7 @@ Examples:
   }),
   async execute({ path: dirPath, recursive }) {
     try {
-      const absolutePath = path.resolve(dirPath);
+      const absolutePath = resolveUserPath(dirPath);
       const entries: Array<{ name: string; type: "file" | "directory"; size?: number }> = [];
 
       async function listDir(dir: string, prefix: string = "") {
@@ -724,7 +736,7 @@ Examples:
     validatePath(filePath, "delete");
 
     try {
-      const absolutePath = path.resolve(filePath);
+      const absolutePath = resolveUserPath(filePath);
       const stats = await fs.stat(absolutePath);
 
       if (stats.isDirectory()) {
@@ -742,7 +754,7 @@ Examples:
     } catch (error) {
       if (error instanceof ToolError) throw error;
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return { deleted: false, path: path.resolve(filePath) };
+        return { deleted: false, path: resolveUserPath(filePath) };
       }
       throw new FileSystemError(`Failed to delete: ${filePath}`, {
         path: filePath,
@@ -777,8 +789,8 @@ Examples:
     validatePath(source, "read");
     validatePath(destination, "write");
     try {
-      const srcPath = path.resolve(source);
-      const destPath = path.resolve(destination);
+      const srcPath = resolveUserPath(source);
+      const destPath = resolveUserPath(destination);
 
       // Check if destination exists
       if (!overwrite) {
@@ -852,8 +864,8 @@ Examples:
     validatePath(source, "delete");
     validatePath(destination, "write");
     try {
-      const srcPath = path.resolve(source);
-      const destPath = path.resolve(destination);
+      const srcPath = resolveUserPath(source);
+      const destPath = resolveUserPath(destination);
 
       // Check if destination exists
       if (!overwrite) {
@@ -965,7 +977,7 @@ Examples:
   }),
   async execute({ path: dirPath, depth, showHidden, dirsOnly }) {
     try {
-      const absolutePath = path.resolve(dirPath ?? ".");
+      const absolutePath = resolveUserPath(dirPath ?? ".");
       let totalFiles = 0;
       let totalDirs = 0;
       const lines: string[] = [path.basename(absolutePath) + "/"];

@@ -49,6 +49,18 @@ describe("env preferences use global config only", () => {
     expect(loadConfig).toHaveBeenCalledWith("/tmp/.coco/config.json");
   });
 
+  it("getLastUsedModel ignores empty-string model values", async () => {
+    const { loadConfig } = await import("./loader.js");
+    vi.mocked(loadConfig).mockResolvedValue({
+      provider: { type: "copilot", model: "   " },
+    } as any);
+
+    const { getLastUsedModel } = await import("./env.js");
+    const model = await getLastUsedModel("copilot" as any);
+
+    expect(model).toBeUndefined();
+  });
+
   it("saveProviderPreference loads/saves against global config", async () => {
     const { loadConfig, saveConfig } = await import("./loader.js");
     vi.mocked(loadConfig).mockResolvedValue({
@@ -79,6 +91,42 @@ describe("env preferences use global config only", () => {
         provider: expect.objectContaining({
           type: "openai",
           model: "gpt-5.4-codex",
+        }),
+      }),
+      undefined,
+      true,
+    );
+  });
+
+  it("saveProviderPreference falls back to provider default when model is empty", async () => {
+    const { loadConfig, saveConfig } = await import("./loader.js");
+    vi.mocked(loadConfig).mockResolvedValue({
+      provider: { type: "anthropic", model: "claude-opus-4-6", maxTokens: 8192 },
+      project: { name: "global", version: "0.1.0" },
+      quality: {
+        minScore: 85,
+        minCoverage: 80,
+        maxIterations: 10,
+        minIterations: 2,
+        convergenceThreshold: 2,
+        securityThreshold: 100,
+      },
+      persistence: {
+        checkpointInterval: 300000,
+        maxCheckpoints: 50,
+        retentionDays: 7,
+        compressOldCheckpoints: true,
+      },
+    } as any);
+
+    const { saveProviderPreference } = await import("./env.js");
+    await saveProviderPreference("copilot" as any, "   ");
+
+    expect(saveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: expect.objectContaining({
+          type: "copilot",
+          model: "claude-sonnet-4.6",
         }),
       }),
       undefined,

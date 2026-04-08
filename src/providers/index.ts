@@ -96,6 +96,12 @@ import { ProviderError } from "../utils/errors.js";
 import { getApiKey, getBaseUrl, getDefaultModel } from "../config/env.js";
 import { createResilientProvider } from "./resilient.js";
 
+function normalizeProviderModel(model: string | undefined): string | undefined {
+  if (typeof model !== "string") return undefined;
+  const trimmed = model.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /**
  * Supported provider types
  */
@@ -130,7 +136,7 @@ export async function createProvider(
   const mergedConfig: ProviderConfig = {
     apiKey: config.apiKey ?? getApiKey(type),
     baseUrl: config.baseUrl ?? getBaseUrl(type),
-    model: config.model ?? getDefaultModel(type),
+    model: normalizeProviderModel(config.model) ?? getDefaultModel(type),
     maxTokens: config.maxTokens,
     temperature: config.temperature,
     timeout: config.timeout,

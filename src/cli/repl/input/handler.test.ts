@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { buildImageIndicator } from "./handler.js";
+import { buildImageIndicator, navigateHistory } from "./handler.js";
 import * as path from "node:path";
 import * as os from "node:os";
 
@@ -172,6 +172,76 @@ describe("Input Handler", () => {
       const toSave = sessionHistory.slice(-500);
 
       expect(toSave.length).toBe(500);
+    });
+  });
+
+  describe("History cursor navigation", () => {
+    it("keeps cursor at start when entering previous history with up", () => {
+      const result = navigateHistory("up", {
+        currentLine: "draft",
+        cursorPos: 0,
+        historyIndex: -1,
+        sessionHistory: ["first command", "second command"],
+        tempLine: "",
+      });
+
+      expect(result).toEqual({
+        currentLine: "second command",
+        cursorPos: 0,
+        historyIndex: 1,
+        tempLine: "draft",
+      });
+    });
+
+    it("keeps cursor at start when moving further up in history", () => {
+      const result = navigateHistory("up", {
+        currentLine: "second command",
+        cursorPos: 0,
+        historyIndex: 1,
+        sessionHistory: ["first command", "second command"],
+        tempLine: "draft",
+      });
+
+      expect(result).toEqual({
+        currentLine: "first command",
+        cursorPos: 0,
+        historyIndex: 0,
+        tempLine: "draft",
+      });
+    });
+
+    it("keeps cursor at end when moving down in history", () => {
+      const result = navigateHistory("down", {
+        currentLine: "first command",
+        cursorPos: 0,
+        historyIndex: 0,
+        sessionHistory: ["first command", "second command"],
+        tempLine: "draft",
+      });
+
+      expect(result).toEqual({
+        currentLine: "second command",
+        cursorPos: "second command".length,
+        historyIndex: 1,
+        tempLine: "draft",
+      });
+    });
+
+    it("restores draft and keeps cursor at end when leaving history downward", () => {
+      const result = navigateHistory("down", {
+        currentLine: "second command",
+        cursorPos: 0,
+        historyIndex: 1,
+        sessionHistory: ["first command", "second command"],
+        tempLine: "draft",
+      });
+
+      expect(result).toEqual({
+        currentLine: "draft",
+        cursorPos: "draft".length,
+        historyIndex: -1,
+        tempLine: "draft",
+      });
     });
   });
 

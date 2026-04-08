@@ -42,6 +42,66 @@ export interface InputHandler {
 /** History file location */
 const HISTORY_FILE = path.join(os.homedir(), ".coco", "history");
 
+interface HistoryNavigationState {
+  currentLine: string;
+  cursorPos: number;
+  historyIndex: number;
+  sessionHistory: string[];
+  tempLine: string;
+}
+
+/**
+ * Apply history navigation while preserving the cursor at the edge used to enter history:
+ * - Up/history keeps the cursor at the start of the recalled line
+ * - Down/history keeps the cursor at the end of the recalled line
+ */
+export function navigateHistory(
+  direction: "up" | "down",
+  state: HistoryNavigationState,
+): Omit<HistoryNavigationState, "sessionHistory"> | null {
+  const { currentLine, historyIndex, sessionHistory, tempLine } = state;
+
+  if (direction === "up") {
+    if (sessionHistory.length === 0) return null;
+
+    let nextIndex = historyIndex;
+    let nextTempLine = tempLine;
+    if (nextIndex === -1) {
+      nextTempLine = currentLine;
+      nextIndex = sessionHistory.length - 1;
+    } else if (nextIndex > 0) {
+      nextIndex--;
+    }
+
+    return {
+      currentLine: sessionHistory[nextIndex] ?? "",
+      cursorPos: 0,
+      historyIndex: nextIndex,
+      tempLine: nextTempLine,
+    };
+  }
+
+  if (historyIndex === -1) return null;
+
+  if (historyIndex < sessionHistory.length - 1) {
+    const nextIndex = historyIndex + 1;
+    const nextLine = sessionHistory[nextIndex] ?? "";
+    return {
+      currentLine: nextLine,
+      cursorPos: nextLine.length,
+      historyIndex: nextIndex,
+      tempLine,
+    };
+  }
+
+  return {
+    currentLine: tempLine,
+    cursorPos: tempLine.length,
+    historyIndex: -1,
+    tempLine,
+  };
+}
+
 /**
  * Handle Option+C / Alt+C keypress: copy the last rendered code block to clipboard.
  * Extracted as a pure-ish function for testability.
@@ -937,15 +997,19 @@ export function createInputHandler(_session: ReplSession): InputHandler {
               cursorPos = 0;
               render();
             } else if (sessionHistory.length > 0) {
-              // Navigate to previous history item
-              if (historyIndex === -1) {
-                tempLine = currentLine;
-                historyIndex = sessionHistory.length - 1;
-              } else if (historyIndex > 0) {
-                historyIndex--;
+              const nextState = navigateHistory("up", {
+                currentLine,
+                cursorPos,
+                historyIndex,
+                sessionHistory,
+                tempLine,
+              });
+              if (nextState) {
+                currentLine = nextState.currentLine;
+                cursorPos = nextState.cursorPos;
+                historyIndex = nextState.historyIndex;
+                tempLine = nextState.tempLine;
               }
-              currentLine = sessionHistory[historyIndex] ?? "";
-              cursorPos = currentLine.length;
               render();
             }
             return;
@@ -973,15 +1037,19 @@ export function createInputHandler(_session: ReplSession): InputHandler {
               cursorPos = currentLine.length;
               render();
             } else if (historyIndex !== -1) {
-              // Navigate to next history item
-              if (historyIndex < sessionHistory.length - 1) {
-                historyIndex++;
-                currentLine = sessionHistory[historyIndex] ?? "";
-              } else {
-                historyIndex = -1;
-                currentLine = tempLine;
+              const nextState = navigateHistory("down", {
+                currentLine,
+                cursorPos,
+                historyIndex,
+                sessionHistory,
+                tempLine,
+              });
+              if (nextState) {
+                currentLine = nextState.currentLine;
+                cursorPos = nextState.cursorPos;
+                historyIndex = nextState.historyIndex;
+                tempLine = nextState.tempLine;
               }
-              cursorPos = currentLine.length;
               render();
             }
             return;

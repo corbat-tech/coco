@@ -923,6 +923,16 @@ describe("Security - Home directory access", () => {
     }
   });
 
+  it("should expand ~ to HOME before reading ~/.coco/mcp.json", async () => {
+    const { readFileTool } = await import("./file.js");
+
+    const cwd = process.cwd();
+    if (!cwd.startsWith("/home/user")) {
+      await readFileTool.execute({ path: "~/.coco/mcp.json" });
+      expect(mockFs.stat).toHaveBeenCalledWith("/home/user/.coco/mcp.json");
+    }
+  });
+
   it("should block writing to files in home directory outside project", async () => {
     const { writeFileTool } = await import("./file.js");
 

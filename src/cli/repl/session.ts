@@ -270,7 +270,7 @@ export async function createDefaultReplConfig(): Promise<ReplConfig> {
   const providerType = await getLastUsedProvider();
 
   // Get last used model for this provider, or fall back to default
-  const model = (await getLastUsedModel(providerType)) ?? getDefaultModel(providerType);
+  const model = (await getLastUsedModel(providerType)) || getDefaultModel(providerType);
 
   return {
     provider: {

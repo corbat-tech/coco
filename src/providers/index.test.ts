@@ -209,6 +209,16 @@ describe("Providers module exports", () => {
         }
       }
     });
+
+    it("should fall back to default model when createProvider receives empty model", async () => {
+      const provider = await ProviderExports.createProvider("copilot", {
+        apiKey: "test-key",
+        model: "   ",
+      });
+
+      expect(provider.id).toBe("copilot");
+      expect(provider.getContextWindow()).toBe(168000);
+    });
   });
 
   describe("getDefaultProvider", () => {

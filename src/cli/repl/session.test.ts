@@ -47,11 +47,28 @@ describe("createDefaultReplConfig", () => {
     expect(config.agent.maxToolIterations).toBe(25);
     expect(config.agent.confirmDestructive).toBe(true);
   });
+
+  it("should fall back to default model when saved model is empty", async () => {
+    const env = await import("../../config/env.js");
+    vi.mocked(env.getLastUsedProvider).mockResolvedValue("copilot" as any);
+    vi.mocked(env.getLastUsedModel).mockResolvedValue("");
+    vi.mocked(env.getDefaultModel).mockReturnValue("claude-sonnet-4.6");
+
+    const { createDefaultReplConfig } = await import("./session.js");
+    const config = await createDefaultReplConfig();
+
+    expect(config.provider.type).toBe("copilot");
+    expect(config.provider.model).toBe("claude-sonnet-4.6");
+  });
 });
 
 describe("createSession", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    const env = await import("../../config/env.js");
+    vi.mocked(env.getLastUsedProvider).mockResolvedValue("anthropic" as any);
+    vi.mocked(env.getLastUsedModel).mockResolvedValue(undefined);
+    vi.mocked(env.getDefaultModel).mockReturnValue("claude-opus-4-6");
   });
 
   it("should create session with unique ID", async () => {

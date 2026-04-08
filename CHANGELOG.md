@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.9] - 2026-04-09
+
+### Fixed
+- **Copilot empty-model fallback** — if the saved or incoming Copilot model is empty/blank, Coco now falls back to a valid default model instead of carrying an empty string that forces the user back into `/model`.
+- **Copilot default model alignment** — the global Copilot default is now aligned with the provider's supported recommended model (`claude-sonnet-4.6`) instead of an inconsistent legacy fallback.
+- **`~` expansion for Coco config paths** — file operations now expand `~` correctly, so paths like `~/.coco/mcp.json` resolve to the user home directory instead of being treated as a literal project-relative path.
+- **History navigation cursor anchors** — pressing `Up` to jump to the start of the line and then pressing `Up` again now navigates to previous history entries while keeping the cursor at the start; the symmetric `Down` flow keeps the cursor at the end for faster vertical history browsing.
+- **Regression coverage for model fallback and input UX** — added focused tests covering blank-model normalization, Copilot fallback behaviour, tilde-expansion, and anchored vertical history navigation.
+
 ## [2.25.8] - 2026-04-09
 
 ### Added

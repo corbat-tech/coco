@@ -60,6 +60,12 @@ const CONTEXT_WINDOWS: Record<string, number> = {
  */
 const DEFAULT_MODEL = "claude-sonnet-4.6";
 
+function normalizeModel(model: string | undefined): string | undefined {
+  if (typeof model !== "string") return undefined;
+  const trimmed = model.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /**
  * Required headers for Copilot API requests.
  *
@@ -101,7 +107,7 @@ export class CopilotProvider extends OpenAIProvider {
   override async initialize(config: ProviderConfig): Promise<void> {
     this.config = {
       ...config,
-      model: config.model ?? DEFAULT_MODEL,
+      model: normalizeModel(config.model) ?? DEFAULT_MODEL,
     };
 
     // Try to get a valid Copilot token
