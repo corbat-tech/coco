@@ -404,15 +404,23 @@ describe("message conversion", () => {
       },
     ]);
 
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({
-          functionResponse: expect.objectContaining({
-            name: "read_file",
+    expect(mockStartChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        history: expect.arrayContaining([
+          expect.objectContaining({
+            role: "function",
+            parts: expect.arrayContaining([
+              expect.objectContaining({
+                functionResponse: expect.objectContaining({
+                  name: "read_file",
+                }),
+              }),
+            ]),
           }),
-        }),
-      ]),
+        ]),
+      }),
     );
+    expect(mockSendMessage).toHaveBeenCalledWith("");
   });
 
   it("should handle empty content array", async () => {

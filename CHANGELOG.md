@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.3] - 2026-04-08
+
+### Fixed
+- **Gemini tool-result role mapping** — fixed Gemini conversation conversion so `functionResponse` parts are sent under a function turn in history instead of a user turn, preventing the SDK/runtime error: `Content with role 'user' contain 'functionResponse' part`.
+- **Gemini post-tool continuation flow** — when the latest turn is only tool results, Coco now sends an empty follow-up user prompt after recording function responses in history, matching Gemini expected request shape.
+- **Regression coverage for Gemini function-response path** — updated tests to ensure tool results are serialized in Gemini-compatible role structure.
+
 ## [2.25.2] - 2026-04-08
 
 ### Fixed

@@ -438,10 +438,15 @@ export class GeminiProvider implements LLMProvider {
               });
             }
           }
+          // Gemini expects functionResponse parts under a "function" role entry.
+          // Putting functionResponse in a user turn causes:
+          // "Content with role 'user' contain 'functionResponse' part".
+          history.push({ role: "function" as Content["role"], parts: functionResponses });
+
           if (isLastMessage) {
-            lastUserMessage = functionResponses;
-          } else {
-            history.push({ role: "user", parts: functionResponses });
+            // After a tool result as the final turn, send an empty user message
+            // so the model can continue from the function response context.
+            lastUserMessage = "";
           }
         } else {
           const parts = this.convertContent(msg.content);
