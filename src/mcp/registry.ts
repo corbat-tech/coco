@@ -119,7 +119,18 @@ export class MCPRegistryImpl implements MCPRegistry {
     try {
       await access(this.registryPath);
       const content = await readFile(this.registryPath, "utf-8");
-      const servers = parseRegistry(content);
+      let servers = parseRegistry(content);
+
+      // Compatibility: also accept the standard cross-agent `mcpServers` format
+      // in ~/.coco/mcp.json, not just the internal `{ servers: [...] }` registry shape.
+      if (servers.length === 0) {
+        try {
+          const { loadMCPConfigFile } = await import("./config-loader.js");
+          servers = await loadMCPConfigFile(this.registryPath);
+        } catch {
+          // Keep empty registry on invalid or unsupported content
+        }
+      }
 
       this.servers.clear();
       for (const server of servers) {

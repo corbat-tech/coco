@@ -16,6 +16,11 @@ import chalk from "chalk";
 import type { SlashCommand, ReplSession } from "../types.js";
 import { getMCPServerManager } from "../../../mcp/lifecycle.js";
 import { MCPRegistryImpl } from "../../../mcp/registry.js";
+import {
+  loadMCPServersFromCOCOConfig,
+  loadProjectMCPFile,
+  mergeMCPConfigs,
+} from "../../../mcp/config-loader.js";
 
 /**
  * Format latency as a human-readable string.
@@ -29,11 +34,15 @@ function formatLatency(ms: number): string {
 /**
  * List all configured MCP servers (from registry) with runtime status.
  */
-async function listServers(): Promise<void> {
+async function listServers(session: ReplSession): Promise<void> {
   const registry = new MCPRegistryImpl();
   await registry.load();
 
-  const servers = registry.listServers();
+  const servers = mergeMCPConfigs(
+    registry.listServers(),
+    await loadMCPServersFromCOCOConfig(),
+    await loadProjectMCPFile(session.projectPath),
+  );
   const manager = getMCPServerManager();
 
   p.intro("MCP Servers");
@@ -183,13 +192,13 @@ export const mcpCommand: SlashCommand = {
   aliases: [],
   description: "Manage MCP servers (list, status, health, restart)",
   usage: "/mcp [list|status|health [name]|restart <name>]",
-  execute: async (args: string[], _session: ReplSession): Promise<boolean> => {
+  execute: async (args: string[], session: ReplSession): Promise<boolean> => {
     const subcommand = args[0]?.toLowerCase() ?? "list";
 
     try {
       switch (subcommand) {
         case "list":
-          await listServers();
+          await listServers(session);
           break;
 
         case "status":

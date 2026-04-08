@@ -35,6 +35,17 @@ const SENSITIVE_PATTERNS = [
  * System paths that should be blocked
  */
 const BLOCKED_PATHS = ["/etc", "/var", "/usr", "/root", "/sys", "/proc", "/boot"];
+const SAFE_COCO_HOME_READ_FILES = new Set([
+  "mcp.json",
+  "config.json",
+  "COCO.md",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "projects.json",
+  "trusted-tools.json",
+  "allowed-paths.json",
+]);
+const SAFE_COCO_HOME_READ_DIR_PREFIXES = ["skills", "memories", "logs", "checkpoints", "sessions"];
 
 /**
  * Validate encoding is safe
@@ -62,6 +73,42 @@ function normalizePath(filePath: string): string {
   // Normalize path separators and resolve .. and .
   normalized = path.normalize(normalized);
   return normalized;
+}
+
+function isWithinDirectory(targetPath: string, baseDir: string): boolean {
+  const normalizedTarget = path.normalize(targetPath);
+  const normalizedBase = path.normalize(baseDir);
+  return (
+    normalizedTarget === normalizedBase || normalizedTarget.startsWith(normalizedBase + path.sep)
+  );
+}
+
+function isSafeCocoHomeReadPath(absolutePath: string, homeDir: string): boolean {
+  const cocoHome = path.join(homeDir, ".coco");
+  if (!isWithinDirectory(absolutePath, cocoHome)) {
+    return false;
+  }
+
+  const relativePath = path.relative(cocoHome, absolutePath);
+  if (!relativePath || relativePath.startsWith("..")) {
+    return false;
+  }
+
+  const segments = relativePath.split(path.sep).filter(Boolean);
+  const firstSegment = segments[0];
+  if (!firstSegment) {
+    return false;
+  }
+
+  if (firstSegment === "tokens" || firstSegment === ".env") {
+    return false;
+  }
+
+  if (segments.length === 1 && SAFE_COCO_HOME_READ_FILES.has(firstSegment)) {
+    return true;
+  }
+
+  return SAFE_COCO_HOME_READ_DIR_PREFIXES.includes(firstSegment);
 }
 
 /**
@@ -99,6 +146,10 @@ function isPathAllowed(
       if (isWithinAllowedPath(absolute, operation)) {
         // Path is explicitly authorized — continue to sensitive file checks below
       } else if (operation === "read") {
+        if (isSafeCocoHomeReadPath(absolute, normalizedHome)) {
+          return { allowed: true };
+        }
+
         // Allow reading common config files in home (but NOT sensitive ones)
         const allowedHomeReads = [".gitconfig", ".zshrc", ".bashrc"];
         const basename = path.basename(absolute);

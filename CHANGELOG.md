@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.8] - 2026-04-09
+
+### Added
+- **Native MCP runtime inspection tool** — added `mcp_list_servers` so the agent can inspect configured and connected MCP servers from the live session without shelling out to `coco mcp ...`.
+
+### Fixed
+- **`~/.coco` MCP config access** — Coco now treats its own config area as first-party state and can read safe files such as `~/.coco/mcp.json` and `~/.coco/config.json` without prompting for `authorize_path`, while still blocking secrets like `~/.coco/.env` and token files.
+- **MCP diagnosis path in agent loop** — when the user explicitly asks to use MCP, Coco now blocks generic `bash_exec` attempts like `coco mcp list` and steers the model to native MCP introspection/tools instead of mixing shell CLI state with the session runtime.
+- **Regression coverage for MCP workflow enforcement** — added targeted tests for safe `~/.coco` reads, MCP runtime inspection, and forcing the model away from shell-based MCP diagnosis.
+
 ## [2.25.7] - 2026-04-09
 
 ### Fixed

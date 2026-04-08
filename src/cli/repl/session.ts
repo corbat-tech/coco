@@ -44,6 +44,7 @@ interface TrustSettings {
  * Category labels for tool catalog display
  */
 const CATEGORY_LABELS: Record<string, string> = {
+  mcp: "MCP Connected Services",
   file: "File Operations",
   bash: "Shell Commands",
   git: "Git & Version Control",
@@ -67,7 +68,7 @@ export function generateToolCatalog(registry: ToolRegistry): string {
   const byCategory = new Map<string, Array<{ name: string; description: string }>>();
 
   for (const tool of tools) {
-    const cat = tool.category;
+    const cat = tool.name.startsWith("mcp_") ? "mcp" : tool.category;
     if (!byCategory.has(cat)) byCategory.set(cat, []);
     byCategory.get(cat)!.push({ name: tool.name, description: tool.description });
   }
@@ -106,6 +107,8 @@ Rules:
 - NEVER show code blocks instead of writing files. NEVER describe actions instead of performing them.
 - NEVER ask "should I?" or "do you want me to?" — the user already told you. JUST DO IT.
 - If you need real-time data, CALL web_search. NEVER say "I don't have access to real-time data."
+- If an MCP tool exists for a service (tool names like \`mcp_<service>_...\`), prefer that MCP tool over generic \`web_fetch\` or \`http_fetch\`.
+- Use \`mcp_list_servers\` to inspect configured or connected MCP services. Do NOT use \`bash_exec\` to run \`coco mcp ...\` unless the user explicitly asked for that CLI command.
 - Before answering "I can't do that", check your full tool catalog below — you likely have a tool for it.
 - NEVER claim you cannot run a command because you lack credentials, access, or connectivity. bash_exec runs in the user's own shell environment and inherits their full PATH, kubeconfig, gcloud auth, AWS profiles, SSH keys, and every other tool installed on their machine. kubectl, gcloud, aws, docker, and any other CLI available to the user are available to you. ALWAYS attempt the command with bash_exec; report failure only if it actually returns a non-zero exit code.
 
@@ -214,6 +217,7 @@ Suggest 1-2 brief, actionable next steps:
 ## File Access
 File operations are restricted to the project directory by default.
 Use **authorize_path** to access paths outside the project — it prompts the user interactively.
+Exception: Coco's own config area under \`~/.coco/\` is first-party product state. You may read safe config files there, especially \`~/.coco/mcp.json\` and \`~/.coco/config.json\`, without using \`authorize_path\`.
 
 ## Tone and Brevity
 

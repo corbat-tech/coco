@@ -24,6 +24,21 @@ const DEFAULT_OPTIONS: Required<MCPToolWrapperOptions> = {
   requestTimeout: 60000,
 };
 
+function buildMcpToolDescription(serverName: string, tool: MCPTool): string {
+  const base = tool.description || `Tool '${tool.name}' exposed by MCP server '${serverName}'`;
+  const lowerServer = serverName.toLowerCase();
+
+  if (
+    lowerServer.includes("atlassian") ||
+    lowerServer.includes("jira") ||
+    lowerServer.includes("confluence")
+  ) {
+    return `${base}. Use this MCP tool for Atlassian/Jira/Confluence data. Prefer it over direct web_fetch or http_fetch for Atlassian content.`;
+  }
+
+  return `${base}. Exposed by MCP server '${serverName}'. Prefer this MCP tool over generic web/http fetch when accessing data from that connected service.`;
+}
+
 /**
  * Convert JSON schema type to Zod schema
  * Enhanced to support: enum, oneOf, anyOf, allOf, const, nullable,
@@ -238,7 +253,7 @@ export function wrapMCPTool(
   // Create COCO tool definition
   const cocoTool: ToolDefinition = {
     name: wrappedName,
-    description: tool.description || `MCP tool: ${tool.name}`,
+    description: buildMcpToolDescription(serverName, tool),
     category: opts.category as ToolCategory,
     parameters: parametersSchema,
     execute: async (params: unknown) => {

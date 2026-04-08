@@ -52,7 +52,8 @@ describe("wrapMCPTool", () => {
     const { tool, wrapped } = wrapMCPTool(mcpTool, "filesystem", mockClient);
 
     expect(tool.name).toBe("mcp_filesystem_read_file");
-    expect(tool.description).toBe("Read a file");
+    expect(tool.description).toContain("Read a file");
+    expect(tool.description).toContain("MCP server 'filesystem'");
     expect(tool.category).toBe("deploy");
     expect(wrapped.originalTool).toEqual(mcpTool);
     expect(wrapped.serverName).toBe("filesystem");
@@ -95,7 +96,21 @@ describe("wrapMCPTool", () => {
 
     const { tool } = wrapMCPTool(mcpTool, "filesystem", mockClient);
 
-    expect(tool.description).toBe("MCP tool: read_file");
+    expect(tool.description).toContain("read_file");
+    expect(tool.description).toContain("MCP server 'filesystem'");
+  });
+
+  it("adds Atlassian-specific preference guidance", () => {
+    const mcpTool: MCPTool = {
+      name: "browse",
+      description: "Browse Jira issue or Confluence page",
+      inputSchema: { type: "object" },
+    };
+
+    const { tool } = wrapMCPTool(mcpTool, "atlassian", mockClient);
+
+    expect(tool.description).toContain("Atlassian/Jira/Confluence");
+    expect(tool.description).toContain("Prefer it over direct web_fetch or http_fetch");
   });
 
   it("should execute mcp tool via wrapper", async () => {

@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, access } from "node:fs/promises";
+import { mkdtemp, rm, access, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MCPRegistryImpl, createMCPRegistry } from "./registry.js";
@@ -202,6 +202,27 @@ describe("MCPRegistryImpl", () => {
       expect(servers.map((s) => s.name)).toContain("enabled-server");
       expect(servers.map((s) => s.name)).toContain("default-server");
       expect(servers.map((s) => s.name)).not.toContain("disabled-server");
+    });
+  });
+
+  describe("load compatibility", () => {
+    it("loads standard mcpServers format from registry path", async () => {
+      const standardConfig = {
+        mcpServers: {
+          atlassian: {
+            url: "https://mcp.atlassian.com/v1/mcp",
+          },
+        },
+      };
+
+      await writeFile(registry.getRegistryPath(), JSON.stringify(standardConfig, null, 2), "utf-8");
+
+      await registry.load();
+
+      const server = registry.getServer("atlassian");
+      expect(server).toBeDefined();
+      expect(server?.transport).toBe("http");
+      expect(server?.http?.url).toBe("https://mcp.atlassian.com/v1/mcp");
     });
   });
 

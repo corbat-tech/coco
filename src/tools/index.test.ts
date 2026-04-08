@@ -216,6 +216,7 @@ describe("Tools module exports", () => {
       expect(registry.get("git_status")).toBeDefined();
       expect(registry.get("run_tests")).toBeDefined();
       expect(registry.get("run_linter")).toBeDefined();
+      expect(registry.get("mcp_list_servers")).toBeDefined();
     });
   });
 

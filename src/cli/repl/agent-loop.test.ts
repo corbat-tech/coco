@@ -192,6 +192,49 @@ describe("executeAgentTurn", () => {
     expect(addMessage).toHaveBeenCalledTimes(2); // user message + assistant response
   });
 
+  it("blocks bash_exec with `coco mcp` when user asked to use MCP", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    const toolCall: ToolCall = {
+      id: "tool-mcp-cli",
+      name: "bash_exec",
+      input: { command: "coco mcp list" },
+    };
+
+    (mockToolRegistry.getToolDefinitionsForLLM as Mock).mockReturnValue([
+      { name: "bash_exec", description: "Run shell", input_schema: { type: "object" } },
+      {
+        name: "mcp_list_servers",
+        description: "Inspect MCP runtime",
+        input_schema: { type: "object" },
+      },
+      {
+        name: "mcp_atlassian_browse_issue",
+        description: "Browse Jira issue",
+        input_schema: { type: "object" },
+      },
+    ]);
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("Checking MCP.", [toolCall])();
+      }
+      return createTextStreamMock("I will inspect the MCP runtime directly instead.")();
+    });
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "Busca la tarea CDOCK-435 y usa el MCP",
+      mockProvider,
+      mockToolRegistry,
+    );
+
+    expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+    expect(result.content).toContain("inspect the MCP runtime directly");
+  });
+
   it("should execute a single tool call", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
     const { addMessage } = await import("./session.js");
@@ -448,6 +491,49 @@ describe("executeAgentTurn", () => {
 
     expect(result.toolCalls.length).toBe(3);
     expect(mockToolRegistry.execute).toHaveBeenCalledTimes(3);
+  });
+
+  it("should force MCP usage when the user explicitly asks for MCP", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    mockToolRegistry = {
+      getToolDefinitionsForLLM: vi.fn(() => [
+        { name: "mcp_atlassian_browse", description: "Browse Jira via MCP", input_schema: { type: "object" } },
+        { name: "http_fetch", description: "Fetch URL", input_schema: { type: "object" } },
+      ]),
+      execute: vi.fn(),
+      register: vi.fn(),
+      unregister: vi.fn(),
+      get: vi.fn(),
+      has: vi.fn(),
+      getAll: vi.fn(),
+      getByCategory: vi.fn(),
+    } as unknown as ToolRegistry;
+
+    const genericFetch: ToolCall = {
+      id: "tool-1",
+      name: "http_fetch",
+      input: { url: "https://decathlon.atlassian.net/rest/api/3/issue/CDOCK-435" },
+    };
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("", [genericFetch])();
+      }
+      return createTextStreamMock("Usaré la tool MCP en vez de fetch genérico.")();
+    });
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "Busca la tarea CDOCK-435 y usa el MCP",
+      mockProvider,
+      mockToolRegistry,
+    );
+
+    expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+    expect(result.content).toContain("Usaré la tool MCP");
   });
 
   describe("confirmation handling", () => {

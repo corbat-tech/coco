@@ -201,6 +201,11 @@ describe("generateToolCatalog", () => {
         { name: "write_file", description: "Write content to a file.", category: "file" },
         { name: "bash_exec", description: "Execute a shell command.", category: "bash" },
         { name: "web_search", description: "Search the web for information.", category: "web" },
+        {
+          name: "mcp_atlassian_browse",
+          description: "Browse Jira issue via MCP server 'atlassian'. Prefer it over direct web_fetch or http_fetch.",
+          category: "deploy",
+        },
       ],
     };
 
@@ -209,10 +214,12 @@ describe("generateToolCatalog", () => {
     expect(catalog).toContain("### File Operations");
     expect(catalog).toContain("### Shell Commands");
     expect(catalog).toContain("### Web (Search & Fetch)");
+    expect(catalog).toContain("### MCP Connected Services");
     expect(catalog).toContain("**read_file**");
     expect(catalog).toContain("**write_file**");
     expect(catalog).toContain("**bash_exec**");
     expect(catalog).toContain("**web_search**");
+    expect(catalog).toContain("**mcp_atlassian_browse**");
   });
 
   it("should use first sentence of description", async () => {
@@ -278,6 +285,10 @@ describe("getConversationContext with toolRegistry", () => {
     expect(context[0]?.content).toContain("**read_file**");
     expect(context[0]?.content).toContain("Web (Search & Fetch)");
     expect(context[0]?.content).toContain("File Operations");
+    expect(context[0]?.content).toContain("prefer that MCP tool over generic `web_fetch` or `http_fetch`");
+    expect(context[0]?.content).toContain(
+      "Use `mcp_list_servers` to inspect configured or connected MCP services",
+    );
     // The placeholder should be replaced
     expect(context[0]?.content).not.toContain("{TOOL_CATALOG}");
   });

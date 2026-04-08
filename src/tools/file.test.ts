@@ -903,6 +903,26 @@ describe("Security - Home directory access", () => {
     }
   });
 
+  it("should allow reading ~/.coco/mcp.json without extra authorization", async () => {
+    const { readFileTool } = await import("./file.js");
+
+    const cwd = process.cwd();
+    if (!cwd.startsWith("/home/user")) {
+      await expect(readFileTool.execute({ path: "/home/user/.coco/mcp.json" })).resolves.toBeDefined();
+    }
+  });
+
+  it("should still block reading ~/.coco/.env", async () => {
+    const { readFileTool } = await import("./file.js");
+
+    const cwd = process.cwd();
+    if (!cwd.startsWith("/home/user")) {
+      await expect(readFileTool.execute({ path: "/home/user/.coco/.env" })).rejects.toThrow(
+        /outside project directory is not allowed/i,
+      );
+    }
+  });
+
   it("should block writing to files in home directory outside project", async () => {
     const { writeFileTool } = await import("./file.js");
 

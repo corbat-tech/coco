@@ -278,6 +278,7 @@ export {
 
 // Open / Execute tools
 export { openFileTool, openTools, type OpenFileOutput } from "./open.js";
+export { mcpListServersTool, mcpTools, type MCPFleetStatus, type MCPFleetServerStatus } from "./mcp.js";
 
 /**
  * Register all tools with a registry
@@ -315,6 +316,7 @@ import { gitEnhancedTools } from "./git-enhanced.js";
 import { githubTools } from "./github.js";
 import { openTools } from "./open.js";
 import { authorizePathTools } from "./authorize-path.js";
+import { mcpTools } from "./mcp.js";
 
 export function registerAllTools(registry: ToolRegistry): void {
   const allTools = [
@@ -349,6 +351,7 @@ export function registerAllTools(registry: ToolRegistry): void {
     ...gitEnhancedTools,
     ...githubTools,
     ...openTools,
+    ...mcpTools,
     ...authorizePathTools,
   ];
 

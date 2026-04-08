@@ -138,6 +138,41 @@ export async function executeAgentTurn(
   // In plan mode, restrict to read-only tools only
   const allTools = toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
   const tools = session.planMode ? filterReadOnlyTools(allTools) : allTools;
+  const availableMcpToolNames = allTools.map((t) => t.name).filter((name) => name.startsWith("mcp_"));
+
+  function extractPlainText(content: string | MessageContent): string {
+    if (typeof content === "string") return content;
+    return content
+      .filter((block): block is { type: "text"; text: string } => block.type === "text")
+      .map((block) => block.text)
+      .join(" ");
+  }
+
+  const normalizedUserRequest = extractPlainText(userMessage).toLowerCase();
+  const userExplicitlyRequestedMcp =
+    /\bmcp\b/.test(normalizedUserRequest) ||
+    /\b(use|using|usa|usar|utiliza|utilizar)\b.{0,24}\bmcp\b/.test(normalizedUserRequest);
+  const userExplicitlyRequestedCocoMcpCli =
+    /\bcoco\s+mcp\b/.test(normalizedUserRequest) ||
+    /\b(run|ejecuta|ejecutar|lanza|lanzar)\b.{0,24}\bcoco\s+mcp\b/.test(normalizedUserRequest);
+  const genericNetworkToolNames = new Set(["http_fetch", "http_json", "web_fetch", "web_search"]);
+
+  function shouldForceMcpForTool(toolCall: ToolCall): boolean {
+    if (!userExplicitlyRequestedMcp) return false;
+    if (availableMcpToolNames.length === 0) return false;
+    if (!genericNetworkToolNames.has(toolCall.name)) return false;
+    return true;
+  }
+
+  function shouldBlockShellMcpInspection(toolCall: ToolCall): boolean {
+    if (toolCall.name !== "bash_exec") return false;
+    if (!userExplicitlyRequestedMcp) return false;
+    if (userExplicitlyRequestedCocoMcpCli) return false;
+    const command = String(toolCall.input.command ?? "")
+      .trim()
+      .toLowerCase();
+    return /^coco\s+mcp(?:\s|$)/.test(command);
+  }
 
   // Agentic loop - continue until no more tool calls
   let iteration = 0;
@@ -532,6 +567,24 @@ export async function executeAgentTurn(
       // Check for abort
       if (options.signal?.aborted || turnAborted) {
         break;
+      }
+
+      if (shouldForceMcpForTool(toolCall)) {
+        declinedTools.set(
+          toolCall.id,
+          `User explicitly requested MCP, but the model selected '${toolCall.name}' instead. Use an MCP tool (${availableMcpToolNames.join(", ")}) for this service access.`,
+        );
+        options.onToolSkipped?.(toolCall, "Use MCP tool instead of generic fetch");
+        continue;
+      }
+
+      if (shouldBlockShellMcpInspection(toolCall)) {
+        declinedTools.set(
+          toolCall.id,
+          "Use the native mcp_list_servers tool to inspect configured and connected MCP services in this session. Do not shell out to `coco mcp ...` for runtime MCP diagnosis unless the user explicitly asked for the CLI command.",
+        );
+        options.onToolSkipped?.(toolCall, "Use mcp_list_servers instead of coco mcp CLI");
+        continue;
       }
 
       // Check if confirmation is needed (skip if tool is trusted for session)

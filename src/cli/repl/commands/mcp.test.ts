@@ -64,6 +64,22 @@ vi.mock("../../../mcp/registry.js", () => ({
   },
 }));
 
+const mockConfigLoader = vi.hoisted(() => ({
+  loadMCPServersFromCOCOConfig: vi.fn(),
+  loadProjectMCPFile: vi.fn(),
+  mergeMCPConfigs: vi.fn((...configs: Array<Array<Record<string, unknown>>>) => {
+    const merged = new Map<string, Record<string, unknown>>();
+    for (const config of configs) {
+      for (const server of config) {
+        merged.set(String(server.name), { ...merged.get(String(server.name)), ...server });
+      }
+    }
+    return Array.from(merged.values());
+  }),
+}));
+
+vi.mock("../../../mcp/config-loader.js", () => mockConfigLoader);
+
 // ---------------------------------------------------------------------------
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
@@ -115,6 +131,8 @@ beforeEach(() => {
   // (clearAllMocks resets vi.fn() implementations too, so we restore them here.)
   mockRegistryMethods.load.mockResolvedValue(undefined);
   mockRegistryMethods.listServers.mockReturnValue([]);
+  mockConfigLoader.loadMCPServersFromCOCOConfig.mockResolvedValue([]);
+  mockConfigLoader.loadProjectMCPFile.mockResolvedValue([]);
   mockManagerMethods.getAllConnections.mockReturnValue([]);
   mockManagerMethods.getConnection.mockReturnValue(undefined);
   mockGetMCPServerManager.mockReturnValue(mockManagerMethods);
@@ -182,6 +200,18 @@ describe("/mcp list (default subcommand)", () => {
     const messages = vi.mocked(p.log.message).mock.calls.map((c) => String(c[0]));
     expect(messages.some((m) => m.includes("filesystem"))).toBe(true);
     expect(messages.some((m) => m.includes("github"))).toBe(true);
+  });
+
+  it("shows servers loaded from coco config even when registry is empty", async () => {
+    mockRegistryMethods.listServers.mockReturnValue([]);
+    mockConfigLoader.loadMCPServersFromCOCOConfig.mockResolvedValue([
+      makeServerConfig("atlassian", "http"),
+    ]);
+
+    await mcpCommand.execute(["list"], mockSession);
+
+    const messages = vi.mocked(p.log.message).mock.calls.map((c) => String(c[0]));
+    expect(messages.some((m) => m.includes("atlassian"))).toBe(true);
   });
 
   it("shows transport type for each server", async () => {
