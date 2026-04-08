@@ -150,6 +150,63 @@ describe("mcp oauth", () => {
     expect(vi.mocked(fetch).mock.calls.length).toBe(3);
   });
 
+  it("forces refresh-token exchange even when cached access token is not locally expired", async () => {
+    const now = Date.now();
+    const cachedStore = {
+      tokens: {
+        "https://mcp.atlassian.com/v1/mcp": {
+          accessToken: "still-cached-token",
+          refreshToken: "refresh-123",
+          expiresAt: now + 60_000,
+          clientId: "client-123",
+          authorizationServer: "https://auth.example.com",
+          resource: "https://mcp.atlassian.com/v1/mcp",
+        },
+      },
+      clients: {},
+    };
+
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(cachedStore));
+    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ authorization_servers: ["https://auth.example.com"] }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            authorization_endpoint: "https://auth.example.com/oauth2/authorize",
+            token_endpoint: "https://auth.example.com/oauth2/token",
+            registration_endpoint: "https://auth.example.com/oauth2/register",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "refreshed-token",
+            refresh_token: "refresh-456",
+            expires_in: 3600,
+          }),
+          { status: 200 },
+        ),
+      );
+
+    const token = await authenticateMcpOAuth({
+      serverName: "atlassian",
+      resourceUrl: "https://mcp.atlassian.com/v1/mcp",
+      forceRefresh: true,
+    });
+
+    expect(token).toBe("refreshed-token");
+    expect(createCallbackServer).not.toHaveBeenCalled();
+  });
+
   it("falls back to authorization-server metadata when protected-resource metadata is unavailable", async () => {
     vi.mocked(fs.readFile).mockRejectedValue(new Error("not found"));
     vi.mocked(fs.mkdir).mockResolvedValue(undefined);

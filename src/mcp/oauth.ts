@@ -428,11 +428,12 @@ export async function authenticateMcpOAuth(params: {
   serverName: string;
   resourceUrl: string;
   wwwAuthenticateHeader?: string | null;
+  forceRefresh?: boolean;
 }): Promise<string> {
   const resource = canonicalizeResourceUrl(params.resourceUrl);
   const store = await loadStore();
   const stored = store.tokens[getResourceKey(resource)];
-  if (stored && !isTokenExpired(stored)) {
+  if (stored && !params.forceRefresh && !isTokenExpired(stored)) {
     return stored.accessToken;
   }
 
@@ -467,7 +468,7 @@ export async function authenticateMcpOAuth(params: {
     authorizationServer ?? authorizationMetadata.issuer ?? new URL(resource).origin;
 
   // Try refresh-token path before interactive login.
-  if (stored && isTokenExpired(stored) && stored.refreshToken && stored.clientId) {
+  if (stored && stored.refreshToken && stored.clientId && (params.forceRefresh || isTokenExpired(stored))) {
     try {
       const refreshed = await refreshAccessToken({
         tokenEndpoint: authorizationMetadata.token_endpoint,

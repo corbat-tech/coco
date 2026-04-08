@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.7] - 2026-04-09
+
+### Fixed
+- **Atlassian MCP OAuth reauthentication** — when a remote MCP server rejects a cached OAuth token with `401 invalid_token`, Coco now invalidates the in-memory token, forces refresh-token exchange, and falls back to interactive browser login when needed instead of looping on the stale token.
+- **MCP auth error detection** — JSON-RPC auth failures now explicitly detect `invalid_token`, expired-token, and related login signals so Coco can trigger OAuth recovery for remote MCP servers that do not present a clean browser flow on the first attempt.
+- **Regression coverage for stale-token MCP flows** — added targeted tests covering forced OAuth refresh and invalid-token recovery in the HTTP MCP transport and OAuth helper.
+
 ## [2.25.6] - 2026-04-08
 
 ### Changed

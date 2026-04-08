@@ -118,8 +118,11 @@ export class HTTPTransport implements MCPTransport {
     return true;
   }
 
-  private async ensureOAuthToken(wwwAuthenticateHeader?: string | null): Promise<string> {
-    if (this.oauthToken) {
+  private async ensureOAuthToken(
+    wwwAuthenticateHeader?: string | null,
+    options?: { forceRefresh?: boolean },
+  ): Promise<string> {
+    if (this.oauthToken && !options?.forceRefresh) {
       return this.oauthToken;
     }
 
@@ -128,10 +131,14 @@ export class HTTPTransport implements MCPTransport {
     }
 
     const serverName = this.config.name ?? this.config.url;
+    if (options?.forceRefresh) {
+      this.oauthToken = undefined;
+    }
     this.oauthInFlight = authenticateMcpOAuth({
       serverName,
       resourceUrl: this.config.url,
       wwwAuthenticateHeader,
+      forceRefresh: options?.forceRefresh,
     })
       .then((token) => {
         this.oauthToken = token;
@@ -172,7 +179,7 @@ export class HTTPTransport implements MCPTransport {
       return response;
     }
 
-    await this.ensureOAuthToken(response.headers.get("www-authenticate"));
+    await this.ensureOAuthToken(response.headers.get("www-authenticate"), { forceRefresh: true });
     response = await doFetch();
     return response;
   }
@@ -186,6 +193,9 @@ export class HTTPTransport implements MCPTransport {
       msg.includes("authentication") ||
       msg.includes("oauth") ||
       msg.includes("access token") ||
+      msg.includes("invalid_token") ||
+      msg.includes("invalid token") ||
+      msg.includes("token expired") ||
       msg.includes("bearer") ||
       msg.includes("not authenticated") ||
       msg.includes("not logged") ||
@@ -290,7 +300,9 @@ export class HTTPTransport implements MCPTransport {
         const data = (await response.json()) as JSONRPCResponse;
 
         if (this.shouldAttemptOAuth() && this.isJsonRpcAuthError(data)) {
-          await this.ensureOAuthToken(response.headers.get("www-authenticate"));
+          await this.ensureOAuthToken(response.headers.get("www-authenticate"), {
+            forceRefresh: true,
+          });
 
           const retryResponse = await this.sendRequestWithOAuthRetry(
             "POST",
