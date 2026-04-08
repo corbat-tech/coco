@@ -537,7 +537,10 @@ async function runDoctor(): Promise<void> {
 
   for (const dir of globalDirs) {
     const metas = await scanSkillsDirectory(dir, "global");
-    const names = metas.map((m) => m.name).sort().join(", ");
+    const names = metas
+      .map((m) => m.name)
+      .sort()
+      .join(", ");
     p.log.info(`Global ${dir}: ${metas.length} skills${names ? ` (${names})` : ""}`);
     for (const meta of metas) {
       registerWinner(winners, meta, scanOrder, winnerScanOrderById);
@@ -550,7 +553,10 @@ async function runDoctor(): Promise<void> {
 
   for (const dir of projectDirs) {
     const metas = await scanSkillsDirectory(dir, "project");
-    const names = metas.map((m) => m.name).sort().join(", ");
+    const names = metas
+      .map((m) => m.name)
+      .sort()
+      .join(", ");
     p.log.info(`Project ${dir}: ${metas.length} skills${names ? ` (${names})` : ""}`);
     for (const meta of metas) {
       registerWinner(winners, meta, scanOrder, winnerScanOrderById);

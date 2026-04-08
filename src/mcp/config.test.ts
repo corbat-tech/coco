@@ -142,11 +142,7 @@ describe("migrateMCPData", () => {
     const servers: MCPServerConfig[] = [
       { name: "github", transport: "stdio", stdio: { command: "npx" } },
     ];
-    await writeFile(
-      join(oldMcpDir, "registry.json"),
-      serializeRegistry(servers),
-      "utf-8",
-    );
+    await writeFile(join(oldMcpDir, "registry.json"), serializeRegistry(servers), "utf-8");
 
     const newRegistry = join(newDir, "mcp.json");
     await migrateMCPData({ oldMcpDir, mcpRegistryPath: newRegistry });

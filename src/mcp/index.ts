@@ -78,11 +78,7 @@ export { createMCPClient, MCPClientImpl } from "./client.js";
 export { createMCPRegistry, MCPRegistryImpl } from "./registry.js";
 
 // Config
-export {
-  validateServerConfig,
-  getDefaultRegistryPath,
-  migrateMCPData,
-} from "./config.js";
+export { validateServerConfig, getDefaultRegistryPath, migrateMCPData } from "./config.js";
 export type { MigrateMCPDataOpts } from "./config.js";
 
 // Tools wrapper

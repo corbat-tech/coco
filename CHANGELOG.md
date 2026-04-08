@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.0] - 2026-04-08
+
+### Added
+- **Cross-agent global skill discovery** — Coco now scans compatible global skill directories by default (`~/.codex/skills`, `~/.gemini/skills`, `~/.opencode/skills`, `~/.claude/skills`, `~/.agents/skills`, `~/.coco/skills`) and supports configurable multi-directory overrides.
+- **`coco skills doctor` command** — added diagnostics for discovery paths, conflicts, and winning skill sources, including disabled-skill visibility.
+
+### Changed
+- **Skills config schema extended** — `skills.globalDirs` and `skills.projectDirs` are now supported (while preserving backward compatibility with single-path `globalDir`/`projectDir`).
+- **MCP configuration resilience and coverage** — MCP config and registry paths received hardening and broader regression coverage to improve stability during config loading and server resolution.
+
+### Fixed
+- **Skill discovery path resolution** — relative `projectDirs` now resolve against `projectPath` (not process cwd), preventing incorrect discovery in non-cwd project contexts.
+- **Release diagnostics accuracy** — `skills doctor` now reports active skills after applying `skills.disabled`, avoiding false “active” counts.
+
 ## [2.24.2] - 2026-03-25
 
 ### Fixed
@@ -1132,7 +1146,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.22.2...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.25.0...HEAD
+[2.25.0]: https://github.com/corbat/corbat-coco/compare/v2.24.2...v2.25.0
 [2.22.2]: https://github.com/corbat/corbat-coco/compare/v2.22.1...v2.22.2
 [2.22.1]: https://github.com/corbat/corbat-coco/compare/v2.22.0...v2.22.1
 [2.22.0]: https://github.com/corbat/corbat-coco/compare/v2.21.1...v2.22.0
