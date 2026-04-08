@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.6] - 2026-04-08
+
+### Changed
+- **Security dependency refresh** — upgraded release-critical dependencies and test tooling to patched versions, including `@anthropic-ai/sdk`, `vitest`, `@vitest/coverage-v8`, and `vite`.
+
+### Fixed
+- **npm audit clean state** — production and full dependency trees now resolve with `0` known vulnerabilities after pinning patched transitive versions for `brace-expansion`, `picomatch`, and `vite`.
+- **Runtime parser dependency regression** — restored `@typescript-eslint/parser` and `@typescript-eslint/typescript-estree` as runtime dependencies required by Coco analysis tools.
+
+## [2.25.5] - 2026-04-08
+
+### Fixed
+- **Atlassian MCP OAuth metadata discovery** — remote MCP auth now falls back cleanly from protected-resource discovery to authorization-server metadata discovery for Atlassian-style deployments.
+- **Copilot Codex parameter compatibility** — OpenAI-compatible requests routed through Copilot now omit unsupported `temperature` values for Codex/GPT-5-style models.
+- **MCP startup visibility and registration stability** — startup now attempts MCP connections early, registers remote MCP tools for connected servers, and surfaces clearer active-server state in the REPL.
+
+## [2.25.4] - 2026-04-08
+
+### Fixed
+- **MCP auth error heuristics** — HTTP MCP transport now recognizes common auth-failure payloads more reliably and triggers OAuth recovery when servers report login/token issues without a clean 401-only flow.
+- **Startup permissions nagging** — suggested-permissions onboarding is now persisted so the recommendation is not shown on every launch after the first decision.
+
 ## [2.25.3] - 2026-04-08
 
 ### Fixed
