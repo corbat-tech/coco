@@ -65,7 +65,9 @@ describe("mcp oauth", () => {
           { status: 200 },
         ),
       )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ client_id: "client-123" }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ client_id: "client-123" }), { status: 200 }),
+      )
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
@@ -217,7 +219,8 @@ describe("mcp oauth", () => {
     } as any);
 
     vi.mocked(fetch).mockImplementation(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       if (url.includes("/.well-known/oauth-protected-resource")) {
         return new Response("404 Not Found", { status: 404 });
       }

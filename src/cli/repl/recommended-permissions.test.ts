@@ -8,6 +8,7 @@ import {
   shouldShowPermissionSuggestion,
   loadPermissionPreferences,
   savePermissionPreference,
+  markPermissionSuggestionShownForProject,
   RECOMMENDED_GLOBAL,
   RECOMMENDED_PROJECT,
 } from "./recommended-permissions.js";
@@ -70,6 +71,20 @@ describe("shouldShowPermissionSuggestion", () => {
 
     expect(result).toBe(false);
   });
+
+  it("should return false when the project was already prompted before", async () => {
+    vi.mocked(fs.readFile).mockResolvedValue(
+      JSON.stringify({
+        recommendedAllowlistPromptedProjects: {
+          "/repo/project": true,
+        },
+      }),
+    );
+
+    const result = await shouldShowPermissionSuggestion("/repo/project");
+
+    expect(result).toBe(false);
+  });
 });
 
 describe("loadPermissionPreferences", () => {
@@ -91,6 +106,7 @@ describe("loadPermissionPreferences", () => {
         recommendedAllowlistApplied: true,
         recommendedAllowlistDismissed: false,
         recommendedAllowlistPrompted: true,
+        recommendedAllowlistPromptedProjects: { "/repo/project": true },
         otherSetting: "value",
       }),
     );
@@ -101,6 +117,7 @@ describe("loadPermissionPreferences", () => {
       recommendedAllowlistApplied: true,
       recommendedAllowlistDismissed: false,
       recommendedAllowlistPrompted: true,
+      recommendedAllowlistPromptedProjects: { "/repo/project": true },
     });
   });
 });
@@ -137,6 +154,34 @@ describe("savePermissionPreference", () => {
       JSON.stringify({ existingKey: "value", recommendedAllowlistApplied: true }, null, 2),
       "utf-8",
     );
+  });
+});
+
+describe("markPermissionSuggestionShownForProject", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("stores the prompted project and keeps other config keys", async () => {
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify({ existingKey: "value" }));
+    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
+    await markPermissionSuggestionShownForProject("/repo/project");
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining("config.json"),
+      expect.any(String),
+      "utf-8",
+    );
+    const writtenConfig = JSON.parse(vi.mocked(fs.writeFile).mock.calls[0]![1] as string);
+    expect(writtenConfig).toEqual({
+      existingKey: "value",
+      recommendedAllowlistPrompted: true,
+      recommendedAllowlistPromptedProjects: {
+        "/repo/project": true,
+      },
+    });
   });
 });
 

@@ -908,7 +908,9 @@ describe("Security - Home directory access", () => {
 
     const cwd = process.cwd();
     if (!cwd.startsWith("/home/user")) {
-      await expect(readFileTool.execute({ path: "/home/user/.coco/mcp.json" })).resolves.toBeDefined();
+      await expect(
+        readFileTool.execute({ path: "/home/user/.coco/mcp.json" }),
+      ).resolves.toBeDefined();
     }
   });
 

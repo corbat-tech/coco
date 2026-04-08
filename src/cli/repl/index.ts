@@ -171,8 +171,8 @@ export async function startRepl(
   await initializeSessionMemory(session);
 
   // Show recommended permissions suggestion for first-time users
-  if (await shouldShowPermissionSuggestion()) {
-    await showPermissionSuggestion();
+  if (await shouldShowPermissionSuggestion(projectPath)) {
+    await showPermissionSuggestion(projectPath);
     // Reload trust into session after potential changes
     const updatedTrust = await loadTrustedTools(projectPath);
     for (const tool of updatedTrust) {
@@ -235,9 +235,8 @@ export async function startRepl(
     const registryServers = mcpRegistry.listEnabledServers();
 
     // Also load project-level .mcp.json (standard cross-agent format — Claude Code, Cursor, Windsurf)
-    const { loadProjectMCPFile, loadMCPServersFromCOCOConfig, mergeMCPConfigs } = await import(
-      "../../mcp/config-loader.js"
-    );
+    const { loadProjectMCPFile, loadMCPServersFromCOCOConfig, mergeMCPConfigs } =
+      await import("../../mcp/config-loader.js");
     const projectServers = await loadProjectMCPFile(projectPath);
     const cocoConfigServers = await loadMCPServersFromCOCOConfig();
     const enabledServers = mergeMCPConfigs(
@@ -304,7 +303,11 @@ export async function startRepl(
   }
 
   async function ensureRequestedMcpConnections(message: string): Promise<void> {
-    if (!mcpManager || configuredMcpServers.length === 0) return;
+    if (configuredMcpServers.length === 0) return;
+    if (!mcpManager) {
+      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
+      mcpManager = getMCPServerManager();
+    }
 
     const normalizedMessage = message.toLowerCase();
     const explicitlyRequestsMcp =
@@ -325,13 +328,16 @@ export async function startRepl(
 
     for (const server of matchingServers) {
       try {
+        const existingConnection = mcpManager.getConnection(server.name);
+        if (existingConnection?.healthy === false) {
+          await mcpManager.stopServer(server.name);
+        }
+
         const connection = await mcpManager.startServer(server);
         if (!registeredMcpServers.has(connection.name)) {
-          await (await import("../../mcp/tools.js")).registerMCPTools(
-            toolRegistry,
-            connection.name,
-            connection.client,
-          );
+          await (
+            await import("../../mcp/tools.js")
+          ).registerMCPTools(toolRegistry, connection.name, connection.client);
           registeredMcpServers.add(connection.name);
         }
       } catch (error) {

@@ -202,7 +202,10 @@ export class HTTPTransport implements MCPTransport {
       msg.includes("login") ||
       (msg.includes("generate") && msg.includes("token"));
     const hasVendorHint =
-      msg.includes("gemini cli") || msg.includes("jira") || msg.includes("confluence") || msg.includes("atlassian");
+      msg.includes("gemini cli") ||
+      msg.includes("jira") ||
+      msg.includes("confluence") ||
+      msg.includes("atlassian");
     const hasWeakAuthSignal =
       msg.includes("authenticate") || msg.includes("token") || msg.includes("authorization");
     return (

@@ -1095,7 +1095,9 @@ export class OpenAIProvider implements LLMProvider {
           input,
           instructions: instructions ?? undefined,
           max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
+          ...(supportsTemp && {
+            temperature: options?.temperature ?? this.config.temperature ?? 0,
+          }),
           store: false,
         });
 
@@ -1137,7 +1139,9 @@ export class OpenAIProvider implements LLMProvider {
           instructions: instructions ?? undefined,
           tools,
           max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
+          ...(supportsTemp && {
+            temperature: options?.temperature ?? this.config.temperature ?? 0,
+          }),
           store: false,
         });
 

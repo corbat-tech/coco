@@ -449,6 +449,11 @@ export interface PermissionPreferences {
   recommendedAllowlistApplied?: boolean;
   recommendedAllowlistDismissed?: boolean;
   recommendedAllowlistPrompted?: boolean;
+  recommendedAllowlistPromptedProjects?: Record<string, boolean>;
+}
+
+function getProjectPreferenceKey(projectPath: string): string {
+  return path.resolve(projectPath);
 }
 
 /**
@@ -462,6 +467,9 @@ export async function loadPermissionPreferences(): Promise<PermissionPreferences
       recommendedAllowlistApplied: config.recommendedAllowlistApplied as boolean | undefined,
       recommendedAllowlistDismissed: config.recommendedAllowlistDismissed as boolean | undefined,
       recommendedAllowlistPrompted: config.recommendedAllowlistPrompted as boolean | undefined,
+      recommendedAllowlistPromptedProjects: config.recommendedAllowlistPromptedProjects as
+        | Record<string, boolean>
+        | undefined,
     };
   } catch {
     return {};
@@ -497,6 +505,31 @@ export async function savePermissionPreference(
   }
 }
 
+export async function markPermissionSuggestionShownForProject(projectPath: string): Promise<void> {
+  try {
+    let config: Record<string, unknown> = {};
+    try {
+      const content = await fs.readFile(CONFIG_PATHS.config, "utf-8");
+      config = JSON.parse(content) as Record<string, unknown>;
+    } catch {
+      // File doesn't exist yet — start fresh
+    }
+
+    const promptedProjects = {
+      ...(config.recommendedAllowlistPromptedProjects as Record<string, boolean> | undefined),
+      [getProjectPreferenceKey(projectPath)]: true,
+    };
+
+    config.recommendedAllowlistPromptedProjects = promptedProjects;
+    config.recommendedAllowlistPrompted = true;
+
+    await fs.mkdir(path.dirname(CONFIG_PATHS.config), { recursive: true });
+    await fs.writeFile(CONFIG_PATHS.config, JSON.stringify(config, null, 2), "utf-8");
+  } catch {
+    // Silently fail if we can't save preferences
+  }
+}
+
 // ============================================================================
 // Suggestion Flow
 // ============================================================================
@@ -505,7 +538,9 @@ export async function savePermissionPreference(
  * Check if the recommended permissions suggestion should be shown.
  * Returns true until user applies or dismisses the suggestion.
  */
-export async function shouldShowPermissionSuggestion(): Promise<boolean> {
+export async function shouldShowPermissionSuggestion(
+  projectPath = process.cwd(),
+): Promise<boolean> {
   const prefs = await loadPermissionPreferences();
 
   // If user dismissed, never show again
@@ -515,6 +550,11 @@ export async function shouldShowPermissionSuggestion(): Promise<boolean> {
 
   // If already applied, no need to show
   if (prefs.recommendedAllowlistApplied) {
+    return false;
+  }
+
+  const projectKey = getProjectPreferenceKey(projectPath);
+  if (prefs.recommendedAllowlistPromptedProjects?.[projectKey]) {
     return false;
   }
 
@@ -544,7 +584,9 @@ export async function applyRecommendedPermissions(): Promise<void> {
  * - Later: remind next startup
  * - No thanks: never show again
  */
-export async function showPermissionSuggestion(): Promise<void> {
+export async function showPermissionSuggestion(projectPath = process.cwd()): Promise<void> {
+  await markPermissionSuggestionShownForProject(projectPath);
+
   console.log();
   console.log(chalk.magenta.bold("  📋 Recommended Permissions"));
   console.log();

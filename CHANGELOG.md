@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.11] - 2026-04-09
+
+### Fixed
+- **Copilot placeholder-model fallback** — persisted placeholder values such as `default` are now treated as unset, so Coco falls back to a real Copilot model instead of booting with an invalid non-model that forces a manual `/model` recovery.
+- **MCP session reconnection and auth recovery** — Coco now exposes a native `mcp_connect_server` tool, reconnects configured MCP servers more aggressively for the current session, and explicitly steers the agent to use built-in MCP OAuth/browser auth instead of telling the user to handle raw tokens manually.
+- **MCP startup/on-demand resilience** — on-demand MCP connection now recreates the lifecycle manager when needed and restarts unhealthy disconnected servers before serving a turn, improving Atlassian/Jira reconnection after expired auth or startup failures.
+- **Recommended permissions prompt persistence per project** — the “recommended permissions” suggestion is now remembered per project path, so choosing “Later” no longer re-prompts on every launch of the same repository.
+- **Release formatting regression** — applied formatter-backed fixes so the release branch passes the CI formatting step that regressed in `2.25.10`.
+
 ## [2.25.10] - 2026-04-09
 
 ### Fixed

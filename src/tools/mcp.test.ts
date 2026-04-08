@@ -21,7 +21,12 @@ const mockConfigLoader = vi.hoisted(() => ({
 
 const mockManagerMethods = {
   getConnection: vi.fn(),
+  startServer: vi.fn(),
+  stopServer: vi.fn(),
 };
+
+const mockRegisterMCPTools = vi.fn();
+const mockGetAgentToolRegistry = vi.fn();
 
 vi.mock("../mcp/registry.js", () => ({
   MCPRegistryImpl: function () {
@@ -35,6 +40,14 @@ vi.mock("../mcp/lifecycle.js", () => ({
   getMCPServerManager: vi.fn(() => mockManagerMethods),
 }));
 
+vi.mock("../mcp/tools.js", () => ({
+  registerMCPTools: mockRegisterMCPTools,
+}));
+
+vi.mock("../agents/provider-bridge.js", () => ({
+  getAgentToolRegistry: mockGetAgentToolRegistry,
+}));
+
 describe("mcpListServersTool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,6 +56,18 @@ describe("mcpListServersTool", () => {
     mockConfigLoader.loadMCPServersFromCOCOConfig.mockResolvedValue([]);
     mockConfigLoader.loadProjectMCPFile.mockResolvedValue([]);
     mockManagerMethods.getConnection.mockReturnValue(undefined);
+    mockManagerMethods.startServer.mockResolvedValue({
+      name: "atlassian",
+      toolCount: 2,
+      client: {
+        listTools: vi.fn().mockResolvedValue({
+          tools: [{ name: "browse_issue" }, { name: "search_issues" }],
+        }),
+      },
+    });
+    mockManagerMethods.stopServer.mockResolvedValue(undefined);
+    mockRegisterMCPTools.mockResolvedValue([]);
+    mockGetAgentToolRegistry.mockReturnValue({ register: vi.fn() });
   });
 
   it("lists configured servers merged from all MCP sources", async () => {
@@ -97,5 +122,29 @@ describe("mcpListServersTool", () => {
     const result = await mcpListServersTool.execute({});
 
     expect(result.servers.map((server) => server.name)).toEqual(["github"]);
+  });
+
+  it("connects a configured MCP server and registers its tools", async () => {
+    const { mcpConnectServerTool } = await import("./mcp.js");
+
+    mockRegistryMethods.listServers.mockReturnValue([{ name: "atlassian", transport: "http" }]);
+
+    const result = await mcpConnectServerTool.execute({ server: "jira", includeTools: true });
+
+    expect(mockManagerMethods.startServer).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "atlassian" }),
+    );
+    expect(mockRegisterMCPTools).toHaveBeenCalledWith(
+      expect.anything(),
+      "atlassian",
+      expect.objectContaining({ listTools: expect.any(Function) }),
+    );
+    expect(result).toMatchObject({
+      requestedServer: "jira",
+      connected: true,
+      healthy: true,
+      toolCount: 2,
+      tools: ["browse_issue", "search_issues"],
+    });
   });
 });

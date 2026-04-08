@@ -63,6 +63,19 @@ describe("env preferences use global config only", () => {
     expect(model).toBeUndefined();
   });
 
+  it("getLastUsedModel ignores placeholder default model values", async () => {
+    const { loadConfig } = await import("./loader.js");
+    vi.mocked(loadConfig).mockResolvedValue({
+      provider: { type: "copilot", model: "default" },
+      providerModels: { copilot: "default" },
+    } as any);
+
+    const { getLastUsedModel } = await import("./env.js");
+    const model = await getLastUsedModel("copilot" as any);
+
+    expect(model).toBeUndefined();
+  });
+
   it("saveProviderPreference loads/saves against global config", async () => {
     const { loadConfig, saveConfig } = await import("./loader.js");
     vi.mocked(loadConfig).mockResolvedValue({

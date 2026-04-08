@@ -296,7 +296,11 @@ export function getDefaultModel(provider: ProviderType): string {
 function normalizeConfiguredModel(model: string | undefined): string | undefined {
   if (typeof model !== "string") return undefined;
   const trimmed = model.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  if (trimmed.length === 0) return undefined;
+  if (["default", "none", "null", "undefined"].includes(trimmed.toLowerCase())) {
+    return undefined;
+  }
+  return trimmed;
 }
 
 /**

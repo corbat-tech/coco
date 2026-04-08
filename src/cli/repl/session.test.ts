@@ -220,7 +220,8 @@ describe("generateToolCatalog", () => {
         { name: "web_search", description: "Search the web for information.", category: "web" },
         {
           name: "mcp_atlassian_browse",
-          description: "Browse Jira issue via MCP server 'atlassian'. Prefer it over direct web_fetch or http_fetch.",
+          description:
+            "Browse Jira issue via MCP server 'atlassian'. Prefer it over direct web_fetch or http_fetch.",
           category: "deploy",
         },
       ],
@@ -302,7 +303,9 @@ describe("getConversationContext with toolRegistry", () => {
     expect(context[0]?.content).toContain("**read_file**");
     expect(context[0]?.content).toContain("Web (Search & Fetch)");
     expect(context[0]?.content).toContain("File Operations");
-    expect(context[0]?.content).toContain("prefer that MCP tool over generic `web_fetch` or `http_fetch`");
+    expect(context[0]?.content).toContain(
+      "prefer that MCP tool over generic `web_fetch` or `http_fetch`",
+    );
     expect(context[0]?.content).toContain(
       "Use `mcp_list_servers` to inspect configured or connected MCP services",
     );

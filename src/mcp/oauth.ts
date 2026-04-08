@@ -199,10 +199,7 @@ function parseResourceMetadataUrl(wwwAuthenticateHeader?: string | null): string
   return match?.[1];
 }
 
-function createProtectedMetadataCandidates(
-  resourceUrl: string,
-  headerUrl?: string,
-): string[] {
+function createProtectedMetadataCandidates(resourceUrl: string, headerUrl?: string): string[] {
   const candidates: string[] = [];
   if (headerUrl) {
     candidates.push(headerUrl);
@@ -215,7 +212,9 @@ function createProtectedMetadataCandidates(
   candidates.push(`${origin}/.well-known/oauth-protected-resource`);
   if (pathPart && pathPart !== "/") {
     candidates.push(`${origin}/.well-known/oauth-protected-resource${pathPart}`);
-    candidates.push(`${origin}/.well-known/oauth-protected-resource/${pathPart.replace(/^\//, "")}`);
+    candidates.push(
+      `${origin}/.well-known/oauth-protected-resource/${pathPart.replace(/^\//, "")}`,
+    );
   }
 
   return Array.from(new Set(candidates));
@@ -254,7 +253,10 @@ async function discoverProtectedResourceMetadata(
   for (const candidate of candidates) {
     try {
       const metadata = await fetchJson<ProtectedResourceMetadata>(candidate);
-      if (Array.isArray(metadata.authorization_servers) && metadata.authorization_servers.length > 0) {
+      if (
+        Array.isArray(metadata.authorization_servers) &&
+        metadata.authorization_servers.length > 0
+      ) {
         return metadata;
       }
     } catch {
@@ -409,7 +411,9 @@ async function persistToken(
 ): Promise<void> {
   const store = await loadStore();
   const expiresAt =
-    typeof token.expires_in === "number" ? Date.now() + Math.max(0, token.expires_in) * 1000 : undefined;
+    typeof token.expires_in === "number"
+      ? Date.now() + Math.max(0, token.expires_in) * 1000
+      : undefined;
 
   store.tokens[getResourceKey(resourceUrl)] = {
     accessToken: token.access_token,
@@ -468,7 +472,12 @@ export async function authenticateMcpOAuth(params: {
     authorizationServer ?? authorizationMetadata.issuer ?? new URL(resource).origin;
 
   // Try refresh-token path before interactive login.
-  if (stored && stored.refreshToken && stored.clientId && (params.forceRefresh || isTokenExpired(stored))) {
+  if (
+    stored &&
+    stored.refreshToken &&
+    stored.clientId &&
+    (params.forceRefresh || isTokenExpired(stored))
+  ) {
     try {
       const refreshed = await refreshAccessToken({
         tokenEndpoint: authorizationMetadata.token_endpoint,

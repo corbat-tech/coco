@@ -498,7 +498,11 @@ describe("executeAgentTurn", () => {
 
     mockToolRegistry = {
       getToolDefinitionsForLLM: vi.fn(() => [
-        { name: "mcp_atlassian_browse", description: "Browse Jira via MCP", input_schema: { type: "object" } },
+        {
+          name: "mcp_atlassian_browse",
+          description: "Browse Jira via MCP",
+          input_schema: { type: "object" },
+        },
         { name: "http_fetch", description: "Fetch URL", input_schema: { type: "object" } },
       ]),
       execute: vi.fn(),

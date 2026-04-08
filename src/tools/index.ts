@@ -278,7 +278,14 @@ export {
 
 // Open / Execute tools
 export { openFileTool, openTools, type OpenFileOutput } from "./open.js";
-export { mcpListServersTool, mcpTools, type MCPFleetStatus, type MCPFleetServerStatus } from "./mcp.js";
+export {
+  mcpListServersTool,
+  mcpConnectServerTool,
+  mcpTools,
+  type MCPFleetStatus,
+  type MCPFleetServerStatus,
+  type MCPConnectServerResult,
+} from "./mcp.js";
 
 /**
  * Register all tools with a registry

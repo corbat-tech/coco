@@ -138,7 +138,9 @@ export async function executeAgentTurn(
   // In plan mode, restrict to read-only tools only
   const allTools = toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
   const tools = session.planMode ? filterReadOnlyTools(allTools) : allTools;
-  const availableMcpToolNames = allTools.map((t) => t.name).filter((name) => name.startsWith("mcp_"));
+  const availableMcpToolNames = allTools
+    .map((t) => t.name)
+    .filter((name) => name.startsWith("mcp_"));
 
   function extractPlainText(content: string | MessageContent): string {
     if (typeof content === "string") return content;
