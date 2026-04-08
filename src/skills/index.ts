@@ -35,8 +35,8 @@ export { UnifiedSkillRegistry, createUnifiedSkillRegistry } from "./registry.js"
 export type { SkillsRuntimeConfig, SkillEvent } from "./registry.js";
 
 // Discovery
-export { discoverAllSkills, scanSkillsDirectory } from "./discovery.js";
-export type { DiscoveryOptions } from "./discovery.js";
+export { discoverAllSkills, scanSkillsDirectory, resolveDiscoveryDirs } from "./discovery.js";
+export type { DiscoveryOptions, ResolvedDiscoveryDirs } from "./discovery.js";
 
 // Matcher
 export { matchSkills, tokenize, stem, levenshtein } from "./matcher.js";

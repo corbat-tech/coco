@@ -56,6 +56,9 @@ export const CONFIG_PATHS = {
 
   /** Global skills directory: ~/.coco/skills/ */
   skills: join(COCO_HOME, "skills"),
+
+  /** MCP server registry: ~/.coco/mcp.json */
+  mcpRegistry: join(COCO_HOME, "mcp.json"),
 } as const;
 
 /**
@@ -71,4 +74,7 @@ export function getAllPaths(): Record<string, string> {
 export const LEGACY_PATHS = {
   /** Old config location */
   oldConfig: join(homedir(), ".config", "corbat-coco"),
+
+  /** Old MCP config directory (pre-unification) */
+  oldMcpDir: join(homedir(), ".config", "coco", "mcp"),
 } as const;

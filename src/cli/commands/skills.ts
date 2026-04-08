@@ -8,11 +8,42 @@
 import { Command } from "commander";
 import * as p from "@clack/prompts";
 import chalk from "chalk";
-import { discoverAllSkills } from "../../skills/index.js";
+import {
+  discoverAllSkills,
+  resolveDiscoveryDirs,
+  scanSkillsDirectory,
+  nativeSkillToMetadata,
+  type DiscoveryOptions,
+  type SkillMetadata,
+} from "../../skills/index.js";
 import { getBuiltinSkillsForDiscovery } from "../repl/skills/index.js";
 import { CONFIG_PATHS } from "../../config/paths.js";
 import fs from "node:fs/promises";
 import path from "node:path";
+
+type LoadedSkillsSettings = {
+  globalDir?: string;
+  globalDirs?: string[];
+  projectDir?: string;
+  projectDirs?: string[];
+  disabled?: string[];
+};
+
+async function loadSkillsSettings(): Promise<LoadedSkillsSettings> {
+  try {
+    const { loadConfig } = await import("../../config/loader.js");
+    const config = await loadConfig();
+    return {
+      globalDir: config.skills?.globalDir,
+      globalDirs: config.skills?.globalDirs,
+      projectDir: config.skills?.projectDir,
+      projectDirs: config.skills?.projectDirs,
+      disabled: config.skills?.disabled ?? [],
+    };
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Register skills command
@@ -61,6 +92,22 @@ export function registerSkillsCommand(program: Command): void {
     .argument("<name>", "Skill name")
     .option("-g, --global", "Create in global directory")
     .action(runCreate);
+
+  // Doctor subcommand
+  skillsCommand
+    .command("doctor")
+    .description("Explain skill discovery paths, conflicts, and winners")
+    .action(runDoctor);
+}
+
+async function loadSkillsDiscoveryOptions(): Promise<DiscoveryOptions> {
+  const settings = await loadSkillsSettings();
+  return {
+    globalDir: settings.globalDir,
+    globalDirs: settings.globalDirs,
+    projectDir: settings.projectDir,
+    projectDirs: settings.projectDirs,
+  };
 }
 
 // ============================================================================
@@ -74,7 +121,8 @@ async function runList(options: { scope?: string; kind?: string }): Promise<void
   let allSkills;
   try {
     const builtins = getBuiltinSkillsForDiscovery();
-    allSkills = await discoverAllSkills(projectPath, builtins);
+    const discoveryOptions = await loadSkillsDiscoveryOptions();
+    allSkills = await discoverAllSkills(projectPath, builtins, discoveryOptions);
   } catch (error) {
     p.log.error(
       `Failed to discover skills: ${error instanceof Error ? error.message : String(error)}`,
@@ -107,7 +155,7 @@ async function runList(options: { scope?: string; kind?: string }): Promise<void
 
   const scopeLabels: Record<string, string> = {
     builtin: "Builtin",
-    global: `Global (${CONFIG_PATHS.skills})`,
+    global: `Global (multi-dir, default includes ${CONFIG_PATHS.skills})`,
     project: `Project (.agents/skills/, .claude/skills/, ...)`,
   };
 
@@ -278,7 +326,8 @@ async function runInfo(name: string): Promise<void> {
   let allSkills;
   try {
     const builtins = getBuiltinSkillsForDiscovery();
-    allSkills = await discoverAllSkills(projectPath, builtins);
+    const discoveryOptions = await loadSkillsDiscoveryOptions();
+    allSkills = await discoverAllSkills(projectPath, builtins, discoveryOptions);
   } catch (error) {
     p.log.error(
       `Failed to discover skills: ${error instanceof Error ? error.message : String(error)}`,
@@ -418,5 +467,127 @@ when this skill is activated (automatically via matching or manually via /${name
 
   p.log.success(`Created skill at ${skillDir}`);
   p.log.info(`Edit ${path.join(skillDir, "SKILL.md")} to add instructions.`);
+  p.outro("");
+}
+
+// ============================================================================
+// Doctor
+// ============================================================================
+
+function registerWinner(
+  winners: Map<string, SkillMetadata>,
+  candidate: SkillMetadata,
+  candidateScanOrder: number,
+  scanOrderById: Map<string, number>,
+): void {
+  const existing = winners.get(candidate.id);
+  const existingOrder = scanOrderById.get(candidate.id) ?? -1;
+  const scopePriority = { builtin: 1, global: 2, project: 3 } as const;
+
+  if (
+    !existing ||
+    scopePriority[candidate.scope] > scopePriority[existing.scope] ||
+    (scopePriority[candidate.scope] === scopePriority[existing.scope] &&
+      candidateScanOrder >= existingOrder)
+  ) {
+    winners.set(candidate.id, candidate);
+    scanOrderById.set(candidate.id, candidateScanOrder);
+  }
+}
+
+async function runDoctor(): Promise<void> {
+  p.intro(chalk.magenta("Skills Doctor"));
+
+  const projectPath = process.cwd();
+  const settings = await loadSkillsSettings();
+  const discoveryOptions: DiscoveryOptions = {
+    globalDir: settings.globalDir,
+    globalDirs: settings.globalDirs,
+    projectDir: settings.projectDir,
+    projectDirs: settings.projectDirs,
+  };
+  const disabled = new Set(settings.disabled ?? []);
+  const builtins = getBuiltinSkillsForDiscovery();
+  const { globalDirs, projectDirs } = resolveDiscoveryDirs(projectPath, discoveryOptions);
+
+  p.log.step("Discovery paths (scan order, later wins within same scope)");
+  console.log(chalk.dim("  Global:"));
+  for (const dir of globalDirs) {
+    console.log(chalk.dim(`    - ${dir}`));
+  }
+  console.log(chalk.dim("  Project:"));
+  for (const dir of projectDirs) {
+    console.log(chalk.dim(`    - ${dir}`));
+  }
+  console.log();
+
+  const winners = new Map<string, SkillMetadata>();
+  const winnerScanOrderById = new Map<string, number>();
+  const candidatesById = new Map<string, SkillMetadata[]>();
+  let scanOrder = 0;
+
+  // Builtins are lowest priority
+  for (const skill of builtins) {
+    const meta = nativeSkillToMetadata(skill, "builtin");
+    meta.path = "<builtin>";
+    registerWinner(winners, meta, scanOrder, winnerScanOrderById);
+    candidatesById.set(meta.id, [meta]);
+    scanOrder += 1;
+  }
+
+  for (const dir of globalDirs) {
+    const metas = await scanSkillsDirectory(dir, "global");
+    const names = metas.map((m) => m.name).sort().join(", ");
+    p.log.info(`Global ${dir}: ${metas.length} skills${names ? ` (${names})` : ""}`);
+    for (const meta of metas) {
+      registerWinner(winners, meta, scanOrder, winnerScanOrderById);
+      const list = candidatesById.get(meta.id) ?? [];
+      list.push(meta);
+      candidatesById.set(meta.id, list);
+      scanOrder += 1;
+    }
+  }
+
+  for (const dir of projectDirs) {
+    const metas = await scanSkillsDirectory(dir, "project");
+    const names = metas.map((m) => m.name).sort().join(", ");
+    p.log.info(`Project ${dir}: ${metas.length} skills${names ? ` (${names})` : ""}`);
+    for (const meta of metas) {
+      registerWinner(winners, meta, scanOrder, winnerScanOrderById);
+      const list = candidatesById.get(meta.id) ?? [];
+      list.push(meta);
+      candidatesById.set(meta.id, list);
+      scanOrder += 1;
+    }
+  }
+
+  const conflicts = Array.from(candidatesById.entries())
+    .filter(([, list]) => list.length > 1)
+    .sort(([a], [b]) => a.localeCompare(b));
+  const activeWinners = Array.from(winners.values()).filter((meta) => !disabled.has(meta.id));
+
+  console.log();
+  p.log.step(`Final active skills: ${activeWinners.length}`);
+  if (disabled.size > 0) {
+    p.log.info(`Disabled by config: ${Array.from(disabled).sort().join(", ")}`);
+  }
+  if (conflicts.length === 0) {
+    p.log.success("No naming conflicts detected.");
+    p.outro("");
+    return;
+  }
+
+  p.log.step(`Conflicts detected: ${conflicts.length}`);
+  for (const [id, list] of conflicts) {
+    const winner = winners.get(id);
+    if (!winner) continue;
+    const disabledTag = disabled.has(winner.id) ? chalk.yellow(" [DISABLED]") : "";
+    console.log(`  ${chalk.bold(id)} -> winner: ${winner.path} [${winner.scope}]${disabledTag}`);
+    for (const candidate of list) {
+      const marker = candidate.path === winner.path ? chalk.green("WIN") : chalk.dim("LOSE");
+      console.log(`    - ${marker} ${candidate.path} [${candidate.scope}]`);
+    }
+  }
+
   p.outro("");
 }

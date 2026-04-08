@@ -79,14 +79,11 @@ export { createMCPRegistry, MCPRegistryImpl } from "./registry.js";
 
 // Config
 export {
-  loadMCPConfig,
-  saveMCPConfig,
   validateServerConfig,
   getDefaultRegistryPath,
-  DEFAULT_MCP_CONFIG_DIR,
-  DEFAULT_REGISTRY_FILE,
+  migrateMCPData,
 } from "./config.js";
-export type { MCPGlobalConfig } from "./config.js";
+export type { MigrateMCPDataOpts } from "./config.js";
 
 // Tools wrapper
 export {

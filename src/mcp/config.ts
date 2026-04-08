@@ -1,47 +1,24 @@
 /**
  * MCP Configuration Module
  *
- * Handles MCP configuration files and settings.
+ * Handles MCP configuration validation and registry path resolution.
+ * Global MCP settings (defaultTimeout, autoDiscover, logLevel) live in
+ * ~/.coco/config.json under the `mcp` key — see src/config/schema.ts.
  */
 
 import { readFile, writeFile, access, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { CONFIG_PATHS, LEGACY_PATHS } from "../config/paths.js";
 import { MCPErrorCode, type MCPServerConfig } from "./types.js";
 import { MCPError } from "./errors.js";
+import { getLogger } from "../utils/logger.js";
 
 /**
- * Default MCP configuration directory
+ * Get default registry path: ~/.coco/mcp.json
  */
-export const DEFAULT_MCP_CONFIG_DIR = join(homedir(), ".config", "coco", "mcp");
-
-/**
- * Default registry file name
- */
-export const DEFAULT_REGISTRY_FILE = "registry.json";
-
-/**
- * MCP global configuration
- */
-export interface MCPGlobalConfig {
-  /** Default timeout for MCP requests (milliseconds) */
-  defaultTimeout: number;
-  /** Auto-discover servers from well-known locations */
-  autoDiscover: boolean;
-  /** Log level for MCP operations */
-  logLevel: "debug" | "info" | "warn" | "error";
-  /** Path to custom servers directory */
-  customServersPath?: string;
+export function getDefaultRegistryPath(): string {
+  return CONFIG_PATHS.mcpRegistry;
 }
-
-/**
- * Default global configuration
- */
-export const DEFAULT_MCP_CONFIG: MCPGlobalConfig = {
-  defaultTimeout: 60000,
-  autoDiscover: true,
-  logLevel: "info",
-};
 
 /**
  * Validate server configuration
@@ -109,49 +86,6 @@ export function validateServerConfig(config: unknown): asserts config is MCPServ
 }
 
 /**
- * Ensure directory exists
- */
-async function ensureDir(path: string): Promise<void> {
-  try {
-    await mkdir(dirname(path), { recursive: true });
-  } catch {
-    // Directory might already exist
-  }
-}
-
-/**
- * Load MCP global configuration
- */
-export async function loadMCPConfig(configPath?: string): Promise<MCPGlobalConfig> {
-  const path = configPath || join(DEFAULT_MCP_CONFIG_DIR, "config.json");
-
-  try {
-    await access(path);
-    const content = await readFile(path, "utf-8");
-    const parsed = JSON.parse(content) as Partial<MCPGlobalConfig>;
-    return { ...DEFAULT_MCP_CONFIG, ...parsed };
-  } catch {
-    return DEFAULT_MCP_CONFIG;
-  }
-}
-
-/**
- * Save MCP global configuration
- */
-export async function saveMCPConfig(config: MCPGlobalConfig, configPath?: string): Promise<void> {
-  const path = configPath || join(DEFAULT_MCP_CONFIG_DIR, "config.json");
-  await ensureDir(path);
-  await writeFile(path, JSON.stringify(config, null, 2), "utf-8");
-}
-
-/**
- * Get default registry path
- */
-export function getDefaultRegistryPath(): string {
-  return join(DEFAULT_MCP_CONFIG_DIR, DEFAULT_REGISTRY_FILE);
-}
-
-/**
  * Parse registry from JSON
  */
 export function parseRegistry(json: string): MCPServerConfig[] {
@@ -171,4 +105,117 @@ export function parseRegistry(json: string): MCPServerConfig[] {
  */
 export function serializeRegistry(servers: MCPServerConfig[]): string {
   return JSON.stringify({ servers, version: "1.0" }, null, 2);
+}
+
+// ============================================================================
+// Migration
+// ============================================================================
+
+export interface MigrateMCPDataOpts {
+  /** Old MCP directory (defaults to LEGACY_PATHS.oldMcpDir) */
+  oldMcpDir?: string;
+  /** New MCP registry file path (defaults to CONFIG_PATHS.mcpRegistry) */
+  mcpRegistryPath?: string;
+  /** Main coco config file path (defaults to CONFIG_PATHS.config) */
+  configPath?: string;
+}
+
+/**
+ * One-time migration from the old ~/.config/coco/mcp/ layout to the new
+ * single-file approach:
+ *
+ *   ~/.config/coco/mcp/registry.json  →  ~/.coco/mcp.json
+ *   ~/.config/coco/mcp/config.json    →  ~/.coco/config.json  (under `mcp` key)
+ *
+ * Idempotent: skips any file that already exists at the destination.
+ * Copy-not-move: old files are preserved.
+ * Never throws: all errors are caught and logged as warnings.
+ */
+export async function migrateMCPData(opts?: MigrateMCPDataOpts): Promise<void> {
+  const oldDir = opts?.oldMcpDir ?? LEGACY_PATHS.oldMcpDir;
+  const newRegistry = opts?.mcpRegistryPath ?? CONFIG_PATHS.mcpRegistry;
+  const newConfig = opts?.configPath ?? CONFIG_PATHS.config;
+
+  try {
+    await migrateRegistry(oldDir, newRegistry);
+    await migrateGlobalConfig(oldDir, newConfig);
+  } catch (error) {
+    getLogger().warn(
+      `[MCP] Migration failed unexpectedly: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function migrateRegistry(oldDir: string, newRegistry: string): Promise<void> {
+  const oldFile = join(oldDir, "registry.json");
+
+  // Skip if destination already exists — never overwrite user data
+  if (await fileExists(newRegistry)) return;
+
+  // Skip if source doesn't exist — nothing to migrate
+  if (!(await fileExists(oldFile))) return;
+
+  try {
+    const content = await readFile(oldFile, "utf-8");
+    const servers = parseRegistry(content);
+    await mkdir(dirname(newRegistry), { recursive: true });
+    await writeFile(newRegistry, serializeRegistry(servers), "utf-8");
+    getLogger().info(
+      `[MCP] Migrated registry from ${oldFile} to ${newRegistry}. The old file can be safely deleted.`,
+    );
+  } catch (error) {
+    getLogger().warn(
+      `[MCP] Could not migrate registry: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function migrateGlobalConfig(oldDir: string, newConfigPath: string): Promise<void> {
+  const oldFile = join(oldDir, "config.json");
+
+  if (!(await fileExists(oldFile))) return;
+
+  try {
+    const oldContent = await readFile(oldFile, "utf-8");
+    const oldMcpConfig = JSON.parse(oldContent) as Record<string, unknown>;
+
+    // Read existing coco config (or start from empty object)
+    let cocoConfig: Record<string, unknown> = {};
+    if (await fileExists(newConfigPath)) {
+      const existing = await readFile(newConfigPath, "utf-8");
+      cocoConfig = JSON.parse(existing) as Record<string, unknown>;
+    }
+
+    const existingMcp = (cocoConfig.mcp ?? {}) as Record<string, unknown>;
+
+    // Only copy fields that are not already set in the destination
+    const fieldsToMigrate = ["defaultTimeout", "autoDiscover", "logLevel", "customServersPath"];
+    let didMerge = false;
+    for (const field of fieldsToMigrate) {
+      if (oldMcpConfig[field] !== undefined && existingMcp[field] === undefined) {
+        existingMcp[field] = oldMcpConfig[field];
+        didMerge = true;
+      }
+    }
+
+    if (!didMerge) return;
+
+    cocoConfig.mcp = existingMcp;
+    await mkdir(dirname(newConfigPath), { recursive: true });
+    await writeFile(newConfigPath, JSON.stringify(cocoConfig, null, 2), "utf-8");
+    getLogger().info(`[MCP] Migrated global MCP settings from ${oldFile} into ${newConfigPath}.`);
+  } catch (error) {
+    getLogger().warn(
+      `[MCP] Could not migrate global MCP config: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }

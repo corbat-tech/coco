@@ -33,7 +33,9 @@ type SkillEventListener = (event: SkillEvent) => void;
 export interface SkillsRuntimeConfig {
   enabled?: boolean;
   globalDir?: string;
+  globalDirs?: string[];
   projectDir?: string;
+  projectDirs?: string[];
   autoActivate?: boolean;
   maxActiveSkills?: number;
   disabled?: string[];
@@ -119,7 +121,9 @@ export class UnifiedSkillRegistry {
     // Build discovery options from config + explicit params
     const discoveryOptions = {
       globalDir: globalDir ?? this._config.globalDir,
+      globalDirs: this._config.globalDirs,
       projectDir: this._config.projectDir,
+      projectDirs: this._config.projectDirs,
     };
 
     const discovered = await discoverAllSkills(projectPath, builtinSkills, discoveryOptions);
