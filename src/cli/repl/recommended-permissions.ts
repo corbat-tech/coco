@@ -448,6 +448,7 @@ export const RECOMMENDED_DENY: string[] = [
 export interface PermissionPreferences {
   recommendedAllowlistApplied?: boolean;
   recommendedAllowlistDismissed?: boolean;
+  recommendedAllowlistPrompted?: boolean;
 }
 
 /**
@@ -460,6 +461,7 @@ export async function loadPermissionPreferences(): Promise<PermissionPreferences
     return {
       recommendedAllowlistApplied: config.recommendedAllowlistApplied as boolean | undefined,
       recommendedAllowlistDismissed: config.recommendedAllowlistDismissed as boolean | undefined,
+      recommendedAllowlistPrompted: config.recommendedAllowlistPrompted as boolean | undefined,
     };
   } catch {
     return {};
@@ -471,7 +473,10 @@ export async function loadPermissionPreferences(): Promise<PermissionPreferences
  * Merges with existing config (doesn't overwrite other settings)
  */
 export async function savePermissionPreference(
-  key: "recommendedAllowlistApplied" | "recommendedAllowlistDismissed",
+  key:
+    | "recommendedAllowlistApplied"
+    | "recommendedAllowlistDismissed"
+    | "recommendedAllowlistPrompted",
   value: boolean,
 ): Promise<void> {
   try {
@@ -498,37 +503,27 @@ export async function savePermissionPreference(
 
 /**
  * Check if the recommended permissions suggestion should be shown.
- * Returns true only if user hasn't applied or permanently dismissed,
- * OR if the trusted-tools.json file doesn't exist or is empty.
+ * Returns true only once for first-time users.
  */
 export async function shouldShowPermissionSuggestion(): Promise<boolean> {
   const prefs = await loadPermissionPreferences();
+
+  // Once shown, don't show again.
+  if (prefs.recommendedAllowlistPrompted) {
+    return false;
+  }
 
   // If user dismissed, never show again
   if (prefs.recommendedAllowlistDismissed) {
     return false;
   }
 
-  // If not applied, show the suggestion
-  if (!prefs.recommendedAllowlistApplied) {
-    return true;
+  // If already applied, no need to show
+  if (prefs.recommendedAllowlistApplied) {
+    return false;
   }
 
-  // If marked as applied but trusted-tools.json doesn't exist or is empty,
-  // we should show the suggestion again to recreate it
-  try {
-    const content = await fs.readFile(CONFIG_PATHS.trustedTools, "utf-8");
-    const settings = JSON.parse(content) as { globalTrusted?: string[] };
-    // If file exists but has no global trusted tools, show suggestion
-    if (!settings.globalTrusted || settings.globalTrusted.length === 0) {
-      return true;
-    }
-  } catch {
-    // File doesn't exist or is invalid - show suggestion
-    return true;
-  }
-
-  return false;
+  return true;
 }
 
 /**
@@ -555,6 +550,9 @@ export async function applyRecommendedPermissions(): Promise<void> {
  * - No thanks: never show again
  */
 export async function showPermissionSuggestion(): Promise<void> {
+  // Mark as prompted right away so the suggestion is strictly first-run only.
+  await savePermissionPreference("recommendedAllowlistPrompted", true);
+
   console.log();
   console.log(chalk.magenta.bold("  📋 Recommended Permissions"));
   console.log();

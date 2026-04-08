@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.1] - 2026-04-08
+
+### Added
+- **MCP remote OAuth automation** — HTTP MCP transport now handles `401 Unauthorized` by triggering OAuth discovery + browser login (PKCE), then automatically retries the request with bearer token.
+- **MCP OAuth token store** — added dedicated MCP OAuth persistence at `~/.coco/tokens/mcp-oauth.json` with regression tests for secure writes and refresh behavior.
+
+### Changed
+- **MCP HTTP lifecycle integration** — MCP HTTP transport now receives server name context for clearer auth/log flows during remote server startup.
+- **Permissions suggestion behavior** — startup recommendation prompt is now first-run only (`recommendedAllowlistPrompted`), avoiding repeated prompts on every session.
+- **Provider fallback persistence** — when startup falls back to another configured cloud provider, Coco now persists that provider/model as last-used preference for future sessions.
+
+### Fixed
+- **Atlassian/remote MCP auth flow gap** — Coco previously expected preconfigured OAuth tokens and could not initiate interactive auth for remote MCP servers. It now performs standards-based MCP OAuth authorization flow.
+- **OAuth client registration stability** — client IDs are now keyed by authorization server + redirect URI to prevent redirect mismatch issues in strict OAuth servers.
+- **MCP token file hardening** — MCP OAuth token store is written with restricted file permissions (`0600`).
+- **MCP token expiry handling** — expired MCP OAuth tokens now attempt refresh-token exchange before requiring interactive re-authentication.
+
 ## [2.25.0] - 2026-04-08
 
 ### Added

@@ -5,6 +5,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { HTTPTransport } from "./http.js";
 import { MCPConnectionError, MCPTransportError } from "../errors.js";
+import { authenticateMcpOAuth, getStoredMcpOAuthToken } from "../oauth.js";
+
+vi.mock("../oauth.js", () => ({
+  authenticateMcpOAuth: vi.fn(),
+  getStoredMcpOAuthToken: vi.fn(),
+}));
 
 describe("HTTPTransport", () => {
   let transport: HTTPTransport;
@@ -12,6 +18,8 @@ describe("HTTPTransport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
+    vi.mocked(authenticateMcpOAuth).mockResolvedValue("oauth-token");
+    vi.mocked(getStoredMcpOAuthToken).mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -87,6 +95,38 @@ describe("HTTPTransport", () => {
 
       await transport.connect();
       await expect(transport.connect()).rejects.toThrow(MCPConnectionError);
+    });
+
+    it("should perform oauth login on 401 and retry connect", async () => {
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(
+          new Response(null, {
+            status: 401,
+            headers: {
+              "www-authenticate":
+                'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"',
+            },
+          }),
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+      transport = new HTTPTransport({
+        name: "atlassian",
+        url: "https://mcp.example.com/v1/mcp",
+      });
+
+      await transport.connect();
+
+      expect(authenticateMcpOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: "atlassian",
+          resourceUrl: "https://mcp.example.com/v1/mcp",
+        }),
+      );
+
+      const secondHeaders = vi.mocked(fetch).mock.calls[1]?.[1]?.headers as Record<string, string>;
+      expect(secondHeaders.Authorization).toBe("Bearer oauth-token");
+      expect(transport.isConnected()).toBe(true);
     });
   });
 
@@ -273,6 +313,35 @@ describe("HTTPTransport", () => {
       await retryTransport.send({ jsonrpc: "2.0", id: 1, method: "test" });
 
       expect(messageCallback).toHaveBeenCalledWith(response);
+    });
+
+    it("should perform oauth login on 401 during send and retry", async () => {
+      const messageCallback = vi.fn();
+      transport.onMessage(messageCallback);
+
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(
+          new Response("Unauthorized", {
+            status: 401,
+            statusText: "Unauthorized",
+            headers: {
+              "www-authenticate":
+                'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"',
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
+            status: 200,
+          }),
+        );
+
+      await transport.send({ jsonrpc: "2.0", id: 1, method: "test" });
+
+      expect(authenticateMcpOAuth).toHaveBeenCalledTimes(1);
+      expect(messageCallback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 1, result: { ok: true } });
+      const secondHeaders = vi.mocked(fetch).mock.calls[2]?.[1]?.headers as Record<string, string>;
+      expect(secondHeaders.Authorization).toBe("Bearer oauth-token");
     });
   });
 

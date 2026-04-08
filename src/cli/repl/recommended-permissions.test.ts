@@ -53,50 +53,22 @@ describe("shouldShowPermissionSuggestion", () => {
     expect(result).toBe(false);
   });
 
-  it("should return true when applied but trusted-tools.json does not exist", async () => {
-    // First call reads config.json, second call reads trusted-tools.json
-    vi.mocked(fs.readFile)
-      .mockResolvedValueOnce(JSON.stringify({ recommendedAllowlistApplied: true }))
-      .mockRejectedValueOnce(new Error("File not found"));
-
-    const result = await shouldShowPermissionSuggestion();
-
-    expect(result).toBe(true);
-  });
-
-  it("should return true when applied but trusted-tools.json has empty globalTrusted", async () => {
-    vi.mocked(fs.readFile)
-      .mockResolvedValueOnce(JSON.stringify({ recommendedAllowlistApplied: true }))
-      .mockResolvedValueOnce(JSON.stringify({ globalTrusted: [], projectTrusted: {} }));
-
-    const result = await shouldShowPermissionSuggestion();
-
-    expect(result).toBe(true);
-  });
-
-  it("should return false when applied and trusted-tools.json has tools", async () => {
-    vi.mocked(fs.readFile)
-      .mockResolvedValueOnce(JSON.stringify({ recommendedAllowlistApplied: true }))
-      .mockResolvedValueOnce(
-        JSON.stringify({
-          globalTrusted: ["read_file", "write_file"],
-          projectTrusted: {},
-        }),
-      );
+  it("should return false when prompt was already shown once", async () => {
+    vi.mocked(fs.readFile).mockResolvedValue(
+      JSON.stringify({ recommendedAllowlistPrompted: true }),
+    );
 
     const result = await shouldShowPermissionSuggestion();
 
     expect(result).toBe(false);
   });
 
-  it("should return true when applied but trusted-tools.json is invalid JSON", async () => {
-    vi.mocked(fs.readFile)
-      .mockResolvedValueOnce(JSON.stringify({ recommendedAllowlistApplied: true }))
-      .mockResolvedValueOnce("invalid json");
+  it("should return false when permissions were already applied", async () => {
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify({ recommendedAllowlistApplied: true }));
 
     const result = await shouldShowPermissionSuggestion();
 
-    expect(result).toBe(true);
+    expect(result).toBe(false);
   });
 });
 
@@ -118,6 +90,7 @@ describe("loadPermissionPreferences", () => {
       JSON.stringify({
         recommendedAllowlistApplied: true,
         recommendedAllowlistDismissed: false,
+        recommendedAllowlistPrompted: true,
         otherSetting: "value",
       }),
     );
@@ -127,6 +100,7 @@ describe("loadPermissionPreferences", () => {
     expect(result).toEqual({
       recommendedAllowlistApplied: true,
       recommendedAllowlistDismissed: false,
+      recommendedAllowlistPrompted: true,
     });
   });
 });

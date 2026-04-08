@@ -63,6 +63,7 @@ export class MCPServerManager {
           throw new MCPConnectionError(`Server '${config.name}' requires http.url`);
         }
         return new HTTPTransport({
+          name: config.name,
           url: config.http.url,
           headers: config.http.headers,
           auth: config.http.auth,

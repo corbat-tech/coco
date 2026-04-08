@@ -723,7 +723,7 @@ describe("onboarding-v2", () => {
       expect(mockedCreateProvider).toHaveBeenCalledWith("codex", { model: "gpt-5.4-codex" });
     });
 
-    it("does not silently switch provider when preferred configured provider is unavailable", async () => {
+    it("falls back to another configured cloud provider and persists it when preferred is unavailable", async () => {
       const anthropicDef = makeProviderDef({
         id: "anthropic" as any,
         envVar: "ANTHROPIC_API_KEY",
@@ -737,18 +737,20 @@ describe("onboarding-v2", () => {
       mockedGetAllProviders.mockReturnValue([anthropicDef, openaiDef]);
       mockedGetConfiguredProviders.mockReturnValue([anthropicDef]);
       process.env["ANTHROPIC_API_KEY"] = "sk-ant-existing-key";
+      process.env["OPENAI_API_KEY"] = "sk-openai-existing-key";
+      mockedGetRecommendedModel.mockImplementation((providerId: any) => {
+        if (providerId === "openai") {
+          return { id: "gpt-5.4-codex" } as any;
+        }
+        return { id: "claude-sonnet-4-20250514" } as any;
+      });
 
-      const unavailableAnthropic = {
-        isAvailable: vi.fn().mockResolvedValue(false),
-        id: "anthropic",
-      };
-      const availableOpenAI = { isAvailable: vi.fn().mockResolvedValue(true), id: "openai" };
-
-      mockedCreateProvider
-        .mockResolvedValueOnce(unavailableAnthropic as any)
-        .mockResolvedValueOnce(availableOpenAI as any);
-
-      mockedSelect.mockResolvedValueOnce("exit");
+      mockedCreateProvider.mockImplementation(async (providerId: any) => {
+        if (providerId === "openai") {
+          return { isAvailable: vi.fn().mockResolvedValue(true), id: "openai" } as any;
+        }
+        return { isAvailable: vi.fn().mockResolvedValue(false), id: "anthropic" } as any;
+      });
 
       const config = {
         provider: { type: "anthropic", model: "claude-sonnet-4-20250514", maxTokens: 8192 },
@@ -756,13 +758,11 @@ describe("onboarding-v2", () => {
 
       const result = await ensureConfiguredV2(config);
 
-      expect(result?.provider.type).toBe("anthropic");
-      // No silent switch to openai/codex should happen while resolving fallback.
-      expect(
-        mockedCreateProvider.mock.calls.every(
-          ([providerId]) => providerId !== "openai" && providerId !== "codex",
-        ),
-      ).toBe(true);
+      expect(result?.provider.type).toBe("openai");
+      expect(result?.provider.model).toBe("gpt-5.4-codex");
+      expect(saveProviderPreference).toHaveBeenCalledWith("openai", "gpt-5.4-codex");
+
+      delete process.env["OPENAI_API_KEY"];
     });
 
     it("sets OPENAI_CODEX_TOKEN when selecting openai OAuth from fallback providers", async () => {

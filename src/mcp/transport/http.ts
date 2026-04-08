@@ -6,11 +6,14 @@
 
 import type { MCPTransport, JSONRPCRequest, JSONRPCResponse } from "../types.js";
 import { MCPConnectionError, MCPTransportError } from "../errors.js";
+import { authenticateMcpOAuth, getStoredMcpOAuthToken } from "../oauth.js";
 
 /**
  * HTTP transport configuration
  */
 export interface HTTPTransportConfig {
+  /** MCP server name (for logs/errors) */
+  name?: string;
   /** Server URL */
   url: string;
   /** Authentication configuration */
@@ -45,6 +48,8 @@ export class HTTPTransport implements MCPTransport {
   private connected = false;
   private abortController: AbortController | null = null;
   private pendingRequests = new Map<string | number, AbortController>();
+  private oauthToken: string | undefined;
+  private oauthInFlight: Promise<string> | null = null;
 
   constructor(private readonly config: HTTPTransportConfig) {
     this.config.timeout = config.timeout ?? 60000;
@@ -55,6 +60,10 @@ export class HTTPTransport implements MCPTransport {
    * Get authentication token
    */
   private getAuthToken(): string | undefined {
+    if (this.oauthToken) {
+      return this.oauthToken;
+    }
+
     if (!this.config.auth) return undefined;
 
     // Try token directly
@@ -80,22 +89,77 @@ export class HTTPTransport implements MCPTransport {
       ...this.config.headers,
     };
 
+    if (this.oauthToken) {
+      headers["Authorization"] = `Bearer ${this.oauthToken}`;
+      return headers;
+    }
+
     const token = this.getAuthToken();
     if (token && this.config.auth) {
-      switch (this.config.auth.type) {
-        case "bearer":
-          headers["Authorization"] = `Bearer ${token}`;
-          break;
-        case "apikey":
-          headers[this.config.auth.headerName || "X-API-Key"] = token;
-          break;
-        case "oauth":
-          headers["Authorization"] = `Bearer ${token}`;
-          break;
+      if (this.config.auth.type === "apikey") {
+        headers[this.config.auth.headerName || "X-API-Key"] = token;
+      } else {
+        headers["Authorization"] = `Bearer ${token}`;
       }
     }
 
     return headers;
+  }
+
+  private shouldAttemptOAuth(): boolean {
+    if (this.config.auth?.type === "apikey" || this.config.auth?.type === "bearer") {
+      return false;
+    }
+    return true;
+  }
+
+  private async ensureOAuthToken(wwwAuthenticateHeader?: string | null): Promise<string> {
+    if (this.oauthToken) {
+      return this.oauthToken;
+    }
+
+    if (this.oauthInFlight) {
+      return this.oauthInFlight;
+    }
+
+    const serverName = this.config.name ?? this.config.url;
+    this.oauthInFlight = authenticateMcpOAuth({
+      serverName,
+      resourceUrl: this.config.url,
+      wwwAuthenticateHeader,
+    })
+      .then((token) => {
+        this.oauthToken = token;
+        return token;
+      })
+      .finally(() => {
+        this.oauthInFlight = null;
+      });
+
+    return this.oauthInFlight;
+  }
+
+  private async sendRequestWithOAuthRetry(
+    method: "GET" | "POST",
+    body?: string,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const doFetch = async (): Promise<Response> =>
+      fetch(this.config.url, {
+        method,
+        headers: this.buildHeaders(),
+        ...(body ? { body } : {}),
+        signal,
+      });
+
+    let response = await doFetch();
+    if (response.status !== 401 || !this.shouldAttemptOAuth()) {
+      return response;
+    }
+
+    await this.ensureOAuthToken(response.headers.get("www-authenticate"));
+    response = await doFetch();
+    return response;
   }
 
   /**
@@ -118,11 +182,15 @@ export class HTTPTransport implements MCPTransport {
     try {
       this.abortController = new AbortController();
 
-      const response = await fetch(this.config.url, {
-        method: "GET",
-        headers: this.buildHeaders(),
-        signal: this.abortController.signal,
-      });
+      if (this.shouldAttemptOAuth()) {
+        this.oauthToken = await getStoredMcpOAuthToken(this.config.url);
+      }
+
+      const response = await this.sendRequestWithOAuthRetry(
+        "GET",
+        undefined,
+        this.abortController.signal,
+      );
 
       if (!response.ok && response.status !== 404) {
         // 404 is acceptable - endpoint might not support GET
@@ -162,12 +230,11 @@ export class HTTPTransport implements MCPTransport {
           abortController.abort();
         }, this.config.timeout);
 
-        const response = await fetch(this.config.url, {
-          method: "POST",
-          headers: this.buildHeaders(),
-          body: JSON.stringify(message),
-          signal: abortController.signal,
-        });
+        const response = await this.sendRequestWithOAuthRetry(
+          "POST",
+          JSON.stringify(message),
+          abortController.signal,
+        );
 
         clearTimeout(timeoutId);
 

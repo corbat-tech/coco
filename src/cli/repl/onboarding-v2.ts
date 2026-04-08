@@ -1583,6 +1583,7 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
   const preferredIsConfigured =
     preferredIsLocal || preferredHasApiKey || preferredHasOpenAIOAuth || preferredHasCopilotCreds;
   let preferredWasConfiguredButUnavailable = false;
+  let preferredUnavailableWasLocal = false;
 
   if (preferredProviderDef && preferredIsConfigured) {
     try {
@@ -1611,6 +1612,7 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
     }
 
     preferredWasConfiguredButUnavailable = true;
+    preferredUnavailableWasLocal = preferredIsLocal;
   }
 
   // 2. Find any configured provider (silently use the first available)
@@ -1618,7 +1620,7 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
   // If the preferred provider was configured but failed, avoid silent provider switches.
   // Include local providers (requiresApiKey: false) even without env vars,
   // but copilot requires device flow credentials, not just requiresApiKey === false
-  if (!preferredWasConfiguredButUnavailable) {
+  if (!preferredWasConfiguredButUnavailable || !preferredUnavailableWasLocal) {
     const configuredProviders = providers.filter((p) => {
       if (p.id === "copilot") return isProviderConfigured("copilot");
       if (p.id === "openai") {
@@ -1644,6 +1646,8 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
 
         const provider = await createProvider(providerId, { model });
         if (await provider.isAvailable()) {
+          // Persist the last known working provider so startup uses it by default next time.
+          await saveProviderPreference(prov.id, model);
           // Silently use this provider - no warning needed
           return {
             ...config,
@@ -1666,7 +1670,7 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
     config.provider.type !== "openai" &&
     config.provider.type !== "codex" &&
     hasOpenAIOAuthTokens &&
-    !preferredWasConfiguredButUnavailable
+    (!preferredWasConfiguredButUnavailable || !preferredUnavailableWasLocal)
   ) {
     try {
       const tokenResult = await getOrRefreshOAuthToken("openai");
