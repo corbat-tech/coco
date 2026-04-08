@@ -135,18 +135,50 @@ async function openBrowser(url: string): Promise<boolean> {
     return false;
   }
 
-  try {
-    if (process.platform === "darwin") {
-      await execFileAsync("open", [safeUrl]);
-    } else if (process.platform === "win32") {
-      await execFileAsync("rundll32", ["url.dll,FileProtocolHandler", safeUrl]);
-    } else {
-      await execFileAsync("xdg-open", [safeUrl]);
-    }
-    return true;
-  } catch {
-    return false;
+  const isWSL =
+    process.platform === "linux" &&
+    (process.env["WSL_DISTRO_NAME"] !== undefined ||
+      process.env["WSL_INTEROP"] !== undefined ||
+      process.env["TERM_PROGRAM"]?.toLowerCase().includes("wsl") === true);
+
+  const commands: Array<{ cmd: string; args: string[] }> = [];
+
+  if (process.platform === "darwin") {
+    commands.push(
+      { cmd: "open", args: [safeUrl] },
+      { cmd: "open", args: ["-a", "Safari", safeUrl] },
+      { cmd: "open", args: ["-a", "Google Chrome", safeUrl] },
+    );
+  } else if (process.platform === "win32") {
+    commands.push({ cmd: "rundll32", args: ["url.dll,FileProtocolHandler", safeUrl] });
+  } else if (isWSL) {
+    commands.push(
+      { cmd: "cmd.exe", args: ["/c", "start", "", safeUrl] },
+      { cmd: "powershell.exe", args: ["-Command", `Start-Process '${safeUrl}'`] },
+      { cmd: "wslview", args: [safeUrl] },
+    );
+  } else {
+    commands.push(
+      { cmd: "xdg-open", args: [safeUrl] },
+      { cmd: "sensible-browser", args: [safeUrl] },
+      { cmd: "x-www-browser", args: [safeUrl] },
+      { cmd: "gnome-open", args: [safeUrl] },
+      { cmd: "firefox", args: [safeUrl] },
+      { cmd: "chromium-browser", args: [safeUrl] },
+      { cmd: "google-chrome", args: [safeUrl] },
+    );
   }
+
+  for (const { cmd, args } of commands) {
+    try {
+      await execFileAsync(cmd, args);
+      return true;
+    } catch {
+      continue;
+    }
+  }
+
+  return false;
 }
 
 function maskUrlForLogs(rawUrl: string): string {
@@ -405,7 +437,7 @@ export async function authenticateMcpOAuth(params: {
 
   if (!process.stdout.isTTY) {
     throw new Error(
-      `MCP server '${params.serverName}' requires interactive OAuth in a TTY session. Run Coco in a terminal to authenticate.`,
+      `MCP server '${params.serverName}' requires interactive OAuth in a TTY session. Run Coco in a terminal, or use mcp-remote (e.g. npx -y mcp-remote@latest ${resource}) for IDE bridge workflows.`,
     );
   }
 

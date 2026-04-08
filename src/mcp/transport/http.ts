@@ -107,8 +107,13 @@ export class HTTPTransport implements MCPTransport {
   }
 
   private shouldAttemptOAuth(): boolean {
-    if (this.config.auth?.type === "apikey" || this.config.auth?.type === "bearer") {
+    if (this.config.auth?.type === "apikey") {
       return false;
+    }
+    // If bearer auth is configured and token is present, do not override with OAuth.
+    // If token is missing (e.g., env var not set), allow OAuth fallback.
+    if (this.config.auth?.type === "bearer") {
+      return !this.getAuthToken();
     }
     return true;
   }

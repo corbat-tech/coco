@@ -128,6 +128,35 @@ describe("HTTPTransport", () => {
       expect(secondHeaders.Authorization).toBe("Bearer oauth-token");
       expect(transport.isConnected()).toBe(true);
     });
+
+    it("should attempt oauth when bearer auth is configured but token is missing", async () => {
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(
+          new Response(null, {
+            status: 401,
+            headers: {
+              "www-authenticate":
+                'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"',
+            },
+          }),
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+      transport = new HTTPTransport({
+        name: "atlassian",
+        url: "https://mcp.example.com/v1/mcp",
+        auth: {
+          type: "bearer",
+          tokenEnv: "MISSING_BEARER_TOKEN_ENV",
+        },
+      });
+
+      await transport.connect();
+
+      expect(authenticateMcpOAuth).toHaveBeenCalledTimes(1);
+      const secondHeaders = vi.mocked(fetch).mock.calls[1]?.[1]?.headers as Record<string, string>;
+      expect(secondHeaders.Authorization).toBe("Bearer oauth-token");
+    });
   });
 
   describe("authentication", () => {

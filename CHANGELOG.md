@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.2] - 2026-04-08
+
+### Fixed
+- **Atlassian MCP OAuth browser launch reliability** — MCP OAuth now uses cross-platform browser fallbacks (including WSL paths like `cmd.exe /c start` / `wslview`) instead of a single `xdg-open` attempt.
+- **Bearer-with-missing-token fallback** — when MCP config declares `auth.type: "bearer"` but no token is actually available, Coco now falls back to interactive OAuth instead of failing with token-only behavior.
+- **Regression coverage for auth fallback** — added test coverage to ensure 401 + missing bearer token triggers OAuth and retries with bearer auth.
+
 ## [2.25.1] - 2026-04-08
 
 ### Added
