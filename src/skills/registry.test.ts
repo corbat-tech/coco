@@ -277,6 +277,15 @@ describe("UnifiedSkillRegistry — config", () => {
     expect(ok2).toBe(true);
     expect(registry.getActiveSkillIds().length).toBe(2);
   });
+
+  it("should support globalDirs config for multi-directory discovery", async () => {
+    const registry = createUnifiedSkillRegistry();
+    registry.setConfig({ globalDirs: ["/non-existent-global", FIXTURES_DIR] });
+    await registry.discoverAndRegister("/non-existent-project", mockBuiltins);
+
+    expect(registry.has("test-skill")).toBe(true);
+    expect(registry.has("minimal-skill")).toBe(true);
+  });
 });
 
 // ============================================================================

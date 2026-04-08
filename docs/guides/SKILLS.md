@@ -68,6 +68,9 @@ When the same skill name exists in multiple directories, the higher-priority one
 ```
 
 Global skills apply to every project on your machine. Good for personal preferences, editor conventions, or workflows you always use.
+By default, Coco also scans compatible global directories from other agents:
+`~/.agents/skills/`, `~/.claude/skills/`, `~/.gemini/skills/`, `~/.codex/skills/`, and `~/.opencode/skills/`.
+You can override discovery paths with `skills.globalDirs` / `skills.projectDirs` in config.
 
 ```bash
 coco skills create my-git-workflow --global

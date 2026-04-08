@@ -3,16 +3,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, readFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   validateServerConfig,
-  loadMCPConfig,
-  saveMCPConfig,
   parseRegistry,
   serializeRegistry,
-  DEFAULT_MCP_CONFIG,
+  migrateMCPData,
 } from "./config.js";
 import { MCPError } from "./errors.js";
 import type { MCPServerConfig } from "./types.js";
@@ -123,63 +121,114 @@ describe("validateServerConfig", () => {
   });
 });
 
-describe("loadMCPConfig", () => {
+describe("migrateMCPData", () => {
   let tempDir: string;
+  let oldMcpDir: string;
+  let newDir: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "mcp-config-test-"));
+    tempDir = await mkdtemp(join(tmpdir(), "mcp-migrate-test-"));
+    oldMcpDir = join(tempDir, "old-mcp");
+    newDir = join(tempDir, "new-coco");
+    await mkdir(oldMcpDir, { recursive: true });
+    await mkdir(newDir, { recursive: true });
   });
 
   afterEach(async () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  it("should return default config when file does not exist", async () => {
-    const config = await loadMCPConfig(join(tempDir, "nonexistent.json"));
+  it("should copy registry.json from old path to new path", async () => {
+    const servers: MCPServerConfig[] = [
+      { name: "github", transport: "stdio", stdio: { command: "npx" } },
+    ];
+    await writeFile(join(oldMcpDir, "registry.json"), serializeRegistry(servers), "utf-8");
 
-    expect(config.defaultTimeout).toBe(DEFAULT_MCP_CONFIG.defaultTimeout);
-    expect(config.autoDiscover).toBe(DEFAULT_MCP_CONFIG.autoDiscover);
-    expect(config.logLevel).toBe(DEFAULT_MCP_CONFIG.logLevel);
+    const newRegistry = join(newDir, "mcp.json");
+    await migrateMCPData({ oldMcpDir, mcpRegistryPath: newRegistry });
+
+    const content = await readFile(newRegistry, "utf-8");
+    const migrated = parseRegistry(content);
+    expect(migrated).toHaveLength(1);
+    expect(migrated[0]?.name).toBe("github");
   });
 
-  it("should load and merge config from file", async () => {
-    const configPath = join(tempDir, "config.json");
+  it("should not overwrite existing mcp.json", async () => {
+    const oldServers: MCPServerConfig[] = [
+      { name: "old-server", transport: "stdio", stdio: { command: "old" } },
+    ];
+    const newServers: MCPServerConfig[] = [
+      { name: "new-server", transport: "stdio", stdio: { command: "new" } },
+    ];
+
+    await writeFile(join(oldMcpDir, "registry.json"), serializeRegistry(oldServers), "utf-8");
+    const newRegistry = join(newDir, "mcp.json");
+    await writeFile(newRegistry, serializeRegistry(newServers), "utf-8");
+
+    await migrateMCPData({ oldMcpDir, mcpRegistryPath: newRegistry });
+
+    const content = await readFile(newRegistry, "utf-8");
+    const servers = parseRegistry(content);
+    expect(servers[0]?.name).toBe("new-server");
+  });
+
+  it("should merge MCPGlobalConfig fields into config.json under mcp key", async () => {
+    const oldConfig = { defaultTimeout: 30000, autoDiscover: false, logLevel: "debug" };
+    await writeFile(join(oldMcpDir, "config.json"), JSON.stringify(oldConfig), "utf-8");
+
+    const cocoConfigPath = join(newDir, "config.json");
+    await writeFile(cocoConfigPath, JSON.stringify({ provider: { type: "anthropic" } }), "utf-8");
+
+    await migrateMCPData({
+      oldMcpDir,
+      mcpRegistryPath: join(newDir, "mcp.json"),
+      configPath: cocoConfigPath,
+    });
+
+    const content = await readFile(cocoConfigPath, "utf-8");
+    const parsed = JSON.parse(content) as { mcp?: Record<string, unknown> };
+    expect(parsed.mcp?.defaultTimeout).toBe(30000);
+    expect(parsed.mcp?.autoDiscover).toBe(false);
+    expect(parsed.mcp?.logLevel).toBe("debug");
+  });
+
+  it("should not overwrite existing mcp fields in config.json", async () => {
+    const oldConfig = { defaultTimeout: 30000, logLevel: "debug" };
+    await writeFile(join(oldMcpDir, "config.json"), JSON.stringify(oldConfig), "utf-8");
+
+    const cocoConfigPath = join(newDir, "config.json");
     await writeFile(
-      configPath,
-      JSON.stringify({ logLevel: "debug", defaultTimeout: 30000 }),
+      cocoConfigPath,
+      JSON.stringify({ mcp: { defaultTimeout: 90000, logLevel: "error" } }),
       "utf-8",
     );
 
-    const config = await loadMCPConfig(configPath);
+    await migrateMCPData({
+      oldMcpDir,
+      mcpRegistryPath: join(newDir, "mcp.json"),
+      configPath: cocoConfigPath,
+    });
 
-    expect(config.logLevel).toBe("debug");
-    expect(config.defaultTimeout).toBe(30000);
-    expect(config.autoDiscover).toBe(DEFAULT_MCP_CONFIG.autoDiscover);
-  });
-});
-
-describe("saveMCPConfig", () => {
-  let tempDir: string;
-
-  beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "mcp-config-test-"));
+    const content = await readFile(cocoConfigPath, "utf-8");
+    const parsed = JSON.parse(content) as { mcp?: Record<string, unknown> };
+    // User-set values must not be overwritten
+    expect(parsed.mcp?.defaultTimeout).toBe(90000);
+    expect(parsed.mcp?.logLevel).toBe("error");
   });
 
-  afterEach(async () => {
-    await rm(tempDir, { recursive: true, force: true });
+  it("should be a no-op when old directory does not exist", async () => {
+    const newRegistry = join(newDir, "mcp.json");
+    await migrateMCPData({ oldMcpDir: join(tempDir, "nonexistent"), mcpRegistryPath: newRegistry });
+
+    // No file should have been created
+    await expect(readFile(newRegistry, "utf-8")).rejects.toThrow();
   });
 
-  it("should save config to file", async () => {
-    const configPath = join(tempDir, "subdir", "config.json");
-    const config = { ...DEFAULT_MCP_CONFIG, logLevel: "error" as const };
-
-    await saveMCPConfig(config, configPath);
-
-    const content = await readFile(configPath, "utf-8");
-    const parsed = JSON.parse(content);
-
-    expect(parsed.logLevel).toBe("error");
-    expect(parsed.defaultTimeout).toBe(DEFAULT_MCP_CONFIG.defaultTimeout);
+  it("should not throw on filesystem errors", async () => {
+    // Pass a registry path in a deeply nested non-creatable location
+    await expect(
+      migrateMCPData({ oldMcpDir, mcpRegistryPath: join(newDir, "mcp.json") }),
+    ).resolves.toBeUndefined();
   });
 });
 

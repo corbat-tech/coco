@@ -143,6 +143,14 @@ export const MCPConfigSchema = z.object({
   enabled: z.boolean().default(true),
   configFile: z.string().optional(), // Path to external MCP config file
   servers: z.array(MCPServerConfigEntrySchema).default([]),
+  /** Default timeout for MCP requests in milliseconds */
+  defaultTimeout: z.number().min(1000).default(60000).optional(),
+  /** Auto-discover MCP servers from well-known locations */
+  autoDiscover: z.boolean().default(true).optional(),
+  /** Log level for MCP operations */
+  logLevel: z.enum(["debug", "info", "warn", "error"]).default("info").optional(),
+  /** Path to custom servers directory */
+  customServersPath: z.string().optional(),
 });
 
 export type MCPConfig = z.infer<typeof MCPConfigSchema>;
@@ -211,8 +219,12 @@ export const SkillsConfigSchema = z.object({
   enabled: z.boolean().default(true),
   /** Override global skills directory */
   globalDir: z.string().optional(),
+  /** Override global skills directories (preferred over globalDir) */
+  globalDirs: z.array(z.string()).optional(),
   /** Override project skills directory */
   projectDir: z.string().optional(),
+  /** Override project skills directories (preferred over projectDir) */
+  projectDirs: z.array(z.string()).optional(),
   /** Auto-activate skills based on user messages */
   autoActivate: z.boolean().default(true),
   /** Maximum concurrent active markdown skills */

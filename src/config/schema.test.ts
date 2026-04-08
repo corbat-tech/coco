@@ -8,6 +8,7 @@ import {
   ProviderConfigSchema,
   QualityConfigSchema,
   PersistenceConfigSchema,
+  SkillsConfigSchema,
   StackConfigSchema,
   validateConfig,
   createDefaultConfigObject,
@@ -336,6 +337,25 @@ describe("StackConfigSchema", () => {
       const result = StackConfigSchema.safeParse({ language });
       expect(result.success).toBe(true);
     }
+  });
+});
+
+describe("SkillsConfigSchema", () => {
+  it("should accept legacy single-directory fields", () => {
+    const result = SkillsConfigSchema.safeParse({
+      enabled: true,
+      globalDir: "~/.coco/skills",
+      projectDir: ".agents/skills",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("should accept multi-directory fields", () => {
+    const result = SkillsConfigSchema.safeParse({
+      globalDirs: ["~/.coco/skills", "~/.claude/skills"],
+      projectDirs: [".claude/skills", ".agents/skills"],
+    });
+    expect(result.success).toBe(true);
   });
 });
 

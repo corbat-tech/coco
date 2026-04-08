@@ -310,7 +310,7 @@ describe("createMCPRegistry", () => {
   it("should use default path when not specified", () => {
     const registry = createMCPRegistry();
 
-    expect(registry.getRegistryPath()).toContain(".config");
-    expect(registry.getRegistryPath()).toContain("registry.json");
+    expect(registry.getRegistryPath()).toContain(".coco");
+    expect(registry.getRegistryPath()).toContain("mcp.json");
   });
 });

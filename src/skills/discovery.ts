@@ -3,13 +3,13 @@
  *
  * Discovers skills across three scopes:
  * - builtin: Native skills compiled into Coco
- * - global: ~/.coco/skills/
+ * - global: ~/.coco/skills/, ~/.agents/skills/, and compat directories from other agents
  * - project: .agents/skills/ (native), .claude/skills/, .codex/skills/, .gemini/skills/, .opencode/skills/ (compat)
  *
  * Higher-priority scopes override lower-priority ones for the same skill ID.
  * For project skills, directories are scanned in ascending priority order:
- *   .claude/skills/ (Claude compat) < .agents/skills/ (shared standard) < .coco/skills/ (native)
- * This means .coco/skills/ always wins when the same skill exists in multiple directories.
+ *   .claude/skills/ (Claude compat) < .codex/skills/ < .gemini/skills/ < .opencode/skills/ < .agents/skills/
+ * This means .agents/skills/ wins when the same skill exists in multiple project directories.
  */
 
 import type { SkillMetadata, SkillScope } from "./types.js";
@@ -19,10 +19,18 @@ import { nativeSkillToMetadata, type LegacySkill } from "./loader/typescript-loa
 import { COCO_HOME } from "../config/paths.js";
 import { getLogger } from "../utils/logger.js";
 import fs from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 
-/** Default global skills directory */
-const GLOBAL_SKILLS_DIR = path.join(COCO_HOME, "skills");
+/** Default global skills directories (scanned in ascending priority order). */
+const GLOBAL_SKILLS_DIRS = [
+  path.join(homedir(), ".codex", "skills"), // Codex CLI legacy compat
+  path.join(homedir(), ".gemini", "skills"), // Gemini CLI compat
+  path.join(homedir(), ".opencode", "skills"), // OpenCode compat
+  path.join(homedir(), ".claude", "skills"), // Claude Code compat
+  path.join(homedir(), ".agents", "skills"), // shared cross-agent standard
+  path.join(COCO_HOME, "skills"), // Coco native global directory (authoritative for Coco)
+];
 
 /**
  * Project skills directory names (scanned in ascending priority; later entries override earlier).
@@ -48,10 +56,80 @@ const PROJECT_SKILLS_DIRNAMES = [
 
 /** Options for skill discovery */
 export interface DiscoveryOptions {
-  /** Override for global skills directory */
+  /** Override for global skills directory (legacy; use globalDirs) */
   globalDir?: string;
-  /** Override for project skills directory */
+  /** Override for global skills directories */
+  globalDirs?: string[];
+  /** Override for project skills directory (legacy; use projectDirs) */
   projectDir?: string;
+  /** Override for project skills directories */
+  projectDirs?: string[];
+}
+
+/** Resolved skill discovery directories, in ascending priority order. */
+export interface ResolvedDiscoveryDirs {
+  globalDirs: string[];
+  projectDirs: string[];
+}
+
+/** Backward compatible options parser. */
+function parseDiscoveryOptions(options?: DiscoveryOptions | string): DiscoveryOptions {
+  // Backward compat: accept a plain string as globalDir override
+  return typeof options === "string" ? { globalDir: options } : (options ?? {});
+}
+
+/** Expand "~" in user-provided paths and remove duplicate/empty entries. */
+function normalizeDirectories(dirs: string[], relativeBaseDir?: string): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  const home = homedir();
+
+  for (const dir of dirs) {
+    const trimmed = dir.trim();
+    if (!trimmed) continue;
+
+    const expanded =
+      trimmed === "~"
+        ? home
+        : trimmed.startsWith("~/")
+          ? path.join(home, trimmed.slice(2))
+          : trimmed;
+    const resolved = path.isAbsolute(expanded)
+      ? path.resolve(expanded)
+      : path.resolve(relativeBaseDir ?? process.cwd(), expanded);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    normalized.push(resolved);
+  }
+
+  return normalized;
+}
+
+/** Resolve global and project discovery directories from options and defaults. */
+export function resolveDiscoveryDirs(
+  projectPath: string,
+  options?: DiscoveryOptions | string,
+): ResolvedDiscoveryDirs {
+  const opts = parseDiscoveryOptions(options);
+
+  const globalDirs = normalizeDirectories(
+    opts.globalDirs && opts.globalDirs.length > 0
+      ? opts.globalDirs
+      : opts.globalDir
+        ? [opts.globalDir]
+        : GLOBAL_SKILLS_DIRS,
+  );
+
+  const projectDirs = normalizeDirectories(
+    opts.projectDirs && opts.projectDirs.length > 0
+      ? opts.projectDirs
+      : opts.projectDir
+        ? [opts.projectDir]
+        : PROJECT_SKILLS_DIRNAMES.map((d) => path.join(projectPath, d)),
+    projectPath,
+  );
+
+  return { globalDirs, projectDirs };
 }
 
 /**
@@ -70,11 +148,8 @@ export async function discoverAllSkills(
   builtinSkills: LegacySkill[] = [],
   options?: DiscoveryOptions | string,
 ): Promise<SkillMetadata[]> {
-  // Backward compat: accept a plain string as globalDir override
-  const opts: DiscoveryOptions =
-    typeof options === "string" ? { globalDir: options } : (options ?? {});
-
   const allSkills = new Map<string, SkillMetadata>();
+  const { globalDirs, projectDirs } = resolveDiscoveryDirs(projectPath, options);
 
   // 1. Register builtin skills (lowest priority)
   for (const skill of builtinSkills) {
@@ -82,20 +157,17 @@ export async function discoverAllSkills(
     allSkills.set(meta.id, meta);
   }
 
-  // 2. Scan global skills directory
-  const resolvedGlobalDir = opts.globalDir ?? GLOBAL_SKILLS_DIR;
-  const globalSkills = await scanSkillsDirectory(resolvedGlobalDir, "global");
-  for (const meta of globalSkills) {
-    applyWithPriority(allSkills, meta);
+  // 2. Scan global skills directories (ascending priority)
+  for (const dir of globalDirs) {
+    const globalSkills = await scanSkillsDirectory(dir, "global");
+    for (const meta of globalSkills) {
+      applyWithPriority(allSkills, meta);
+    }
   }
 
-  // 3. Scan project skills directories (highest priority)
+  // 3. Scan project skills directories (ascending priority, highest overall)
   // Scans in ascending priority: .claude/ < .codex/ < .gemini/ < .opencode/ < .agents/
   // .agents/skills/ is the native dir and always wins for the same skill ID
-  const projectDirs = opts.projectDir
-    ? [opts.projectDir]
-    : PROJECT_SKILLS_DIRNAMES.map((d) => path.join(projectPath, d));
-
   for (const dir of projectDirs) {
     const projectSkills = await scanSkillsDirectory(dir, "project");
     for (const meta of projectSkills) {

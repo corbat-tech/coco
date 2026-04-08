@@ -160,6 +160,9 @@ Skills are instruction files (SKILL.md) that Coco injects into its context to fo
 | `.agents/skills/<skill-name>/SKILL.md` | Project — native, highest priority |
 | `~/.coco/skills/<skill-name>/SKILL.md` | Global — personal, all projects |
 
+By default, Coco also scans compatible global directories from other agents:
+`~/.agents/skills/`, `~/.claude/skills/`, `~/.gemini/skills/`, `~/.codex/skills/`, and `~/.opencode/skills/`.
+
 Coco also reads skills from other agents automatically, so you can bring skills you already have:
 
 | Directory | Agent |

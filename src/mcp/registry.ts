@@ -12,6 +12,7 @@ import {
   parseRegistry,
   serializeRegistry,
   getDefaultRegistryPath,
+  migrateMCPData,
 } from "./config.js";
 import { MCPError } from "./errors.js";
 
@@ -110,6 +111,11 @@ export class MCPRegistryImpl implements MCPRegistry {
    * Load registry from disk
    */
   async load(): Promise<void> {
+    // Run one-time migration from old ~/.config/coco/mcp/ layout
+    if (this.registryPath === getDefaultRegistryPath()) {
+      await migrateMCPData();
+    }
+
     try {
       await access(this.registryPath);
       const content = await readFile(this.registryPath, "utf-8");
