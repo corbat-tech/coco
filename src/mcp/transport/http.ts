@@ -159,12 +159,52 @@ export class HTTPTransport implements MCPTransport {
 
     let response = await doFetch();
     if (response.status !== 401 || !this.shouldAttemptOAuth()) {
+      // Some servers include OAuth challenge headers even on non-401 responses.
+      // If we don't have a token yet and challenge is present, bootstrap OAuth now.
+      if (
+        this.shouldAttemptOAuth() &&
+        !this.oauthToken &&
+        response.headers.get("www-authenticate")
+      ) {
+        await this.ensureOAuthToken(response.headers.get("www-authenticate"));
+        response = await doFetch();
+      }
       return response;
     }
 
     await this.ensureOAuthToken(response.headers.get("www-authenticate"));
     response = await doFetch();
     return response;
+  }
+
+  private looksLikeAuthErrorMessage(message?: string): boolean {
+    if (!message) return false;
+    const msg = message.toLowerCase();
+    const hasStrongAuthSignal =
+      msg.includes("unauthorized") ||
+      msg.includes("unauthorised") ||
+      msg.includes("authentication") ||
+      msg.includes("oauth") ||
+      msg.includes("access token") ||
+      msg.includes("bearer") ||
+      msg.includes("not authenticated") ||
+      msg.includes("not logged") ||
+      msg.includes("login") ||
+      (msg.includes("generate") && msg.includes("token"));
+    const hasVendorHint =
+      msg.includes("gemini cli") || msg.includes("jira") || msg.includes("confluence") || msg.includes("atlassian");
+    const hasWeakAuthSignal =
+      msg.includes("authenticate") || msg.includes("token") || msg.includes("authorization");
+    return (
+      hasStrongAuthSignal ||
+      // Vendor-specific hints alone are not enough; require an auth-related token too.
+      (hasVendorHint && hasWeakAuthSignal)
+    );
+  }
+
+  private isJsonRpcAuthError(payload: JSONRPCResponse): boolean {
+    if (!payload.error) return false;
+    return this.looksLikeAuthErrorMessage(payload.error.message);
   }
 
   /**
@@ -248,6 +288,27 @@ export class HTTPTransport implements MCPTransport {
         }
 
         const data = (await response.json()) as JSONRPCResponse;
+
+        if (this.shouldAttemptOAuth() && this.isJsonRpcAuthError(data)) {
+          await this.ensureOAuthToken(response.headers.get("www-authenticate"));
+
+          const retryResponse = await this.sendRequestWithOAuthRetry(
+            "POST",
+            JSON.stringify(message),
+            abortController.signal,
+          );
+
+          if (!retryResponse.ok) {
+            throw new MCPTransportError(
+              `HTTP error ${retryResponse.status}: ${retryResponse.statusText}`,
+            );
+          }
+
+          const retryData = (await retryResponse.json()) as JSONRPCResponse;
+          this.messageCallback?.(retryData);
+          return;
+        }
+
         this.messageCallback?.(data);
         return;
       } catch (error) {

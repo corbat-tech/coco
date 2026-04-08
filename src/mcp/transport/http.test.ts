@@ -372,6 +372,98 @@ describe("HTTPTransport", () => {
       const secondHeaders = vi.mocked(fetch).mock.calls[2]?.[1]?.headers as Record<string, string>;
       expect(secondHeaders.Authorization).toBe("Bearer oauth-token");
     });
+
+    it("should trigger oauth when JSON-RPC error indicates auth is required", async () => {
+      const messageCallback = vi.fn();
+      transport.onMessage(messageCallback);
+
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              error: {
+                code: -32001,
+                message: "Not authenticated. Please generate a token or login.",
+              },
+            }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
+            status: 200,
+          }),
+        );
+
+      await transport.send({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+      expect(authenticateMcpOAuth).toHaveBeenCalledTimes(1);
+      expect(messageCallback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 1, result: { ok: true } });
+    });
+
+    it("should trigger oauth for Atlassian Gemini-CLI style auth hint", async () => {
+      const messageCallback = vi.fn();
+      transport.onMessage(messageCallback);
+
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              error: {
+                code: -32001,
+                message:
+                  "Atlassian Remote MCP is a Gemini CLI extension for Jira and Confluence. Please authenticate first.",
+              },
+            }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
+            status: 200,
+          }),
+        );
+
+      await transport.send({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+      expect(authenticateMcpOAuth).toHaveBeenCalledTimes(1);
+      expect(messageCallback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 1, result: { ok: true } });
+    });
+
+    it("should not trigger oauth for non-auth domain errors", async () => {
+      const messageCallback = vi.fn();
+      transport.onMessage(messageCallback);
+
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            error: {
+              code: -32000,
+              message: "Jira issue COR-123 not found in this project.",
+            },
+          }),
+          { status: 200 },
+        ),
+      );
+
+      await transport.send({ jsonrpc: "2.0", id: 1, method: "initialize" });
+
+      expect(authenticateMcpOAuth).not.toHaveBeenCalled();
+      expect(messageCallback).toHaveBeenCalledWith({
+        jsonrpc: "2.0",
+        id: 1,
+        error: {
+          code: -32000,
+          message: "Jira issue COR-123 not found in this project.",
+        },
+      });
+    });
   });
 
   describe("disconnect", () => {

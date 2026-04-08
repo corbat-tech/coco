@@ -53,14 +53,14 @@ describe("shouldShowPermissionSuggestion", () => {
     expect(result).toBe(false);
   });
 
-  it("should return false when prompt was already shown once", async () => {
+  it("should return true when prompt was shown but user has not applied/dismissed", async () => {
     vi.mocked(fs.readFile).mockResolvedValue(
       JSON.stringify({ recommendedAllowlistPrompted: true }),
     );
 
     const result = await shouldShowPermissionSuggestion();
 
-    expect(result).toBe(false);
+    expect(result).toBe(true);
   });
 
   it("should return false when permissions were already applied", async () => {

@@ -272,6 +272,16 @@ export async function startRepl(
       if (activeCount > 0) {
         logger.info(`[MCP] ${activeCount} MCP server(s) active`);
       }
+
+      const failedServers = enabledServers
+        .map((s) => s.name)
+        .filter((name) => !connections.has(name));
+      if (failedServers.length > 0) {
+        p.log.warn(
+          `MCP startup check: ${failedServers.length} server(s) failed to connect: ${failedServers.join(", ")}`,
+        );
+        p.log.message(chalk.dim("Run /mcp health <name> to inspect details."));
+      }
     }
   } catch (mcpError) {
     logger.warn(

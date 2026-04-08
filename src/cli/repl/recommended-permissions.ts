@@ -503,15 +503,10 @@ export async function savePermissionPreference(
 
 /**
  * Check if the recommended permissions suggestion should be shown.
- * Returns true only once for first-time users.
+ * Returns true until user applies or dismisses the suggestion.
  */
 export async function shouldShowPermissionSuggestion(): Promise<boolean> {
   const prefs = await loadPermissionPreferences();
-
-  // Once shown, don't show again.
-  if (prefs.recommendedAllowlistPrompted) {
-    return false;
-  }
 
   // If user dismissed, never show again
   if (prefs.recommendedAllowlistDismissed) {
@@ -550,9 +545,6 @@ export async function applyRecommendedPermissions(): Promise<void> {
  * - No thanks: never show again
  */
 export async function showPermissionSuggestion(): Promise<void> {
-  // Mark as prompted right away so the suggestion is strictly first-run only.
-  await savePermissionPreference("recommendedAllowlistPrompted", true);
-
   console.log();
   console.log(chalk.magenta.bold("  📋 Recommended Permissions"));
   console.log();
@@ -583,6 +575,7 @@ export async function showPermissionSuggestion(): Promise<void> {
   }
 
   if (action === "dismiss") {
+    await savePermissionPreference("recommendedAllowlistPrompted", true);
     await savePermissionPreference("recommendedAllowlistDismissed", true);
     console.log(chalk.dim("  Won't show again. Use /permissions to apply later."));
     return;
@@ -603,6 +596,7 @@ export async function showPermissionSuggestion(): Promise<void> {
 
   // Apply template
   await applyRecommendedPermissions();
+  await savePermissionPreference("recommendedAllowlistPrompted", true);
   console.log(chalk.green("  ✓ Recommended permissions applied"));
   console.log(chalk.dim("  Use /permissions to review or modify anytime."));
 }
