@@ -132,6 +132,8 @@ const MODELS_WITHOUT_TEMPERATURE: string[] = [
   "o3",
   "o3-mini",
   "o4-mini",
+  "gpt-5",
+  "codex",
   "kimi-k2.5",
   "kimi-k2-0324",
   "kimi-latest",
@@ -258,7 +260,7 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Check if a model supports temperature parameter
    */
-  private supportsTemperature(model: string): boolean {
+  protected supportsTemperature(model: string): boolean {
     return !MODELS_WITHOUT_TEMPERATURE.some((m) => model.toLowerCase().includes(m.toLowerCase()));
   }
 
@@ -1086,13 +1088,14 @@ export class OpenAIProvider implements LLMProvider {
       try {
         const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
         const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+        const supportsTemp = this.supportsTemperature(model);
 
         const response = await this.client!.responses.create({
           model,
           input,
           instructions: instructions ?? undefined,
           max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          temperature: options?.temperature ?? this.config.temperature ?? 0,
+          ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
           store: false,
         });
 
@@ -1126,6 +1129,7 @@ export class OpenAIProvider implements LLMProvider {
         const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
         const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
         const tools = this.convertToolsForResponses(options.tools);
+        const supportsTemp = this.supportsTemperature(model);
 
         const response = await this.client!.responses.create({
           model,
@@ -1133,7 +1137,7 @@ export class OpenAIProvider implements LLMProvider {
           instructions: instructions ?? undefined,
           tools,
           max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          temperature: options?.temperature ?? this.config.temperature ?? 0,
+          ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
           store: false,
         });
 
@@ -1187,13 +1191,14 @@ export class OpenAIProvider implements LLMProvider {
     try {
       const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+      const supportsTemp = this.supportsTemperature(model);
 
       const stream = await this.client!.responses.create({
         model,
         input,
         instructions: instructions ?? undefined,
         max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-        temperature: options?.temperature ?? this.config.temperature ?? 0,
+        ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
         store: false,
         stream: true,
       });
@@ -1262,13 +1267,14 @@ export class OpenAIProvider implements LLMProvider {
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
       const tools =
         options.tools.length > 0 ? this.convertToolsForResponses(options.tools) : undefined;
+      const supportsTemp = this.supportsTemperature(model);
 
       const requestParams: Record<string, unknown> = {
         model,
         input,
         instructions: instructions ?? undefined,
         max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-        temperature: options?.temperature ?? this.config.temperature ?? 0,
+        ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
         store: false,
         stream: true,
       };

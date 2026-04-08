@@ -1169,3 +1169,26 @@ describe("needsResponsesApi", () => {
     expect(needsResponsesApi("o1-mini")).toBe(false);
   });
 });
+
+describe("responses temperature compatibility", () => {
+  it("omits temperature for gpt-5/codex models in responses API", async () => {
+    mockResponsesCreate.mockResolvedValue({
+      id: "resp_123",
+      model: "gpt-5.3-codex",
+      output_text: "ok",
+      status: "completed",
+      output: [],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test", model: "gpt-5.3-codex", temperature: 0.2 });
+
+    await provider.chat([{ role: "user", content: "hi" }]);
+
+    const req = mockResponsesCreate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(req).toBeDefined();
+    expect(req).not.toHaveProperty("temperature");
+  });
+});

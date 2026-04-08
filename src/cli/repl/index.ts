@@ -232,10 +232,14 @@ export async function startRepl(
     const registryServers = mcpRegistry.listEnabledServers();
 
     // Also load project-level .mcp.json (standard cross-agent format — Claude Code, Cursor, Windsurf)
-    const { loadProjectMCPFile, mergeMCPConfigs } = await import("../../mcp/config-loader.js");
-    const projectServers = await loadProjectMCPFile(process.cwd());
+    const { loadProjectMCPFile, loadMCPServersFromCOCOConfig, mergeMCPConfigs } = await import(
+      "../../mcp/config-loader.js"
+    );
+    const projectServers = await loadProjectMCPFile(projectPath);
+    const cocoConfigServers = await loadMCPServersFromCOCOConfig();
     const enabledServers = mergeMCPConfigs(
       registryServers,
+      cocoConfigServers.filter((s) => s.enabled !== false),
       projectServers.filter((s) => s.enabled !== false),
     );
 
@@ -260,7 +264,12 @@ export async function startRepl(
       // Register tools from each successfully connected server
       for (const connection of connections.values()) {
         try {
-          await registerMCPTools(toolRegistry, connection.name, connection.client);
+          const wrapped = await registerMCPTools(toolRegistry, connection.name, connection.client);
+          if (wrapped.length === 0) {
+            logger.warn(
+              `[MCP] Server '${connection.name}' connected but exposed 0 tools (check server auth/scopes).`,
+            );
+          }
         } catch (toolError) {
           logger.warn(
             `[MCP] Failed to register tools for server '${connection.name}': ${toolError instanceof Error ? toolError.message : String(toolError)}`,

@@ -149,4 +149,55 @@ describe("mcp oauth", () => {
     expect(createCallbackServer).not.toHaveBeenCalled();
     expect(vi.mocked(fetch).mock.calls.length).toBe(3);
   });
+
+  it("falls back to authorization-server metadata when protected-resource metadata is unavailable", async () => {
+    vi.mocked(fs.readFile).mockRejectedValue(new Error("not found"));
+    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+    vi.mocked(createCallbackServer).mockResolvedValue({
+      port: 1455,
+      resultPromise: Promise.resolve({ code: "auth-code", state: "state" }),
+    } as any);
+
+    vi.mocked(fetch).mockImplementation(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("/.well-known/oauth-protected-resource")) {
+        return new Response("404 Not Found", { status: 404 });
+      }
+      if (url === "https://mcp.atlassian.com/.well-known/oauth-authorization-server") {
+        return new Response(
+          JSON.stringify({
+            issuer: "https://cf.mcp.atlassian.com",
+            authorization_endpoint: "https://mcp.atlassian.com/v1/authorize",
+            token_endpoint: "https://cf.mcp.atlassian.com/v1/token",
+            registration_endpoint: "https://cf.mcp.atlassian.com/v1/register",
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === "https://cf.mcp.atlassian.com/v1/register") {
+        return new Response(JSON.stringify({ client_id: "client-123" }), { status: 200 });
+      }
+      if (url === "https://cf.mcp.atlassian.com/v1/token") {
+        return new Response(
+          JSON.stringify({
+            access_token: "token-123",
+            refresh_token: "refresh-123",
+            expires_in: 3600,
+            token_type: "Bearer",
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const token = await authenticateMcpOAuth({
+      serverName: "atlassian",
+      resourceUrl: "https://mcp.atlassian.com/v1/mcp",
+    });
+
+    expect(token).toBe("token-123");
+    expect(createCallbackServer).toHaveBeenCalledOnce();
+  });
 });

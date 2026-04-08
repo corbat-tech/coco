@@ -243,6 +243,21 @@ vi.mock("../../mcp/tools.js", () => ({
   jsonSchemaToZod: vi.fn(),
 }));
 
+// Mock MCP config loader (project/global sources + merge)
+vi.mock("../../mcp/config-loader.js", () => ({
+  loadProjectMCPFile: vi.fn().mockResolvedValue([]),
+  loadMCPServersFromCOCOConfig: vi.fn().mockResolvedValue([]),
+  mergeMCPConfigs: vi.fn((...configs: Array<Array<{ name: string }>>) => {
+    const map = new Map<string, { name: string }>();
+    for (const cfg of configs) {
+      for (const s of cfg) {
+        map.set(s.name, s);
+      }
+    }
+    return Array.from(map.values());
+  }),
+}));
+
 // Mock modules that are now lazy-loaded inside startRepl()
 vi.mock("./interruptions/llm-classifier.js", () => ({
   createLLMClassifier: vi.fn(() => ({
@@ -1169,6 +1184,45 @@ describe("REPL index", () => {
       );
       // registerMCPTools should have been called for the connected server
       expect(registerMCPTools).toHaveBeenCalledWith(expect.anything(), "test-server", fakeClient);
+    });
+
+    it("loads MCP servers from coco config when registry is empty", async () => {
+      const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { loadMCPServersFromCOCOConfig } = await import("../../mcp/config-loader.js");
+
+      vi.mocked(MCPRegistryImpl).mockImplementation(
+        () =>
+          ({
+            load: vi.fn().mockResolvedValue(undefined),
+            listEnabledServers: vi.fn().mockReturnValue([]),
+          }) as any,
+      );
+
+      vi.mocked(loadMCPServersFromCOCOConfig).mockResolvedValue([
+        {
+          name: "atlassian",
+          transport: "http",
+          enabled: true,
+          http: { url: "https://mcp.atlassian.com/v1/mcp" },
+        } as any,
+      ]);
+
+      const mockManager = {
+        startAll: vi.fn().mockResolvedValue(new Map()),
+        stopAll: vi.fn().mockResolvedValue(undefined),
+        getConnectedServers: vi.fn().mockReturnValue([]),
+      };
+      vi.mocked(createMCPServerManager).mockReturnValue(mockManager as any);
+
+      await setupMinimalRepl();
+
+      const { startRepl } = await import("./index.js");
+      await startRepl({ projectPath: "/test" });
+
+      expect(mockManager.startAll).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ name: "atlassian" })]),
+      );
     });
 
     it("continues REPL startup if MCP initialization fails", async () => {

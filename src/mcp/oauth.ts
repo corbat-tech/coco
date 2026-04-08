@@ -46,6 +46,7 @@ interface ProtectedResourceMetadata {
 }
 
 interface AuthorizationServerMetadata {
+  issuer?: string;
   authorization_endpoint: string;
   token_endpoint: string;
   registration_endpoint?: string;
@@ -441,16 +442,29 @@ export async function authenticateMcpOAuth(params: {
     );
   }
 
-  const protectedMetadata = await discoverProtectedResourceMetadata(
-    resource,
-    params.wwwAuthenticateHeader,
-  );
-  const authorizationServer = protectedMetadata.authorization_servers?.[0];
-  if (!authorizationServer) {
-    throw new Error("Protected resource metadata does not include authorization_servers");
+  let authorizationServer: string | undefined;
+  let authorizationMetadata: AuthorizationServerMetadata | undefined;
+
+  try {
+    const protectedMetadata = await discoverProtectedResourceMetadata(
+      resource,
+      params.wwwAuthenticateHeader,
+    );
+    authorizationServer = protectedMetadata.authorization_servers?.[0];
+    if (authorizationServer) {
+      authorizationMetadata = await discoverAuthorizationServerMetadata(authorizationServer);
+    }
+  } catch {
+    // Some real-world MCP servers do not expose RFC9728 protected-resource metadata.
+    // Fallback to direct authorization-server metadata discovery at the resource origin.
   }
 
-  const authorizationMetadata = await discoverAuthorizationServerMetadata(authorizationServer);
+  if (!authorizationMetadata) {
+    authorizationMetadata = await discoverAuthorizationServerMetadata(resource);
+  }
+
+  authorizationServer =
+    authorizationServer ?? authorizationMetadata.issuer ?? new URL(resource).origin;
 
   // Try refresh-token path before interactive login.
   if (stored && isTokenExpired(stored) && stored.refreshToken && stored.clientId) {
