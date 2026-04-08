@@ -247,6 +247,7 @@ export const CocoConfigSchema = z.object({
     temperature: 0,
     timeout: 120000,
   }),
+  providerModels: z.record(z.string(), z.string()).optional(),
   quality: QualityConfigSchema.default({
     minScore: 85,
     minCoverage: 80,
@@ -305,6 +306,7 @@ export function createDefaultConfigObject(
       temperature: 0,
       timeout: 120000,
     },
+    providerModels: {},
     quality: {
       minScore: 85,
       minCoverage: 80,

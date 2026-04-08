@@ -339,6 +339,10 @@ export async function getLastUsedModel(provider: ProviderType): Promise<string |
   try {
     // Read global preferences only (do not let project config override user defaults)
     const config = await loadConfig(CONFIG_PATHS.config);
+    const perProviderModel = normalizeConfiguredModel(config.providerModels?.[provider]);
+    if (perProviderModel) {
+      return perProviderModel;
+    }
     // If the current provider matches, return its model
     if (config.provider.type === provider) {
       return normalizeConfiguredModel(config.provider.model);
@@ -393,6 +397,11 @@ export async function saveProviderPreference(
   // Update provider and model
   config.provider.type = provider;
   const normalizedModel = normalizeConfiguredModel(model);
+  const persistedModel = normalizedModel ?? getDefaultModel(provider);
+  config.providerModels = {
+    ...config.providerModels,
+    [provider]: persistedModel,
+  };
   if (normalizedModel) {
     config.provider.model = normalizedModel;
   } else {
@@ -535,13 +544,28 @@ export async function migrateOldPreferences(): Promise<void> {
     // Migrate provider preference
     if (oldPrefs.provider && VALID_PROVIDERS.includes(oldPrefs.provider as ProviderType)) {
       config.provider.type = oldPrefs.provider as ProviderType;
+      config.providerModels = {
+        ...config.providerModels,
+      };
+
+      for (const [providerName, modelName] of Object.entries(oldPrefs.models ?? {})) {
+        if (VALID_PROVIDERS.includes(providerName as ProviderType)) {
+          const normalized = normalizeConfiguredModel(modelName);
+          if (normalized) {
+            config.providerModels[providerName] = normalized;
+          }
+        }
+      }
 
       // Migrate model preference for this provider
       const modelForProvider = oldPrefs.provider ? oldPrefs.models?.[oldPrefs.provider] : undefined;
-      if (modelForProvider) {
-        config.provider.model = modelForProvider;
+      const normalizedMigratedModel = normalizeConfiguredModel(modelForProvider);
+      if (normalizedMigratedModel) {
+        config.provider.model = normalizedMigratedModel;
+        config.providerModels[oldPrefs.provider] = normalizedMigratedModel;
       } else {
         config.provider.model = getDefaultModel(oldPrefs.provider as ProviderType);
+        config.providerModels[oldPrefs.provider] = config.provider.model;
       }
 
       // Save to global config

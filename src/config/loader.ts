@@ -108,6 +108,7 @@ function deepMergeConfig(base: CocoConfig, override: Partial<CocoConfig>): CocoC
     ...override,
     project: { ...base.project, ...override.project },
     provider: { ...base.provider, ...override.provider },
+    providerModels: { ...base.providerModels, ...override.providerModels },
     quality: { ...base.quality, ...override.quality },
     persistence: { ...base.persistence, ...override.persistence },
     // Merge optional sections only if present in either base or override

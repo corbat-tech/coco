@@ -28,7 +28,12 @@ import {
   deleteTokens,
   deleteCopilotCredentials,
 } from "../../../auth/index.js";
-import { saveProviderPreference, clearAuthMethod, type AuthMethod } from "../../../config/env.js";
+import {
+  saveProviderPreference,
+  clearAuthMethod,
+  getLastUsedModel,
+  type AuthMethod,
+} from "../../../config/env.js";
 
 interface ProviderOption {
   id: string;
@@ -527,8 +532,9 @@ async function switchProvider(
   }
 
   // Get recommended model for new provider
+  const rememberedModel = await getLastUsedModel(newProvider.id as ProviderType);
   const recommendedModel = getRecommendedModel(newProvider.id as ProviderType);
-  const newModel = recommendedModel?.id || newProvider.models[0]?.id || "";
+  const newModel = rememberedModel || recommendedModel?.id || newProvider.models[0]?.id || "";
 
   // Test connection (use internal provider ID for OAuth)
   const spinner = p.spinner();

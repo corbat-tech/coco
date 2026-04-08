@@ -84,6 +84,7 @@ import {
 } from "../../utils/subprocess-registry.js";
 import { looksLikeTechnicalJargon, humanizeWithLLM } from "../../utils/error-humanizer.js";
 import type { HookRegistryInterface, HookExecutor } from "./hooks/index.js";
+import type { MCPServerConfig } from "../../mcp/types.js";
 
 // stringWidth (from 'string-width') is the industry-standard way to measure
 // visual terminal width of strings.  It correctly handles ANSI codes, emoji
@@ -221,6 +222,8 @@ export async function startRepl(
 
   // Initialize MCP servers (non-fatal — REPL starts even if MCP fails)
   let mcpManager: MCPServerManager | null = null;
+  let configuredMcpServers: MCPServerConfig[] = [];
+  const registeredMcpServers = new Set<string>();
   const logger = (await import("../../utils/logger.js")).getLogger();
   try {
     const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
@@ -242,6 +245,7 @@ export async function startRepl(
       cocoConfigServers.filter((s) => s.enabled !== false),
       projectServers.filter((s) => s.enabled !== false),
     );
+    configuredMcpServers = enabledServers;
 
     if (enabledServers.length > 0) {
       mcpManager = getMCPServerManager();
@@ -265,6 +269,7 @@ export async function startRepl(
       for (const connection of connections.values()) {
         try {
           const wrapped = await registerMCPTools(toolRegistry, connection.name, connection.client);
+          registeredMcpServers.add(connection.name);
           if (wrapped.length === 0) {
             logger.warn(
               `[MCP] Server '${connection.name}' connected but exposed 0 tools (check server auth/scopes).`,
@@ -296,6 +301,53 @@ export async function startRepl(
     logger.warn(
       `[MCP] Initialization failed: ${mcpError instanceof Error ? mcpError.message : String(mcpError)}`,
     );
+  }
+
+  async function ensureRequestedMcpConnections(message: string): Promise<void> {
+    if (!mcpManager || configuredMcpServers.length === 0) return;
+
+    const normalizedMessage = message.toLowerCase();
+    const explicitlyRequestsMcp =
+      /\bmcp\b/.test(normalizedMessage) ||
+      /\b(use|using|usa|usar|utiliza|utilizar)\b.{0,24}\bmcp\b/.test(normalizedMessage);
+
+    const matchingServers = configuredMcpServers.filter((server) => {
+      if (mcpManager?.getConnection(server.name)) return false;
+      if (explicitlyRequestsMcp) return true;
+
+      const loweredName = server.name.toLowerCase();
+      if (normalizedMessage.includes(loweredName)) return true;
+      if (loweredName.includes("atlassian")) {
+        return /\b(atlassian|jira|confluence)\b/.test(normalizedMessage);
+      }
+      return false;
+    });
+
+    for (const server of matchingServers) {
+      try {
+        const connection = await mcpManager.startServer(server);
+        if (!registeredMcpServers.has(connection.name)) {
+          await (await import("../../mcp/tools.js")).registerMCPTools(
+            toolRegistry,
+            connection.name,
+            connection.client,
+          );
+          registeredMcpServers.add(connection.name);
+        }
+      } catch (error) {
+        logger.warn(
+          `[MCP] On-demand connect failed for '${server.name}': ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  function extractMessageText(content: string | MessageContent): string {
+    if (typeof content === "string") return content;
+    return content
+      .filter((block): block is TextContent => block.type === "text")
+      .map((block) => block.text)
+      .join(" ");
   }
 
   // Load lifecycle hooks from .coco/hooks.json (non-fatal — REPL starts even if hooks fail)
@@ -926,6 +978,8 @@ export async function startRepl(
       // Track LLM call count and last tool category for contextual spinner messages
       let llmCallCount = 0;
       let lastToolGroup: string | null = null;
+
+      await ensureRequestedMcpConnections(extractMessageText(effectiveMessage));
 
       const result = await executeAgentTurn(session, effectiveMessage, provider, toolRegistry, {
         onStream: (chunk) => {

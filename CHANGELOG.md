@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.10] - 2026-04-09
+
+### Fixed
+- **Per-provider model persistence** — Coco now remembers the last selected model for each provider instead of storing only a single global `provider.model`, so switching back to Copilot restores the previously chosen Copilot model instead of overwriting it with a generic fallback.
+- **`/provider` model restoration** — switching providers now loads the remembered model for that provider first, only falling back to the recommended/default model when no provider-specific preference exists.
+- **On-demand MCP reconnection** — when a user explicitly asks to use MCP and a configured server such as Atlassian is enabled but currently disconnected, Coco now attempts to reconnect that MCP server and register its tools before giving up.
+- **Compatibility with old preferences migration** — legacy `preferences.json` model maps are now migrated into the new per-provider model storage, preserving historical model choices across upgrades.
+
 ## [2.25.9] - 2026-04-09
 
 ### Fixed

@@ -1413,6 +1413,58 @@ describe("REPL index", () => {
       expect(mockMcpManager.stopAll).toHaveBeenCalled();
     });
 
+    it("reconnects a configured disconnected MCP server on demand when user asks for MCP", async () => {
+      const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { registerMCPTools } = await import("../../mcp/tools.js");
+      const { executeAgentTurn } = await import("./agent-loop.js");
+
+      const fakeClient = { isConnected: vi.fn().mockReturnValue(true), listTools: vi.fn() };
+      const fakeConnection = { name: "atlassian", client: fakeClient, toolCount: 2 };
+
+      const mockMcpManager = {
+        startAll: vi.fn().mockResolvedValue(new Map()),
+        startServer: vi.fn().mockResolvedValue(fakeConnection),
+        stopAll: vi.fn().mockResolvedValue(undefined),
+        getConnectedServers: vi.fn().mockReturnValue([]),
+        getConnection: vi.fn().mockReturnValue(undefined),
+      };
+      vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
+
+      vi.mocked(MCPRegistryImpl).mockImplementation(
+        () =>
+          ({
+            load: vi.fn().mockResolvedValue(undefined),
+            listEnabledServers: vi.fn().mockReturnValue([
+              {
+                name: "atlassian",
+                transport: "http",
+                enabled: true,
+                http: { url: "https://mcp.atlassian.com/v1/mcp" },
+              },
+            ]),
+          }) as any,
+      );
+
+      vi.mocked(registerMCPTools).mockResolvedValue([]);
+      vi.mocked(executeAgentTurn).mockResolvedValue({
+        content: "ok",
+        toolCalls: [],
+        usage: { inputTokens: 1, outputTokens: 1 },
+        aborted: false,
+      } as any);
+
+      await setupMinimalRepl({ inputPromptValues: ["usa el mcp de atlassian", null] });
+
+      const { startRepl } = await import("./index.js");
+      await startRepl({ projectPath: "/test" });
+
+      expect(mockMcpManager.startServer).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "atlassian" }),
+      );
+      expect(registerMCPTools).toHaveBeenCalledWith(expect.anything(), "atlassian", fakeClient);
+    });
+
     it("calls mcpManager.stopAll() on normal REPL exit (EOF)", async () => {
       const { MCPRegistryImpl } = await import("../../mcp/registry.js");
       const { createMCPServerManager } = await import("../../mcp/lifecycle.js");

@@ -40,6 +40,7 @@ describe("env preferences use global config only", () => {
     const { loadConfig } = await import("./loader.js");
     vi.mocked(loadConfig).mockResolvedValue({
       provider: { type: "anthropic", model: "claude-opus-4-6" },
+      providerModels: { anthropic: "claude-opus-4-6" },
     } as any);
 
     const { getLastUsedModel } = await import("./env.js");
@@ -53,6 +54,7 @@ describe("env preferences use global config only", () => {
     const { loadConfig } = await import("./loader.js");
     vi.mocked(loadConfig).mockResolvedValue({
       provider: { type: "copilot", model: "   " },
+      providerModels: { copilot: "   " },
     } as any);
 
     const { getLastUsedModel } = await import("./env.js");
@@ -65,6 +67,7 @@ describe("env preferences use global config only", () => {
     const { loadConfig, saveConfig } = await import("./loader.js");
     vi.mocked(loadConfig).mockResolvedValue({
       provider: { type: "anthropic", model: "claude-opus-4-6", maxTokens: 8192 },
+      providerModels: { anthropic: "claude-opus-4-6" },
       project: { name: "global", version: "0.1.0" },
       quality: {
         minScore: 85,
@@ -92,6 +95,10 @@ describe("env preferences use global config only", () => {
           type: "openai",
           model: "gpt-5.4-codex",
         }),
+        providerModels: expect.objectContaining({
+          anthropic: "claude-opus-4-6",
+          openai: "gpt-5.4-codex",
+        }),
       }),
       undefined,
       true,
@@ -102,6 +109,7 @@ describe("env preferences use global config only", () => {
     const { loadConfig, saveConfig } = await import("./loader.js");
     vi.mocked(loadConfig).mockResolvedValue({
       provider: { type: "anthropic", model: "claude-opus-4-6", maxTokens: 8192 },
+      providerModels: { anthropic: "claude-opus-4-6" },
       project: { name: "global", version: "0.1.0" },
       quality: {
         minScore: 85,
@@ -128,9 +136,26 @@ describe("env preferences use global config only", () => {
           type: "copilot",
           model: "claude-sonnet-4.6",
         }),
+        providerModels: expect.objectContaining({
+          anthropic: "claude-opus-4-6",
+          copilot: "claude-sonnet-4.6",
+        }),
       }),
       undefined,
       true,
     );
+  });
+
+  it("getLastUsedModel prefers provider-specific saved model over current provider.model", async () => {
+    const { loadConfig } = await import("./loader.js");
+    vi.mocked(loadConfig).mockResolvedValue({
+      provider: { type: "anthropic", model: "claude-opus-4-6" },
+      providerModels: { copilot: "gpt-5.4-codex", anthropic: "claude-opus-4-6" },
+    } as any);
+
+    const { getLastUsedModel } = await import("./env.js");
+    const model = await getLastUsedModel("copilot" as any);
+
+    expect(model).toBe("gpt-5.4-codex");
   });
 });
