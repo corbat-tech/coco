@@ -33,6 +33,7 @@ import type {
 import { ProviderError } from "../utils/errors.js";
 
 const DEFAULT_MODEL = "gemini-3.1-pro-preview";
+const SKIP_THOUGHT_SIGNATURE_VALIDATOR = "skip_thought_signature_validator";
 
 const CONTEXT_WINDOWS: Record<string, number> = {
   "gemini-3.1-pro-preview": 1000000,
@@ -154,34 +155,33 @@ export class GeminiProvider implements LLMProvider {
           yield { type: "text", text };
         }
 
-        const functionCalls = this.extractFunctionCalls(chunk);
-        for (const functionCall of functionCalls) {
-          const toolCallId = functionCall.id ?? `gemini_call_${++fallbackToolCounter}`;
+        const toolCalls = this.extractToolCalls(chunk, { includeLegacyFunctionCalls: true });
+        for (const toolCall of toolCalls) {
+          const toolCallId = toolCall.id ?? `gemini_call_${++fallbackToolCounter}`;
           if (emittedToolIds.has(toolCallId)) continue;
           emittedToolIds.add(toolCallId);
 
-          const toolCall: ToolCall = {
+          const normalizedToolCall: ToolCall = {
+            ...toolCall,
             id: toolCallId,
-            name: functionCall.name ?? "unknown_function",
-            input: (functionCall.args ?? {}) as Record<string, unknown>,
           };
 
           yield {
             type: "tool_use_start",
             toolCall: {
-              id: toolCall.id,
-              name: toolCall.name,
+              id: normalizedToolCall.id,
+              name: normalizedToolCall.name,
             },
           };
 
           yield {
             type: "tool_use_end",
-            toolCall,
+            toolCall: normalizedToolCall,
           };
         }
 
         const finishReason = chunk.candidates?.[0]?.finishReason;
-        if (functionCalls.length > 0) {
+        if (toolCalls.length > 0) {
           streamStopReason = "tool_use";
         } else if (finishReason) {
           streamStopReason = this.mapFinishReason(finishReason);
@@ -354,13 +354,18 @@ export class GeminiProvider implements LLMProvider {
         });
       } else if (block.type === "tool_use") {
         const toolUse = block as ToolUseContent;
-        parts.push({
-          functionCall: {
-            id: toolUse.id,
-            name: toolUse.name,
-            args: toolUse.input,
-          },
-        });
+        const thoughtSignature = toolUse.geminiThoughtSignature ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR;
+        const functionCall: FunctionCall = {
+          id: toolUse.id,
+          name: toolUse.name,
+          args: toolUse.input,
+        };
+        const part = {
+          functionCall,
+          thoughtSignature,
+          thought_signature: thoughtSignature,
+        } as Part & { thoughtSignature?: string; thought_signature?: string };
+        parts.push(part);
       }
     }
 
@@ -391,17 +396,52 @@ export class GeminiProvider implements LLMProvider {
     };
   }
 
-  private extractFunctionCalls(response: GenerateContentResponse): FunctionCall[] {
-    if (response.functionCalls && response.functionCalls.length > 0) {
-      return response.functionCalls;
+  private extractThoughtSignatureFromPart(part: Part): string | undefined {
+    const withSignature = part as Part & {
+      thoughtSignature?: string;
+      thought_signature?: string;
+      functionCall?: FunctionCall & {
+        thoughtSignature?: string;
+        thought_signature?: string;
+      };
+    };
+    return (
+      withSignature.thoughtSignature ??
+      withSignature.thought_signature ??
+      withSignature.functionCall?.thoughtSignature ??
+      withSignature.functionCall?.thought_signature
+    );
+  }
+
+  private extractToolCalls(
+    response: GenerateContentResponse,
+    options?: { includeLegacyFunctionCalls?: boolean },
+  ): ToolCall[] {
+    const toolCallsFromParts = (response.candidates?.[0]?.content?.parts ?? [])
+      .filter((part) => !!part.functionCall)
+      .map((part, index) => ({
+        id: part.functionCall!.id ?? `gemini_call_${index + 1}`,
+        name: part.functionCall!.name ?? "unknown_function",
+        input: (part.functionCall!.args ?? {}) as Record<string, unknown>,
+        geminiThoughtSignature: this.extractThoughtSignatureFromPart(part),
+      }));
+
+    if (toolCallsFromParts.length > 0) {
+      return toolCallsFromParts;
     }
 
-    const candidate = response.candidates?.[0];
-    const parts = candidate?.content?.parts ?? [];
-    return parts
-      .filter((part) => !!part.functionCall)
-      .map((part) => part.functionCall!)
-      .filter(Boolean);
+    if (!options?.includeLegacyFunctionCalls || !response.functionCalls?.length) {
+      return [];
+    }
+
+    return response.functionCalls.map((functionCall, index) => ({
+      id: functionCall.id ?? `gemini_call_${index + 1}`,
+      name: functionCall.name ?? "unknown_function",
+      input: (functionCall.args ?? {}) as Record<string, unknown>,
+      geminiThoughtSignature: this.extractThoughtSignatureFromPart({
+        functionCall: functionCall as Part["functionCall"],
+      } as Part),
+    }));
   }
 
   private parseResponse(response: GenerateContentResponse, model?: string): ChatResponse {
@@ -424,11 +464,7 @@ export class GeminiProvider implements LLMProvider {
     model?: string,
   ): ChatWithToolsResponse {
     const usage = response.usageMetadata;
-    const toolCalls = this.extractFunctionCalls(response).map((functionCall, index) => ({
-      id: functionCall.id ?? `gemini_call_${index + 1}`,
-      name: functionCall.name ?? "unknown_function",
-      input: (functionCall.args ?? {}) as Record<string, unknown>,
-    }));
+    const toolCalls = this.extractToolCalls(response, { includeLegacyFunctionCalls: true });
 
     return {
       id: `gemini-${Date.now()}`,

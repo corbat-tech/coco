@@ -39,7 +39,7 @@ const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses";
  * Note: ChatGPT subscription uses different models than the API
  * Updated March 2026
  */
-const DEFAULT_MODEL = "gpt-5.4-codex";
+const DEFAULT_MODEL = "gpt-5.3-codex";
 
 /**
  * Context windows for Codex models (ChatGPT Plus/Pro)

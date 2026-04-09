@@ -33,6 +33,7 @@ vi.mock("@clack/prompts", () => ({
 
 vi.mock("node:fs/promises", () => ({
   default: {
+    mkdir: vi.fn().mockResolvedValue(undefined),
     writeFile: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -46,10 +47,13 @@ vi.mock("../session.js", () => ({
 vi.mock("../recommended-permissions.js", () => ({
   applyRecommendedPermissions: vi.fn().mockResolvedValue(undefined),
   showPermissionDetails: vi.fn(),
-  loadPermissionPreferences: vi.fn().mockResolvedValue({}),
-  savePermissionPreference: vi.fn().mockResolvedValue(undefined),
   saveProjectPermissionPreference: vi.fn().mockResolvedValue(undefined),
-  isRecommendedAllowlistAppliedForProject: vi.fn().mockReturnValue(false),
+  getProjectPermissionState: vi.fn().mockResolvedValue({
+    applied: false,
+    dismissed: false,
+    prompted: false,
+    updatedAt: new Date(0).toISOString(),
+  }),
   RECOMMENDED_GLOBAL: ["read_file", "glob", "bash:cat"],
   RECOMMENDED_PROJECT: ["write_file", "edit_file", "bash:git:add"],
   RECOMMENDED_DENY: ["bash:sudo", "bash:git:push"],
@@ -70,9 +74,7 @@ import { getAllTrustedTools, saveTrustedTool, removeTrustedTool } from "../sessi
 import {
   applyRecommendedPermissions,
   showPermissionDetails,
-  loadPermissionPreferences,
-  savePermissionPreference,
-  isRecommendedAllowlistAppliedForProject,
+  getProjectPermissionState,
 } from "../recommended-permissions.js";
 import { permissionsCommand } from "./permissions.js";
 
@@ -107,9 +109,12 @@ beforeEach(() => {
     denied: [],
   });
 
-  // Default: loadPermissionPreferences returns no prefs set
-  vi.mocked(loadPermissionPreferences).mockResolvedValue({});
-  vi.mocked(isRecommendedAllowlistAppliedForProject).mockReturnValue(false);
+  vi.mocked(getProjectPermissionState).mockResolvedValue({
+    applied: false,
+    dismissed: false,
+    prompted: false,
+    updatedAt: new Date(0).toISOString(),
+  });
 });
 
 afterEach(() => {
@@ -156,18 +161,19 @@ describe("permissionsCommand", () => {
       expect(getAllTrustedTools).toHaveBeenCalledWith("/test/project");
     });
 
-    it("calls loadPermissionPreferences", async () => {
+    it("calls getProjectPermissionState", async () => {
       const session = makeSession();
       await permissionsCommand.execute([], session);
-
-      expect(loadPermissionPreferences).toHaveBeenCalled();
+      expect(getProjectPermissionState).toHaveBeenCalledWith("/test/project");
     });
 
     it("shows 'Recommended allowlist applied' when flag is true", async () => {
-      vi.mocked(loadPermissionPreferences).mockResolvedValue({
-        recommendedAllowlistApplied: true,
+      vi.mocked(getProjectPermissionState).mockResolvedValue({
+        applied: true,
+        dismissed: false,
+        prompted: true,
+        updatedAt: new Date(0).toISOString(),
       });
-      vi.mocked(isRecommendedAllowlistAppliedForProject).mockReturnValue(true);
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
@@ -176,8 +182,11 @@ describe("permissionsCommand", () => {
     });
 
     it("shows 'Recommended allowlist not applied' when flag is false", async () => {
-      vi.mocked(loadPermissionPreferences).mockResolvedValue({
-        recommendedAllowlistApplied: false,
+      vi.mocked(getProjectPermissionState).mockResolvedValue({
+        applied: false,
+        dismissed: false,
+        prompted: true,
+        updatedAt: new Date(0).toISOString(),
       });
       const session = makeSession();
       await permissionsCommand.execute([], session);
@@ -187,7 +196,12 @@ describe("permissionsCommand", () => {
     });
 
     it("shows 'Recommended allowlist not applied' when preference is absent", async () => {
-      vi.mocked(loadPermissionPreferences).mockResolvedValue({});
+      vi.mocked(getProjectPermissionState).mockResolvedValue({
+        applied: false,
+        dismissed: false,
+        prompted: false,
+        updatedAt: new Date(0).toISOString(),
+      });
       const session = makeSession();
       await permissionsCommand.execute([], session);
 
@@ -572,13 +586,13 @@ describe("permissionsCommand", () => {
       await permissionsCommand.execute(["reset"], session);
 
       expect(fs.writeFile).toHaveBeenCalledWith(
-        "/mock-home/.coco/trusted-tools.json",
-        expect.stringContaining('"globalTrusted": []'),
+        "/test/project/.coco/trusted-tools.json",
+        expect.stringContaining('"trusted": []'),
         "utf-8",
       );
     });
 
-    it("written empty settings contain empty projectTrusted", async () => {
+    it("written empty settings contain empty trusted", async () => {
       vi.mocked(p.confirm).mockResolvedValue(true);
       vi.mocked(p.isCancel).mockReturnValue(false);
       const session = makeSession();
@@ -586,10 +600,10 @@ describe("permissionsCommand", () => {
 
       const writtenContent = vi.mocked(fs.writeFile).mock.calls[0]![1] as string;
       const parsed = JSON.parse(writtenContent) as Record<string, unknown>;
-      expect(parsed.projectTrusted).toEqual({});
+      expect(parsed.trusted).toEqual([]);
     });
 
-    it("written empty settings contain empty projectDenied", async () => {
+    it("written empty settings contain empty denied", async () => {
       vi.mocked(p.confirm).mockResolvedValue(true);
       vi.mocked(p.isCancel).mockReturnValue(false);
       const session = makeSession();
@@ -597,15 +611,25 @@ describe("permissionsCommand", () => {
 
       const writtenContent = vi.mocked(fs.writeFile).mock.calls[0]![1] as string;
       const parsed = JSON.parse(writtenContent) as Record<string, unknown>;
-      expect(parsed.projectDenied).toEqual({});
+      expect(parsed.denied).toEqual([]);
     });
 
-    it("calls savePermissionPreference to reset the allowlist flag when confirmed", async () => {
+    it("calls saveProjectPermissionPreference to reset project-scoped flags when confirmed", async () => {
       vi.mocked(p.confirm).mockResolvedValue(true);
       vi.mocked(p.isCancel).mockReturnValue(false);
       const session = makeSession();
       await permissionsCommand.execute(["reset"], session);
-      expect(savePermissionPreference).toHaveBeenCalledWith("recommendedAllowlistApplied", false);
+      const { saveProjectPermissionPreference } = await import("../recommended-permissions.js");
+      expect(saveProjectPermissionPreference).toHaveBeenCalledWith(
+        "recommendedAllowlistAppliedProjects",
+        "/test/project",
+        false,
+      );
+      expect(saveProjectPermissionPreference).toHaveBeenCalledWith(
+        "recommendedAllowlistDismissedProjects",
+        "/test/project",
+        false,
+      );
     });
 
     it("prints success message after reset", async () => {
@@ -636,12 +660,13 @@ describe("permissionsCommand", () => {
       expect(fs.writeFile).not.toHaveBeenCalled();
     });
 
-    it("does NOT call savePermissionPreference when cancelled", async () => {
+    it("does NOT call saveProjectPermissionPreference when cancelled", async () => {
       vi.mocked(p.confirm).mockResolvedValue(false);
       vi.mocked(p.isCancel).mockReturnValue(false);
       const session = makeSession();
       await permissionsCommand.execute(["reset"], session);
-      expect(savePermissionPreference).not.toHaveBeenCalled();
+      const { saveProjectPermissionPreference } = await import("../recommended-permissions.js");
+      expect(saveProjectPermissionPreference).not.toHaveBeenCalled();
     });
 
     it("prints 'Cancelled' when user declines", async () => {

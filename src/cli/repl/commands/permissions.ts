@@ -17,14 +17,11 @@ import chalk from "chalk";
 import fs from "node:fs/promises";
 import type { SlashCommand, ReplSession } from "../types.js";
 import { getAllTrustedTools, saveTrustedTool, removeTrustedTool } from "../session.js";
-import { CONFIG_PATHS } from "../../../config/paths.js";
 import {
   applyRecommendedPermissions,
   showPermissionDetails,
-  loadPermissionPreferences,
-  savePermissionPreference,
   saveProjectPermissionPreference,
-  isRecommendedAllowlistAppliedForProject,
+  getProjectPermissionState,
   RECOMMENDED_GLOBAL,
   RECOMMENDED_PROJECT,
   RECOMMENDED_DENY,
@@ -68,14 +65,14 @@ export const permissionsCommand: SlashCommand = {
  */
 async function showStatus(session: ReplSession): Promise<void> {
   const tools = await getAllTrustedTools(session.projectPath);
-  const prefs = await loadPermissionPreferences();
+  const permissionState = await getProjectPermissionState(session.projectPath);
 
   console.log();
   console.log(chalk.magenta.bold("  🔐 Tool Permissions"));
   console.log();
 
   const allowCount = RECOMMENDED_GLOBAL.length + RECOMMENDED_PROJECT.length;
-  if (isRecommendedAllowlistAppliedForProject(prefs, session.projectPath)) {
+  if (permissionState.applied) {
     console.log(
       chalk.green("  ✓ Recommended allowlist applied") +
         chalk.dim(` (${allowCount} allow, ${RECOMMENDED_DENY.length} deny)`),
@@ -189,29 +186,30 @@ async function resetPermissions(session: ReplSession): Promise<void> {
   session.trustedTools.clear();
 
   // Clear persisted trust settings (including project deny lists)
-  const emptySettings = {
-    globalTrusted: [] as string[],
-    projectTrusted: {} as Record<string, string[]>,
-    projectDenied: {} as Record<string, string[]>,
+  const emptyProjectSettings = {
+    trusted: [] as string[],
+    denied: [] as string[],
     updatedAt: new Date().toISOString(),
   };
 
   try {
-    await fs.writeFile(CONFIG_PATHS.trustedTools, JSON.stringify(emptySettings, null, 2), "utf-8");
+    const projectTrustPath = `${session.projectPath}/.coco/trusted-tools.json`;
+    await fs.mkdir(`${session.projectPath}/.coco`, { recursive: true });
+    await fs.writeFile(projectTrustPath, JSON.stringify(emptyProjectSettings, null, 2), "utf-8");
   } catch {
     // Silently fail
   }
 
-  // Reset preference flag
-  await savePermissionPreference("recommendedAllowlistApplied", false);
+  const permissionScopePath = session.projectPath;
+  // Reset project-scoped preference flags
   await saveProjectPermissionPreference(
     "recommendedAllowlistAppliedProjects",
-    session.projectPath,
+    permissionScopePath,
     false,
   );
   await saveProjectPermissionPreference(
     "recommendedAllowlistDismissedProjects",
-    session.projectPath,
+    permissionScopePath,
     false,
   );
 

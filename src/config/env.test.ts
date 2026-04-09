@@ -233,7 +233,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("openai");
 
-    expect(model).toBe("gpt-5.4-codex");
+    expect(model).toBe("gpt-5.3-codex");
   });
 
   it("should return custom GEMINI_MODEL if set", () => {

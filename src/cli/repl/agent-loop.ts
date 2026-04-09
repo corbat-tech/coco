@@ -338,7 +338,12 @@ export async function executeAgentTurn(
     // Track tool call builders for streaming
     const toolCallBuilders: Map<
       string,
-      { id: string; name: string; input: Record<string, unknown> }
+      {
+        id: string;
+        name: string;
+        input: Record<string, unknown>;
+        geminiThoughtSignature?: string;
+      }
     > = new Map();
 
     // Wrap streaming in try/catch to handle provider errors gracefully
@@ -383,6 +388,7 @@ export async function executeAgentTurn(
               id,
               name: toolName,
               input: {},
+              geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
             });
             // Notify that a tool is being prepared/parsed
             if (toolName) {
@@ -399,6 +405,8 @@ export async function executeAgentTurn(
                 id: builder.id,
                 name: chunk.toolCall.name ?? builder.name,
                 input: chunk.toolCall.input ?? builder.input,
+                geminiThoughtSignature:
+                  chunk.toolCall.geminiThoughtSignature ?? builder.geminiThoughtSignature,
               };
               collectedToolCalls.push(finalToolCall);
             } else if (chunk.toolCall.id && chunk.toolCall.name) {
@@ -407,6 +415,7 @@ export async function executeAgentTurn(
                 id: chunk.toolCall.id,
                 name: chunk.toolCall.name,
                 input: chunk.toolCall.input ?? {},
+                geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
               });
             }
           }
@@ -760,6 +769,7 @@ export async function executeAgentTurn(
         id: toolCall.id,
         name: toolCall.name,
         input: toolCall.input,
+        geminiThoughtSignature: toolCall.geminiThoughtSignature,
       });
 
       // Check if this tool was declined

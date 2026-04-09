@@ -87,9 +87,9 @@
  *
  * CURRENT MODELS (verified from official docs):
  * - Anthropic: claude-opus-4-6 (latest), claude-sonnet-4-6, claude-haiku-4-5
- * - OpenAI: gpt-5.4-codex (latest), gpt-5.3-codex, gpt-5.2-codex, gpt-5.1-codex-max, gpt-4.1
+ * - OpenAI: gpt-5.3-codex (latest available), gpt-5.2-codex, gpt-5.1-codex-max, gpt-4.1
  * - Gemini: gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-2.5-pro, gemini-2.5-flash
- * - Vertex AI: gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash-001
+ * - Vertex AI: gemini-3-pro-preview, gemini-3-flash-preview, gemini-2.5-pro, gemini-2.5-flash
  * - Copilot: claude-sonnet-4.6, gpt-5.4-codex, gpt-5.4, gpt-5 mini, gpt-4.1, gemini-3.1-pro
  * - Kimi: kimi-k2.5, kimi-k2-thinking
  * - Qwen: qwen-coder-plus (recommended), qwen-max, qwen-plus, qwen-turbo, qwq-plus
@@ -254,19 +254,12 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     // Updated: March 2026 — from platform.openai.com/docs/models
     models: [
       {
-        id: "gpt-5.4-codex",
-        name: "GPT-5.4 Codex",
-        description: "Latest agentic coding model (Mar 2026)",
+        id: "gpt-5.3-codex",
+        name: "GPT-5.3 Codex",
+        description: "Latest available agentic coding model",
         contextWindow: 400000,
         maxOutputTokens: 128000,
         recommended: true,
-      },
-      {
-        id: "gpt-5.3-codex",
-        name: "GPT-5.3 Codex",
-        description: "Previous agentic coding model (Feb 2026)",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
       },
       {
         id: "gpt-5.2-codex",
@@ -563,19 +556,12 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     },
     models: [
       {
-        id: "gpt-5.4-codex",
-        name: "GPT-5.4 Codex",
-        description: "Latest coding model via ChatGPT subscription (Mar 2026)",
+        id: "gpt-5.3-codex",
+        name: "GPT-5.3 Codex",
+        description: "Latest available coding model via ChatGPT subscription",
         contextWindow: 200000,
         maxOutputTokens: 128000,
         recommended: true,
-      },
-      {
-        id: "gpt-5.3-codex",
-        name: "GPT-5.3 Codex",
-        description: "Previous coding model via ChatGPT subscription",
-        contextWindow: 200000,
-        maxOutputTokens: 128000,
       },
       {
         id: "gpt-5.2-codex",
@@ -687,12 +673,26 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     },
     models: [
       {
-        id: "gemini-2.5-pro",
-        name: "Gemini 2.5 Pro",
-        description: "Recommended Vertex model for coding and complex reasoning",
+        id: "gemini-3-pro-preview",
+        name: "Gemini 3 Pro (Preview)",
+        description: "Most capable Vertex Gemini 3 model (preview)",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
         recommended: true,
+      },
+      {
+        id: "gemini-3-flash-preview",
+        name: "Gemini 3 Flash (Preview)",
+        description: "Fast Gemini 3 model on Vertex (preview)",
+        contextWindow: 1048576,
+        maxOutputTokens: 65536,
+      },
+      {
+        id: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
+        description: "Stable high-quality Vertex model for coding and complex reasoning",
+        contextWindow: 1048576,
+        maxOutputTokens: 65536,
       },
       {
         id: "gemini-2.5-flash",

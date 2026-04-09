@@ -48,9 +48,7 @@ describe("shouldShowPermissionSuggestion", () => {
 
   it("should return false when user dismissed for this project", async () => {
     vi.mocked(fs.readFile).mockResolvedValue(
-      JSON.stringify({
-        recommendedAllowlistDismissedProjects: { ["/repo/project"]: true },
-      }),
+      JSON.stringify({ dismissed: true, applied: false, prompted: true }),
     );
 
     const result = await shouldShowPermissionSuggestion("/repo/project");
@@ -59,9 +57,7 @@ describe("shouldShowPermissionSuggestion", () => {
   });
 
   it("should return true when prompt was shown but user has not applied/dismissed", async () => {
-    vi.mocked(fs.readFile).mockResolvedValue(
-      JSON.stringify({ recommendedAllowlistPrompted: true }),
-    );
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify({ prompted: true, dismissed: false }));
 
     const result = await shouldShowPermissionSuggestion();
 
@@ -69,11 +65,7 @@ describe("shouldShowPermissionSuggestion", () => {
   });
 
   it("should return false when permissions were already applied for this project", async () => {
-    vi.mocked(fs.readFile).mockResolvedValue(
-      JSON.stringify({
-        recommendedAllowlistAppliedProjects: { ["/repo/project"]: true },
-      }),
-    );
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify({ applied: true, dismissed: false }));
 
     const result = await shouldShowPermissionSuggestion("/repo/project");
 
@@ -81,9 +73,7 @@ describe("shouldShowPermissionSuggestion", () => {
   });
 
   it("should return true after 'later' style state (prompted but not applied/dismissed)", async () => {
-    vi.mocked(fs.readFile).mockResolvedValue(
-      JSON.stringify({ recommendedAllowlistPromptedProjects: { ["/repo/project"]: true } }),
-    );
+    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify({ prompted: true, applied: false }));
 
     const result = await shouldShowPermissionSuggestion("/repo/project");
     expect(result).toBe(true);
@@ -118,14 +108,7 @@ describe("loadPermissionPreferences", () => {
 
     const result = await loadPermissionPreferences();
 
-    expect(result).toEqual({
-      recommendedAllowlistApplied: true,
-      recommendedAllowlistDismissed: false,
-      recommendedAllowlistPrompted: true,
-      recommendedAllowlistPromptedProjects: { "/repo/project": true },
-      recommendedAllowlistAppliedProjects: { "/repo/project": true },
-      recommendedAllowlistDismissedProjects: { "/repo/project": false },
-    });
+    expect(result).toEqual({});
   });
 });
 
@@ -134,33 +117,25 @@ describe("savePermissionPreference", () => {
     vi.clearAllMocks();
   });
 
-  it("should create new config file if it does not exist", async () => {
+  it("is a no-op (project-local flow now)", async () => {
     vi.mocked(fs.readFile).mockRejectedValue(new Error("File not found"));
     vi.mocked(fs.mkdir).mockResolvedValue(undefined);
     vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
     await savePermissionPreference("recommendedAllowlistApplied", true);
 
-    expect(fs.mkdir).toHaveBeenCalledWith(expect.stringContaining(".coco"), { recursive: true });
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.stringContaining("config.json"),
-      JSON.stringify({ recommendedAllowlistApplied: true }, null, 2),
-      "utf-8",
-    );
+    expect(fs.mkdir).not.toHaveBeenCalled();
+    expect(fs.writeFile).not.toHaveBeenCalled();
   });
 
-  it("should merge with existing config", async () => {
+  it("does not merge with global config anymore", async () => {
     vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify({ existingKey: "value" }));
     vi.mocked(fs.mkdir).mockResolvedValue(undefined);
     vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
     await savePermissionPreference("recommendedAllowlistApplied", true);
 
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.stringContaining("config.json"),
-      JSON.stringify({ existingKey: "value", recommendedAllowlistApplied: true }, null, 2),
-      "utf-8",
-    );
+    expect(fs.writeFile).not.toHaveBeenCalled();
   });
 });
 
@@ -169,7 +144,7 @@ describe("saveProjectPermissionPreference", () => {
     vi.clearAllMocks();
   });
 
-  it("stores project-scoped keys and keeps other config keys", async () => {
+  it("stores project-scoped state in project .coco file", async () => {
     vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify({ existingKey: "value" }));
     vi.mocked(fs.mkdir).mockResolvedValue(undefined);
     vi.mocked(fs.writeFile).mockResolvedValue(undefined);
@@ -181,17 +156,12 @@ describe("saveProjectPermissionPreference", () => {
     );
 
     expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.stringContaining("config.json"),
+      "/repo/project/.coco/recommended-permissions.json",
       expect.any(String),
       "utf-8",
     );
     const writtenConfig = JSON.parse(vi.mocked(fs.writeFile).mock.calls[0]![1] as string);
-    expect(writtenConfig).toEqual({
-      existingKey: "value",
-      recommendedAllowlistAppliedProjects: {
-        "/repo/project": true,
-      },
-    });
+    expect(writtenConfig.applied).toBe(true);
   });
 });
 

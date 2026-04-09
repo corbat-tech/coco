@@ -202,12 +202,20 @@ async function selectModelInteractively(
           totalLines++;
         }
 
-        // Build suffix: star + context + description (truncated to fit)
+        // Build suffix: star + metric + description (truncated to fit)
+        // For Copilot, show request multiplier (xN) instead of context size.
         const star = model.recommended ? " ⭐" : "";
-        const ctx = model.contextWindow ? ` ${Math.round(model.contextWindow / 1000)}K` : "";
+        const multiplierMatch = model.description?.match(
+          /\b(?:Premium|Free)\s*x([0-9]+(?:\.[0-9]+)?)\b/i,
+        );
+        const metric = multiplierMatch
+          ? ` x${multiplierMatch[1]}`
+          : model.contextWindow
+            ? ` ${Math.round(model.contextWindow / 1000)}K`
+            : "";
         const desc = model.description ? `  ${model.description}` : "";
         const hint = model.hint ? `  → ${model.hint}` : "";
-        const suffix = truncate(`${star}${ctx}${desc}${hint}`, descWidth, "…");
+        const suffix = truncate(`${star}${metric}${desc}${hint}`, descWidth, "…");
 
         if (model.disabled) {
           let line = chalk.dim("   ○ ");

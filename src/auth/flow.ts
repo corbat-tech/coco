@@ -44,6 +44,7 @@ import {
   requestGitHubDeviceCode,
   pollGitHubForToken,
   exchangeForCopilotToken,
+  getGitHubLogin,
   getValidCopilotToken,
   saveCopilotCredentials,
   loadCopilotCredentials,
@@ -927,6 +928,11 @@ async function runCopilotDeviceFlow(): Promise<{
 
     spinner.stop(chalk.green("✓ GitHub authentication successful!"));
 
+    const githubLogin = await getGitHubLogin(githubToken);
+    if (githubLogin) {
+      console.log(chalk.dim(`   Authenticated as: @${githubLogin}`));
+    }
+
     // Step 5: Exchange for Copilot token
     console.log(chalk.dim("   Exchanging token for Copilot access..."));
 
@@ -963,6 +969,11 @@ async function runCopilotDeviceFlow(): Promise<{
       console.log(chalk.red("   ✗ GitHub Copilot is not enabled for this account."));
       console.log(chalk.dim("   Please ensure you have an active Copilot subscription:"));
       console.log(chalk.cyan("   → https://github.com/settings/copilot"));
+      console.log(
+        chalk.dim(
+          "   If this account is wrong, sign out of github.com in your browser and run /provider again.",
+        ),
+      );
     } else if (errorMsg.includes("expired") || errorMsg.includes("timed out")) {
       console.log(chalk.yellow("   ⚠ Authentication timed out. Please try again."));
     } else if (errorMsg.includes("denied")) {

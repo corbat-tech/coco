@@ -264,7 +264,7 @@ export function getDefaultModel(provider: ProviderType): string {
     case "anthropic":
       return process.env["ANTHROPIC_MODEL"] ?? "claude-opus-4-6";
     case "openai":
-      return process.env["OPENAI_MODEL"] ?? "gpt-5.4-codex";
+      return process.env["OPENAI_MODEL"] ?? "gpt-5.3-codex";
     case "gemini":
       return process.env["GEMINI_MODEL"] ?? "gemini-3.1-pro-preview";
     case "vertex":
