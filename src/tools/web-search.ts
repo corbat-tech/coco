@@ -44,6 +44,12 @@ export interface WebSearchOutput {
   duration: number;
 }
 
+function isEngineConfigured(engine: "duckduckgo" | "brave" | "serpapi"): boolean {
+  if (engine === "duckduckgo") return true;
+  if (engine === "brave") return !!process.env.BRAVE_SEARCH_API_KEY;
+  return !!process.env.SERPAPI_KEY;
+}
+
 /**
  * Sanitize search query
  */
@@ -391,8 +397,10 @@ Examples:
 
     try {
       let results: WebSearchResultItem[];
+      const requestedEngine = engine;
+      const effectiveEngine = isEngineConfigured(requestedEngine) ? requestedEngine : "duckduckgo";
 
-      switch (engine) {
+      switch (effectiveEngine) {
         case "brave":
           results = await searchBrave(sanitizedQuery, maxResults, DEFAULT_SEARCH_TIMEOUT_MS);
           break;
@@ -408,7 +416,7 @@ Examples:
       return {
         results,
         totalResults: results.length,
-        engine: engine ?? "duckduckgo",
+        engine: effectiveEngine,
         duration: performance.now() - startTime,
       };
     } catch (error) {
