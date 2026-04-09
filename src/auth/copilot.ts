@@ -16,6 +16,8 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { z } from "zod";
 
 /**
@@ -38,6 +40,10 @@ interface GitHubTokenResponse {
   scope?: string;
   error?: string;
   error_description?: string;
+}
+
+interface GitHubUserResponse {
+  login?: string;
 }
 
 /**
@@ -91,6 +97,7 @@ const DEFAULT_COPILOT_BASE_URL = "https://api.githubcopilot.com";
 
 /** Buffer before expiry to trigger refresh (60 seconds) */
 const REFRESH_BUFFER_MS = 60_000;
+const execFileAsync = promisify(execFile);
 
 /**
  * Error indicating the GitHub token is permanently invalid and credentials
@@ -223,6 +230,41 @@ export async function exchangeForCopilotToken(githubToken: string): Promise<Copi
 }
 
 /**
+ * Resolve GitHub login for a token (best-effort, for UX diagnostics).
+ */
+export async function getGitHubLogin(githubToken: string): Promise<string | null> {
+  try {
+    const response = await fetch("https://api.github.com/user", {
+      method: "GET",
+      headers: {
+        Authorization: `token ${githubToken}`,
+        Accept: "application/json",
+        "User-Agent": "Corbat-Coco/1.0",
+      },
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as GitHubUserResponse;
+    return data.login ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best-effort fallback to GitHub CLI token.
+ * Mirrors official Copilot CLI behavior when no direct token is available.
+ */
+export async function getGitHubCliToken(): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("gh", ["auth", "token"], { timeout: 5000 });
+    const token = stdout.trim();
+    return token.length > 0 ? token : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get the Copilot API base URL based on account type
  */
 export function getCopilotBaseUrl(accountType?: string): string {
@@ -306,14 +348,14 @@ export async function getValidCopilotToken(): Promise<{
   isNew: boolean;
 } | null> {
   const creds = await loadCopilotCredentials();
-  if (!creds) return null;
-
-  // Also accept env var overrides
-  const envToken = process.env["GITHUB_TOKEN"] || process.env["GH_TOKEN"];
-  const githubToken = envToken || creds.githubToken;
+  const envToken =
+    process.env["COPILOT_GITHUB_TOKEN"] || process.env["GH_TOKEN"] || process.env["GITHUB_TOKEN"];
+  const fallbackGhToken = await getGitHubCliToken();
+  const githubToken = envToken || creds?.githubToken || fallbackGhToken;
+  if (!githubToken) return null;
 
   // Check if current Copilot token is still valid
-  if (!isCopilotTokenExpired(creds) && creds.copilotToken) {
+  if (creds && !isCopilotTokenExpired(creds) && creds.copilotToken) {
     return {
       token: creds.copilotToken,
       baseUrl: getCopilotBaseUrl(creds.accountType),
@@ -328,11 +370,11 @@ export async function getValidCopilotToken(): Promise<{
     // Always preserve the file's githubToken — env var overrides are transient
     // and should not bleed into durable storage
     const updatedCreds: CopilotCredentials = {
-      ...creds,
-      githubToken: creds.githubToken,
+      ...(creds ?? { githubToken }),
+      githubToken: creds?.githubToken ?? githubToken,
       copilotToken: copilotToken.token,
       copilotTokenExpiresAt: copilotToken.expires_at * 1000,
-      accountType: copilotToken.annotations?.copilot_plan ?? creds.accountType,
+      accountType: copilotToken.annotations?.copilot_plan ?? creds?.accountType,
     };
 
     await saveCopilotCredentials(updatedCreds);

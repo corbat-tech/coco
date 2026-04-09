@@ -42,6 +42,8 @@ export interface ToolUseContent {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  /** Gemini-specific: preserve function-call thought signature across tool turns */
+  geminiThoughtSignature?: string;
 }
 
 /**
@@ -82,6 +84,8 @@ export interface ToolCall {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  /** Gemini-specific: preserve function-call thought signature across tool turns */
+  geminiThoughtSignature?: string;
 }
 
 /**

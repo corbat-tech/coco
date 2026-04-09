@@ -43,6 +43,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-4o-mini": { inputPerMillion: 0.15, outputPerMillion: 0.6, contextWindow: 128000 },
 
   // Google Gemini models
+  "gemini-3-pro-preview": { inputPerMillion: 1.25, outputPerMillion: 5, contextWindow: 1000000 },
   "gemini-3.1-pro-preview": { inputPerMillion: 1.25, outputPerMillion: 5, contextWindow: 1000000 },
   "gemini-3-flash-preview": {
     inputPerMillion: 0.15,

@@ -31,7 +31,7 @@ import {
 /**
  * Default model - Updated February 2026
  */
-const DEFAULT_MODEL = "gpt-5.4-codex";
+const DEFAULT_MODEL = "gpt-5.3-codex";
 
 /**
  * Context windows for models (Updated March 2026)

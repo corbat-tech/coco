@@ -86,13 +86,143 @@ describe("VertexProvider", () => {
       { role: "user", parts: [{ text: "Find the weather" }] },
       {
         role: "model",
-        parts: [{ functionCall: { name: "get_weather", args: { city: "Madrid" } } }],
+        parts: [
+          {
+            functionCall: { name: "get_weather", args: { city: "Madrid" } },
+            thoughtSignature: "skip_thought_signature_validator",
+            thought_signature: "skip_thought_signature_validator",
+          },
+        ],
       },
       {
         role: "user",
         parts: [{ functionResponse: { name: "get_weather", response: { result: "Sunny" } } }],
       },
     ]);
+  });
+
+  it("preserves thought_signature in tool_use parts", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: "ok" }],
+              },
+              finishReason: "STOP",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const { VertexProvider } = await import("./vertex.js");
+    const provider = new VertexProvider();
+    await provider.initialize({ project: "test-project", location: "global" });
+
+    await provider.chatWithTools(
+      [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "tool-1",
+              name: "bash_exec",
+              input: { command: "date" },
+              geminiThoughtSignature: "sig-123",
+            },
+          ],
+        },
+      ],
+      {
+        model: "gemini-3-flash-preview",
+        tools: [
+          {
+            name: "bash_exec",
+            description: "Run shell command",
+            input_schema: {
+              type: "object",
+              properties: {
+                command: { type: "string" },
+              },
+              required: ["command"],
+            },
+          },
+        ],
+      },
+    );
+
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    const body = JSON.parse(String(call?.[1]?.body)) as {
+      contents: Array<{ role: string; parts: Array<Record<string, unknown>> }>;
+    };
+    const modelParts = body.contents.find((c) => c.role === "model")?.parts ?? [];
+    const functionCall = modelParts[0]?.["functionCall"] as
+      | { thoughtSignature?: string; thought_signature?: string }
+      | undefined;
+    const partSignature = modelParts[0] as
+      | { thoughtSignature?: string; thought_signature?: string }
+      | undefined;
+
+    expect(functionCall?.thoughtSignature).toBeUndefined();
+    expect(functionCall?.thought_signature).toBeUndefined();
+    expect(partSignature?.thoughtSignature).toBe("sig-123");
+    expect(partSignature?.thought_signature).toBe("sig-123");
+  });
+
+  it("returns thought_signature in parsed tool calls", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    functionCall: {
+                      name: "bash_exec",
+                      args: { command: "date" },
+                    },
+                    thoughtSignature: "sig-abc",
+                  },
+                ],
+              },
+              finishReason: "STOP",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const { VertexProvider } = await import("./vertex.js");
+    const provider = new VertexProvider();
+    await provider.initialize({ project: "test-project", location: "global" });
+
+    const response = await provider.chatWithTools(
+      [{ role: "user", content: "run date" }],
+      {
+        model: "gemini-3-flash-preview",
+        tools: [
+          {
+            name: "bash_exec",
+            description: "Run shell command",
+            input_schema: {
+              type: "object",
+              properties: {
+                command: { type: "string" },
+              },
+              required: ["command"],
+            },
+          },
+        ],
+      },
+    );
+
+    expect(response.toolCalls[0]?.geminiThoughtSignature).toBe("sig-abc");
   });
 
   it("uses the global endpoint for global location", async () => {
@@ -135,5 +265,77 @@ describe("VertexProvider", () => {
     expect(url).toContain(
       "https://europe-west1-aiplatform.googleapis.com/v1/projects/test-project/locations/europe-west1/",
     );
+  });
+
+  it("parses SSE streams with CRLF boundaries", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'data: {"candidates":[{"content":{"parts":[{"text":"Ho"}]},"finishReason":"STOP"}]}\r\n\r\n',
+          ),
+        );
+        controller.enqueue(
+          encoder.encode(
+            'data: {"candidates":[{"content":{"parts":[{"text":"la"}]},"finishReason":"STOP"}]}\r\n\r\n',
+          ),
+        );
+        controller.enqueue(encoder.encode("data: [DONE]\r\n\r\n"));
+        controller.close();
+      },
+    });
+
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    );
+
+    const { VertexProvider } = await import("./vertex.js");
+    const provider = new VertexProvider();
+    await provider.initialize({ project: "test-project", location: "global" });
+
+    const chunks: string[] = [];
+    for await (const chunk of provider.stream([{ role: "user", content: "hola" }])) {
+      if (chunk.type === "text") chunks.push(chunk.text);
+    }
+
+    expect(chunks.join("")).toBe("Hola");
+  });
+
+  it("ignores malformed SSE JSON chunks and continues streaming", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("data: {invalid-json}\r\n\r\n"));
+        controller.enqueue(
+          encoder.encode(
+            'data: {"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}]}\r\n\r\n',
+          ),
+        );
+        controller.enqueue(encoder.encode("data: [DONE]\r\n\r\n"));
+        controller.close();
+      },
+    });
+
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    );
+
+    const { VertexProvider } = await import("./vertex.js");
+    const provider = new VertexProvider();
+    await provider.initialize({ project: "test-project", location: "global" });
+
+    const chunks: string[] = [];
+    for await (const chunk of provider.stream([{ role: "user", content: "hola" }])) {
+      if (chunk.type === "text") chunks.push(chunk.text);
+    }
+
+    expect(chunks.join("")).toBe("ok");
   });
 });

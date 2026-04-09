@@ -15,7 +15,6 @@ import * as p from "@clack/prompts";
 import chalk from "chalk";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { CONFIG_PATHS } from "../../config/paths.js";
 import { saveTrustedTool } from "./session.js";
 
 // ============================================================================
@@ -454,34 +453,101 @@ export interface PermissionPreferences {
   recommendedAllowlistDismissedProjects?: Record<string, boolean>;
 }
 
+interface ProjectPermissionState {
+  applied: boolean;
+  dismissed: boolean;
+  prompted: boolean;
+  updatedAt: string;
+}
+
 function getProjectPreferenceKey(projectPath: string): string {
   return path.resolve(projectPath);
+}
+
+function getProjectPermissionStatePath(projectPath: string): string {
+  return path.join(projectPath, ".coco", "recommended-permissions.json");
+}
+
+/**
+ * Resolve a stable per-project scope path for permission preferences.
+ * Prefers canonical realpath and, when inside a git repo, uses repo root.
+ */
+export async function resolvePermissionScopePath(projectPath: string): Promise<string> {
+  let resolved = path.resolve(projectPath);
+  try {
+    resolved = await fs.realpath(resolved);
+  } catch {
+    // Keep resolved path when realpath cannot be obtained.
+  }
+
+  let current = resolved;
+  while (true) {
+    try {
+      await fs.access(path.join(current, ".git"));
+      return current;
+    } catch {
+      // Keep walking up.
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return resolved;
+}
+
+async function loadProjectPermissionState(projectPath: string): Promise<ProjectPermissionState> {
+  const defaultState: ProjectPermissionState = {
+    applied: false,
+    dismissed: false,
+    prompted: false,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    const content = await fs.readFile(getProjectPermissionStatePath(projectPath), "utf-8");
+    const parsed = JSON.parse(content) as Partial<ProjectPermissionState>;
+    return {
+      applied: parsed.applied ?? defaultState.applied,
+      dismissed: parsed.dismissed ?? defaultState.dismissed,
+      prompted: parsed.prompted ?? defaultState.prompted,
+      updatedAt: parsed.updatedAt ?? defaultState.updatedAt,
+    };
+  } catch {
+    return defaultState;
+  }
+}
+
+async function saveProjectPermissionState(
+  projectPath: string,
+  update: Partial<ProjectPermissionState>,
+): Promise<void> {
+  try {
+    const current = await loadProjectPermissionState(projectPath);
+    const next: ProjectPermissionState = {
+      ...current,
+      ...update,
+      updatedAt: new Date().toISOString(),
+    };
+    const filePath = getProjectPermissionStatePath(projectPath);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(next, null, 2), "utf-8");
+  } catch {
+    // Silently fail if we can't save preferences
+  }
+}
+
+export async function getProjectPermissionState(projectPath: string): Promise<ProjectPermissionState> {
+  const scopePath = await resolvePermissionScopePath(projectPath);
+  return loadProjectPermissionState(scopePath);
 }
 
 /**
  * Load permission preferences from ~/.coco/config.json
  */
 export async function loadPermissionPreferences(): Promise<PermissionPreferences> {
-  try {
-    const content = await fs.readFile(CONFIG_PATHS.config, "utf-8");
-    const config = JSON.parse(content) as Record<string, unknown>;
-    return {
-      recommendedAllowlistApplied: config.recommendedAllowlistApplied as boolean | undefined,
-      recommendedAllowlistDismissed: config.recommendedAllowlistDismissed as boolean | undefined,
-      recommendedAllowlistPrompted: config.recommendedAllowlistPrompted as boolean | undefined,
-      recommendedAllowlistPromptedProjects: config.recommendedAllowlistPromptedProjects as
-        | Record<string, boolean>
-        | undefined,
-      recommendedAllowlistAppliedProjects: config.recommendedAllowlistAppliedProjects as
-        | Record<string, boolean>
-        | undefined,
-      recommendedAllowlistDismissedProjects: config.recommendedAllowlistDismissedProjects as
-        | Record<string, boolean>
-        | undefined,
-    };
-  } catch {
-    return {};
-  }
+  return {};
 }
 
 /**
@@ -495,47 +561,14 @@ export async function savePermissionPreference(
     | "recommendedAllowlistPrompted",
   value: boolean,
 ): Promise<void> {
-  try {
-    let config: Record<string, unknown> = {};
-    try {
-      const content = await fs.readFile(CONFIG_PATHS.config, "utf-8");
-      config = JSON.parse(content) as Record<string, unknown>;
-    } catch {
-      // File doesn't exist yet — start fresh
-    }
-
-    config[key] = value;
-
-    await fs.mkdir(path.dirname(CONFIG_PATHS.config), { recursive: true });
-    await fs.writeFile(CONFIG_PATHS.config, JSON.stringify(config, null, 2), "utf-8");
-  } catch {
-    // Silently fail if we can't save preferences
-  }
+  // Legacy no-op: recommended permissions are now project-local.
+  void key;
+  void value;
 }
 
 export async function markPermissionSuggestionShownForProject(projectPath: string): Promise<void> {
-  try {
-    let config: Record<string, unknown> = {};
-    try {
-      const content = await fs.readFile(CONFIG_PATHS.config, "utf-8");
-      config = JSON.parse(content) as Record<string, unknown>;
-    } catch {
-      // File doesn't exist yet — start fresh
-    }
-
-    const promptedProjects = {
-      ...(config.recommendedAllowlistPromptedProjects as Record<string, boolean> | undefined),
-      [getProjectPreferenceKey(projectPath)]: true,
-    };
-
-    config.recommendedAllowlistPromptedProjects = promptedProjects;
-    config.recommendedAllowlistPrompted = true;
-
-    await fs.mkdir(path.dirname(CONFIG_PATHS.config), { recursive: true });
-    await fs.writeFile(CONFIG_PATHS.config, JSON.stringify(config, null, 2), "utf-8");
-  } catch {
-    // Silently fail if we can't save preferences
-  }
+  const scopePath = await resolvePermissionScopePath(projectPath);
+  await saveProjectPermissionState(scopePath, { prompted: true });
 }
 
 export function isRecommendedAllowlistAppliedForProject(
@@ -543,16 +576,7 @@ export function isRecommendedAllowlistAppliedForProject(
   projectPath: string,
 ): boolean {
   const projectKey = getProjectPreferenceKey(projectPath);
-  if (prefs.recommendedAllowlistAppliedProjects?.[projectKey] === true) {
-    return true;
-  }
-
-  // Backward-compatibility: keep honoring legacy global opt-in
-  // when project-scoped state is not present yet.
-  if (prefs.recommendedAllowlistApplied === true && !prefs.recommendedAllowlistAppliedProjects) {
-    return true;
-  }
-  return false;
+  return prefs.recommendedAllowlistAppliedProjects?.[projectKey] === true;
 }
 
 export function isRecommendedAllowlistDismissedForProject(
@@ -560,19 +584,7 @@ export function isRecommendedAllowlistDismissedForProject(
   projectPath: string,
 ): boolean {
   const projectKey = getProjectPreferenceKey(projectPath);
-  if (prefs.recommendedAllowlistDismissedProjects?.[projectKey] === true) {
-    return true;
-  }
-
-  // Backward-compatibility: keep honoring legacy global dismiss
-  // when project-scoped state is not present yet.
-  if (
-    prefs.recommendedAllowlistDismissed === true &&
-    !prefs.recommendedAllowlistDismissedProjects
-  ) {
-    return true;
-  }
-  return false;
+  return prefs.recommendedAllowlistDismissedProjects?.[projectKey] === true;
 }
 
 export async function saveProjectPermissionPreference(
@@ -580,27 +592,12 @@ export async function saveProjectPermissionPreference(
   projectPath: string,
   value: boolean,
 ): Promise<void> {
-  try {
-    let config: Record<string, unknown> = {};
-    try {
-      const content = await fs.readFile(CONFIG_PATHS.config, "utf-8");
-      config = JSON.parse(content) as Record<string, unknown>;
-    } catch {
-      // File doesn't exist yet — start fresh
-    }
-
-    const projectKey = getProjectPreferenceKey(projectPath);
-    const currentMap = (config[key] as Record<string, boolean> | undefined) ?? {};
-    config[key] = {
-      ...currentMap,
-      [projectKey]: value,
-    };
-
-    await fs.mkdir(path.dirname(CONFIG_PATHS.config), { recursive: true });
-    await fs.writeFile(CONFIG_PATHS.config, JSON.stringify(config, null, 2), "utf-8");
-  } catch {
-    // Silently fail if we can't save preferences
+  const scopePath = await resolvePermissionScopePath(projectPath);
+  if (key === "recommendedAllowlistAppliedProjects") {
+    await saveProjectPermissionState(scopePath, { applied: value });
+    return;
   }
+  await saveProjectPermissionState(scopePath, { dismissed: value });
 }
 
 // ============================================================================
@@ -614,11 +611,11 @@ export async function saveProjectPermissionPreference(
 export async function shouldShowPermissionSuggestion(
   projectPath = process.cwd(),
 ): Promise<boolean> {
-  const prefs = await loadPermissionPreferences();
-  if (isRecommendedAllowlistDismissedForProject(prefs, projectPath)) {
+  const state = await getProjectPermissionState(projectPath);
+  if (state.dismissed) {
     return false;
   }
-  if (isRecommendedAllowlistAppliedForProject(prefs, projectPath)) {
+  if (state.applied) {
     return false;
   }
 
@@ -630,6 +627,7 @@ export async function shouldShowPermissionSuggestion(
  * All tools (read + write) are saved for current project scope.
  */
 export async function applyRecommendedPermissions(projectPath = process.cwd()): Promise<void> {
+  const scopePath = await resolvePermissionScopePath(projectPath);
   // Apply all recommended tools to current project only.
   // This avoids surprising cross-project permission drift.
   for (const tool of [...RECOMMENDED_GLOBAL, ...RECOMMENDED_PROJECT]) {
@@ -637,11 +635,11 @@ export async function applyRecommendedPermissions(projectPath = process.cwd()): 
   }
 
   // Mark as applied for this project.
-  await saveProjectPermissionPreference("recommendedAllowlistAppliedProjects", projectPath, true);
+  await saveProjectPermissionPreference("recommendedAllowlistAppliedProjects", scopePath, true);
   // Ensure "dismissed" is not sticky for the same project once applied.
   await saveProjectPermissionPreference(
     "recommendedAllowlistDismissedProjects",
-    projectPath,
+    scopePath,
     false,
   );
 }
@@ -656,6 +654,7 @@ export async function applyRecommendedPermissions(projectPath = process.cwd()): 
  * - No thanks: never show again
  */
 export async function showPermissionSuggestion(projectPath = process.cwd()): Promise<void> {
+  const scopePath = await resolvePermissionScopePath(projectPath);
   console.log();
   console.log(chalk.magenta.bold("  📋 Recommended Permissions"));
   console.log();
@@ -666,7 +665,7 @@ export async function showPermissionSuggestion(projectPath = process.cwd()): Pro
   );
   console.log(chalk.dim("  • Deny: sudo, git push, docker push, inline code exec, DNS exfil..."));
   console.log();
-  console.log(chalk.dim("  Stored in ~/.coco/trusted-tools.json — edit manually or let"));
+  console.log(chalk.dim("  Stored in .coco/trusted-tools.json — edit manually or let"));
   console.log(chalk.dim("  Coco manage it when you approve actions from the prompt."));
   console.log(chalk.dim("  Note: applying here affects only the current project."));
   console.log();
@@ -693,7 +692,7 @@ export async function showPermissionSuggestion(projectPath = process.cwd()): Pro
   if (action === "dismiss") {
     await saveProjectPermissionPreference(
       "recommendedAllowlistDismissedProjects",
-      projectPath,
+      scopePath,
       true,
     );
     console.log(chalk.dim("  Won't show again. Use /permissions to apply later."));

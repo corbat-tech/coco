@@ -257,7 +257,10 @@ async function setupProviderWithAuth(
 
   if (authMethod === "oauth") {
     // OAuth flow
+    const oauthSpinner = p.spinner();
+    oauthSpinner.start("Starting OAuth sign-in flow...");
     const result = await runOAuthFlow(provider.id);
+    oauthSpinner.stop(result ? "OAuth sign-in completed" : "OAuth sign-in cancelled");
     if (!result) return null;
 
     if (provider.id === "copilot") {
@@ -375,7 +378,10 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
   console.log();
 
   // Check if gcloud CLI is installed
+  const gcloudCheckSpinner = p.spinner();
+  gcloudCheckSpinner.start("Checking gcloud CLI...");
   const gcloudInstalled = await isGcloudInstalled();
+  gcloudCheckSpinner.stop(gcloudInstalled ? "gcloud CLI detected" : "gcloud CLI not detected");
   if (!gcloudInstalled) {
     p.log.error("gcloud CLI is not installed");
     console.log(chalk.dim("   Install it from: https://cloud.google.com/sdk/docs/install"));
@@ -415,7 +421,14 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
     };
   }
 
+  const adcInspectSpinner = p.spinner();
+  adcInspectSpinner.start("Checking existing ADC credentials...");
   let adc = await inspectADC();
+  adcInspectSpinner.stop(
+    adc.status === "ok" && adc.token
+      ? "ADC credentials found"
+      : "No reusable ADC credentials found",
+  );
 
   if (adc.status === "ok" && adc.token) {
     console.log(chalk.green("   ✓ gcloud ADC is already configured!"));
@@ -451,9 +464,19 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
 
   if (runLoginNow) {
     p.log.step("Running `gcloud auth application-default login`...");
+    const loginSpinner = p.spinner();
+    loginSpinner.start("Launching gcloud login flow (browser may open)...");
     const loginOk = await runGcloudADCLogin();
+    loginSpinner.stop(loginOk ? "gcloud login flow completed" : "gcloud login flow failed");
     if (loginOk) {
+      const recheckSpinner = p.spinner();
+      recheckSpinner.start("Verifying ADC credentials after login...");
       adc = await inspectADC();
+      recheckSpinner.stop(
+        adc.status === "ok" && adc.token
+          ? "ADC credentials verified"
+          : "ADC verification failed after login",
+      );
       if (adc.status === "ok" && adc.token) {
         console.log(chalk.green("   ✓ gcloud ADC is now configured."));
         console.log();

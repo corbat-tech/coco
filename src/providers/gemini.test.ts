@@ -103,7 +103,14 @@ describe("GeminiProvider", () => {
     it("returns function calls using provider ids from the API response", async () => {
       mockGenerateContent.mockResolvedValue({
         text: "",
-        functionCalls: [{ id: "call-123", name: "read_file", args: { path: "a.txt" } }],
+        functionCalls: [
+          {
+            id: "call-123",
+            name: "read_file",
+            args: { path: "a.txt" },
+            thoughtSignature: "sig-1",
+          },
+        ],
         candidates: [{ finishReason: "STOP" }],
         usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 5 },
       });
@@ -122,6 +129,7 @@ describe("GeminiProvider", () => {
           id: "call-123",
           name: "read_file",
           input: { path: "a.txt" },
+          geminiThoughtSignature: "sig-1",
         },
       ]);
     });
@@ -148,6 +156,7 @@ describe("GeminiProvider", () => {
                 id: "call-123",
                 name: "read_file",
                 input: { path: "a.txt" },
+                geminiThoughtSignature: "sig-abc",
               },
             ],
           },
@@ -172,7 +181,15 @@ describe("GeminiProvider", () => {
             {
               role: "model",
               parts: [
-                { functionCall: { id: "call-123", name: "read_file", args: { path: "a.txt" } } },
+                {
+                  functionCall: {
+                    id: "call-123",
+                    name: "read_file",
+                    args: { path: "a.txt" },
+                  },
+                  thoughtSignature: "sig-abc",
+                  thought_signature: "sig-abc",
+                },
               ],
             },
             {

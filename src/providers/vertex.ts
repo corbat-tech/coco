@@ -29,12 +29,15 @@ const DEFAULT_BASE_URL = "https://aiplatform.googleapis.com/v1";
 const DEFAULT_LOCATION = "global";
 
 const CONTEXT_WINDOWS: Record<string, number> = {
+  "gemini-3-pro-preview": 1048576,
+  "gemini-3-flash-preview": 1048576,
   "gemini-2.5-pro": 1048576,
   "gemini-2.5-flash": 1048576,
   "gemini-2.5-flash-lite": 1048576,
   "gemini-2.0-flash-001": 1048576,
   "gemini-2.0-flash-lite-001": 1048576,
 };
+const SKIP_THOUGHT_SIGNATURE_VALIDATOR = "skip_thought_signature_validator";
 
 interface VertexInlineData {
   mimeType: string;
@@ -44,6 +47,8 @@ interface VertexInlineData {
 interface VertexFunctionCall {
   name: string;
   args?: Record<string, unknown>;
+  thoughtSignature?: string;
+  thought_signature?: string;
 }
 
 interface VertexFunctionResponse {
@@ -56,6 +61,8 @@ interface VertexPart {
   inlineData?: VertexInlineData;
   functionCall?: VertexFunctionCall;
   functionResponse?: VertexFunctionResponse;
+  thoughtSignature?: string;
+  thought_signature?: string;
 }
 
 interface VertexContent {
@@ -81,6 +88,20 @@ interface VertexGenerateContentResponse {
     message?: string;
     status?: string;
   };
+}
+
+function extractSseEventData(rawEvent: string): string | null {
+  const dataLines = rawEvent
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .filter(Boolean);
+
+  if (dataLines.length === 0) {
+    return null;
+  }
+
+  return dataLines.join("\n");
 }
 
 export class VertexProvider implements LLMProvider {
@@ -198,12 +219,18 @@ export class VertexProvider implements LLMProvider {
         }
         if (part.functionCall) {
           streamToolCallCounter++;
+          const geminiThoughtSignature =
+            part.thoughtSignature ??
+            part.thought_signature ??
+            part.functionCall.thoughtSignature ??
+            part.functionCall.thought_signature;
           yield {
             type: "tool_use_start",
             toolCall: {
               id: `vertex_call_${streamToolCallCounter}`,
               name: part.functionCall.name,
               input: part.functionCall.args ?? {},
+              geminiThoughtSignature,
             },
           };
           yield {
@@ -212,6 +239,7 @@ export class VertexProvider implements LLMProvider {
               id: `vertex_call_${streamToolCallCounter}`,
               name: part.functionCall.name,
               input: part.functionCall.args ?? {},
+              geminiThoughtSignature,
             },
           };
         }
@@ -369,11 +397,15 @@ export class VertexProvider implements LLMProvider {
         });
       } else if (block.type === "tool_use") {
         const toolUse = block as ToolUseContent;
+        const thoughtSignature =
+          toolUse.geminiThoughtSignature ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR;
         parts.push({
           functionCall: {
             name: toolUse.name,
             args: toolUse.input,
           },
+          thoughtSignature,
+          thought_signature: thoughtSignature,
         });
       }
     }
@@ -506,30 +538,32 @@ export class VertexProvider implements LLMProvider {
       buffer += decoder.decode(value, { stream: true });
 
       while (true) {
-        const eventBoundary = buffer.indexOf("\n\n");
-        if (eventBoundary === -1) break;
+        const boundaryMatch = /\r?\n\r?\n/.exec(buffer);
+        if (!boundaryMatch || boundaryMatch.index === undefined) break;
 
-        const rawEvent = buffer.slice(0, eventBoundary);
-        buffer = buffer.slice(eventBoundary + 2);
+        const rawEvent = buffer.slice(0, boundaryMatch.index);
+        buffer = buffer.slice(boundaryMatch.index + boundaryMatch[0].length);
+        const data = extractSseEventData(rawEvent);
 
-        const dataLines = rawEvent
-          .split("\n")
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trim())
-          .filter(Boolean);
+        if (!data || data === "[DONE]") {
+          if (data === "[DONE]") return;
+          continue;
+        }
 
-        for (const line of dataLines) {
-          if (line === "[DONE]") return;
-          yield JSON.parse(line) as VertexGenerateContentResponse;
+        try {
+          yield JSON.parse(data) as VertexGenerateContentResponse;
+        } catch {
+          continue;
         }
       }
     }
 
-    const trailing = buffer.trim();
-    if (trailing.startsWith("data:")) {
-      const line = trailing.slice(5).trim();
-      if (line && line !== "[DONE]") {
-        yield JSON.parse(line) as VertexGenerateContentResponse;
+    const trailingData = extractSseEventData(buffer.trim());
+    if (trailingData && trailingData !== "[DONE]") {
+      try {
+        yield JSON.parse(trailingData) as VertexGenerateContentResponse;
+      } catch {
+        // Ignore incomplete trailing fragments.
       }
     }
   }
@@ -573,6 +607,11 @@ export class VertexProvider implements LLMProvider {
           id: `vertex_call_${toolIndex}`,
           name: part.functionCall.name,
           input: part.functionCall.args ?? {},
+          geminiThoughtSignature:
+            part.thoughtSignature ??
+            part.thought_signature ??
+            part.functionCall.thoughtSignature ??
+            part.functionCall.thought_signature,
         });
       }
     }

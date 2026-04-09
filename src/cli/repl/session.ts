@@ -25,6 +25,7 @@ const MAX_SKILL_INSTRUCTIONS_CHARS = 16000;
  */
 const TRUST_SETTINGS_DIR = path.dirname(CONFIG_PATHS.trustedTools);
 const TRUST_SETTINGS_FILE = CONFIG_PATHS.trustedTools;
+const PROJECT_TRUST_FILE_RELATIVE_PATH = path.join(".coco", "trusted-tools.json");
 
 /**
  * Trust settings interface
@@ -36,6 +37,15 @@ interface TrustSettings {
   projectTrusted: Record<string, string[]>;
   /** Per-project denied tools (overrides global allow) */
   projectDenied: Record<string, string[]>;
+  /** Last updated timestamp */
+  updatedAt: string;
+}
+
+interface ProjectTrustSettings {
+  /** Trusted tools for this project */
+  trusted: string[];
+  /** Denied tools for this project */
+  denied: string[];
   /** Last updated timestamp */
   updatedAt: string;
 }
@@ -630,11 +640,56 @@ async function saveTrustSettings(settings: TrustSettings): Promise<void> {
   }
 }
 
+function getProjectTrustSettingsFile(projectPath: string): string {
+  return path.join(projectPath, PROJECT_TRUST_FILE_RELATIVE_PATH);
+}
+
+async function loadProjectTrustSettings(projectPath: string): Promise<ProjectTrustSettings> {
+  const settings = await loadTrustSettings();
+  const legacyTrusted = settings.projectTrusted[projectPath] ?? [];
+  const legacyDenied = settings.projectDenied[projectPath] ?? [];
+  const defaultState: ProjectTrustSettings = {
+    trusted: legacyTrusted,
+    denied: legacyDenied,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    const content = await fs.readFile(getProjectTrustSettingsFile(projectPath), "utf-8");
+    const raw = JSON.parse(content) as Partial<ProjectTrustSettings>;
+    return {
+      trusted: raw.trusted ?? defaultState.trusted,
+      denied: raw.denied ?? defaultState.denied,
+      updatedAt: raw.updatedAt ?? defaultState.updatedAt,
+    };
+  } catch {
+    return defaultState;
+  }
+}
+
+async function saveProjectTrustSettings(
+  projectPath: string,
+  settings: ProjectTrustSettings,
+): Promise<void> {
+  try {
+    const filePath = getProjectTrustSettingsFile(projectPath);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    settings.updatedAt = new Date().toISOString();
+    await fs.writeFile(filePath, JSON.stringify(settings, null, 2), "utf-8");
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.warn(`[Trust] Failed to save project trust settings: ${msg}`);
+  }
+}
+
 /**
  * Load trusted tools for a session from persistent storage
  */
 export async function loadTrustedTools(projectPath: string): Promise<Set<string>> {
-  const settings = await loadTrustSettings();
+  const [settings, projectSettings] = await Promise.all([
+    loadTrustSettings(),
+    loadProjectTrustSettings(projectPath),
+  ]);
   const trusted = new Set<string>();
 
   // Add globally trusted tools
@@ -643,13 +698,13 @@ export async function loadTrustedTools(projectPath: string): Promise<Set<string>
   }
 
   // Add project-specific trusted tools (additive)
-  const projectTrusted = settings.projectTrusted[projectPath] ?? [];
+  const projectTrusted = projectSettings.trusted;
   for (const tool of projectTrusted) {
     trusted.add(tool);
   }
 
   // Remove project-denied tools (subtractive override — project > global)
-  const projectDenied = settings.projectDenied[projectPath] ?? [];
+  const projectDenied = projectSettings.denied;
   for (const tool of projectDenied) {
     trusted.delete(tool);
   }
@@ -676,17 +731,17 @@ export async function saveTrustedTool(
       settings.globalTrusted.push(toolName);
     }
   } else if (projectPath) {
-    // Add to project-specific trusted (only if we have a valid project path)
-    if (!settings.projectTrusted[projectPath]) {
-      settings.projectTrusted[projectPath] = [];
+    const projectSettings = await loadProjectTrustSettings(projectPath);
+    if (!projectSettings.trusted.includes(toolName)) {
+      projectSettings.trusted.push(toolName);
     }
-    const projectTrusted = settings.projectTrusted[projectPath];
-    if (projectTrusted && !projectTrusted.includes(toolName)) {
-      projectTrusted.push(toolName);
-    }
+    projectSettings.denied = projectSettings.denied.filter((t) => t !== toolName);
+    await saveProjectTrustSettings(projectPath, projectSettings);
   }
 
-  await saveTrustSettings(settings);
+  if (global) {
+    await saveTrustSettings(settings);
+  }
 }
 
 /**
@@ -701,14 +756,12 @@ export async function removeTrustedTool(
 
   if (global) {
     settings.globalTrusted = settings.globalTrusted.filter((t) => t !== toolName);
+    await saveTrustSettings(settings);
   } else {
-    const projectTrusted = settings.projectTrusted[projectPath];
-    if (projectTrusted) {
-      settings.projectTrusted[projectPath] = projectTrusted.filter((t) => t !== toolName);
-    }
+    const projectSettings = await loadProjectTrustSettings(projectPath);
+    projectSettings.trusted = projectSettings.trusted.filter((t) => t !== toolName);
+    await saveProjectTrustSettings(projectPath, projectSettings);
   }
-
-  await saveTrustSettings(settings);
 }
 
 /**
@@ -716,45 +769,30 @@ export async function removeTrustedTool(
  * Also removes from projectTrusted for consistency.
  */
 export async function saveDeniedTool(toolName: string, projectPath: string): Promise<void> {
-  const settings = await loadTrustSettings();
-
-  if (!settings.projectDenied[projectPath]) {
-    settings.projectDenied[projectPath] = [];
-  }
-  const denied = settings.projectDenied[projectPath];
-  if (denied && !denied.includes(toolName)) {
-    denied.push(toolName);
+  const projectSettings = await loadProjectTrustSettings(projectPath);
+  if (!projectSettings.denied.includes(toolName)) {
+    projectSettings.denied.push(toolName);
   }
 
-  // Remove from projectTrusted for this project if present (consistency)
-  const projectTrusted = settings.projectTrusted[projectPath];
-  if (projectTrusted) {
-    settings.projectTrusted[projectPath] = projectTrusted.filter((t) => t !== toolName);
-  }
-
-  await saveTrustSettings(settings);
+  projectSettings.trusted = projectSettings.trusted.filter((t) => t !== toolName);
+  await saveProjectTrustSettings(projectPath, projectSettings);
 }
 
 /**
  * Remove a tool from the project deny list
  */
 export async function removeDeniedTool(toolName: string, projectPath: string): Promise<void> {
-  const settings = await loadTrustSettings();
-
-  const denied = settings.projectDenied[projectPath];
-  if (denied) {
-    settings.projectDenied[projectPath] = denied.filter((t) => t !== toolName);
-  }
-
-  await saveTrustSettings(settings);
+  const projectSettings = await loadProjectTrustSettings(projectPath);
+  projectSettings.denied = projectSettings.denied.filter((t) => t !== toolName);
+  await saveProjectTrustSettings(projectPath, projectSettings);
 }
 
 /**
  * Get denied tools for a project
  */
 export async function getDeniedTools(projectPath: string): Promise<string[]> {
-  const settings = await loadTrustSettings();
-  return settings.projectDenied[projectPath] ?? [];
+  const settings = await loadProjectTrustSettings(projectPath);
+  return settings.denied;
 }
 
 /**
@@ -765,11 +803,14 @@ export async function getAllTrustedTools(projectPath: string): Promise<{
   project: string[];
   denied: string[];
 }> {
-  const settings = await loadTrustSettings();
+  const [settings, projectSettings] = await Promise.all([
+    loadTrustSettings(),
+    loadProjectTrustSettings(projectPath),
+  ]);
   return {
     global: settings.globalTrusted,
-    project: settings.projectTrusted[projectPath] ?? [],
-    denied: settings.projectDenied[projectPath] ?? [],
+    project: projectSettings.trusted,
+    denied: projectSettings.denied,
   };
 }
 

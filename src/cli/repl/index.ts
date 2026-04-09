@@ -128,11 +128,22 @@ export async function startRepl(
   // Initialize provider
   // Use internal provider ID (e.g., "codex" for "openai" with OAuth)
   const internalProviderId = getInternalProviderId(session.config.provider.type);
+  const initialVertexProject =
+    session.config.provider.project ??
+    process.env["VERTEX_PROJECT"] ??
+    process.env["GOOGLE_CLOUD_PROJECT"] ??
+    process.env["GCLOUD_PROJECT"];
+  const initialVertexLocation =
+    session.config.provider.location ??
+    process.env["VERTEX_LOCATION"] ??
+    process.env["GOOGLE_CLOUD_LOCATION"];
   let provider: LLMProvider;
   try {
     provider = await createProvider(internalProviderId, {
       model: session.config.provider.model || undefined,
       maxTokens: session.config.provider.maxTokens,
+      project: initialVertexProject,
+      location: initialVertexLocation,
     });
   } catch (error) {
     p.log.error(
@@ -652,6 +663,15 @@ export async function startRepl(
           provider = await createProvider(newInternalId, {
             model: session.config.provider.model || undefined,
             maxTokens: session.config.provider.maxTokens,
+            project:
+              session.config.provider.project ??
+              process.env["VERTEX_PROJECT"] ??
+              process.env["GOOGLE_CLOUD_PROJECT"] ??
+              process.env["GCLOUD_PROJECT"],
+            location:
+              session.config.provider.location ??
+              process.env["VERTEX_LOCATION"] ??
+              process.env["GOOGLE_CLOUD_LOCATION"],
           });
           setAgentProvider(provider);
           initializeContextManager(session, provider);

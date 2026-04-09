@@ -833,13 +833,13 @@ describe("onboarding-v2", () => {
       mockedCreateProvider.mockResolvedValue(codexProvider as any);
 
       const config = {
-        provider: { type: "openai", model: "gpt-5.4-codex", maxTokens: 8192 },
+        provider: { type: "openai", model: "gpt-5.3-codex", maxTokens: 8192 },
       } as any;
 
       const result = await ensureConfiguredV2(config);
 
       expect(result).toEqual(config);
-      expect(mockedCreateProvider).toHaveBeenCalledWith("codex", { model: "gpt-5.4-codex" });
+      expect(mockedCreateProvider).toHaveBeenCalledWith("codex", { model: "gpt-5.3-codex" });
     });
 
     it("falls back to another configured cloud provider and persists it when preferred is unavailable", async () => {
@@ -859,7 +859,7 @@ describe("onboarding-v2", () => {
       process.env["OPENAI_API_KEY"] = "sk-openai-existing-key";
       mockedGetRecommendedModel.mockImplementation((providerId: any) => {
         if (providerId === "openai") {
-          return { id: "gpt-5.4-codex" } as any;
+          return { id: "gpt-5.3-codex" } as any;
         }
         return { id: "claude-sonnet-4-20250514" } as any;
       });
@@ -878,8 +878,8 @@ describe("onboarding-v2", () => {
       const result = await ensureConfiguredV2(config);
 
       expect(result?.provider.type).toBe("openai");
-      expect(result?.provider.model).toBe("gpt-5.4-codex");
-      expect(saveProviderPreference).toHaveBeenCalledWith("openai", "gpt-5.4-codex");
+      expect(result?.provider.model).toBe("gpt-5.3-codex");
+      expect(saveProviderPreference).toHaveBeenCalledWith("openai", "gpt-5.3-codex");
 
       delete process.env["OPENAI_API_KEY"];
     });

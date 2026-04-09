@@ -279,10 +279,16 @@ async function switchProvider(
   // Check if OAuth is already configured for this provider
   let oauthConnected = false;
   if (hasOAuth) {
+    const oauthCheckSpinner = p.spinner();
+    oauthCheckSpinner.start("Checking existing OAuth session...");
     try {
       oauthConnected = await isOAuthConfigured(oauthProviderName);
+      oauthCheckSpinner.stop(
+        oauthConnected ? "Existing OAuth session found" : "No existing OAuth session",
+      );
     } catch {
       // Ignore errors checking OAuth status
+      oauthCheckSpinner.stop("Could not verify OAuth session");
     }
   }
 
@@ -367,20 +373,26 @@ async function switchProvider(
       hint: "",
     });
 
-    // Only show selection if there's actually a choice to make
+    let authChoice: string;
     if (authOptions.length > 2) {
-      // More than just one option + cancel
-      const authChoice = await p.select({
+      // Multiple options available, ask explicitly.
+      const selected = await p.select({
         message: `How would you like to authenticate with ${newProvider.name}?`,
         options: authOptions,
       });
 
-      if (p.isCancel(authChoice) || authChoice === "cancel") {
+      if (p.isCancel(selected) || selected === "cancel") {
         return false;
       }
+      authChoice = selected as string;
+    } else {
+      // Single auth method + cancel: proceed directly with that method.
+      authChoice = authOptions.find((option) => option.value !== "cancel")?.value ?? "cancel";
+      if (authChoice === "cancel") return false;
+    }
 
-      // Handle OAuth flow
-      if (authChoice === "oauth") {
+    // Handle OAuth flow
+    if (authChoice === "oauth") {
         const isCopilot = newProvider.id === "copilot";
         const isGemini = newProvider.id === "gemini";
 
@@ -390,7 +402,12 @@ async function switchProvider(
           if (oauthConnected) {
             console.log(chalk.dim(`\nUsing existing GitHub session...`));
           } else {
+            const oauthStartSpinner = p.spinner();
+            oauthStartSpinner.start("Starting GitHub OAuth sign-in...");
             const result = await runOAuthFlow("copilot");
+            oauthStartSpinner.stop(
+              result ? "GitHub OAuth sign-in completed" : "GitHub OAuth sign-in cancelled",
+            );
             if (!result) return false;
           }
           selectedAuthMethod = "oauth";
@@ -401,16 +418,25 @@ async function switchProvider(
 
           if (oauthConnected) {
             // Use existing OAuth session
+            const refreshSpinner = p.spinner();
+            refreshSpinner.start("Refreshing existing OAuth session...");
             try {
               const tokenResult = await getOrRefreshOAuthToken(oauthProviderName);
               if (tokenResult) {
                 process.env[tokenEnvVar] = tokenResult.accessToken;
                 selectedAuthMethod = "oauth";
                 if (!isGemini) internalProviderId = "codex";
+                refreshSpinner.stop("OAuth session ready");
                 console.log(chalk.dim(`\nUsing existing OAuth session...`));
               } else {
                 // Token refresh failed, need to re-authenticate
+                refreshSpinner.stop("OAuth refresh failed, re-authentication required");
+                const oauthStartSpinner = p.spinner();
+                oauthStartSpinner.start("Starting OAuth sign-in...");
                 const result = await runOAuthFlow(newProvider.id);
+                oauthStartSpinner.stop(
+                  result ? "OAuth sign-in completed" : "OAuth sign-in cancelled",
+                );
                 if (!result) return false;
                 process.env[tokenEnvVar] = result.accessToken;
                 selectedAuthMethod = "oauth";
@@ -418,7 +444,13 @@ async function switchProvider(
               }
             } catch {
               // Token expired, need to re-authenticate
+              refreshSpinner.stop("OAuth refresh failed, re-authentication required");
+              const oauthStartSpinner = p.spinner();
+              oauthStartSpinner.start("Starting OAuth sign-in...");
               const result = await runOAuthFlow(newProvider.id);
+              oauthStartSpinner.stop(
+                result ? "OAuth sign-in completed" : "OAuth sign-in cancelled",
+              );
               if (!result) return false;
               process.env[tokenEnvVar] = result.accessToken;
               selectedAuthMethod = "oauth";
@@ -426,16 +458,19 @@ async function switchProvider(
             }
           } else {
             // New OAuth flow
+            const oauthStartSpinner = p.spinner();
+            oauthStartSpinner.start("Starting OAuth sign-in...");
             const result = await runOAuthFlow(newProvider.id);
+            oauthStartSpinner.stop(result ? "OAuth sign-in completed" : "OAuth sign-in cancelled");
             if (!result) return false;
             process.env[tokenEnvVar] = result.accessToken;
             selectedAuthMethod = "oauth";
             if (!isGemini) internalProviderId = "codex";
           }
         }
-      }
-      // Handle gcloud ADC flow
-      else if (authChoice === "gcloud") {
+    }
+    // Handle gcloud ADC flow
+    else if (authChoice === "gcloud") {
         const adcResult = await setupGcloudADCForProvider(newProvider);
         if (!adcResult) return false;
         selectedAuthMethod = "gcloud";
@@ -447,9 +482,9 @@ async function switchProvider(
           if (!settings) return false;
           vertexSettings = settings;
         }
-      }
-      // Handle API key flow
-      else if (authChoice === "apikey") {
+    }
+    // Handle API key flow
+    else if (authChoice === "apikey") {
         if (apiKey) {
           // Use existing API key
           selectedAuthMethod = "apikey";
@@ -478,9 +513,9 @@ async function switchProvider(
           if (!settings) return false;
           vertexSettings = settings;
         }
-      }
-      // Handle remove credentials
-      else if (authChoice === "remove") {
+    }
+    // Handle remove credentials
+    else if (authChoice === "remove") {
         const removeOptions: Array<{ value: string; label: string }> = [];
 
         if (oauthConnected) {
@@ -537,37 +572,6 @@ async function switchProvider(
 
         console.log("");
         return false;
-      }
-    } else {
-      // Only one auth option (API key) and nothing configured - prompt directly
-      console.log(chalk.yellow(`\n${newProvider.emoji} ${newProvider.name} is not configured.`));
-
-      if (hasGcloudADC && !supportsApiKey) {
-        const adcResult = await setupGcloudADCForProvider(newProvider);
-        if (!adcResult) return false;
-        selectedAuthMethod = "gcloud";
-        if (newProvider.id === "vertex") {
-          const settings = await promptVertexSettings({
-            project: session.config.provider.project,
-            location: session.config.provider.location,
-          });
-          if (!settings) return false;
-          vertexSettings = settings;
-        }
-      } else {
-        const key = await p.password({
-          message: `Enter your ${newProvider.name} API key:`,
-          validate: (v) => (!v || v.length < 10 ? "API key too short" : undefined),
-        });
-
-        if (p.isCancel(key)) {
-          return false;
-        }
-
-        process.env[newProvider.envVar] = key;
-        selectedAuthMethod = "apikey";
-        newApiKeyForSaving = key;
-      }
     }
   }
 
@@ -575,6 +579,27 @@ async function switchProvider(
   const rememberedModel = await getLastUsedModel(newProvider.id as ProviderType);
   const recommendedModel = getRecommendedModel(newProvider.id as ProviderType);
   const newModel = rememberedModel || recommendedModel?.id || newProvider.models[0]?.id || "";
+  const resolvedVertexProject =
+    newProvider.id === "vertex"
+      ? (
+          vertexSettings?.project ??
+          session.config.provider.project ??
+          process.env["VERTEX_PROJECT"] ??
+          process.env["GOOGLE_CLOUD_PROJECT"] ??
+          process.env["GCLOUD_PROJECT"] ??
+          ""
+        ).trim()
+      : undefined;
+  const resolvedVertexLocation =
+    newProvider.id === "vertex"
+      ? (
+          vertexSettings?.location ??
+          session.config.provider.location ??
+          process.env["VERTEX_LOCATION"] ??
+          process.env["GOOGLE_CLOUD_LOCATION"] ??
+          "global"
+        ).trim()
+      : undefined;
 
   // Test connection (use internal provider ID for OAuth)
   const spinner = p.spinner();
@@ -583,8 +608,8 @@ async function switchProvider(
   try {
     const testProvider = await createProvider(internalProviderId as ProviderType, {
       model: newModel,
-      project: vertexSettings?.project,
-      location: vertexSettings?.location,
+      project: resolvedVertexProject,
+      location: resolvedVertexLocation,
     });
     const available = await testProvider.isAvailable();
 
@@ -601,8 +626,14 @@ async function switchProvider(
     session.config.provider.type = userFacingProviderId as ProviderType;
     session.config.provider.model = newModel;
     if (userFacingProviderId === "vertex") {
-      session.config.provider.project = vertexSettings?.project;
-      session.config.provider.location = vertexSettings?.location;
+      session.config.provider.project = resolvedVertexProject;
+      session.config.provider.location = resolvedVertexLocation;
+      if (resolvedVertexProject) {
+        process.env["VERTEX_PROJECT"] = resolvedVertexProject;
+      }
+      if (resolvedVertexLocation) {
+        process.env["VERTEX_LOCATION"] = resolvedVertexLocation;
+      }
     } else {
       delete session.config.provider.project;
       delete session.config.provider.location;
@@ -615,14 +646,14 @@ async function switchProvider(
         type: userFacingProviderId as ProviderType,
         model: newModel,
         apiKey: newApiKeyForSaving,
-        project: vertexSettings?.project,
-        location: vertexSettings?.location,
+        project: resolvedVertexProject,
+        location: resolvedVertexLocation,
       });
     } else {
       // Using existing credentials (OAuth or pre-existing API key): just save provider/model
       await saveProviderPreference(userFacingProviderId as ProviderType, newModel, {
-        project: vertexSettings?.project,
-        location: vertexSettings?.location,
+        project: resolvedVertexProject,
+        location: resolvedVertexLocation,
       });
     }
 
@@ -653,14 +684,24 @@ async function switchProvider(
  */
 async function setupGcloudADCForProvider(_provider: ProviderDefinition): Promise<boolean> {
   // Check if gcloud is installed
+  const gcloudCheckSpinner = p.spinner();
+  gcloudCheckSpinner.start("Checking gcloud CLI...");
   const gcloudInstalled = await isGcloudInstalled();
+  gcloudCheckSpinner.stop(gcloudInstalled ? "gcloud CLI detected" : "gcloud CLI not detected");
   if (!gcloudInstalled) {
     p.log.error("gcloud CLI is not installed");
     console.log(chalk.dim("   Install it from: https://cloud.google.com/sdk/docs/install\n"));
     return false;
   }
 
+  const adcInspectSpinner = p.spinner();
+  adcInspectSpinner.start("Checking existing ADC credentials...");
   const adc = await inspectADC();
+  adcInspectSpinner.stop(
+    adc.status === "ok" && adc.token
+      ? "ADC credentials found"
+      : "No reusable ADC credentials found",
+  );
   if (adc.status === "ok" && adc.token) {
     console.log(chalk.green("   ✓ gcloud ADC is already configured!\n"));
     return true;
@@ -680,9 +721,19 @@ async function setupGcloudADCForProvider(_provider: ProviderDefinition): Promise
 
   if (runLoginNow) {
     p.log.step("Running `gcloud auth application-default login`...");
+    const loginSpinner = p.spinner();
+    loginSpinner.start("Launching gcloud login flow (browser may open)...");
     const loginOk = await runGcloudADCLogin();
+    loginSpinner.stop(loginOk ? "gcloud login flow completed" : "gcloud login flow failed");
     if (loginOk) {
+      const recheckSpinner = p.spinner();
+      recheckSpinner.start("Verifying ADC credentials after login...");
       const refreshed = await inspectADC();
+      recheckSpinner.stop(
+        refreshed.status === "ok" && refreshed.token
+          ? "ADC credentials verified"
+          : "ADC verification failed after login",
+      );
       if (refreshed.status === "ok" && refreshed.token) {
         console.log(chalk.green("   ✓ gcloud ADC is now configured.\n"));
         return true;
