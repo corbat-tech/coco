@@ -1632,7 +1632,12 @@ async function printWelcome(
   const projectName = lastSep > 0 ? displayPath.slice(lastSep + 1) : displayPath;
 
   const providerName = session.config.provider.type;
-  const modelName = session.config.provider.model || "default";
+  const configuredModel = session.config.provider.model?.trim();
+  const modelName =
+    configuredModel &&
+    !["default", "none", "null", "undefined"].includes(configuredModel.toLowerCase())
+      ? configuredModel
+      : getDefaultModel(session.config.provider.type);
   const trustText =
     trustLevel === "full"
       ? "full"

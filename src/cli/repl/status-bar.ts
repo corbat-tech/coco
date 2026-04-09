@@ -10,6 +10,7 @@
 
 import chalk from "chalk";
 import path from "node:path";
+import { getDefaultModel } from "../../config/env.js";
 import { isQualityLoop } from "./quality-loop.js";
 import { isFullAccessMode } from "./full-access-mode.js";
 import type { ReplConfig } from "./types.js";
@@ -23,6 +24,14 @@ function formatContextUsage(percent: number): string {
   if (percent >= 90) return chalk.red(label);
   if (percent >= 75) return chalk.yellow(label);
   return chalk.dim(label);
+}
+
+function getDisplayModel(config: ReplConfig): string {
+  const model = config.provider.model?.trim();
+  if (!model || ["default", "none", "null", "undefined"].includes(model.toLowerCase())) {
+    return getDefaultModel(config.provider.type);
+  }
+  return model;
 }
 
 /**
@@ -42,7 +51,7 @@ export function formatStatusBar(
 
   // Provider/model
   const providerName = config.provider.type;
-  const modelName = config.provider.model || "default";
+  const modelName = getDisplayModel(config);
   parts.push(chalk.dim(`${providerName}/`) + chalk.cyan(modelName));
 
   // Quality loop indicator

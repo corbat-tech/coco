@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.13] - 2026-04-09
+
+### Fixed
+- **Header/status bar effective model display** — Coco no longer shows placeholders like `copilot/default` in the header or status bar when the provider is actually using a real fallback or remembered model. The UI now displays the effective model name shown to the user.
+
 ## [2.25.12] - 2026-04-09
 
 ### Fixed
