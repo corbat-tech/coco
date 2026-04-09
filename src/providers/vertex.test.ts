@@ -335,4 +335,69 @@ describe("VertexProvider", () => {
 
     expect(chunks.join("")).toBe("ok");
   });
+
+  it("deduplicates repeated functionCall chunks in streamWithTools", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_env","args":{"name":"HOME"}},"thoughtSignature":"sig-home"}]},"finishReason":"STOP"}]}\r\n\r\n',
+          ),
+        );
+        // Some Vertex streams repeat cumulative parts; this duplicate must not emit twice.
+        controller.enqueue(
+          encoder.encode(
+            'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_env","args":{"name":"HOME"}},"thoughtSignature":"sig-home"}]},"finishReason":"STOP"}]}\r\n\r\n',
+          ),
+        );
+        controller.enqueue(encoder.encode("data: [DONE]\r\n\r\n"));
+        controller.close();
+      },
+    });
+
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    );
+
+    const { VertexProvider } = await import("./vertex.js");
+    const provider = new VertexProvider();
+    await provider.initialize({ project: "test-project", location: "global" });
+
+    const chunks = [];
+    for await (const chunk of provider.streamWithTools([{ role: "user", content: "hola" }], {
+      model: "gemini-3-flash-preview",
+      tools: [
+        {
+          name: "get_env",
+          description: "Get environment variable",
+          input_schema: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+            },
+            required: ["name"],
+          },
+        },
+      ],
+    })) {
+      chunks.push(chunk);
+    }
+
+    const starts = chunks.filter((c) => c.type === "tool_use_start");
+    const ends = chunks.filter((c) => c.type === "tool_use_end");
+    expect(starts).toHaveLength(1);
+    expect(ends).toHaveLength(1);
+    expect(starts[0]).toMatchObject({
+      type: "tool_use_start",
+      toolCall: {
+        name: "get_env",
+        input: { name: "HOME" },
+        geminiThoughtSignature: "sig-home",
+      },
+    });
+  });
 });

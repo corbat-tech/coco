@@ -104,6 +104,23 @@ function extractSseEventData(rawEvent: string): string | null {
   return dataLines.join("\n");
 }
 
+function getToolCallFingerprint(part: VertexPart): string {
+  const name = part.functionCall?.name ?? "unknown_function";
+  let argsSerialized = "{}";
+  try {
+    argsSerialized = JSON.stringify(part.functionCall?.args ?? {});
+  } catch {
+    argsSerialized = "{}";
+  }
+  const thoughtSignature =
+    part.thoughtSignature ??
+    part.thought_signature ??
+    part.functionCall?.thoughtSignature ??
+    part.functionCall?.thought_signature ??
+    "";
+  return `${name}:${argsSerialized}:${thoughtSignature}`;
+}
+
 export class VertexProvider implements LLMProvider {
   readonly id = "vertex";
   readonly name = "Google Vertex AI Gemini";
@@ -209,6 +226,7 @@ export class VertexProvider implements LLMProvider {
     );
     let stopReason: StreamChunk["stopReason"] = "end_turn";
     let streamToolCallCounter = 0;
+    const emittedToolFingerprints = new Set<string>();
 
     for await (const chunk of stream) {
       const candidate = chunk.candidates?.[0];
@@ -218,6 +236,11 @@ export class VertexProvider implements LLMProvider {
           yield { type: "text", text: part.text };
         }
         if (part.functionCall) {
+          const fingerprint = getToolCallFingerprint(part);
+          if (emittedToolFingerprints.has(fingerprint)) {
+            continue;
+          }
+          emittedToolFingerprints.add(fingerprint);
           streamToolCallCounter++;
           const geminiThoughtSignature =
             part.thoughtSignature ??

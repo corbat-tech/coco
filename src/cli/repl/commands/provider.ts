@@ -23,6 +23,7 @@ import {
   isGcloudInstalled,
   inspectADC,
   runGcloudADCLogin,
+  runGcloudADCRevoke,
   isOAuthConfigured,
   getOrRefreshOAuthToken,
   deleteTokens,
@@ -271,6 +272,15 @@ async function switchProvider(
   // Check OAuth support from both auth module (for OpenAI) and provider config (for Gemini)
   const hasOAuth = supportsOAuth(newProvider.id) || newProvider.supportsOAuth;
   const hasGcloudADC = newProvider.supportsGcloudADC;
+  let adcConnected = false;
+  if (hasGcloudADC) {
+    try {
+      const adc = await inspectADC();
+      adcConnected = adc.status === "ok" && adc.token !== null;
+    } catch {
+      adcConnected = false;
+    }
+  }
 
   // Determine which OAuth provider to check
   const oauthProviderName =
@@ -337,8 +347,10 @@ async function switchProvider(
     if (hasGcloudADC) {
       authOptions.push({
         value: "gcloud",
-        label: "☁️ Use gcloud ADC",
-        hint: "Authenticate via gcloud CLI",
+        label: adcConnected ? "☁️ Use gcloud ADC (configured ✓)" : "☁️ Use gcloud ADC",
+        hint: adcConnected
+          ? "Reuse current ADC session or switch account"
+          : "Authenticate via gcloud CLI",
       });
     }
 
@@ -359,7 +371,7 @@ async function switchProvider(
     }
 
     // Add option to remove credentials if any are configured
-    if (oauthConnected || apiKey) {
+    if (oauthConnected || apiKey || adcConnected) {
       authOptions.push({
         value: "remove",
         label: "🗑️  Remove saved credentials",
@@ -530,7 +542,14 @@ async function switchProvider(
         });
       }
 
-      if (oauthConnected && apiKey) {
+      if (adcConnected) {
+        removeOptions.push({
+          value: "gcloud",
+          label: "☁️ Revoke gcloud ADC session",
+        });
+      }
+
+      if ((oauthConnected && apiKey) || (adcConnected && (oauthConnected || apiKey))) {
         removeOptions.push({
           value: "all",
           label: "🗑️  Remove all credentials",
@@ -566,6 +585,19 @@ async function switchProvider(
         delete process.env[newProvider.envVar];
         console.log(chalk.green("✓ API key removed from session"));
         console.log(chalk.dim(`  Note: If key is in ~/.coco/.env, remove it there too`));
+      }
+
+      if (removeChoice === "gcloud" || removeChoice === "all") {
+        const revokeSpinner = p.spinner();
+        revokeSpinner.start("Revoking gcloud ADC session...");
+        const revoked = await runGcloudADCRevoke();
+        revokeSpinner.stop(revoked ? "gcloud ADC session revoked" : "Failed to revoke gcloud ADC");
+        if (!revoked) {
+          console.log(chalk.yellow("⚠️ Could not revoke ADC from Coco."));
+          console.log(chalk.dim("   Try manually: gcloud auth application-default revoke"));
+        } else {
+          console.log(chalk.green("✓ gcloud ADC session revoked"));
+        }
       }
 
       console.log("");
@@ -702,7 +734,37 @@ async function setupGcloudADCForProvider(_provider: ProviderDefinition): Promise
   );
   if (adc.status === "ok" && adc.token) {
     console.log(chalk.green("   ✓ gcloud ADC is already configured!\n"));
-    return true;
+    const adcChoice = await p.select({
+      message: "ADC session detected. What do you want to do?",
+      options: [
+        {
+          value: "use",
+          label: "Use current ADC session",
+        },
+        {
+          value: "switch",
+          label: "Switch Google account (revoke and re-login)",
+        },
+        {
+          value: "cancel",
+          label: "Cancel",
+        },
+      ],
+    });
+    if (p.isCancel(adcChoice) || adcChoice === "cancel") return false;
+    if (adcChoice === "use") return true;
+
+    const revokeSpinner = p.spinner();
+    revokeSpinner.start("Revoking current gcloud ADC session...");
+    const revoked = await runGcloudADCRevoke();
+    revokeSpinner.stop(
+      revoked ? "Current ADC session revoked" : "Could not revoke current ADC session",
+    );
+    if (!revoked) {
+      console.log(chalk.yellow("⚠️ Could not revoke ADC from Coco."));
+      console.log(chalk.dim("   Try manually: gcloud auth application-default revoke\n"));
+      return false;
+    }
   }
 
   console.log(chalk.yellow("\n   No reusable gcloud ADC session was found for Coco."));
@@ -767,6 +829,18 @@ async function promptVertexSettings(
     process.env["VERTEX_LOCATION"] ??
     process.env["GOOGLE_CLOUD_LOCATION"] ??
     "global";
+
+  console.log(chalk.dim("\n   Need help finding these values?"));
+  console.log(chalk.cyan("   $ gcloud projects list"));
+  console.log(chalk.cyan("   $ gcloud config set project <PROJECT_ID>"));
+  console.log(chalk.cyan("   $ gcloud config get-value project"));
+  console.log(chalk.cyan("   $ gcloud config get-value compute/region"));
+  console.log(
+    chalk.cyan("   $ gcloud config set compute/region <LOCATION>    # e.g. global, europe-west1"),
+  );
+  console.log(
+    chalk.dim("   (If compute/region is unset, set it as above, then use that value for Vertex location)\n"),
+  );
 
   const project = await p.text({
     message: "Google Cloud project ID:",

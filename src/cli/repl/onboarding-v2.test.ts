@@ -64,6 +64,7 @@ vi.mock("../../auth/index.js", () => ({
   isGcloudInstalled: vi.fn(),
   inspectADC: vi.fn(),
   runGcloudADCLogin: vi.fn(),
+  runGcloudADCRevoke: vi.fn(),
   isOAuthConfigured: vi.fn(),
   getOrRefreshOAuthToken: vi.fn(),
 }));
@@ -106,6 +107,7 @@ import {
   isGcloudInstalled,
   inspectADC,
   runGcloudADCLogin,
+  runGcloudADCRevoke,
   isOAuthConfigured,
   getOrRefreshOAuthToken,
 } from "../../auth/index.js";
@@ -131,6 +133,7 @@ const mockedRunOAuthFlow = vi.mocked(runOAuthFlow);
 const mockedIsOAuthConfigured = vi.mocked(isOAuthConfigured);
 const mockedGetOrRefreshOAuthToken = vi.mocked(getOrRefreshOAuthToken);
 const mockedRunGcloudADCLogin = vi.mocked(runGcloudADCLogin);
+const mockedRunGcloudADCRevoke = vi.mocked(runGcloudADCRevoke);
 const mockedCreateProvider = vi.mocked(createProvider);
 const mockedGetLastUsedModel = vi.mocked(getLastUsedModel);
 const _mockedIsGcloudInstalled = vi.mocked(isGcloudInstalled);
@@ -185,6 +188,7 @@ describe("onboarding-v2", () => {
       token: null,
       message: "No ADC configured",
     } as any);
+    mockedRunGcloudADCRevoke.mockResolvedValue(true);
   });
 
   afterEach(() => {

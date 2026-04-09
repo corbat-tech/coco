@@ -46,6 +46,7 @@ interface ADCCredentials {
 
 const PRINT_ACCESS_TOKEN_COMMAND = "gcloud auth application-default print-access-token";
 const ADC_LOGIN_COMMAND = "gcloud auth application-default login";
+const ADC_REVOKE_COMMAND = "gcloud auth application-default revoke --quiet";
 const GEMINI_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/cloud-platform",
   "https://www.googleapis.com/auth/generative-language.retriever",
@@ -216,6 +217,32 @@ export async function runGcloudADCLogin(): Promise<boolean> {
     } catch {
       return false;
     }
+  }
+}
+
+/**
+ * Revoke gcloud Application Default Credentials for the current machine user.
+ * Useful when user wants to switch to a different Google account.
+ */
+export async function runGcloudADCRevoke(): Promise<boolean> {
+  try {
+    await execAsync(ADC_REVOKE_COMMAND, {
+      timeout: 120000,
+    });
+    clearADCCache();
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Treat "already revoked / not found" style outcomes as success.
+    if (
+      message.includes("No credentialed accounts") ||
+      message.includes("There are no credentials") ||
+      message.includes("No active credentials")
+    ) {
+      clearADCCache();
+      return true;
+    }
+    return false;
   }
 }
 

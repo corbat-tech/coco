@@ -92,6 +92,7 @@ export {
   getCachedADCToken,
   clearADCCache,
   runGcloudADCLogin,
+  runGcloudADCRevoke,
   type ADCCheckResult,
   type ADCStatus,
   type ADCToken,
