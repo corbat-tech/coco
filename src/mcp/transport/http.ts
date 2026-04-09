@@ -50,6 +50,8 @@ export class HTTPTransport implements MCPTransport {
   private pendingRequests = new Map<string | number, AbortController>();
   private oauthToken: string | undefined;
   private oauthInFlight: Promise<string> | null = null;
+  private sessionId: string | undefined;
+  private protocolVersion = "2024-11-05";
 
   constructor(private readonly config: HTTPTransportConfig) {
     this.config.timeout = config.timeout ?? 60000;
@@ -82,12 +84,23 @@ export class HTTPTransport implements MCPTransport {
   /**
    * Build request headers
    */
-  private buildHeaders(): Record<string, string> {
+  private buildHeaders(method: "GET" | "POST"): Record<string, string> {
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+      ...(method === "POST"
+        ? {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          }
+        : {
+            Accept: "text/event-stream",
+          }),
+      ...(this.protocolVersion ? { "MCP-Protocol-Version": this.protocolVersion } : {}),
       ...this.config.headers,
     };
+
+    if (this.sessionId) {
+      headers["Mcp-Session-Id"] = this.sessionId;
+    }
 
     if (this.oauthToken) {
       headers["Authorization"] = `Bearer ${this.oauthToken}`;
@@ -159,7 +172,7 @@ export class HTTPTransport implements MCPTransport {
     const doFetch = async (): Promise<Response> =>
       fetch(this.config.url, {
         method,
-        headers: this.buildHeaders(),
+        headers: this.buildHeaders(method),
         ...(body ? { body } : {}),
         signal,
       });
@@ -218,6 +231,68 @@ export class HTTPTransport implements MCPTransport {
   private isJsonRpcAuthError(payload: JSONRPCResponse): boolean {
     if (!payload.error) return false;
     return this.looksLikeAuthErrorMessage(payload.error.message);
+  }
+
+  private captureResponseSession(response: Response): void {
+    const sessionId = response.headers.get("mcp-session-id");
+    if (sessionId) {
+      this.sessionId = sessionId;
+    }
+  }
+
+  private async parseSseResponse(response: Response): Promise<void> {
+    if (!response.body) {
+      throw new MCPTransportError("SSE response has no body");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let eventData = "";
+
+    const flushEvent = (): void => {
+      if (!eventData) return;
+      const payload = eventData.trim();
+      eventData = "";
+      if (!payload) return;
+
+      const parsed = JSON.parse(payload) as JSONRPCResponse;
+      if (
+        parsed.result &&
+        typeof parsed.result === "object" &&
+        parsed.result !== null &&
+        "protocolVersion" in parsed.result &&
+        typeof (parsed.result as { protocolVersion?: unknown }).protocolVersion === "string"
+      ) {
+        this.protocolVersion = (parsed.result as { protocolVersion: string }).protocolVersion;
+      }
+      this.messageCallback?.(parsed);
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (line === "") {
+          flushEvent();
+          continue;
+        }
+        if (line.startsWith(":")) continue;
+        if (line.startsWith("data:")) {
+          eventData += (eventData ? "\n" : "") + line.slice(5).trimStart();
+        }
+      }
+    }
+
+    if (buffer.length > 0 && buffer.startsWith("data:")) {
+      eventData += (eventData ? "\n" : "") + buffer.slice(5).trimStart();
+    }
+    flushEvent();
   }
 
   /**
@@ -282,12 +357,32 @@ export class HTTPTransport implements MCPTransport {
         );
 
         clearTimeout(timeoutId);
+        this.captureResponseSession(response);
 
         if (!response.ok) {
           throw new MCPTransportError(`HTTP error ${response.status}: ${response.statusText}`);
         }
 
+        if (response.status === 202) {
+          return;
+        }
+
+        const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+        if (contentType.includes("text/event-stream")) {
+          await this.parseSseResponse(response);
+          return;
+        }
+
         const data = (await response.json()) as JSONRPCResponse;
+        if (
+          data.result &&
+          typeof data.result === "object" &&
+          data.result !== null &&
+          "protocolVersion" in data.result &&
+          typeof (data.result as { protocolVersion?: unknown }).protocolVersion === "string"
+        ) {
+          this.protocolVersion = (data.result as { protocolVersion: string }).protocolVersion;
+        }
 
         if (this.shouldAttemptOAuth() && this.isJsonRpcAuthError(data)) {
           await this.ensureOAuthToken(response.headers.get("www-authenticate"), {
@@ -300,13 +395,33 @@ export class HTTPTransport implements MCPTransport {
             abortController.signal,
           );
 
+          this.captureResponseSession(retryResponse);
           if (!retryResponse.ok) {
             throw new MCPTransportError(
               `HTTP error ${retryResponse.status}: ${retryResponse.statusText}`,
             );
           }
 
+          if (retryResponse.status === 202) {
+            return;
+          }
+
+          const retryContentType = retryResponse.headers.get("content-type")?.toLowerCase() ?? "";
+          if (retryContentType.includes("text/event-stream")) {
+            await this.parseSseResponse(retryResponse);
+            return;
+          }
+
           const retryData = (await retryResponse.json()) as JSONRPCResponse;
+          if (
+            retryData.result &&
+            typeof retryData.result === "object" &&
+            retryData.result !== null &&
+            "protocolVersion" in retryData.result &&
+            typeof (retryData.result as { protocolVersion?: unknown }).protocolVersion === "string"
+          ) {
+            this.protocolVersion = (retryData.result as { protocolVersion: string }).protocolVersion;
+          }
           this.messageCallback?.(retryData);
           return;
         }

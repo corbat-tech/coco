@@ -111,6 +111,8 @@ describe("HTTPTransport", () => {
       const headers = lastCall?.[1]?.headers as Record<string, string>;
 
       expect(headers["Authorization"]).toBe("Bearer my-token");
+      expect(headers["Accept"]).toContain("application/json");
+      expect(headers["Accept"]).toContain("text/event-stream");
     });
 
     it("should include api key", async () => {
@@ -215,6 +217,80 @@ describe("HTTPTransport", () => {
       await transport.send({ jsonrpc: "2.0", id: 1, method: "test" });
 
       expect(messageCallback).toHaveBeenCalledWith(response);
+    });
+
+    it("should accept notification responses with 202 and empty body", async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 202 }));
+
+      await expect(
+        transport.send({ jsonrpc: "2.0", id: 1, method: "notifications/initialized" }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("should persist MCP session id across requests", async () => {
+      const messageCallback = vi.fn();
+      transport.onMessage(messageCallback);
+
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              result: { protocolVersion: "2024-11-05", capabilities: {}, serverInfo: {} },
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json", "mcp-session-id": "sess-123" },
+            },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ jsonrpc: "2.0", id: 2, result: { ok: true } }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+
+      await transport.send({ jsonrpc: "2.0", id: 1, method: "initialize" });
+      await transport.send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+
+      const secondHeaders = vi.mocked(fetch).mock.calls[1]?.[1]?.headers as Record<string, string>;
+      expect(secondHeaders["Mcp-Session-Id"]).toBe("sess-123");
+      expect(messageCallback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 2, result: { ok: true } });
+    });
+
+    it("should parse streamable HTTP event-stream responses", async () => {
+      const messageCallback = vi.fn();
+      transport.onMessage(messageCallback);
+
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      });
+
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(stream, {
+          status: 200,
+          headers: { "content-type": "text/event-stream", "mcp-session-id": "sess-sse" },
+        }),
+      );
+
+      await transport.send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+
+      const headers = vi.mocked(fetch).mock.calls[0]?.[1]?.headers as Record<string, string>;
+      expect(headers["Accept"]).toContain("text/event-stream");
+      expect(messageCallback).toHaveBeenCalledWith({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { ok: true },
+      });
     });
 
     it("should throw when not connected", async () => {

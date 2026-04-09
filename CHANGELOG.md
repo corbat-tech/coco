@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.14] - 2026-04-09
+
+### Fixed
+- **HTTP MCP protocol compliance** — Coco’s HTTP MCP transport now follows streamable HTTP expectations much more closely: `POST` requests advertise both `application/json` and `text/event-stream`, session IDs from `Mcp-Session-Id` are persisted across requests, `202 Accepted` notification responses are handled correctly, and `text/event-stream` POST responses are parsed instead of being treated as JSON-only.
+- **Atlassian MCP 406/connection failures** — fixed protocol-level request negotiation that could cause Atlassian and other strict HTTP MCP servers to reject Coco’s requests with errors such as `406 Not Acceptable` or break after initialization/session establishment.
+
 ## [2.25.13] - 2026-04-09
 
 ### Fixed
