@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.28.1] - 2026-04-09
+
+### Changed
+- **Vertex now defaults to a stable generally-available model** — provider defaults and recommendations now prefer `gemini-2.5-pro` instead of preview-only defaults, reducing false authentication/setup failures.
+
+### Fixed
+- **Duplicate destructive tool confirmations in Copilot/Responses streams** — repeated `bash_exec` tool emissions that only differ in metadata no longer trigger duplicated confirmation prompts in the same turn.
+- **Vertex provider connection fallback during `/provider` setup** — when a selected Vertex model is unavailable for the project, Coco now tries stable fallback models and persists the working one.
+
 ## [2.28.0] - 2026-04-09
 
 ### Added
@@ -1347,7 +1356,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.28.0...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.28.1...HEAD
+[2.28.1]: https://github.com/corbat/corbat-coco/compare/v2.28.0...v2.28.1
 [2.28.0]: https://github.com/corbat/corbat-coco/compare/v2.27.5...v2.28.0
 [2.27.5]: https://github.com/corbat/corbat-coco/compare/v2.27.4...v2.27.5
 [2.27.4]: https://github.com/corbat/corbat-coco/compare/v2.27.3...v2.27.4

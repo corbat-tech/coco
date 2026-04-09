@@ -275,7 +275,12 @@ describe("executeAgentTurn", () => {
       duration: 1,
     });
 
-    const result = await executeAgentTurn(mockSession, "run mermaid check", mockProvider, mockToolRegistry);
+    const result = await executeAgentTurn(
+      mockSession,
+      "run mermaid check",
+      mockProvider,
+      mockToolRegistry,
+    );
 
     expect(confirmToolExecutionWithFallback).toHaveBeenCalledTimes(1);
     expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
