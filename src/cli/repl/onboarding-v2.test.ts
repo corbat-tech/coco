@@ -463,7 +463,11 @@ describe("onboarding-v2", () => {
       mockedSupportsOAuth.mockReturnValue(false);
       _mockedIsGcloudInstalled.mockResolvedValue(true);
       mockedInspectADC
-        .mockResolvedValueOnce({ status: "missing", token: null, message: "No ADC configured" } as any)
+        .mockResolvedValueOnce({
+          status: "missing",
+          token: null,
+          message: "No ADC configured",
+        } as any)
         .mockResolvedValueOnce({
           status: "ok",
           token: { accessToken: "adc-token", expiresAt: Date.now() + 3600000 },
