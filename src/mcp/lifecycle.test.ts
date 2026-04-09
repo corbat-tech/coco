@@ -233,6 +233,26 @@ describe("MCPServerManager", () => {
 
       await expect(manager.stopServer("unknown")).resolves.toBeUndefined();
     });
+
+    it("should clear disconnect timeout timer after successful stop", async () => {
+      vi.useFakeTimers();
+      try {
+        const { MCPServerManager } = await import("./lifecycle.js");
+        const manager = new MCPServerManager();
+
+        await manager.startServer({
+          name: "test-server",
+          transport: "stdio",
+          stdio: { command: "npx" },
+        });
+
+        await manager.stopServer("test-server");
+
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe("restartServer", () => {
