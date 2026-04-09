@@ -63,6 +63,7 @@ vi.mock("../../auth/index.js", () => ({
   supportsOAuth: vi.fn(),
   isGcloudInstalled: vi.fn(),
   inspectADC: vi.fn(),
+  runGcloudADCLogin: vi.fn(),
   isOAuthConfigured: vi.fn(),
   getOrRefreshOAuthToken: vi.fn(),
 }));
@@ -103,6 +104,7 @@ import {
   runOAuthFlow,
   isGcloudInstalled,
   inspectADC,
+  runGcloudADCLogin,
   isOAuthConfigured,
   getOrRefreshOAuthToken,
 } from "../../auth/index.js";
@@ -127,6 +129,7 @@ const mockedSupportsOAuth = vi.mocked(supportsOAuth);
 const mockedRunOAuthFlow = vi.mocked(runOAuthFlow);
 const mockedIsOAuthConfigured = vi.mocked(isOAuthConfigured);
 const mockedGetOrRefreshOAuthToken = vi.mocked(getOrRefreshOAuthToken);
+const mockedRunGcloudADCLogin = vi.mocked(runGcloudADCLogin);
 const mockedCreateProvider = vi.mocked(createProvider);
 const _mockedIsGcloudInstalled = vi.mocked(isGcloudInstalled);
 const mockedInspectADC = vi.mocked(inspectADC);
@@ -173,6 +176,7 @@ describe("onboarding-v2", () => {
     mockedIsProviderConfigured.mockReturnValue(false);
     mockedIsOAuthConfigured.mockResolvedValue(false);
     mockedGetOrRefreshOAuthToken.mockResolvedValue(null);
+    mockedRunGcloudADCLogin.mockResolvedValue(false);
     mockedInspectADC.mockResolvedValue({
       status: "missing",
       token: null,
@@ -430,6 +434,91 @@ describe("onboarding-v2", () => {
       mockedRunOAuthFlow.mockResolvedValue(null);
 
       const result = await runOnboardingV2();
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("setupProviderWithAuth (gcloud ADC flow)", () => {
+    it("should allow Vertex login via gcloud from Coco when ADC is missing", async () => {
+      const vertexDef = makeProviderDef({
+        id: "vertex" as any,
+        name: "Google Vertex AI Gemini",
+        envVar: "VERTEX_PROJECT",
+        supportsGcloudADC: true,
+        models: [
+          {
+            id: "gemini-2.5-pro",
+            name: "Gemini 2.5 Pro",
+            contextWindow: 1048576,
+            maxOutputTokens: 8192,
+            description: "Vertex default",
+            recommended: true,
+          },
+        ],
+      });
+
+      mockedGetConfiguredProviders.mockReturnValue([]);
+      mockedGetAllProviders.mockReturnValue([vertexDef]);
+      mockedGetProviderDefinition.mockReturnValue(vertexDef);
+      mockedSupportsOAuth.mockReturnValue(false);
+      _mockedIsGcloudInstalled.mockResolvedValue(true);
+      mockedInspectADC
+        .mockResolvedValueOnce({
+          status: "missing",
+          token: null,
+          message: "No ADC configured",
+        } as any)
+        .mockResolvedValueOnce({
+          status: "ok",
+          token: { accessToken: "adc-token", expiresAt: Date.now() + 3600000 },
+        } as any);
+      mockedRunGcloudADCLogin.mockResolvedValue(true);
+
+      mockedSelect
+        .mockResolvedValueOnce("vertex")
+        .mockResolvedValueOnce("gcloud")
+        .mockResolvedValueOnce("gemini-2.5-pro");
+      mockedConfirm.mockResolvedValueOnce(true);
+      mockedText.mockResolvedValueOnce("my-gcp-project");
+      mockedText.mockResolvedValueOnce("europe-west1");
+
+      const result = await runOnboardingV2();
+
+      expect(mockedRunGcloudADCLogin).toHaveBeenCalledOnce();
+      expect(result).toEqual({
+        type: "vertex",
+        model: "gemini-2.5-pro",
+        apiKey: "__gcloud_adc__",
+        project: "my-gcp-project",
+        location: "europe-west1",
+      });
+    });
+
+    it("should return null for Vertex when ADC is missing and user skips gcloud login", async () => {
+      const vertexDef = makeProviderDef({
+        id: "vertex" as any,
+        name: "Google Vertex AI Gemini",
+        envVar: "VERTEX_PROJECT",
+        supportsGcloudADC: true,
+      });
+
+      mockedGetConfiguredProviders.mockReturnValue([]);
+      mockedGetAllProviders.mockReturnValue([vertexDef]);
+      mockedGetProviderDefinition.mockReturnValue(vertexDef);
+      mockedSupportsOAuth.mockReturnValue(false);
+      _mockedIsGcloudInstalled.mockResolvedValue(true);
+      mockedInspectADC.mockResolvedValue({
+        status: "missing",
+        token: null,
+        message: "No ADC configured",
+      } as any);
+
+      mockedSelect.mockResolvedValueOnce("vertex").mockResolvedValueOnce("gcloud");
+      mockedConfirm.mockResolvedValueOnce(false);
+
+      const result = await runOnboardingV2();
+
+      expect(mockedRunGcloudADCLogin).not.toHaveBeenCalled();
       expect(result).toBeNull();
     });
   });
