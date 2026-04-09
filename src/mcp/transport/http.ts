@@ -236,25 +236,12 @@ export class HTTPTransport implements MCPTransport {
       throw new MCPConnectionError(`Invalid URL: ${this.config.url}`);
     }
 
-    // Test connection with a simple request
     try {
       this.abortController = new AbortController();
 
       if (this.shouldAttemptOAuth()) {
         this.oauthToken = await getStoredMcpOAuthToken(this.config.url);
       }
-
-      const response = await this.sendRequestWithOAuthRetry(
-        "GET",
-        undefined,
-        this.abortController.signal,
-      );
-
-      if (!response.ok && response.status !== 404) {
-        // 404 is acceptable - endpoint might not support GET
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
       this.connected = true;
     } catch (error) {
       if (error instanceof MCPError) {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.12] - 2026-04-09
+
+### Fixed
+- **Atlassian MCP HTTP 400 on connect** — Coco no longer probes remote HTTP MCP endpoints with a `GET` during transport connect, avoiding false startup failures like `Failed to start server 'atlassian': Failed to connect: HTTP 400 Bad Request` on servers that only support JSON-RPC `POST` requests.
+- **HTTP MCP transport tests aligned with protocol flow** — updated transport coverage so connection setup validates URL/state only, while real connectivity/auth is exercised through the `initialize` and JSON-RPC request path.
+
 ## [2.25.11] - 2026-04-09
 
 ### Fixed

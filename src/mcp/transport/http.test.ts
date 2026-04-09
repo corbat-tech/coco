@@ -44,9 +44,7 @@ describe("HTTPTransport", () => {
   });
 
   describe("connect", () => {
-    it("should connect to valid url", async () => {
-      vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
-
+    it("should connect to valid url without probing endpoint with GET", async () => {
       transport = new HTTPTransport({
         url: "https://api.example.com/mcp",
       });
@@ -54,18 +52,7 @@ describe("HTTPTransport", () => {
       await transport.connect();
 
       expect(transport.isConnected()).toBe(true);
-    });
-
-    it("should accept 404 as valid connection", async () => {
-      vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 404 }));
-
-      transport = new HTTPTransport({
-        url: "https://api.example.com/mcp",
-      });
-
-      await transport.connect();
-
-      expect(transport.isConnected()).toBe(true);
+      expect(fetch).not.toHaveBeenCalled();
     });
 
     it("should throw for invalid url", async () => {
@@ -76,19 +63,7 @@ describe("HTTPTransport", () => {
       await expect(transport.connect()).rejects.toThrow(MCPConnectionError);
     });
 
-    it("should throw for connection errors", async () => {
-      vi.mocked(fetch).mockRejectedValueOnce(new Error("Network error"));
-
-      transport = new HTTPTransport({
-        url: "https://api.example.com/mcp",
-      });
-
-      await expect(transport.connect()).rejects.toThrow(MCPConnectionError);
-    });
-
     it("should throw if already connected", async () => {
-      vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
-
       transport = new HTTPTransport({
         url: "https://api.example.com/mcp",
       });
@@ -97,18 +72,8 @@ describe("HTTPTransport", () => {
       await expect(transport.connect()).rejects.toThrow(MCPConnectionError);
     });
 
-    it("should perform oauth login on 401 and retry connect", async () => {
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(
-          new Response(null, {
-            status: 401,
-            headers: {
-              "www-authenticate":
-                'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"',
-            },
-          }),
-        )
-        .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    it("should preload stored oauth token during connect without forcing auth yet", async () => {
+      vi.mocked(getStoredMcpOAuthToken).mockResolvedValue("cached-token");
 
       transport = new HTTPTransport({
         name: "atlassian",
@@ -117,57 +82,18 @@ describe("HTTPTransport", () => {
 
       await transport.connect();
 
-      expect(authenticateMcpOAuth).toHaveBeenCalledWith(
-        expect.objectContaining({
-          serverName: "atlassian",
-          resourceUrl: "https://mcp.example.com/v1/mcp",
-        }),
-      );
-
-      const secondHeaders = vi.mocked(fetch).mock.calls[1]?.[1]?.headers as Record<string, string>;
-      expect(secondHeaders.Authorization).toBe("Bearer oauth-token");
-      expect(transport.isConnected()).toBe(true);
-    });
-
-    it("should attempt oauth when bearer auth is configured but token is missing", async () => {
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(
-          new Response(null, {
-            status: 401,
-            headers: {
-              "www-authenticate":
-                'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"',
-            },
-          }),
-        )
-        .mockResolvedValueOnce(new Response(null, { status: 200 }));
-
-      transport = new HTTPTransport({
-        name: "atlassian",
-        url: "https://mcp.example.com/v1/mcp",
-        auth: {
-          type: "bearer",
-          tokenEnv: "MISSING_BEARER_TOKEN_ENV",
-        },
-      });
-
-      await transport.connect();
-
-      expect(authenticateMcpOAuth).toHaveBeenCalledTimes(1);
-      const secondHeaders = vi.mocked(fetch).mock.calls[1]?.[1]?.headers as Record<string, string>;
-      expect(secondHeaders.Authorization).toBe("Bearer oauth-token");
+      expect(getStoredMcpOAuthToken).toHaveBeenCalledWith("https://mcp.example.com/v1/mcp");
+      expect(authenticateMcpOAuth).not.toHaveBeenCalled();
     });
   });
 
   describe("authentication", () => {
     it("should include bearer token", async () => {
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(new Response(null, { status: 200 }))
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
-            status: 200,
-          }),
-        );
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
+          status: 200,
+        }),
+      );
 
       transport = new HTTPTransport({
         url: "https://api.example.com/mcp",
@@ -188,13 +114,11 @@ describe("HTTPTransport", () => {
     });
 
     it("should include api key", async () => {
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(new Response(null, { status: 200 }))
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
-            status: 200,
-          }),
-        );
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
+          status: 200,
+        }),
+      );
 
       transport = new HTTPTransport({
         url: "https://api.example.com/mcp",
@@ -218,13 +142,11 @@ describe("HTTPTransport", () => {
     it("should read token from environment variable", async () => {
       process.env.TEST_API_TOKEN = "env-token";
 
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(new Response(null, { status: 200 }))
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
-            status: 200,
-          }),
-        );
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
+          status: 200,
+        }),
+      );
 
       transport = new HTTPTransport({
         url: "https://api.example.com/mcp",
@@ -247,13 +169,11 @@ describe("HTTPTransport", () => {
     });
 
     it("should include custom headers", async () => {
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(new Response(null, { status: 200 }))
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
-            status: 200,
-          }),
-        );
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
+          status: 200,
+        }),
+      );
 
       transport = new HTTPTransport({
         url: "https://api.example.com/mcp",
@@ -275,8 +195,6 @@ describe("HTTPTransport", () => {
 
   describe("send", () => {
     beforeEach(async () => {
-      vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
-
       transport = new HTTPTransport({
         url: "https://api.example.com/mcp",
         retries: 1,
@@ -319,9 +237,6 @@ describe("HTTPTransport", () => {
 
     it("should retry on failure", async () => {
       const response = { jsonrpc: "2.0", id: 1, result: { data: "test" } };
-
-      // Setup connect mock first
-      vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
 
       // Create new transport with retries
       const retryTransport = new HTTPTransport({
@@ -369,7 +284,7 @@ describe("HTTPTransport", () => {
 
       expect(authenticateMcpOAuth).toHaveBeenCalledTimes(1);
       expect(messageCallback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 1, result: { ok: true } });
-      const secondHeaders = vi.mocked(fetch).mock.calls[2]?.[1]?.headers as Record<string, string>;
+      const secondHeaders = vi.mocked(fetch).mock.calls[1]?.[1]?.headers as Record<string, string>;
       expect(secondHeaders.Authorization).toBe("Bearer oauth-token");
     });
 
@@ -378,7 +293,6 @@ describe("HTTPTransport", () => {
       vi.mocked(getStoredMcpOAuthToken).mockResolvedValueOnce("stale-token");
       vi.mocked(authenticateMcpOAuth).mockResolvedValueOnce("fresh-token");
 
-      vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
       transport = new HTTPTransport({
         name: "atlassian",
         url: "https://mcp.example.com/v1/mcp",
@@ -550,8 +464,6 @@ describe("HTTPTransport", () => {
 
   describe("disconnect", () => {
     it("should disconnect and call close callback", async () => {
-      vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
-
       const closeCallback = vi.fn();
       transport = new HTTPTransport({
         url: "https://api.example.com/mcp",
@@ -568,8 +480,6 @@ describe("HTTPTransport", () => {
 
   describe("callbacks", () => {
     beforeEach(async () => {
-      vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }));
-
       transport = new HTTPTransport({
         url: "https://api.example.com/mcp",
       });
