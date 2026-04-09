@@ -1,9 +1,13 @@
 /**
  * Google Cloud Application Default Credentials (ADC) Support
  *
- * Provides authentication via gcloud CLI for Gemini API
- * Users can run: gcloud auth application-default login
- * Then use Gemini without needing an explicit API key
+ * Coco can reuse ADC that already exists on the machine via:
+ *   gcloud auth application-default print-access-token
+ *
+ * For Gemini API, Google's current OAuth guide requires a manually-created
+ * OAuth client (`client_secret.json`) plus explicit scopes. Coco does not
+ * provision that flow automatically, so the CLI should only reuse existing
+ * ADC and otherwise point the user to manual setup.
  */
 
 import { exec } from "node:child_process";
@@ -21,6 +25,15 @@ export interface ADCToken {
   expiresAt?: number;
 }
 
+export type ADCStatus = "ok" | "missing" | "scope_not_consented" | "error";
+
+export interface ADCCheckResult {
+  status: ADCStatus;
+  token: ADCToken | null;
+  message?: string;
+  suggestion?: string;
+}
+
 /**
  * ADC credentials file structure
  */
@@ -30,6 +43,13 @@ interface ADCCredentials {
   refresh_token?: string;
   type?: string;
 }
+
+const PRINT_ACCESS_TOKEN_COMMAND = "gcloud auth application-default print-access-token";
+const ADC_LOGIN_COMMAND = "gcloud auth application-default login";
+const GEMINI_OAUTH_SCOPES = [
+  "https://www.googleapis.com/auth/cloud-platform",
+  "https://www.googleapis.com/auth/generative-language.retriever",
+].join(",");
 
 /**
  * Get the path to ADC credentials file
@@ -76,36 +96,77 @@ export async function hasADCCredentials(): Promise<boolean> {
  * Get access token from gcloud CLI
  * Uses: gcloud auth application-default print-access-token
  */
-export async function getADCAccessToken(): Promise<ADCToken | null> {
+export async function inspectADC(): Promise<ADCCheckResult> {
   try {
-    const { stdout } = await execAsync("gcloud auth application-default print-access-token", {
+    const { stdout } = await execAsync(PRINT_ACCESS_TOKEN_COMMAND, {
       timeout: 10000,
     });
 
     const accessToken = stdout.trim();
-    if (!accessToken) return null;
+    if (!accessToken) {
+      return {
+        status: "missing",
+        token: null,
+        message: "gcloud ADC is not configured.",
+        suggestion: `Run \`${ADC_LOGIN_COMMAND}\` manually, then retry Coco.`,
+      };
+    }
 
     // Access tokens typically expire in 1 hour
     const expiresAt = Date.now() + 55 * 60 * 1000; // 55 minutes buffer
 
     return {
-      accessToken,
-      expiresAt,
+      status: "ok",
+      token: {
+        accessToken,
+        expiresAt,
+      },
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
-    // Check for common errors
+    if (message.includes("scope is required but not consented")) {
+      return {
+        status: "scope_not_consented",
+        token: null,
+        message:
+          "gcloud ADC exists, but the required Google scope was not consented for this account.",
+        suggestion:
+          "For Vertex AI, rerun `gcloud auth application-default login` manually. " +
+          "For Gemini API OAuth, follow Google's OAuth guide with your own OAuth client and run " +
+          `\`gcloud auth application-default login --client-id-file=client_secret.json --scopes='${GEMINI_OAUTH_SCOPES}'\`. ` +
+          "Otherwise use a Gemini API key in Coco.",
+      };
+    }
+
     if (
       message.includes("not logged in") ||
       message.includes("no application default credentials")
     ) {
-      return null;
+      return {
+        status: "missing",
+        token: null,
+        message: "No application default credentials were found for gcloud.",
+        suggestion: `Run \`${ADC_LOGIN_COMMAND}\` manually, then retry Coco.`,
+      };
     }
 
-    // gcloud not found or other error
-    return null;
+    return {
+      status: "error",
+      token: null,
+      message,
+      suggestion: `Try \`${PRINT_ACCESS_TOKEN_COMMAND}\` in your terminal to inspect the local ADC state.`,
+    };
   }
+}
+
+/**
+ * Get access token from gcloud CLI
+ * Uses: gcloud auth application-default print-access-token
+ */
+export async function getADCAccessToken(): Promise<ADCToken | null> {
+  const result = await inspectADC();
+  return result.token;
 }
 
 /**
@@ -130,9 +191,8 @@ export async function isADCConfigured(): Promise<boolean> {
   const hasCredentials = await hasADCCredentials();
   if (!hasCredentials) return false;
 
-  // Try to get an access token
-  const token = await getADCAccessToken();
-  return token !== null;
+  const result = await inspectADC();
+  return result.status === "ok" && result.token !== null;
 }
 
 /**

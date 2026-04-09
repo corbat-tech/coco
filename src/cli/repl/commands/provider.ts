@@ -20,9 +20,8 @@ import { setupLMStudioProvider, setupOllamaProvider, saveConfiguration } from ".
 import {
   runOAuthFlow,
   supportsOAuth,
-  isADCConfigured,
   isGcloudInstalled,
-  getADCAccessToken,
+  inspectADC,
   isOAuthConfigured,
   getOrRefreshOAuthToken,
   deleteTokens,
@@ -41,6 +40,11 @@ interface ProviderOption {
   emoji: string;
   description: string;
   isConfigured: boolean;
+}
+
+interface VertexSettings {
+  project: string;
+  location: string;
 }
 
 /**
@@ -236,6 +240,7 @@ async function switchProvider(
   let internalProviderId = initialProvider.id; // What we use internally (e.g., "codex" for OAuth)
   let selectedAuthMethod: AuthMethod = "apikey"; // Default to API key
   let newApiKeyForSaving: string | null = null; // Track new API key entered, to persist it
+  let vertexSettings: VertexSettings | undefined;
 
   // Local providers use special setup flow (auto-detect models, no API key)
   if (newProvider.id === "lmstudio" || newProvider.id === "ollama") {
@@ -260,7 +265,8 @@ async function switchProvider(
   }
 
   // Cloud providers: Check current configuration status
-  const apiKey = process.env[newProvider.envVar];
+  const supportsApiKey = newProvider.id !== "vertex" && newProvider.requiresApiKey !== false;
+  const apiKey = supportsApiKey ? process.env[newProvider.envVar] : undefined;
   // Check OAuth support from both auth module (for OpenAI) and provider config (for Gemini)
   const hasOAuth = supportsOAuth(newProvider.id) || newProvider.supportsOAuth;
   const hasGcloudADC = newProvider.supportsGcloudADC;
@@ -329,18 +335,20 @@ async function switchProvider(
       });
     }
 
-    if (apiKey) {
-      authOptions.push({
-        value: "apikey",
-        label: "🔑 API key (configured ✓)",
-        hint: "Use your existing API key",
-      });
-    } else {
-      authOptions.push({
-        value: "apikey",
-        label: "🔑 Enter API key",
-        hint: `Get from ${newProvider.apiKeyUrl}`,
-      });
+    if (supportsApiKey) {
+      if (apiKey) {
+        authOptions.push({
+          value: "apikey",
+          label: "🔑 API key (configured ✓)",
+          hint: "Use your existing API key",
+        });
+      } else {
+        authOptions.push({
+          value: "apikey",
+          label: "🔑 Enter API key",
+          hint: `Get from ${newProvider.apiKeyUrl}`,
+        });
+      }
     }
 
     // Add option to remove credentials if any are configured
@@ -430,6 +438,11 @@ async function switchProvider(
         const adcResult = await setupGcloudADCForProvider(newProvider);
         if (!adcResult) return false;
         selectedAuthMethod = "gcloud";
+        if (newProvider.id === "vertex") {
+          const settings = await promptVertexSettings();
+          if (!settings) return false;
+          vertexSettings = settings;
+        }
       }
       // Handle API key flow
       else if (authChoice === "apikey") {
@@ -516,18 +529,29 @@ async function switchProvider(
       // Only one auth option (API key) and nothing configured - prompt directly
       console.log(chalk.yellow(`\n${newProvider.emoji} ${newProvider.name} is not configured.`));
 
-      const key = await p.password({
-        message: `Enter your ${newProvider.name} API key:`,
-        validate: (v) => (!v || v.length < 10 ? "API key too short" : undefined),
-      });
+      if (hasGcloudADC && !supportsApiKey) {
+        const adcResult = await setupGcloudADCForProvider(newProvider);
+        if (!adcResult) return false;
+        selectedAuthMethod = "gcloud";
+        if (newProvider.id === "vertex") {
+          const settings = await promptVertexSettings();
+          if (!settings) return false;
+          vertexSettings = settings;
+        }
+      } else {
+        const key = await p.password({
+          message: `Enter your ${newProvider.name} API key:`,
+          validate: (v) => (!v || v.length < 10 ? "API key too short" : undefined),
+        });
 
-      if (p.isCancel(key)) {
-        return false;
+        if (p.isCancel(key)) {
+          return false;
+        }
+
+        process.env[newProvider.envVar] = key;
+        selectedAuthMethod = "apikey";
+        newApiKeyForSaving = key;
       }
-
-      process.env[newProvider.envVar] = key;
-      selectedAuthMethod = "apikey";
-      newApiKeyForSaving = key;
     }
   }
 
@@ -543,6 +567,8 @@ async function switchProvider(
   try {
     const testProvider = await createProvider(internalProviderId as ProviderType, {
       model: newModel,
+      project: vertexSettings?.project,
+      location: vertexSettings?.location,
     });
     const available = await testProvider.isAvailable();
 
@@ -558,6 +584,13 @@ async function switchProvider(
     // Update session - use user-facing provider name, not internal ID
     session.config.provider.type = userFacingProviderId as ProviderType;
     session.config.provider.model = newModel;
+    if (userFacingProviderId === "vertex") {
+      session.config.provider.project = vertexSettings?.project;
+      session.config.provider.location = vertexSettings?.location;
+    } else {
+      delete session.config.provider.project;
+      delete session.config.provider.location;
+    }
 
     // Save preferences and persist API key if a new one was entered
     if (newApiKeyForSaving) {
@@ -569,7 +602,10 @@ async function switchProvider(
       });
     } else {
       // Using existing credentials (OAuth or pre-existing API key): just save provider/model
-      await saveProviderPreference(userFacingProviderId as ProviderType, newModel);
+      await saveProviderPreference(userFacingProviderId as ProviderType, newModel, {
+        project: vertexSettings?.project,
+        location: vertexSettings?.location,
+      });
     }
 
     console.log(chalk.green(`\n✓ Switched to ${newProvider.emoji} ${newProvider.name}`));
@@ -606,44 +642,55 @@ async function setupGcloudADCForProvider(_provider: ProviderDefinition): Promise
     return false;
   }
 
-  // Check if ADC is already configured
-  const adcConfigured = await isADCConfigured();
-  if (adcConfigured) {
-    const token = await getADCAccessToken();
-    if (token) {
-      console.log(chalk.green("   ✓ gcloud ADC is already configured!\n"));
-      return true;
-    }
+  const adc = await inspectADC();
+  if (adc.status === "ok" && adc.token) {
+    console.log(chalk.green("   ✓ gcloud ADC is already configured!\n"));
+    return true;
   }
 
-  // Need to run gcloud auth
-  console.log(chalk.dim("\n   To authenticate, run:"));
-  console.log(chalk.cyan("   $ gcloud auth application-default login\n"));
-
-  const runNow = await p.confirm({
-    message: "Run gcloud auth now?",
-    initialValue: true,
-  });
-
-  if (p.isCancel(runNow) || !runNow) {
-    return false;
+  console.log(chalk.yellow("\n   No reusable gcloud ADC session was found for Coco."));
+  if (adc.message) {
+    console.log(chalk.dim(`   ${adc.message}`));
   }
-
-  // Run gcloud auth
-  const { exec } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const execAsync = promisify(exec);
-
-  try {
-    await execAsync("gcloud auth application-default login", { timeout: 120000 });
-    const token = await getADCAccessToken();
-    if (token) {
-      console.log(chalk.green("\n   ✓ Authentication successful!\n"));
-      return true;
-    }
-  } catch (error) {
-    p.log.error(`Authentication failed: ${error instanceof Error ? error.message : String(error)}`);
+  console.log(chalk.dim("\n   Check the current ADC state with:"));
+  console.log(chalk.cyan("   $ gcloud auth application-default print-access-token"));
+  console.log(chalk.dim("\n   Authenticate manually in your terminal with:"));
+  console.log(chalk.cyan("   $ gcloud auth application-default login"));
+  if (adc.suggestion) {
+    console.log(chalk.dim(`\n   ${adc.suggestion}`));
   }
+  console.log();
 
   return false;
+}
+
+async function promptVertexSettings(): Promise<VertexSettings | null> {
+  const projectDefault =
+    process.env["VERTEX_PROJECT"] ??
+    process.env["GOOGLE_CLOUD_PROJECT"] ??
+    process.env["GCLOUD_PROJECT"] ??
+    "";
+  const locationDefault =
+    process.env["VERTEX_LOCATION"] ?? process.env["GOOGLE_CLOUD_LOCATION"] ?? "global";
+
+  const project = await p.text({
+    message: "Google Cloud project ID:",
+    placeholder: projectDefault || "my-gcp-project",
+    initialValue: projectDefault,
+    validate: (value) => (!value?.trim() ? "Project ID is required for Vertex AI" : undefined),
+  });
+  if (p.isCancel(project)) return null;
+
+  const location = await p.text({
+    message: "Vertex AI location:",
+    placeholder: locationDefault,
+    initialValue: locationDefault,
+    validate: (value) => (!value?.trim() ? "Location is required for Vertex AI" : undefined),
+  });
+  if (p.isCancel(location)) return null;
+
+  return {
+    project: project.trim(),
+    location: location.trim(),
+  };
 }

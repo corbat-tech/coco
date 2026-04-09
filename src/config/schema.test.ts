@@ -135,6 +135,7 @@ describe("ProviderConfigSchema", () => {
       "openai",
       "codex",
       "gemini",
+      "vertex",
       "kimi",
       "lmstudio",
       "ollama",
@@ -186,6 +187,18 @@ describe("ProviderConfigSchema", () => {
     const config = {
       type: "gemini",
       model: "gemini-2.0-flash",
+    };
+
+    const result = ProviderConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  it("should accept vertex provider with project metadata", () => {
+    const config = {
+      type: "vertex",
+      model: "gemini-2.5-pro",
+      project: "my-project",
+      location: "global",
     };
 
     const result = ProviderConfigSchema.safeParse(config);

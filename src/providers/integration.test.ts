@@ -40,13 +40,13 @@ vi.mock("openai", () => {
 });
 
 // Mock Gemini SDK
-vi.mock("@google/generative-ai", () => ({
-  GoogleGenerativeAI: vi.fn().mockImplementation(function () {
+vi.mock("@google/genai", () => ({
+  GoogleGenAI: vi.fn().mockImplementation(function () {
     return {
-      getGenerativeModel: vi.fn().mockReturnValue({
+      models: {
         generateContent: vi.fn(),
         generateContentStream: vi.fn(),
-      }),
+      },
     };
   }),
 }));

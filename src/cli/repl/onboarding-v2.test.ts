@@ -61,9 +61,8 @@ vi.mock("./providers-config.js", () => ({
 vi.mock("../../auth/index.js", () => ({
   runOAuthFlow: vi.fn(),
   supportsOAuth: vi.fn(),
-  isADCConfigured: vi.fn(),
   isGcloudInstalled: vi.fn(),
-  getADCAccessToken: vi.fn(),
+  inspectADC: vi.fn(),
   isOAuthConfigured: vi.fn(),
   getOrRefreshOAuthToken: vi.fn(),
 }));
@@ -103,8 +102,7 @@ import {
   supportsOAuth,
   runOAuthFlow,
   isGcloudInstalled,
-  isADCConfigured,
-  getADCAccessToken,
+  inspectADC,
   isOAuthConfigured,
   getOrRefreshOAuthToken,
 } from "../../auth/index.js";
@@ -131,8 +129,7 @@ const mockedIsOAuthConfigured = vi.mocked(isOAuthConfigured);
 const mockedGetOrRefreshOAuthToken = vi.mocked(getOrRefreshOAuthToken);
 const mockedCreateProvider = vi.mocked(createProvider);
 const _mockedIsGcloudInstalled = vi.mocked(isGcloudInstalled);
-const _mockedIsADCConfigured = vi.mocked(isADCConfigured);
-const _mockedGetADCAccessToken = vi.mocked(getADCAccessToken);
+const mockedInspectADC = vi.mocked(inspectADC);
 
 function makeProviderDef(overrides: Partial<ProviderDefinition> = {}): ProviderDefinition {
   return {
@@ -176,6 +173,11 @@ describe("onboarding-v2", () => {
     mockedIsProviderConfigured.mockReturnValue(false);
     mockedIsOAuthConfigured.mockResolvedValue(false);
     mockedGetOrRefreshOAuthToken.mockResolvedValue(null);
+    mockedInspectADC.mockResolvedValue({
+      status: "missing",
+      token: null,
+      message: "No ADC configured",
+    } as any);
   });
 
   afterEach(() => {
@@ -445,9 +447,31 @@ describe("onboarding-v2", () => {
         apiKey: "__gcloud_adc__",
       });
 
-      expect(saveProviderPreference).toHaveBeenCalledWith("gemini", "gemini-pro");
+      expect(saveProviderPreference).toHaveBeenCalledWith("gemini", "gemini-pro", {
+        project: undefined,
+        location: undefined,
+      });
       // writeFile should NOT be called for ADC (no env file writing)
       expect(fs.writeFile).not.toHaveBeenCalled();
+    });
+
+    it("should persist Vertex project and location for gcloud ADC configuration", async () => {
+      const provDef = makeProviderDef({ id: "vertex" as any, envVar: "VERTEX_PROJECT" });
+      mockedGetProviderDefinition.mockReturnValue(provDef);
+
+      await saveConfiguration({
+        type: "vertex" as any,
+        model: "gemini-2.5-pro",
+        apiKey: "__gcloud_adc__",
+        project: "my-gcp-project",
+        location: "europe-west1",
+      });
+
+      expect(saveProviderPreference).toHaveBeenCalledWith("vertex", "gemini-2.5-pro", {
+        project: "my-gcp-project",
+        location: "europe-west1",
+      });
+      expect(fs.writeFile).toHaveBeenCalled();
     });
 
     it("should save API key to global env file when user selects global", async () => {
@@ -465,7 +489,10 @@ describe("onboarding-v2", () => {
 
       expect(fs.mkdir).toHaveBeenCalled();
       expect(fs.writeFile).toHaveBeenCalled();
-      expect(saveProviderPreference).toHaveBeenCalledWith("anthropic", "claude-sonnet-4-20250514");
+      expect(saveProviderPreference).toHaveBeenCalledWith("anthropic", "claude-sonnet-4-20250514", {
+        project: undefined,
+        location: undefined,
+      });
     });
 
     it("should set env vars for session only when user selects session", async () => {

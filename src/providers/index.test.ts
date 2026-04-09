@@ -5,6 +5,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as ProviderExports from "./index.js";
 
+vi.mock("../auth/gcloud.js", () => ({
+  getCachedADCToken: vi.fn().mockResolvedValue({
+    accessToken: "adc-token",
+    expiresAt: Date.now() + 3600000,
+  }),
+}));
+
 // Mock Anthropic SDK
 vi.mock("@anthropic-ai/sdk", () => ({
   default: vi.fn().mockImplementation(function () {
@@ -48,30 +55,23 @@ vi.mock("openai", () => ({
   }),
 }));
 
-// Mock Google Generative AI SDK
-vi.mock("@google/generative-ai", () => ({
-  GoogleGenerativeAI: vi.fn().mockImplementation(function () {
+// Mock Google GenAI SDK
+vi.mock("@google/genai", () => ({
+  GoogleGenAI: vi.fn().mockImplementation(function () {
     return {
-      getGenerativeModel: vi.fn().mockReturnValue({
-        startChat: vi.fn().mockReturnValue({
-          sendMessage: vi.fn().mockResolvedValue({
-            response: {
-              text: () => "Mock response",
-              candidates: [{ finishReason: "STOP" }],
-              usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 },
-            },
-          }),
-        }),
+      models: {
         generateContent: vi.fn().mockResolvedValue({
-          response: { text: () => "Mock response" },
+          text: "Mock response",
+          candidates: [{ finishReason: "STOP" }],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 },
         }),
-      }),
+        generateContentStream: vi.fn(),
+      },
     };
   }),
-  FunctionCallingMode: {
+  FunctionCallingConfigMode: {
     AUTO: "AUTO",
     ANY: "ANY",
-    NONE: "NONE",
   },
 }));
 
@@ -121,6 +121,17 @@ describe("Providers module exports", () => {
     });
   });
 
+  describe("VertexProvider", () => {
+    it("should export VertexProvider class", () => {
+      expect(ProviderExports.VertexProvider).toBeDefined();
+    });
+
+    it("should be able to instantiate VertexProvider", () => {
+      const provider = new ProviderExports.VertexProvider();
+      expect(provider).toBeInstanceOf(ProviderExports.VertexProvider);
+    });
+  });
+
   describe("createAnthropicProvider", () => {
     it("should export createAnthropicProvider function", () => {
       expect(ProviderExports.createAnthropicProvider).toBeDefined();
@@ -166,6 +177,17 @@ describe("Providers module exports", () => {
 
       expect(provider).toBeDefined();
       expect(typeof provider.chat).toBe("function");
+    });
+
+    it("should create vertex provider", async () => {
+      const provider = await ProviderExports.createProvider("vertex", {
+        project: "test-project",
+        location: "global",
+      });
+
+      expect(provider).toBeDefined();
+      expect(typeof provider.chat).toBe("function");
+      expect(provider.id).toBe("vertex");
     });
 
     it("should create kimi provider", async () => {
@@ -245,13 +267,14 @@ describe("Providers module exports", () => {
 
     it("should return list of providers", () => {
       const providers = ProviderExports.listProviders();
-      expect(providers).toHaveLength(16);
+      expect(providers).toHaveLength(17);
       expect(providers.map((p) => p.id)).toEqual([
         "anthropic",
         "openai",
         "codex",
         "copilot",
         "gemini",
+        "vertex",
         "kimi",
         "kimi-code",
         "groq",
@@ -275,11 +298,12 @@ describe("Providers module exports", () => {
         "openai",
         "codex",
         "gemini",
+        "vertex",
         "kimi",
         "lmstudio",
         "ollama",
       ];
-      expect(validTypes).toHaveLength(7);
+      expect(validTypes).toHaveLength(8);
     });
   });
 });

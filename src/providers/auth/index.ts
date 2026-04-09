@@ -62,7 +62,8 @@ export const OAUTH_CONFIGS = {
   },
 
   /**
-   * Google OAuth config (for Gemini)
+   * Google OAuth config placeholder
+   * Public third-party Gemini OAuth is not currently supported.
    */
   google: {
     authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -91,7 +92,9 @@ export function getAuthMethods(provider: string): AuthMethod[] {
     case "anthropic":
       return ["api_key"]; // OAuth not yet fully supported
     case "gemini":
-      return ["api_key", "gcloud"];
+      return ["api_key"];
+    case "vertex":
+      return ["gcloud"];
     case "kimi":
     case "kimi-code":
       return ["api_key"];

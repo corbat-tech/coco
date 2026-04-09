@@ -103,6 +103,14 @@ describe("getApiKey", () => {
 
     expect(key).toBeUndefined();
   });
+
+  it("should return undefined for vertex provider", () => {
+    process.env.VERTEX_PROJECT = "test-project";
+
+    const key = getApiKey("vertex");
+
+    expect(key).toBeUndefined();
+  });
 });
 
 describe("getBaseUrl", () => {
@@ -152,6 +160,12 @@ describe("getBaseUrl", () => {
     const url = getBaseUrl("gemini");
 
     expect(url).toBeUndefined();
+  });
+
+  it("should return Vertex AI base URL for vertex provider", () => {
+    const url = getBaseUrl("vertex");
+
+    expect(url).toBe("https://aiplatform.googleapis.com/v1");
   });
 
   it("should return DASHSCOPE_BASE_URL for qwen provider", () => {
@@ -236,6 +250,14 @@ describe("getDefaultModel", () => {
     const model = getDefaultModel("gemini");
 
     expect(model).toBe("gemini-3.1-pro-preview");
+  });
+
+  it("should return default vertex model", () => {
+    delete process.env.VERTEX_MODEL;
+
+    const model = getDefaultModel("vertex");
+
+    expect(model).toBe("gemini-2.5-pro");
   });
 
   it("should return custom KIMI_MODEL if set", () => {

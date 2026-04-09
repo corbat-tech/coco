@@ -86,10 +86,13 @@ export {
   isGcloudInstalled,
   hasADCCredentials,
   isADCConfigured,
+  inspectADC,
   getADCAccessToken,
   getGeminiADCKey,
   getCachedADCToken,
   clearADCCache,
   runGcloudADCLogin,
+  type ADCCheckResult,
+  type ADCStatus,
   type ADCToken,
 } from "./gcloud.js";

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.26.0] - 2026-04-09
+
+### Added
+- **Dedicated Google Vertex AI provider** — Coco now exposes Vertex AI as a first-class provider separate from Gemini Developer API, with support for project/location configuration, ADC-based auth, provider persistence, onboarding, and `/provider` switching.
+
+### Changed
+- **Gemini provider migrated to the official Google GenAI SDK** — replaced the deprecated `@google/generative-ai` integration with `@google/genai` for the Gemini Developer API, aligning Coco with Google’s current production SDK guidance.
+- **Google auth model clarified across the CLI** — Gemini is now treated as Developer API with API-key auth, while Vertex AI is handled as a separate Google Cloud provider with its own configuration and auth flow.
+- **Gemini image analysis path updated** — internal Gemini-backed image reading now uses the official Google GenAI SDK as well, keeping Google integrations consistent across the repo.
+
+### Fixed
+- **Vertex AI function-calling payload compatibility** — tool results are now returned using `functionResponse` under valid Vertex/Gemini content roles, matching the official API contract and avoiding malformed follow-up turns.
+- **Vertex AI regional endpoint routing** — requests now use regional `LOCATION-aiplatform.googleapis.com` hosts when a regional location is configured, while preserving the global endpoint for `global`.
+- **Google provider regression coverage** — added focused tests covering Vertex payload shape, endpoint selection, Gemini SDK behavior, provider registration, config persistence, and auth method selection.
+
 ## [2.25.15] - 2026-04-09
 
 ### Fixed

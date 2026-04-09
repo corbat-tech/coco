@@ -89,6 +89,7 @@
  * - Anthropic: claude-opus-4-6 (latest), claude-sonnet-4-6, claude-haiku-4-5
  * - OpenAI: gpt-5.4-codex (latest), gpt-5.3-codex, gpt-5.2-codex, gpt-5.1-codex-max, gpt-4.1
  * - Gemini: gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-2.5-pro, gemini-2.5-flash
+ * - Vertex AI: gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash-001
  * - Copilot: claude-sonnet-4.6, claude-opus-4.6, gpt-5.4-codex, gpt-4.1, gemini-3.1-pro-preview
  * - Kimi: kimi-k2.5, kimi-k2-thinking
  * - Qwen: qwen-coder-plus (recommended), qwen-max, qwen-plus, qwen-turbo, qwq-plus
@@ -145,7 +146,7 @@ export interface ProviderDefinition {
   requiresApiKey?: boolean;
   /** Whether provider supports gcloud ADC authentication */
   supportsGcloudADC?: boolean;
-  /** Whether provider supports OAuth authentication (e.g., Google account login for Gemini) */
+  /** Whether provider supports OAuth authentication */
   supportsOAuth?: boolean;
   /** Internal provider - not shown in user selection (e.g., "codex" is internal, "openai" is user-facing) */
   internal?: boolean;
@@ -518,15 +519,13 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     id: "gemini",
     name: "Google Gemini",
     emoji: "🔵",
-    description: "Gemini 3 and 2.5 models",
+    description: "Gemini Developer API via AI Studio API key",
     envVar: "GEMINI_API_KEY",
     apiKeyUrl: "https://aistudio.google.com/apikey",
     docsUrl: "https://ai.google.dev/gemini-api/docs",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     supportsCustomModels: true,
     openaiCompatible: false,
-    supportsGcloudADC: true, // Supports gcloud auth application-default login
-    // NOTE: OAuth removed - Google's client ID is restricted to official apps only
     paymentType: "freemium",
     features: {
       streaming: true,
@@ -578,6 +577,64 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         description: "Cheapest stable option (GA)",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
+      },
+    ],
+  },
+
+  vertex: {
+    id: "vertex",
+    name: "Google Vertex AI Gemini",
+    emoji: "☁️",
+    description: "Gemini on Vertex AI with GCP project, IAM and ADC",
+    envVar: "VERTEX_PROJECT",
+    apiKeyUrl: "https://console.cloud.google.com/vertex-ai",
+    docsUrl: "https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstart",
+    baseUrl: "https://aiplatform.googleapis.com/v1",
+    supportsCustomModels: true,
+    openaiCompatible: false,
+    supportsGcloudADC: true,
+    paymentType: "api",
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: true,
+    },
+    models: [
+      {
+        id: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
+        description: "Recommended Vertex model for coding and complex reasoning",
+        contextWindow: 1048576,
+        maxOutputTokens: 65536,
+        recommended: true,
+      },
+      {
+        id: "gemini-2.5-flash",
+        name: "Gemini 2.5 Flash",
+        description: "Faster Vertex model with 1M context",
+        contextWindow: 1048576,
+        maxOutputTokens: 65536,
+      },
+      {
+        id: "gemini-2.5-flash-lite",
+        name: "Gemini 2.5 Flash-Lite",
+        description: "Lowest-cost Vertex option",
+        contextWindow: 1048576,
+        maxOutputTokens: 65536,
+      },
+      {
+        id: "gemini-2.0-flash-001",
+        name: "Gemini 2.0 Flash 001",
+        description: "Broadly available Vertex model",
+        contextWindow: 1048576,
+        maxOutputTokens: 8192,
+      },
+      {
+        id: "gemini-2.0-flash-lite-001",
+        name: "Gemini 2.0 Flash-Lite 001",
+        description: "Lightweight Vertex fallback",
+        contextWindow: 1048576,
+        maxOutputTokens: 8192,
       },
     ],
   },
@@ -1258,6 +1315,13 @@ export function getConfiguredProviders(): ProviderDefinition[] {
     if (p.id === "lmstudio" || p.id === "ollama") {
       return hasLocalProviderConfig(p.id);
     }
+    if (p.id === "vertex") {
+      return !!(
+        process.env["VERTEX_PROJECT"] ??
+        process.env["GOOGLE_CLOUD_PROJECT"] ??
+        process.env["GCLOUD_PROJECT"]
+      );
+    }
     return !!process.env[p.envVar];
   });
 }
@@ -1278,6 +1342,13 @@ export function isProviderConfigured(type: ProviderType): boolean {
   }
   if (type === "lmstudio" || type === "ollama") {
     return hasLocalProviderConfig(type);
+  }
+  if (type === "vertex") {
+    return !!(
+      process.env["VERTEX_PROJECT"] ??
+      process.env["GOOGLE_CLOUD_PROJECT"] ??
+      process.env["GCLOUD_PROJECT"]
+    );
   }
   return !!process.env[PROVIDER_DEFINITIONS[type].envVar];
 }

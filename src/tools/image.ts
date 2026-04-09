@@ -207,7 +207,7 @@ Examples:
       } else if (selectedProvider === "gemini") {
         model = "gemini-2.0-flash";
 
-        const { GoogleGenerativeAI } = await import("@google/generative-ai");
+        const { GoogleGenAI } = await import("@google/genai");
         const apiKey = process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
         if (!apiKey) {
           throw new ToolError(
@@ -216,20 +216,26 @@ Examples:
           );
         }
 
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const genModel = genAI.getGenerativeModel({ model });
-
-        const result = await genModel.generateContent([
-          effectivePrompt,
-          {
-            inlineData: {
-              data: base64,
-              mimeType,
+        const genAI = new GoogleGenAI({ apiKey });
+        const result = await genAI.models.generateContent({
+          model,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: effectivePrompt },
+                {
+                  inlineData: {
+                    data: base64,
+                    mimeType,
+                  },
+                },
+              ],
             },
-          },
-        ]);
+          ],
+        });
 
-        description = result.response.text() ?? "No description generated";
+        description = result.text ?? "No description generated";
       } else {
         throw new ToolError(`Unsupported provider: ${selectedProvider}`, {
           tool: "read_image",
@@ -246,7 +252,7 @@ Examples:
         const pkgMap: Record<string, string> = {
           anthropic: "@anthropic-ai/sdk",
           openai: "openai",
-          gemini: "@google/generative-ai",
+          gemini: "@google/genai",
         };
         const pkg = pkgMap[selectedProvider] ?? selectedProvider;
         throw new ToolError(`Provider SDK not installed. Run: pnpm add ${pkg}`, {

@@ -60,6 +60,7 @@ export type ProviderType =
   | "codex"
   | "copilot"
   | "gemini"
+  | "vertex"
   | "kimi"
   | "kimi-code"
   | "lmstudio"
@@ -78,6 +79,7 @@ const VALID_PROVIDERS: ProviderType[] = [
   "codex",
   "copilot",
   "gemini",
+  "vertex",
   "kimi",
   "kimi-code",
   "lmstudio",
@@ -168,6 +170,8 @@ export function getApiKey(provider: ProviderType): string | undefined {
       return process.env["OPENAI_API_KEY"];
     case "gemini":
       return process.env["GEMINI_API_KEY"] ?? process.env["GOOGLE_API_KEY"];
+    case "vertex":
+      return undefined;
     case "kimi":
       return process.env["KIMI_API_KEY"] ?? process.env["MOONSHOT_API_KEY"];
     case "kimi-code":
@@ -225,6 +229,8 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
       return "https://chatgpt.com/backend-api/codex/responses";
     case "copilot":
       return process.env["COPILOT_BASE_URL"] ?? "https://api.githubcopilot.com";
+    case "vertex":
+      return process.env["VERTEX_BASE_URL"] ?? "https://aiplatform.googleapis.com/v1";
     case "groq":
       return process.env["GROQ_BASE_URL"] ?? "https://api.groq.com/openai/v1";
     case "openrouter":
@@ -261,6 +267,8 @@ export function getDefaultModel(provider: ProviderType): string {
       return process.env["OPENAI_MODEL"] ?? "gpt-5.4-codex";
     case "gemini":
       return process.env["GEMINI_MODEL"] ?? "gemini-3.1-pro-preview";
+    case "vertex":
+      return process.env["VERTEX_MODEL"] ?? "gemini-2.5-pro";
     case "kimi":
       return process.env["KIMI_MODEL"] ?? "kimi-k2.5";
     case "kimi-code":
@@ -364,6 +372,7 @@ export async function getLastUsedModel(provider: ProviderType): Promise<string |
 export async function saveProviderPreference(
   provider: ProviderType,
   model?: string,
+  options?: { project?: string; location?: string },
 ): Promise<void> {
   // Load current global config
   let config: CocoConfig;
@@ -410,6 +419,18 @@ export async function saveProviderPreference(
     config.provider.model = normalizedModel;
   } else {
     config.provider.model = getDefaultModel(provider);
+  }
+
+  if (options?.project !== undefined) {
+    config.provider.project = options.project;
+  } else if (provider !== "vertex") {
+    delete config.provider.project;
+  }
+
+  if (options?.location !== undefined) {
+    config.provider.location = options.location;
+  } else if (provider !== "vertex") {
+    delete config.provider.location;
   }
 
   // Save to global config

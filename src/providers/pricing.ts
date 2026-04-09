@@ -78,6 +78,7 @@ export const DEFAULT_PRICING: Record<ProviderType, ModelPricing> = {
   openai: { inputPerMillion: 2.5, outputPerMillion: 10, contextWindow: 128000 },
   codex: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 128000 }, // ChatGPT Plus/Pro subscription
   gemini: { inputPerMillion: 0.1, outputPerMillion: 0.4, contextWindow: 1000000 },
+  vertex: { inputPerMillion: 0.1, outputPerMillion: 0.4, contextWindow: 1048576 },
   kimi: { inputPerMillion: 1.2, outputPerMillion: 1.2, contextWindow: 8192 },
   "kimi-code": { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 131072 }, // Included in subscription
   copilot: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 200000 }, // Included in subscription

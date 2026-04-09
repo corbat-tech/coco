@@ -37,6 +37,7 @@ export { CopilotProvider, createCopilotProvider } from "./copilot.js";
 
 // Gemini provider
 export { GeminiProvider, createGeminiProvider } from "./gemini.js";
+export { VertexProvider, createVertexProvider } from "./vertex.js";
 
 // Retry utilities
 export {
@@ -90,6 +91,7 @@ import type { LLMProvider, ProviderConfig } from "./types.js";
 import { AnthropicProvider, createKimiCodeProvider } from "./anthropic.js";
 import { OpenAIProvider, createKimiProvider } from "./openai.js";
 import { GeminiProvider } from "./gemini.js";
+import { VertexProvider } from "./vertex.js";
 import { CodexProvider } from "./codex.js";
 import { CopilotProvider } from "./copilot.js";
 import { ProviderError } from "../utils/errors.js";
@@ -102,6 +104,12 @@ function normalizeProviderModel(model: string | undefined): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function normalizeOptional(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /**
  * Supported provider types
  */
@@ -111,6 +119,7 @@ export type ProviderType =
   | "codex"
   | "copilot"
   | "gemini"
+  | "vertex"
   | "kimi"
   | "kimi-code"
   | "lmstudio"
@@ -140,6 +149,20 @@ export async function createProvider(
     maxTokens: config.maxTokens,
     temperature: config.temperature,
     timeout: config.timeout,
+    project:
+      normalizeOptional(config.project) ??
+      (type === "vertex"
+        ? normalizeOptional(
+            process.env["VERTEX_PROJECT"] ??
+              process.env["GOOGLE_CLOUD_PROJECT"] ??
+              process.env["GCLOUD_PROJECT"],
+          )
+        : undefined),
+    location:
+      normalizeOptional(config.location) ??
+      (type === "vertex"
+        ? normalizeOptional(process.env["VERTEX_LOCATION"] ?? process.env["GOOGLE_CLOUD_LOCATION"])
+        : undefined),
   };
 
   switch (type) {
@@ -162,6 +185,10 @@ export async function createProvider(
 
     case "gemini":
       provider = new GeminiProvider();
+      break;
+
+    case "vertex":
+      provider = new VertexProvider();
       break;
 
     case "kimi":
@@ -277,6 +304,15 @@ export function listProviders(): Array<{
       })(),
     },
     { id: "gemini", name: "Google Gemini", configured: !!getApiKey("gemini") },
+    {
+      id: "vertex",
+      name: "Google Vertex AI",
+      configured: !!(
+        process.env["VERTEX_PROJECT"] ??
+        process.env["GOOGLE_CLOUD_PROJECT"] ??
+        process.env["GCLOUD_PROJECT"]
+      ),
+    },
     { id: "kimi", name: "Kimi (Moonshot API)", configured: !!getApiKey("kimi") },
     { id: "kimi-code", name: "Kimi Code (Subscription)", configured: !!getApiKey("kimi-code") },
     { id: "groq", name: "Groq", configured: !!getApiKey("groq") },

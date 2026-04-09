@@ -15,6 +15,7 @@ export const ProviderConfigSchema = z.object({
       "codex",
       "copilot",
       "gemini",
+      "vertex",
       "kimi",
       "kimi-code",
       "lmstudio",
@@ -33,6 +34,8 @@ export const ProviderConfigSchema = z.object({
   maxTokens: z.number().min(1).max(200000).default(8192),
   temperature: z.number().min(0).max(2).default(0),
   timeout: z.number().min(1000).default(120000),
+  project: z.string().optional(),
+  location: z.string().optional(),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;

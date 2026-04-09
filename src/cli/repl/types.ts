@@ -47,6 +47,8 @@ export interface ReplConfig {
     type: ProviderType;
     model: string;
     maxTokens: number;
+    project?: string;
+    location?: string;
   };
   ui: {
     theme: "dark" | "light" | "auto";

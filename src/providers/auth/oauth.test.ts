@@ -1368,10 +1368,14 @@ describe("auth/index", () => {
       expect(methods).toEqual(["api_key"]);
     });
 
-    it("should return api_key and gcloud for gemini", () => {
+    it("should return api_key for gemini", () => {
       const methods = getAuthMethods("gemini");
-      expect(methods).toContain("api_key");
-      expect(methods).toContain("gcloud");
+      expect(methods).toEqual(["api_key"]);
+    });
+
+    it("should return gcloud for vertex", () => {
+      const methods = getAuthMethods("vertex");
+      expect(methods).toEqual(["gcloud"]);
     });
 
     it("should return api_key for kimi", () => {
