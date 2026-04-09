@@ -608,7 +608,7 @@ async function switchProvider(
   // Get recommended model for new provider
   const rememberedModel = await getLastUsedModel(newProvider.id as ProviderType);
   const recommendedModel = getRecommendedModel(newProvider.id as ProviderType);
-  const newModel = rememberedModel || recommendedModel?.id || newProvider.models[0]?.id || "";
+  let newModel = rememberedModel || recommendedModel?.id || newProvider.models[0]?.id || "";
   const resolvedVertexProject =
     newProvider.id === "vertex"
       ? (
@@ -641,7 +641,32 @@ async function switchProvider(
       project: resolvedVertexProject,
       location: resolvedVertexLocation,
     });
-    const available = await testProvider.isAvailable();
+    let available = await testProvider.isAvailable();
+
+    if (!available && newProvider.id === "vertex") {
+      const fallbackModels = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash-001"].filter(
+        (modelId) => modelId !== newModel,
+      );
+
+      for (const fallbackModel of fallbackModels) {
+        const fallbackProvider = await createProvider(internalProviderId as ProviderType, {
+          model: fallbackModel,
+          project: resolvedVertexProject,
+          location: resolvedVertexLocation,
+        });
+        const fallbackAvailable = await fallbackProvider.isAvailable();
+        if (fallbackAvailable) {
+          newModel = fallbackModel;
+          available = true;
+          console.log(
+            chalk.yellow(
+              `\n⚠️  The selected Vertex model was not available. Using fallback model: ${fallbackModel}`,
+            ),
+          );
+          break;
+        }
+      }
+    }
 
     if (!available) {
       spinner.stop(chalk.red("Connection failed"));
