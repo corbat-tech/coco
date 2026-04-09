@@ -279,40 +279,128 @@ describe("web-search", () => {
       ).rejects.toThrow("empty after sanitization");
     });
 
-    it("should require API key for Brave engine", async () => {
+    it("should fallback to duckduckgo when Brave key is missing", async () => {
       const { webSearchTool } = await import("./web-search.js");
 
-      // Remove env var
       const original = process.env.BRAVE_SEARCH_API_KEY;
       delete process.env.BRAVE_SEARCH_API_KEY;
 
-      await expect(
-        webSearchTool.execute({
-          query: "test",
-          maxResults: 5,
-          engine: "brave",
-        }),
-      ).rejects.toThrow("BRAVE_SEARCH_API_KEY");
+      const mockHtml = `
+        <a rel="nofollow" href="https://example.com/result">Test Result</a>
+        <td class="result-snippet">A test snippet.</td>
+      `;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(mockHtml),
+      });
 
-      // Restore
+      const result = await webSearchTool.execute({
+        query: "test",
+        maxResults: 5,
+        engine: "brave",
+      });
+
+      expect(result.engine).toBe("duckduckgo");
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("lite.duckduckgo.com/lite/?q="),
+        expect.any(Object),
+      );
+
       if (original) process.env.BRAVE_SEARCH_API_KEY = original;
     });
 
-    it("should require API key for SerpAPI engine", async () => {
+    it("should fallback to duckduckgo when SerpAPI key is missing", async () => {
       const { webSearchTool } = await import("./web-search.js");
 
       const original = process.env.SERPAPI_KEY;
       delete process.env.SERPAPI_KEY;
 
-      await expect(
-        webSearchTool.execute({
-          query: "test",
-          maxResults: 5,
-          engine: "serpapi",
-        }),
-      ).rejects.toThrow("SERPAPI_KEY");
+      const mockHtml = `
+        <a rel="nofollow" href="https://example.com/result">Test Result</a>
+        <td class="result-snippet">A test snippet.</td>
+      `;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(mockHtml),
+      });
+
+      const result = await webSearchTool.execute({
+        query: "test",
+        maxResults: 5,
+        engine: "serpapi",
+      });
+
+      expect(result.engine).toBe("duckduckgo");
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("lite.duckduckgo.com/lite/?q="),
+        expect.any(Object),
+      );
 
       if (original) process.env.SERPAPI_KEY = original;
+    });
+
+    it("should use Brave engine when BRAVE_SEARCH_API_KEY is set", async () => {
+      const { webSearchTool } = await import("./web-search.js");
+
+      const original = process.env.BRAVE_SEARCH_API_KEY;
+      process.env.BRAVE_SEARCH_API_KEY = "test-brave-key";
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            web: {
+              results: [{ title: "Brave Result", url: "https://example.com", description: "ok" }],
+            },
+          }),
+      });
+
+      const result = await webSearchTool.execute({
+        query: "test brave",
+        maxResults: 5,
+        engine: "brave",
+      });
+
+      expect(result.engine).toBe("brave");
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("api.search.brave.com/res/v1/web/search"),
+        expect.any(Object),
+      );
+
+      if (original) process.env.BRAVE_SEARCH_API_KEY = original;
+      else delete process.env.BRAVE_SEARCH_API_KEY;
+    });
+
+    it("should use SerpAPI engine when SERPAPI_KEY is set", async () => {
+      const { webSearchTool } = await import("./web-search.js");
+
+      const original = process.env.SERPAPI_KEY;
+      process.env.SERPAPI_KEY = "test-serpapi-key";
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            organic_results: [
+              { title: "SerpAPI Result", link: "https://example.com", snippet: "ok" },
+            ],
+          }),
+      });
+
+      const result = await webSearchTool.execute({
+        query: "test serpapi",
+        maxResults: 5,
+        engine: "serpapi",
+      });
+
+      expect(result.engine).toBe("serpapi");
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("serpapi.com/search.json"),
+        expect.any(Object),
+      );
+
+      if (original) process.env.SERPAPI_KEY = original;
+      else delete process.env.SERPAPI_KEY;
     });
   });
 });
