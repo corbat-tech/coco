@@ -193,6 +193,47 @@ describe("executeAgentTurn", () => {
     expect(addMessage).toHaveBeenCalledTimes(2); // user message + assistant response
   });
 
+  it("deduplicates repeated identical tool calls in the same streamed turn", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    let providerCalls = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      providerCalls++;
+      if (providerCalls === 1) {
+        return toAsyncIterable(
+          (function* (): Generator<StreamChunk> {
+            const repeated: ToolCall = {
+              id: "call-1",
+              name: "get_env",
+              input: { name: "HOME" },
+            };
+            yield { type: "tool_use_start", toolCall: { id: repeated.id, name: repeated.name } };
+            yield { type: "tool_use_end", toolCall: repeated };
+            // Duplicate tool emission from provider stream (same tool call again)
+            yield { type: "tool_use_start", toolCall: { id: repeated.id, name: repeated.name } };
+            yield { type: "tool_use_end", toolCall: repeated };
+            yield { type: "done", stopReason: "tool_use" };
+          })(),
+        );
+      }
+      return createTextStreamMock("Hecho", "end_turn")();
+    });
+
+    (mockToolRegistry.execute as Mock).mockResolvedValue({
+      success: true,
+      data: "/Users/test",
+      duration: 1,
+    });
+
+    const result = await executeAgentTurn(mockSession, "hola", mockProvider, mockToolRegistry, {
+      skipConfirmation: true,
+    });
+
+    expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0]?.name).toBe("get_env");
+  });
+
   it("blocks bash_exec with `coco mcp` when user asked to use MCP", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 

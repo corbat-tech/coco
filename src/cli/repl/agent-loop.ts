@@ -556,10 +556,29 @@ export async function executeAgentTurn(
 
     noToolRecoveryAttempts = 0;
 
+    // Defensive de-duplication: some providers can emit repeated tool calls
+    // within the same streamed turn. Keep first occurrence order.
+    const dedupedToolCalls: ToolCall[] = [];
+    const seenToolCallFingerprints = new Set<string>();
+    for (const toolCall of collectedToolCalls) {
+      let inputSerialized = "{}";
+      try {
+        inputSerialized = JSON.stringify(toolCall.input ?? {});
+      } catch {
+        inputSerialized = "{}";
+      }
+      const fingerprint = `${toolCall.name}:${inputSerialized}`;
+      if (seenToolCallFingerprints.has(fingerprint)) {
+        continue;
+      }
+      seenToolCallFingerprints.add(fingerprint);
+      dedupedToolCalls.push(toolCall);
+    }
+
     // Use collected tool calls for execution
     const response = {
       content: responseContent,
-      toolCalls: collectedToolCalls,
+      toolCalls: dedupedToolCalls,
     };
 
     // Execute tool calls with parallel execution support

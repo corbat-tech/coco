@@ -30,6 +30,7 @@ import {
   isGcloudInstalled,
   inspectADC,
   runGcloudADCLogin,
+  runGcloudADCRevoke,
   isOAuthConfigured,
   getOrRefreshOAuthToken,
 } from "../../auth/index.js";
@@ -433,6 +434,43 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
   if (adc.status === "ok" && adc.token) {
     console.log(chalk.green("   ✓ gcloud ADC is already configured!"));
     console.log();
+    const adcChoice = await p.select({
+      message: "ADC session detected. What do you want to do?",
+      options: [
+        { value: "use", label: "Use current ADC session" },
+        { value: "switch", label: "Switch Google account (revoke and re-login)" },
+        { value: "cancel", label: "Cancel" },
+      ],
+    });
+    if (p.isCancel(adcChoice) || adcChoice === "cancel") return null;
+    if (adcChoice === "switch") {
+      const revokeSpinner = p.spinner();
+      revokeSpinner.start("Revoking current gcloud ADC session...");
+      const revoked = await runGcloudADCRevoke();
+      revokeSpinner.stop(
+        revoked ? "Current ADC session revoked" : "Could not revoke current ADC session",
+      );
+      if (!revoked) {
+        p.log.error("Could not revoke gcloud ADC from Coco.");
+        console.log(chalk.dim("   Try manually: gcloud auth application-default revoke"));
+        console.log();
+        return null;
+      }
+      const loginSpinner = p.spinner();
+      loginSpinner.start("Running `gcloud auth application-default login`...");
+      const loginOk = await runGcloudADCLogin();
+      loginSpinner.stop(loginOk ? "gcloud login flow completed" : "gcloud login flow failed");
+      if (!loginOk) return null;
+      const recheckSpinner = p.spinner();
+      recheckSpinner.start("Verifying ADC credentials after re-login...");
+      adc = await inspectADC();
+      recheckSpinner.stop(
+        adc.status === "ok" && adc.token
+          ? "ADC credentials verified"
+          : "ADC verification failed after re-login",
+      );
+      if (!(adc.status === "ok" && adc.token)) return null;
+    }
     p.log.success("Authentication verified");
 
     const vertexSettings = provider.id === "vertex" ? await promptVertexSettings() : undefined;
@@ -556,6 +594,20 @@ async function promptVertexSettings(): Promise<{ project: string; location: stri
     "";
   const locationDefault =
     process.env["VERTEX_LOCATION"] ?? process.env["GOOGLE_CLOUD_LOCATION"] ?? "global";
+
+  console.log(chalk.dim("\n   Need help finding these values?"));
+  console.log(chalk.cyan("   $ gcloud projects list"));
+  console.log(chalk.cyan("   $ gcloud config set project <PROJECT_ID>"));
+  console.log(chalk.cyan("   $ gcloud config get-value project"));
+  console.log(chalk.cyan("   $ gcloud config get-value compute/region"));
+  console.log(
+    chalk.cyan("   $ gcloud config set compute/region <LOCATION>    # e.g. global, europe-west1"),
+  );
+  console.log(
+    chalk.dim(
+      "   (If compute/region is unset, set it as above, then use that value for Vertex location)\n",
+    ),
+  );
 
   const project = await p.text({
     message: "Google Cloud project ID:",

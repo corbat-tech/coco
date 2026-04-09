@@ -45,6 +45,31 @@ export class MCPServerManager {
   private static readonly STOP_TIMEOUT_MS = 5000;
 
   /**
+   * Run an async operation with a timeout, always clearing timer resources.
+   */
+  private async runWithTimeout<T>(
+    operation: Promise<T>,
+    timeoutMs: number,
+    timeoutMessage: string,
+  ): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+      if (typeof timeoutId.unref === "function") {
+        timeoutId.unref();
+      }
+    });
+
+    try {
+      return await Promise.race([operation, timeoutPromise]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  /**
    * Create transport for a server config
    */
   private createTransport(config: MCPServerConfig): MCPTransport {
@@ -145,15 +170,11 @@ export class MCPServerManager {
     this.logger.info(`Stopping MCP server: ${name}`);
 
     try {
-      await Promise.race([
+      await this.runWithTimeout(
         connection.transport.disconnect(),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("MCP disconnect timeout")),
-            MCPServerManager.STOP_TIMEOUT_MS,
-          ),
-        ),
-      ]);
+        MCPServerManager.STOP_TIMEOUT_MS,
+        "MCP disconnect timeout",
+      );
     } catch (error) {
       this.logger.error(
         `Error disconnecting server '${name}': ${error instanceof Error ? error.message : String(error)}`,
@@ -199,12 +220,11 @@ export class MCPServerManager {
     const startTime = performance.now();
 
     try {
-      const { tools } = await Promise.race([
+      const { tools } = await this.runWithTimeout(
         connection.client.listTools(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Health check timeout")), 5000),
-        ),
-      ]);
+        5000,
+        "Health check timeout",
+      );
 
       const latencyMs = performance.now() - startTime;
       connection.healthy = true;
