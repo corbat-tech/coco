@@ -201,13 +201,21 @@ export async function isADCConfigured(): Promise<boolean> {
  */
 export async function runGcloudADCLogin(): Promise<boolean> {
   try {
-    // This command opens a browser window
-    await execAsync("gcloud auth application-default login --no-launch-browser", {
-      timeout: 120000, // 2 minute timeout for manual login
+    // Prefer browser-based flow first for smoother UX.
+    await execAsync(ADC_LOGIN_COMMAND, {
+      timeout: 300000, // 5 minutes for interactive auth
     });
     return true;
   } catch {
-    return false;
+    try {
+      // Fallback for headless environments where browser launch is unavailable.
+      await execAsync(`${ADC_LOGIN_COMMAND} --no-launch-browser`, {
+        timeout: 300000,
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 

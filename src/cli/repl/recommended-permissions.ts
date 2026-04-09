@@ -450,6 +450,8 @@ export interface PermissionPreferences {
   recommendedAllowlistDismissed?: boolean;
   recommendedAllowlistPrompted?: boolean;
   recommendedAllowlistPromptedProjects?: Record<string, boolean>;
+  recommendedAllowlistAppliedProjects?: Record<string, boolean>;
+  recommendedAllowlistDismissedProjects?: Record<string, boolean>;
 }
 
 function getProjectPreferenceKey(projectPath: string): string {
@@ -468,6 +470,12 @@ export async function loadPermissionPreferences(): Promise<PermissionPreferences
       recommendedAllowlistDismissed: config.recommendedAllowlistDismissed as boolean | undefined,
       recommendedAllowlistPrompted: config.recommendedAllowlistPrompted as boolean | undefined,
       recommendedAllowlistPromptedProjects: config.recommendedAllowlistPromptedProjects as
+        | Record<string, boolean>
+        | undefined,
+      recommendedAllowlistAppliedProjects: config.recommendedAllowlistAppliedProjects as
+        | Record<string, boolean>
+        | undefined,
+      recommendedAllowlistDismissedProjects: config.recommendedAllowlistDismissedProjects as
         | Record<string, boolean>
         | undefined,
     };
@@ -530,6 +538,71 @@ export async function markPermissionSuggestionShownForProject(projectPath: strin
   }
 }
 
+export function isRecommendedAllowlistAppliedForProject(
+  prefs: PermissionPreferences,
+  projectPath: string,
+): boolean {
+  const projectKey = getProjectPreferenceKey(projectPath);
+  if (prefs.recommendedAllowlistAppliedProjects?.[projectKey] === true) {
+    return true;
+  }
+
+  // Backward-compatibility: keep honoring legacy global opt-in
+  // when project-scoped state is not present yet.
+  if (prefs.recommendedAllowlistApplied === true && !prefs.recommendedAllowlistAppliedProjects) {
+    return true;
+  }
+  return false;
+}
+
+export function isRecommendedAllowlistDismissedForProject(
+  prefs: PermissionPreferences,
+  projectPath: string,
+): boolean {
+  const projectKey = getProjectPreferenceKey(projectPath);
+  if (prefs.recommendedAllowlistDismissedProjects?.[projectKey] === true) {
+    return true;
+  }
+
+  // Backward-compatibility: keep honoring legacy global dismiss
+  // when project-scoped state is not present yet.
+  if (
+    prefs.recommendedAllowlistDismissed === true &&
+    !prefs.recommendedAllowlistDismissedProjects
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export async function saveProjectPermissionPreference(
+  key: "recommendedAllowlistAppliedProjects" | "recommendedAllowlistDismissedProjects",
+  projectPath: string,
+  value: boolean,
+): Promise<void> {
+  try {
+    let config: Record<string, unknown> = {};
+    try {
+      const content = await fs.readFile(CONFIG_PATHS.config, "utf-8");
+      config = JSON.parse(content) as Record<string, unknown>;
+    } catch {
+      // File doesn't exist yet — start fresh
+    }
+
+    const projectKey = getProjectPreferenceKey(projectPath);
+    const currentMap = (config[key] as Record<string, boolean> | undefined) ?? {};
+    config[key] = {
+      ...currentMap,
+      [projectKey]: value,
+    };
+
+    await fs.mkdir(path.dirname(CONFIG_PATHS.config), { recursive: true });
+    await fs.writeFile(CONFIG_PATHS.config, JSON.stringify(config, null, 2), "utf-8");
+  } catch {
+    // Silently fail if we can't save preferences
+  }
+}
+
 // ============================================================================
 // Suggestion Flow
 // ============================================================================
@@ -542,19 +615,10 @@ export async function shouldShowPermissionSuggestion(
   projectPath = process.cwd(),
 ): Promise<boolean> {
   const prefs = await loadPermissionPreferences();
-
-  // If user dismissed, never show again
-  if (prefs.recommendedAllowlistDismissed) {
+  if (isRecommendedAllowlistDismissedForProject(prefs, projectPath)) {
     return false;
   }
-
-  // If already applied, no need to show
-  if (prefs.recommendedAllowlistApplied) {
-    return false;
-  }
-
-  const projectKey = getProjectPreferenceKey(projectPath);
-  if (prefs.recommendedAllowlistPromptedProjects?.[projectKey]) {
+  if (isRecommendedAllowlistAppliedForProject(prefs, projectPath)) {
     return false;
   }
 
@@ -565,14 +629,20 @@ export async function shouldShowPermissionSuggestion(
  * Apply the recommended permissions template.
  * All tools (read + write) are saved as global — apply once, works everywhere.
  */
-export async function applyRecommendedPermissions(): Promise<void> {
+export async function applyRecommendedPermissions(projectPath = process.cwd()): Promise<void> {
   // Apply all recommended tools as global
   for (const tool of [...RECOMMENDED_GLOBAL, ...RECOMMENDED_PROJECT]) {
     await saveTrustedTool(tool, null, true);
   }
 
-  // Mark as applied
-  await savePermissionPreference("recommendedAllowlistApplied", true);
+  // Mark as applied for this project.
+  await saveProjectPermissionPreference("recommendedAllowlistAppliedProjects", projectPath, true);
+  // Ensure "dismissed" is not sticky for the same project once applied.
+  await saveProjectPermissionPreference(
+    "recommendedAllowlistDismissedProjects",
+    projectPath,
+    false,
+  );
 }
 
 /**
@@ -585,8 +655,6 @@ export async function applyRecommendedPermissions(): Promise<void> {
  * - No thanks: never show again
  */
 export async function showPermissionSuggestion(projectPath = process.cwd()): Promise<void> {
-  await markPermissionSuggestionShownForProject(projectPath);
-
   console.log();
   console.log(chalk.magenta.bold("  📋 Recommended Permissions"));
   console.log();
@@ -617,8 +685,11 @@ export async function showPermissionSuggestion(projectPath = process.cwd()): Pro
   }
 
   if (action === "dismiss") {
-    await savePermissionPreference("recommendedAllowlistPrompted", true);
-    await savePermissionPreference("recommendedAllowlistDismissed", true);
+    await saveProjectPermissionPreference(
+      "recommendedAllowlistDismissedProjects",
+      projectPath,
+      true,
+    );
     console.log(chalk.dim("  Won't show again. Use /permissions to apply later."));
     return;
   }
@@ -637,8 +708,7 @@ export async function showPermissionSuggestion(projectPath = process.cwd()): Pro
   }
 
   // Apply template
-  await applyRecommendedPermissions();
-  await savePermissionPreference("recommendedAllowlistPrompted", true);
+  await applyRecommendedPermissions(projectPath);
   console.log(chalk.green("  ✓ Recommended permissions applied"));
   console.log(chalk.dim("  Use /permissions to review or modify anytime."));
 }

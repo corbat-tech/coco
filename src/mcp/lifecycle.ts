@@ -42,6 +42,7 @@ export interface HealthCheckResult {
 export class MCPServerManager {
   private connections = new Map<string, ServerConnection>();
   private logger = getLogger();
+  private static readonly STOP_TIMEOUT_MS = 5000;
 
   /**
    * Create transport for a server config
@@ -144,7 +145,15 @@ export class MCPServerManager {
     this.logger.info(`Stopping MCP server: ${name}`);
 
     try {
-      await connection.transport.disconnect();
+      await Promise.race([
+        connection.transport.disconnect(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("MCP disconnect timeout")),
+            MCPServerManager.STOP_TIMEOUT_MS,
+          ),
+        ),
+      ]);
     } catch (error) {
       this.logger.error(
         `Error disconnecting server '${name}': ${error instanceof Error ? error.message : String(error)}`,

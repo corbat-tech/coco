@@ -22,6 +22,7 @@ import {
   supportsOAuth,
   isGcloudInstalled,
   inspectADC,
+  runGcloudADCLogin,
   isOAuthConfigured,
   getOrRefreshOAuthToken,
   deleteTokens,
@@ -265,7 +266,7 @@ async function switchProvider(
   }
 
   // Cloud providers: Check current configuration status
-  const supportsApiKey = newProvider.id !== "vertex" && newProvider.requiresApiKey !== false;
+  const supportsApiKey = newProvider.requiresApiKey !== false;
   const apiKey = supportsApiKey ? process.env[newProvider.envVar] : undefined;
   // Check OAuth support from both auth module (for OpenAI) and provider config (for Gemini)
   const hasOAuth = supportsOAuth(newProvider.id) || newProvider.supportsOAuth;
@@ -439,7 +440,10 @@ async function switchProvider(
         if (!adcResult) return false;
         selectedAuthMethod = "gcloud";
         if (newProvider.id === "vertex") {
-          const settings = await promptVertexSettings();
+          const settings = await promptVertexSettings({
+            project: session.config.provider.project,
+            location: session.config.provider.location,
+          });
           if (!settings) return false;
           vertexSettings = settings;
         }
@@ -464,6 +468,15 @@ async function switchProvider(
           process.env[newProvider.envVar] = key;
           selectedAuthMethod = "apikey";
           newApiKeyForSaving = key;
+        }
+
+        if (newProvider.id === "vertex") {
+          const settings = await promptVertexSettings({
+            project: session.config.provider.project,
+            location: session.config.provider.location,
+          });
+          if (!settings) return false;
+          vertexSettings = settings;
         }
       }
       // Handle remove credentials
@@ -534,7 +547,10 @@ async function switchProvider(
         if (!adcResult) return false;
         selectedAuthMethod = "gcloud";
         if (newProvider.id === "vertex") {
-          const settings = await promptVertexSettings();
+          const settings = await promptVertexSettings({
+            project: session.config.provider.project,
+            location: session.config.provider.location,
+          });
           if (!settings) return false;
           vertexSettings = settings;
         }
@@ -599,6 +615,8 @@ async function switchProvider(
         type: userFacingProviderId as ProviderType,
         model: newModel,
         apiKey: newApiKeyForSaving,
+        project: vertexSettings?.project,
+        location: vertexSettings?.location,
       });
     } else {
       // Using existing credentials (OAuth or pre-existing API key): just save provider/model
@@ -649,9 +667,31 @@ async function setupGcloudADCForProvider(_provider: ProviderDefinition): Promise
   }
 
   console.log(chalk.yellow("\n   No reusable gcloud ADC session was found for Coco."));
-  if (adc.message) {
-    console.log(chalk.dim(`   ${adc.message}`));
+  console.log();
+  if (adc.message) console.log(chalk.dim(`   ${adc.message}`));
+  console.log();
+
+  const runLoginNow = await p.confirm({
+    message: "Authenticate with gcloud now from Coco?",
+    initialValue: true,
+  });
+
+  if (p.isCancel(runLoginNow)) return false;
+
+  if (runLoginNow) {
+    p.log.step("Running `gcloud auth application-default login`...");
+    const loginOk = await runGcloudADCLogin();
+    if (loginOk) {
+      const refreshed = await inspectADC();
+      if (refreshed.status === "ok" && refreshed.token) {
+        console.log(chalk.green("   ✓ gcloud ADC is now configured.\n"));
+        return true;
+      }
+    }
+    p.log.error("Could not complete gcloud ADC login from Coco.");
+    console.log();
   }
+
   console.log(chalk.dim("\n   Check the current ADC state with:"));
   console.log(chalk.cyan("   $ gcloud auth application-default print-access-token"));
   console.log(chalk.dim("\n   Authenticate manually in your terminal with:"));
@@ -664,14 +704,20 @@ async function setupGcloudADCForProvider(_provider: ProviderDefinition): Promise
   return false;
 }
 
-async function promptVertexSettings(): Promise<VertexSettings | null> {
+async function promptVertexSettings(
+  defaults?: Partial<VertexSettings>,
+): Promise<VertexSettings | null> {
   const projectDefault =
+    defaults?.project ??
     process.env["VERTEX_PROJECT"] ??
     process.env["GOOGLE_CLOUD_PROJECT"] ??
     process.env["GCLOUD_PROJECT"] ??
     "";
   const locationDefault =
-    process.env["VERTEX_LOCATION"] ?? process.env["GOOGLE_CLOUD_LOCATION"] ?? "global";
+    defaults?.location ??
+    process.env["VERTEX_LOCATION"] ??
+    process.env["GOOGLE_CLOUD_LOCATION"] ??
+    "global";
 
   const project = await p.text({
     message: "Google Cloud project ID:",

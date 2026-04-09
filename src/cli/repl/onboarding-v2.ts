@@ -34,7 +34,7 @@ import {
   getOrRefreshOAuthToken,
 } from "../../auth/index.js";
 import { CONFIG_PATHS } from "../../config/paths.js";
-import { saveProviderPreference } from "../../config/env.js";
+import { getLastUsedModel, saveProviderPreference } from "../../config/env.js";
 
 /**
  * Resultado del onboarding
@@ -298,6 +298,12 @@ async function setupProviderWithAuth(
 
   const apiKey = await requestApiKey(provider);
   if (!apiKey) return null;
+  let vertexSettings: { project: string; location: string } | undefined;
+  if (provider.id === "vertex") {
+    const settings = await promptVertexSettings();
+    if (!settings) return null;
+    vertexSettings = settings;
+  }
 
   // Ask for custom URL if provider supports it
   let baseUrl: string | undefined;
@@ -330,7 +336,7 @@ async function setupProviderWithAuth(
   if (!model) return null;
 
   // Test connection
-  const valid = await testConnection(provider, apiKey, model, baseUrl);
+  const valid = await testConnection(provider, apiKey, model, baseUrl, vertexSettings);
   if (!valid) {
     const retry = await p.confirm({
       message: "Would you like to try again?",
@@ -348,6 +354,8 @@ async function setupProviderWithAuth(
     model,
     apiKey,
     baseUrl,
+    project: vertexSettings?.project,
+    location: vertexSettings?.location,
   };
 }
 
@@ -373,12 +381,6 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
     console.log(chalk.dim("   Install it from: https://cloud.google.com/sdk/docs/install"));
     console.log();
 
-    if (provider.id === "vertex") {
-      console.log(chalk.dim("   Vertex AI requires gcloud ADC plus a Google Cloud project."));
-      console.log();
-      return null;
-    }
-
     const useFallback = await p.confirm({
       message: "Use API key instead?",
       initialValue: true,
@@ -394,10 +396,23 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
     const model = await selectModel(provider);
     if (!model) return null;
 
-    const valid = await testConnection(provider, apiKey, model);
+    let vertexSettings: { project: string; location: string } | undefined;
+    if (provider.id === "vertex") {
+      const settings = await promptVertexSettings();
+      if (!settings) return null;
+      vertexSettings = settings;
+    }
+
+    const valid = await testConnection(provider, apiKey, model, undefined, vertexSettings);
     if (!valid) return null;
 
-    return { type: provider.id, model, apiKey };
+    return {
+      type: provider.id,
+      model,
+      apiKey,
+      project: vertexSettings?.project,
+      location: vertexSettings?.location,
+    };
   }
 
   let adc = await inspectADC();
@@ -477,14 +492,6 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
   console.log(chalk.dim("   Coco will reuse the login on the next attempt if ADC is valid."));
   console.log();
 
-  if (provider.id === "vertex") {
-    console.log(
-      chalk.dim("   Vertex AI does not use API keys in Coco. Configure ADC, then retry."),
-    );
-    console.log();
-    return null;
-  }
-
   const useFallback = await p.confirm({
     message: "Use API key for now?",
     initialValue: true,
@@ -499,10 +506,23 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
   const model = await selectModel(provider);
   if (!model) return null;
 
-  const valid = await testConnection(provider, apiKey, model);
+  let vertexSettings: { project: string; location: string } | undefined;
+  if (provider.id === "vertex") {
+    const settings = await promptVertexSettings();
+    if (!settings) return null;
+    vertexSettings = settings;
+  }
+
+  const valid = await testConnection(provider, apiKey, model, undefined, vertexSettings);
   if (!valid) return null;
 
-  return { type: provider.id, model, apiKey };
+  return {
+    type: provider.id,
+    model,
+    apiKey,
+    project: vertexSettings?.project,
+    location: vertexSettings?.location,
+  };
 }
 
 async function promptVertexSettings(): Promise<{ project: string; location: string } | null> {
@@ -1675,8 +1695,9 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
 
     for (const prov of configuredProviders) {
       try {
+        const rememberedModel = await getLastUsedModel(prov.id);
         const recommended = getRecommendedModel(prov.id);
-        const model = recommended?.id || prov.models[0]?.id || "";
+        const model = rememberedModel || recommended?.id || prov.models[0]?.id || "";
         let providerId = prov.id;
 
         if (prov.id === "openai" && hasOpenAIOAuthTokens && !process.env[prov.envVar]) {

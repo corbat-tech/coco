@@ -1,7 +1,7 @@
 /**
  * Google Vertex AI Gemini provider for Corbat-Coco
  *
- * Uses Vertex AI's Gemini API with Google Cloud ADC authentication.
+ * Uses Vertex AI's Gemini API with either Google Cloud ADC or API key authentication.
  */
 
 import type {
@@ -90,6 +90,7 @@ export class VertexProvider implements LLMProvider {
   private config: ProviderConfig = {};
   private project = "";
   private location = DEFAULT_LOCATION;
+  private apiKey?: string;
   private retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
 
   async initialize(config: ProviderConfig): Promise<void> {
@@ -105,6 +106,8 @@ export class VertexProvider implements LLMProvider {
       process.env["VERTEX_LOCATION"] ??
       process.env["GOOGLE_CLOUD_LOCATION"] ??
       DEFAULT_LOCATION;
+    this.apiKey = config.apiKey ?? process.env["VERTEX_API_KEY"] ?? process.env["GOOGLE_API_KEY"];
+
     if (!this.project.trim()) {
       throw new ProviderError(
         "Vertex AI project not configured. Set provider.project, VERTEX_PROJECT, or GOOGLE_CLOUD_PROJECT.",
@@ -112,10 +115,14 @@ export class VertexProvider implements LLMProvider {
       );
     }
 
+    if (this.apiKey?.trim()) {
+      return;
+    }
+
     const token = await getCachedADCToken();
     if (!token) {
       throw new ProviderError(
-        "Vertex AI ADC is not configured. Run `gcloud auth application-default login` manually, then retry.",
+        "Vertex AI authentication is not configured. Set VERTEX_API_KEY (or GOOGLE_API_KEY), or run `gcloud auth application-default login`.",
         { provider: this.id },
       );
     }
@@ -264,10 +271,18 @@ export class VertexProvider implements LLMProvider {
   }
 
   private async getHeaders(): Promise<Record<string, string>> {
+    if (this.apiKey?.trim()) {
+      return {
+        "Content-Type": "application/json",
+        "x-goog-api-key": this.apiKey,
+        "x-goog-user-project": this.project,
+      };
+    }
+
     const token = await getCachedADCToken();
     if (!token) {
       throw new ProviderError(
-        "Vertex AI ADC token is unavailable. Re-authenticate with gcloud and retry.",
+        "Vertex AI token is unavailable. Re-authenticate with gcloud or configure VERTEX_API_KEY.",
         { provider: this.id },
       );
     }

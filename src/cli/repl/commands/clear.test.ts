@@ -20,9 +20,18 @@ vi.mock("../session.js", () => ({
   clearSession: vi.fn(),
 }));
 
+vi.mock("../git-context.js", () => ({
+  getGitContext: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("../startup-panel.js", () => ({
+  renderStartupPanel: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe("clearCommand", () => {
   let mockSession: ReplSession;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+  let stdoutWriteSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     mockSession = {
@@ -41,6 +50,7 @@ describe("clearCommand", () => {
       trustedTools: new Set(),
     };
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    stdoutWriteSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   });
 
   afterEach(() => {
@@ -74,10 +84,24 @@ describe("clearCommand", () => {
       expect(clearSession).toHaveBeenCalledWith(mockSession);
     });
 
-    it("should log confirmation message", async () => {
+    it("should clear terminal screen", async () => {
       await clearCommand.execute([], mockSession);
 
-      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Conversation cleared"));
+      expect(stdoutWriteSpy).toHaveBeenCalledWith("\x1b[2J\x1b[H");
+    });
+
+    it("should render startup panel after clearing", async () => {
+      const { renderStartupPanel } = await import("../startup-panel.js");
+
+      await clearCommand.execute([], mockSession);
+
+      expect(renderStartupPanel).toHaveBeenCalledWith(mockSession, null);
+    });
+
+    it("should log post-clear status message", async () => {
+      await clearCommand.execute([], mockSession);
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Context cleared"));
     });
 
     it("should return false (do not exit)", async () => {

@@ -48,6 +48,8 @@ vi.mock("../recommended-permissions.js", () => ({
   showPermissionDetails: vi.fn(),
   loadPermissionPreferences: vi.fn().mockResolvedValue({}),
   savePermissionPreference: vi.fn().mockResolvedValue(undefined),
+  saveProjectPermissionPreference: vi.fn().mockResolvedValue(undefined),
+  isRecommendedAllowlistAppliedForProject: vi.fn().mockReturnValue(false),
   RECOMMENDED_GLOBAL: ["read_file", "glob", "bash:cat"],
   RECOMMENDED_PROJECT: ["write_file", "edit_file", "bash:git:add"],
   RECOMMENDED_DENY: ["bash:sudo", "bash:git:push"],
@@ -70,6 +72,7 @@ import {
   showPermissionDetails,
   loadPermissionPreferences,
   savePermissionPreference,
+  isRecommendedAllowlistAppliedForProject,
 } from "../recommended-permissions.js";
 import { permissionsCommand } from "./permissions.js";
 
@@ -106,6 +109,7 @@ beforeEach(() => {
 
   // Default: loadPermissionPreferences returns no prefs set
   vi.mocked(loadPermissionPreferences).mockResolvedValue({});
+  vi.mocked(isRecommendedAllowlistAppliedForProject).mockReturnValue(false);
 });
 
 afterEach(() => {
@@ -163,6 +167,7 @@ describe("permissionsCommand", () => {
       vi.mocked(loadPermissionPreferences).mockResolvedValue({
         recommendedAllowlistApplied: true,
       });
+      vi.mocked(isRecommendedAllowlistAppliedForProject).mockReturnValue(true);
       const session = makeSession();
       await permissionsCommand.execute([], session);
 

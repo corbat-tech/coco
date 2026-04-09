@@ -3,7 +3,6 @@
  */
 
 import chalk from "chalk";
-import stringWidth from "string-width";
 import {
   createSession,
   initializeSessionTrust,
@@ -76,7 +75,8 @@ import {
   getQualityLoopSystemPrompt,
   parseQualityLoopReport,
 } from "./quality-loop.js";
-import { getGitContext, formatGitLine, type GitContext } from "./git-context.js";
+import { getGitContext, type GitContext } from "./git-context.js";
+import { renderStartupPanel } from "./startup-panel.js";
 import { renderStatusBar } from "./status-bar.js";
 import {
   registerGlobalCleanup,
@@ -85,10 +85,6 @@ import {
 import { looksLikeTechnicalJargon, humanizeWithLLM } from "../../utils/error-humanizer.js";
 import type { HookRegistryInterface, HookExecutor } from "./hooks/index.js";
 import type { MCPServerConfig } from "../../mcp/types.js";
-
-// stringWidth (from 'string-width') is the industry-standard way to measure
-// visual terminal width of strings.  It correctly handles ANSI codes, emoji
-// (including ZWJ sequences), CJK, and grapheme clusters via Intl.Segmenter.
 
 /**
  * Start the REPL
@@ -1570,140 +1566,7 @@ async function printWelcome(
   gitCtx: GitContext | null,
   mcpManager?: MCPServerManager | null,
 ): Promise<void> {
-  const trustStore = createTrustStore();
-  await trustStore.init();
-  const trustLevel = trustStore.getLevel(session.projectPath);
-
-  // Box dimensions — fixed width for consistency.
-  // Using the same approach as `boxen`: measure content with `stringWidth`,
-  // pad with spaces to a uniform inner width, then wrap with border chars.
-  // IMPORTANT: Emoji MUST stay outside the box.  Terminal emoji widths are
-  // unpredictable (some render 🥥 as 2 cols, others as 3) and no JS lib
-  // can query the actual terminal width.  Only ASCII content goes inside
-  // so the right │ always aligns perfectly with the corners.
-  const boxWidth = 41;
-  const innerWidth = boxWidth - 2; // visible columns between the two │ chars
-
-  const versionText = `v${VERSION}`;
-  const subtitleText = "open source \u2022 corbat.tech";
-
-  // Helper: build a padded content line inside the box.
-  // Measures the visual width of `content` with stringWidth, then pads it
-  // with trailing spaces so every line has exactly `innerWidth` visible
-  // columns.  The right │ is always placed immediately after the padding.
-  const boxLine = (content: string): string => {
-    const pad = Math.max(0, innerWidth - stringWidth(content));
-    return chalk.magenta("\u2502") + content + " ".repeat(pad) + chalk.magenta("\u2502");
-  };
-
-  // Line 1: " COCO                    v1.2.x "
-  const titleLeftRaw = " COCO";
-  const titleRightRaw = versionText + " ";
-  const titleLeftStyled = " " + chalk.bold.white("COCO");
-  const titleGap = Math.max(1, innerWidth - stringWidth(titleLeftRaw) - stringWidth(titleRightRaw));
-  const titleContent = titleLeftStyled + " ".repeat(titleGap) + chalk.dim(titleRightRaw);
-
-  // Line 2: tagline in brand color
-  const taglineText = "code that converges to quality";
-  const taglineContent = " " + chalk.magenta(taglineText) + " ";
-
-  // Line 3: attribution (dim)
-  const subtitleContent = " " + chalk.dim(subtitleText) + " ";
-
-  // Always show the styled header box.
-  // Only ASCII inside the box — emoji widths are unpredictable across terminals.
-  console.log();
-  console.log(chalk.magenta("  \u256D" + "\u2500".repeat(boxWidth - 2) + "\u256E"));
-  console.log("  " + boxLine(titleContent));
-  console.log("  " + boxLine(taglineContent));
-  console.log("  " + boxLine(subtitleContent));
-  console.log(chalk.magenta("  \u2570" + "\u2500".repeat(boxWidth - 2) + "\u256F"));
-
-  // Project info - single compact block
-  const maxPathLen = 50;
-  let displayPath = session.projectPath;
-  if (displayPath.length > maxPathLen) {
-    displayPath = "..." + displayPath.slice(-maxPathLen + 3);
-  }
-
-  // Split path to highlight project folder name
-  const lastSep = displayPath.lastIndexOf("/");
-  const parentPath = lastSep > 0 ? displayPath.slice(0, lastSep + 1) : "";
-  const projectName = lastSep > 0 ? displayPath.slice(lastSep + 1) : displayPath;
-
-  const providerName = session.config.provider.type;
-  const configuredModel = session.config.provider.model?.trim();
-  const modelName =
-    configuredModel &&
-    !["default", "none", "null", "undefined"].includes(configuredModel.toLowerCase())
-      ? configuredModel
-      : getDefaultModel(session.config.provider.type);
-  const trustText =
-    trustLevel === "full"
-      ? "full"
-      : trustLevel === "write"
-        ? "write"
-        : trustLevel === "read"
-          ? "read"
-          : "";
-
-  console.log();
-  console.log(chalk.dim(`  \u{1F4C1} ${parentPath}`) + chalk.magenta.bold(projectName));
-  console.log(
-    chalk.dim(`  \u{1F916} ${providerName}/`) +
-      chalk.magenta(modelName) +
-      (trustText ? chalk.dim(` \u2022 \u{1F510} ${trustText}`) : ""),
-  );
-  // Show git context if available
-  if (gitCtx) {
-    console.log(`  ${formatGitLine(gitCtx)}`);
-  }
-  // Show quality loop status
-  const cocoStatus = isQualityLoop()
-    ? chalk.magenta("  \u{1F504} quality mode: ") +
-      chalk.green.bold("on") +
-      chalk.dim(" — iterates until quality \u2265 85. /quality to disable")
-    : chalk.dim("  \u{1F4A1} /quality on — enable auto-test & quality iteration");
-  console.log(cocoStatus);
-
-  // Show skills and MCP status summary (only when something is active)
-  const skillTotal = session.skillRegistry?.size ?? 0;
-  const mcpServers = mcpManager?.getConnectedServers() ?? [];
-  const hasSomething = skillTotal > 0 || mcpServers.length > 0;
-  if (hasSomething) {
-    if (skillTotal > 0) {
-      const allMeta = session.skillRegistry!.getAllMetadata();
-      const builtinCount = allMeta.filter((s) => s.scope === "builtin").length;
-      const projectCount = skillTotal - builtinCount;
-      const parts: string[] = [];
-      if (builtinCount > 0) parts.push(`${builtinCount} builtin`);
-      if (projectCount > 0) parts.push(`${projectCount} project`);
-      const detail = parts.length > 0 ? ` (${parts.join(" \u00B7 ")})` : "";
-      console.log(chalk.green("  \u2713") + chalk.dim(` Skills: ${skillTotal} loaded${detail}`));
-    } else {
-      console.log(chalk.dim("  \u00B7 Skills: none loaded"));
-    }
-    if (mcpServers.length > 0) {
-      const names = mcpServers.join(", ");
-      console.log(
-        chalk.green("  \u2713") +
-          chalk.dim(
-            ` MCP: ${names} (${mcpServers.length} server${mcpServers.length === 1 ? "" : "s"} active)`,
-          ),
-      );
-    }
-  }
-
-  console.log();
-  console.log(
-    chalk.dim("  Type your request or ") + chalk.magenta("/help") + chalk.dim(" for commands"),
-  );
-  const pasteHint =
-    process.platform === "darwin"
-      ? chalk.dim("  \u{1F4CB} \u2318V paste text \u2022 \u2303V paste image")
-      : chalk.dim("  \u{1F4CB} Ctrl+V paste image from clipboard");
-  console.log(pasteHint);
-  console.log();
+  await renderStartupPanel(session, gitCtx, mcpManager?.getConnectedServers() ?? []);
 }
 
 export type { ReplConfig, ReplSession, AgentTurnResult } from "./types.js";

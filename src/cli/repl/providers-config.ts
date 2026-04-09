@@ -354,13 +354,14 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true,
     },
-    // Updated: March 2026 — from docs.github.com/en/copilot/reference/ai-models/supported-models
+    // Updated: April 2026 — from docs.github.com/en/copilot/reference/ai-models/supported-models
+    // Premium request multipliers in descriptions are for paid Copilot plans.
     models: [
       // Anthropic models
       {
         id: "claude-sonnet-4.6",
         name: "Claude Sonnet 4.6",
-        description: "Anthropic's latest balanced model via Copilot",
+        description: "Balanced Claude model via Copilot — Premium x1",
         contextWindow: 200000,
         maxOutputTokens: 64000,
         recommended: true,
@@ -368,28 +369,28 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       {
         id: "claude-opus-4.6",
         name: "Claude Opus 4.6",
-        description: "Anthropic's most intelligent model via Copilot",
+        description: "Most capable Claude model via Copilot — Premium x3",
         contextWindow: 200000,
         maxOutputTokens: 128000,
       },
       {
         id: "claude-sonnet-4.5",
         name: "Claude Sonnet 4.5",
-        description: "Previous balanced Claude model via Copilot",
+        description: "Previous balanced Claude model via Copilot — Premium x1",
         contextWindow: 200000,
         maxOutputTokens: 64000,
       },
       {
         id: "claude-opus-4.5",
         name: "Claude Opus 4.5",
-        description: "Previous flagship Claude model via Copilot",
+        description: "Previous flagship Claude model via Copilot — Premium x3",
         contextWindow: 200000,
         maxOutputTokens: 64000,
       },
       {
         id: "claude-haiku-4.5",
         name: "Claude Haiku 4.5",
-        description: "Fast and affordable Claude model via Copilot",
+        description: "Fast low-cost Claude model via Copilot — Premium x0.33",
         contextWindow: 200000,
         maxOutputTokens: 64000,
       },
@@ -397,7 +398,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       {
         id: "gpt-5.4-codex",
         name: "GPT-5.4 Codex",
-        description: "OpenAI's latest coding model via Copilot (Mar 2026)",
+        description: "Latest coding model via Copilot — Premium x1",
         contextWindow: 400000,
         maxOutputTokens: 128000,
         recommended: true,
@@ -405,28 +406,28 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       {
         id: "gpt-5.3-codex",
         name: "GPT-5.3 Codex",
-        description: "OpenAI's previous coding model via Copilot",
+        description: "Previous coding model via Copilot — Premium x1",
         contextWindow: 400000,
         maxOutputTokens: 128000,
       },
       {
         id: "gpt-5.2-codex",
         name: "GPT-5.2 Codex",
-        description: "OpenAI's previous coding model via Copilot",
+        description: "Previous coding model via Copilot — Premium x1",
         contextWindow: 400000,
         maxOutputTokens: 128000,
       },
       {
         id: "gpt-5.1-codex-max",
         name: "GPT-5.1 Codex Max",
-        description: "Frontier agentic coding model via Copilot",
+        description: "Frontier agentic coding model via Copilot — Premium x1",
         contextWindow: 400000,
         maxOutputTokens: 128000,
       },
       {
         id: "gpt-4.1",
         name: "GPT-4.1",
-        description: "OpenAI long-context model via Copilot (1M)",
+        description: "OpenAI long-context model via Copilot (1M) — Premium x0",
         contextWindow: 1048576,
         maxOutputTokens: 32768,
       },
@@ -434,21 +435,21 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       {
         id: "gemini-3.1-pro-preview",
         name: "Gemini 3.1 Pro",
-        description: "Google's latest model via Copilot (1M)",
+        description: "Google's latest model via Copilot (1M) — Premium x1",
         contextWindow: 1000000,
         maxOutputTokens: 64000,
       },
       {
         id: "gemini-3-flash-preview",
         name: "Gemini 3 Flash",
-        description: "Google's fast model via Copilot (1M)",
+        description: "Google's fast model via Copilot (1M) — Premium x0.33",
         contextWindow: 1000000,
         maxOutputTokens: 64000,
       },
       {
         id: "gemini-2.5-pro",
         name: "Gemini 2.5 Pro",
-        description: "Google stable model via Copilot (1M)",
+        description: "Google stable model via Copilot (1M) — Premium x1",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
       },
@@ -586,8 +587,8 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     name: "Google Vertex AI Gemini",
     emoji: "☁️",
     description: "Gemini on Vertex AI with GCP project, IAM and ADC",
-    envVar: "VERTEX_PROJECT",
-    apiKeyUrl: "https://console.cloud.google.com/vertex-ai",
+    envVar: "VERTEX_API_KEY",
+    apiKeyUrl: "https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys",
     docsUrl: "https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstart",
     baseUrl: "https://aiplatform.googleapis.com/v1",
     supportsCustomModels: true,
@@ -1317,6 +1318,8 @@ export function getConfiguredProviders(): ProviderDefinition[] {
     }
     if (p.id === "vertex") {
       return !!(
+        process.env["VERTEX_API_KEY"] ??
+        process.env["GOOGLE_API_KEY"] ??
         process.env["VERTEX_PROJECT"] ??
         process.env["GOOGLE_CLOUD_PROJECT"] ??
         process.env["GCLOUD_PROJECT"]
@@ -1345,6 +1348,8 @@ export function isProviderConfigured(type: ProviderType): boolean {
   }
   if (type === "vertex") {
     return !!(
+      process.env["VERTEX_API_KEY"] ??
+      process.env["GOOGLE_API_KEY"] ??
       process.env["VERTEX_PROJECT"] ??
       process.env["GOOGLE_CLOUD_PROJECT"] ??
       process.env["GCLOUD_PROJECT"]

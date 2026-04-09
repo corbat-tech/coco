@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.27.2] - 2026-04-09
+
+### Changed
+- **Vertex authentication now supports both ADC and API key flows** — Coco can now configure Vertex with `gcloud` ADC or `VERTEX_API_KEY`/`GOOGLE_API_KEY`, including direct setup from `/provider`.
+- **Copilot model metadata now surfaces Premium Request multipliers** — Copilot model descriptions in provider selection now include current multipliers (for example `x1`, `x0.33`) to make consumption impact visible before switching.
+
+### Fixed
+- **`/clear` now restores the startup panel after clearing context** — clearing the conversation now also repaints the terminal UI to the same panel style shown at REPL startup.
+- **Recommended permissions prompt now persists per project decision** — choosing apply/no-thanks/later is now tracked at project scope so Coco no longer re-prompts every time for the same repository unless explicitly reset.
+- **MCP shutdown no longer blocks REPL exit on hung disconnects** — MCP server disconnect now has a defensive timeout so `/exit` does not hang indefinitely at “Stopping MCP server”.
+- **Copilot preferred model persistence during startup fallback** — when Coco falls back to another configured provider at startup, it now respects the provider’s last selected model instead of always resetting to the recommended default.
+
 ## [2.27.1] - 2026-04-09
 
 ### Fixed
@@ -1289,7 +1301,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.27.1...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.27.2...HEAD
+[2.27.2]: https://github.com/corbat/corbat-coco/compare/v2.27.1...v2.27.2
 [2.27.1]: https://github.com/corbat/corbat-coco/compare/v2.27.0...v2.27.1
 [2.27.0]: https://github.com/corbat/corbat-coco/compare/v2.26.0...v2.27.0
 [2.26.0]: https://github.com/corbat/corbat-coco/compare/v2.25.15...v2.26.0

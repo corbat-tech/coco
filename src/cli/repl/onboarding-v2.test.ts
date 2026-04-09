@@ -78,6 +78,7 @@ vi.mock("../../config/paths.js", () => ({
 }));
 
 vi.mock("../../config/env.js", () => ({
+  getLastUsedModel: vi.fn().mockResolvedValue(undefined),
   saveProviderPreference: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -109,7 +110,7 @@ import {
   getOrRefreshOAuthToken,
 } from "../../auth/index.js";
 import { createProvider } from "../../providers/index.js";
-import { saveProviderPreference } from "../../config/env.js";
+import { getLastUsedModel, saveProviderPreference } from "../../config/env.js";
 import type { ProviderDefinition } from "./providers-config.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -131,6 +132,7 @@ const mockedIsOAuthConfigured = vi.mocked(isOAuthConfigured);
 const mockedGetOrRefreshOAuthToken = vi.mocked(getOrRefreshOAuthToken);
 const mockedRunGcloudADCLogin = vi.mocked(runGcloudADCLogin);
 const mockedCreateProvider = vi.mocked(createProvider);
+const mockedGetLastUsedModel = vi.mocked(getLastUsedModel);
 const _mockedIsGcloudInstalled = vi.mocked(isGcloudInstalled);
 const mockedInspectADC = vi.mocked(inspectADC);
 
@@ -168,6 +170,7 @@ describe("onboarding-v2", () => {
     vi.spyOn(console, "clear").mockImplementation(() => {});
     vi.spyOn(console, "log").mockImplementation(() => {});
     mockedIsCancel.mockReturnValue(false);
+    mockedGetLastUsedModel.mockResolvedValue(undefined);
     mockedFormatModelInfo.mockImplementation((m) => m.name || m.id);
     mockedGetRecommendedModel.mockImplementation((providerId: any) => {
       const prov = makeProviderDef({ id: providerId as any });

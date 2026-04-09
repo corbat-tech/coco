@@ -171,7 +171,7 @@ export function getApiKey(provider: ProviderType): string | undefined {
     case "gemini":
       return process.env["GEMINI_API_KEY"] ?? process.env["GOOGLE_API_KEY"];
     case "vertex":
-      return undefined;
+      return process.env["VERTEX_API_KEY"] ?? process.env["GOOGLE_API_KEY"];
     case "kimi":
       return process.env["KIMI_API_KEY"] ?? process.env["MOONSHOT_API_KEY"];
     case "kimi-code":

@@ -23,6 +23,8 @@ import {
   showPermissionDetails,
   loadPermissionPreferences,
   savePermissionPreference,
+  saveProjectPermissionPreference,
+  isRecommendedAllowlistAppliedForProject,
   RECOMMENDED_GLOBAL,
   RECOMMENDED_PROJECT,
   RECOMMENDED_DENY,
@@ -73,7 +75,7 @@ async function showStatus(session: ReplSession): Promise<void> {
   console.log();
 
   const allowCount = RECOMMENDED_GLOBAL.length + RECOMMENDED_PROJECT.length;
-  if (prefs.recommendedAllowlistApplied) {
+  if (isRecommendedAllowlistAppliedForProject(prefs, session.projectPath)) {
     console.log(
       chalk.green("  ✓ Recommended allowlist applied") +
         chalk.dim(` (${allowCount} allow, ${RECOMMENDED_DENY.length} deny)`),
@@ -125,7 +127,7 @@ async function showStatus(session: ReplSession): Promise<void> {
  * Apply recommended permissions template
  */
 async function applyRecommended(session: ReplSession): Promise<void> {
-  await applyRecommendedPermissions();
+  await applyRecommendedPermissions(session.projectPath);
 
   // Reload into current session
   for (const tool of RECOMMENDED_GLOBAL) {
@@ -202,6 +204,16 @@ async function resetPermissions(session: ReplSession): Promise<void> {
 
   // Reset preference flag
   await savePermissionPreference("recommendedAllowlistApplied", false);
+  await saveProjectPermissionPreference(
+    "recommendedAllowlistAppliedProjects",
+    session.projectPath,
+    false,
+  );
+  await saveProjectPermissionPreference(
+    "recommendedAllowlistDismissedProjects",
+    session.projectPath,
+    false,
+  );
 
   console.log(chalk.green("  ✓ All tool permissions reset."));
 }
