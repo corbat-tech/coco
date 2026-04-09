@@ -36,23 +36,35 @@ import { getValidCopilotToken } from "../auth/copilot.js";
 const CONTEXT_WINDOWS: Record<string, number> = {
   // Claude models — Copilot API caps these at 168 000 (not 200 000 like Anthropic direct)
   "claude-sonnet-4.6": 168000,
+  "claude-sonnet-4": 168000,
   "claude-opus-4.6": 168000,
+  "claude-opus-4.6-fast": 168000,
   "claude-sonnet-4.5": 168000,
   "claude-opus-4.5": 168000,
   "claude-haiku-4.5": 168000,
   // OpenAI models — chat/completions
   "gpt-4.1": 1048576,
+  "gpt-4o": 128000,
   // OpenAI models — /responses API (Codex/GPT-5+)
   "gpt-5.4-codex": 400000,
+  "gpt-5.4": 400000,
+  "gpt-5.4-mini": 400000,
   "gpt-5.3-codex": 400000,
   "gpt-5.2-codex": 400000,
   "gpt-5.1-codex-max": 400000,
+  "gpt-5-mini": 400000,
   "gpt-5.2": 400000,
   "gpt-5.1": 400000,
   // Google models
+  "gemini-3.1-pro": 1000000,
   "gemini-3.1-pro-preview": 1000000,
+  "gemini-3-flash": 1000000,
   "gemini-3-flash-preview": 1000000,
   "gemini-2.5-pro": 1048576,
+  // Evaluation models
+  "grok-code-fast-1": 400000,
+  "raptor-mini": 400000,
+  goldeneye: 400000,
 };
 
 /**

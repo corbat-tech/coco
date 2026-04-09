@@ -90,7 +90,7 @@
  * - OpenAI: gpt-5.4-codex (latest), gpt-5.3-codex, gpt-5.2-codex, gpt-5.1-codex-max, gpt-4.1
  * - Gemini: gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-2.5-pro, gemini-2.5-flash
  * - Vertex AI: gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash-001
- * - Copilot: claude-sonnet-4.6, claude-opus-4.6, gpt-5.4-codex, gpt-4.1, gemini-3.1-pro-preview
+ * - Copilot: claude-sonnet-4.6, gpt-5.4-codex, gpt-5.4, gpt-5 mini, gpt-4.1, gemini-3.1-pro
  * - Kimi: kimi-k2.5, kimi-k2-thinking
  * - Qwen: qwen-coder-plus (recommended), qwen-max, qwen-plus, qwen-turbo, qwq-plus
  * - LM Studio: qwen3-coder series (best local option)
@@ -394,6 +394,20 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         contextWindow: 200000,
         maxOutputTokens: 64000,
       },
+      {
+        id: "claude-sonnet-4",
+        name: "Claude Sonnet 4",
+        description: "Previous balanced Claude model via Copilot — Premium x1",
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "claude-opus-4.6-fast",
+        name: "Claude Opus 4.6 (Fast)",
+        description: "Public preview fast Opus mode via Copilot — Premium x30",
+        contextWindow: 200000,
+        maxOutputTokens: 128000,
+      },
       // OpenAI models (Codex/GPT-5+ use /responses API, others use /chat/completions)
       {
         id: "gpt-5.4-codex",
@@ -418,31 +432,80 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         maxOutputTokens: 128000,
       },
       {
-        id: "gpt-5.1-codex-max",
-        name: "GPT-5.1 Codex Max",
-        description: "Frontier agentic coding model via Copilot — Premium x1",
+        id: "gpt-5.2",
+        name: "GPT-5.2",
+        description: "General GPT-5 model via Copilot — Premium x1",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-5.4",
+        name: "GPT-5.4",
+        description: "Latest general GPT-5 model via Copilot — Premium x1",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-5.4-mini",
+        name: "GPT-5.4 mini",
+        description: "Fast GPT-5.4 variant via Copilot — Premium x0.33",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-5-mini",
+        name: "GPT-5 mini",
+        description: "Included model via Copilot paid plans — Premium x0",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "gpt-5.1",
+        name: "GPT-5.1",
+        description: "Legacy GPT-5 model via Copilot — Premium x1",
         contextWindow: 400000,
         maxOutputTokens: 128000,
       },
       {
         id: "gpt-4.1",
         name: "GPT-4.1",
-        description: "OpenAI long-context model via Copilot (1M) — Premium x0",
+        description: "Included OpenAI model via Copilot paid plans — Premium x0",
         contextWindow: 1048576,
         maxOutputTokens: 32768,
       },
+      {
+        id: "gpt-4o",
+        name: "GPT-4o",
+        description: "Included fallback/LTS OpenAI model via Copilot paid plans — Premium x0",
+        contextWindow: 128000,
+        maxOutputTokens: 16384,
+      },
       // Google models
       {
-        id: "gemini-3.1-pro-preview",
+        id: "gemini-3.1-pro",
         name: "Gemini 3.1 Pro",
         description: "Google's latest model via Copilot (1M) — Premium x1",
         contextWindow: 1000000,
         maxOutputTokens: 64000,
       },
       {
-        id: "gemini-3-flash-preview",
+        id: "gemini-3.1-pro-preview",
+        name: "Gemini 3.1 Pro (Preview ID)",
+        description: "Compatibility alias for Gemini 3.1 Pro via Copilot — Premium x1",
+        contextWindow: 1000000,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "gemini-3-flash",
         name: "Gemini 3 Flash",
         description: "Google's fast model via Copilot (1M) — Premium x0.33",
+        contextWindow: 1000000,
+        maxOutputTokens: 64000,
+      },
+      {
+        id: "gemini-3-flash-preview",
+        name: "Gemini 3 Flash (Preview ID)",
+        description: "Compatibility alias for Gemini 3 Flash via Copilot — Premium x0.33",
         contextWindow: 1000000,
         maxOutputTokens: 64000,
       },
@@ -452,6 +515,28 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         description: "Google stable model via Copilot (1M) — Premium x1",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
+      },
+      // Evaluation models
+      {
+        id: "grok-code-fast-1",
+        name: "Grok Code Fast 1",
+        description: "xAI coding model via Copilot — Premium x0.25",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "raptor-mini",
+        name: "Raptor mini",
+        description: "Fine-tuned GPT-5 mini via Copilot — Premium x0",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+      },
+      {
+        id: "goldeneye",
+        name: "Goldeneye",
+        description: "Fine-tuned GPT-5.1-Codex via Copilot (Free x1)",
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
       },
     ],
   },

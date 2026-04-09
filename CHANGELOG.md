@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.27.4] - 2026-04-09
+
+### Changed
+- **Copilot model catalog expanded to current official lineup** — Coco now exposes the current supported Copilot models, including GPT-5.4, GPT-5.4 mini, GPT-5 mini, GPT-5.2, Claude Sonnet 4, evaluation models (Grok Code Fast 1, Raptor mini, Goldeneye), and compatibility aliases for Gemini 3.1 Pro / Gemini 3 Flash.
+- **Premium request multipliers refreshed for Copilot selection UX** — model descriptions now reflect current GitHub multipliers, including included models with paid multiplier `x0` so users can choose lower-cost options directly.
+- **Copilot provider context-window mapping updated for new model IDs** — runtime context metadata now includes the newly exposed Copilot model IDs to keep status and budgeting behavior consistent.
+
 ## [2.27.3] - 2026-04-09
 
 ### Changed
@@ -1312,7 +1319,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.27.3...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.27.4...HEAD
+[2.27.4]: https://github.com/corbat/corbat-coco/compare/v2.27.3...v2.27.4
 [2.27.3]: https://github.com/corbat/corbat-coco/compare/v2.27.2...v2.27.3
 [2.27.2]: https://github.com/corbat/corbat-coco/compare/v2.27.1...v2.27.2
 [2.27.1]: https://github.com/corbat/corbat-coco/compare/v2.27.0...v2.27.1
