@@ -12,6 +12,15 @@ vi.mock("../auth/gcloud.js", () => ({
   }),
 }));
 
+vi.mock("../auth/copilot.js", () => ({
+  getValidCopilotToken: vi.fn().mockResolvedValue({
+    token: "copilot-token",
+    baseUrl: "https://api.githubcopilot.com",
+    isNew: false,
+  }),
+  getCopilotCredentialsPath: vi.fn(() => "/tmp/copilot/credentials.json"),
+}));
+
 // Mock Anthropic SDK
 vi.mock("@anthropic-ai/sdk", () => ({
   default: vi.fn().mockImplementation(function () {

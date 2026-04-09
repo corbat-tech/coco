@@ -397,8 +397,7 @@ export class VertexProvider implements LLMProvider {
         });
       } else if (block.type === "tool_use") {
         const toolUse = block as ToolUseContent;
-        const thoughtSignature =
-          toolUse.geminiThoughtSignature ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR;
+        const thoughtSignature = toolUse.geminiThoughtSignature ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR;
         parts.push({
           functionCall: {
             name: toolUse.name,

@@ -538,7 +538,9 @@ async function saveProjectPermissionState(
   }
 }
 
-export async function getProjectPermissionState(projectPath: string): Promise<ProjectPermissionState> {
+export async function getProjectPermissionState(
+  projectPath: string,
+): Promise<ProjectPermissionState> {
   const scopePath = await resolvePermissionScopePath(projectPath);
   return loadProjectPermissionState(scopePath);
 }
@@ -637,11 +639,7 @@ export async function applyRecommendedPermissions(projectPath = process.cwd()): 
   // Mark as applied for this project.
   await saveProjectPermissionPreference("recommendedAllowlistAppliedProjects", scopePath, true);
   // Ensure "dismissed" is not sticky for the same project once applied.
-  await saveProjectPermissionPreference(
-    "recommendedAllowlistDismissedProjects",
-    scopePath,
-    false,
-  );
+  await saveProjectPermissionPreference("recommendedAllowlistDismissedProjects", scopePath, false);
 }
 
 /**
@@ -690,11 +688,7 @@ export async function showPermissionSuggestion(projectPath = process.cwd()): Pro
   }
 
   if (action === "dismiss") {
-    await saveProjectPermissionPreference(
-      "recommendedAllowlistDismissedProjects",
-      scopePath,
-      true,
-    );
+    await saveProjectPermissionPreference("recommendedAllowlistDismissedProjects", scopePath, true);
     console.log(chalk.dim("  Won't show again. Use /permissions to apply later."));
     return;
   }

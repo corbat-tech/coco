@@ -202,25 +202,22 @@ describe("VertexProvider", () => {
     const provider = new VertexProvider();
     await provider.initialize({ project: "test-project", location: "global" });
 
-    const response = await provider.chatWithTools(
-      [{ role: "user", content: "run date" }],
-      {
-        model: "gemini-3-flash-preview",
-        tools: [
-          {
-            name: "bash_exec",
-            description: "Run shell command",
-            input_schema: {
-              type: "object",
-              properties: {
-                command: { type: "string" },
-              },
-              required: ["command"],
+    const response = await provider.chatWithTools([{ role: "user", content: "run date" }], {
+      model: "gemini-3-flash-preview",
+      tools: [
+        {
+          name: "bash_exec",
+          description: "Run shell command",
+          input_schema: {
+            type: "object",
+            properties: {
+              command: { type: "string" },
             },
+            required: ["command"],
           },
-        ],
-      },
-    );
+        },
+      ],
+    });
 
     expect(response.toolCalls[0]?.geminiThoughtSignature).toBe("sig-abc");
   });

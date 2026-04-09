@@ -354,8 +354,7 @@ export class GeminiProvider implements LLMProvider {
         });
       } else if (block.type === "tool_use") {
         const toolUse = block as ToolUseContent;
-        const thoughtSignature =
-          toolUse.geminiThoughtSignature ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR;
+        const thoughtSignature = toolUse.geminiThoughtSignature ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR;
         const functionCall: FunctionCall = {
           id: toolUse.id,
           name: toolUse.name,

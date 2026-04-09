@@ -393,57 +393,43 @@ async function switchProvider(
 
     // Handle OAuth flow
     if (authChoice === "oauth") {
-        const isCopilot = newProvider.id === "copilot";
-        const isGemini = newProvider.id === "gemini";
+      const isCopilot = newProvider.id === "copilot";
+      const isGemini = newProvider.id === "gemini";
 
-        if (isCopilot) {
-          // Copilot uses GitHub Device Flow — handled entirely by the copilot provider
-          // Just run the device flow if not already authenticated
-          if (oauthConnected) {
-            console.log(chalk.dim(`\nUsing existing GitHub session...`));
-          } else {
-            const oauthStartSpinner = p.spinner();
-            oauthStartSpinner.start("Starting GitHub OAuth sign-in...");
-            const result = await runOAuthFlow("copilot");
-            oauthStartSpinner.stop(
-              result ? "GitHub OAuth sign-in completed" : "GitHub OAuth sign-in cancelled",
-            );
-            if (!result) return false;
-          }
-          selectedAuthMethod = "oauth";
-          // internalProviderId stays "copilot" — CopilotProvider handles its own tokens
+      if (isCopilot) {
+        // Copilot uses GitHub Device Flow — handled entirely by the copilot provider
+        // Just run the device flow if not already authenticated
+        if (oauthConnected) {
+          console.log(chalk.dim(`\nUsing existing GitHub session...`));
         } else {
-          // OpenAI/Gemini OAuth flow
-          const tokenEnvVar = isGemini ? "GEMINI_OAUTH_TOKEN" : "OPENAI_CODEX_TOKEN";
+          const oauthStartSpinner = p.spinner();
+          oauthStartSpinner.start("Starting GitHub OAuth sign-in...");
+          const result = await runOAuthFlow("copilot");
+          oauthStartSpinner.stop(
+            result ? "GitHub OAuth sign-in completed" : "GitHub OAuth sign-in cancelled",
+          );
+          if (!result) return false;
+        }
+        selectedAuthMethod = "oauth";
+        // internalProviderId stays "copilot" — CopilotProvider handles its own tokens
+      } else {
+        // OpenAI/Gemini OAuth flow
+        const tokenEnvVar = isGemini ? "GEMINI_OAUTH_TOKEN" : "OPENAI_CODEX_TOKEN";
 
-          if (oauthConnected) {
-            // Use existing OAuth session
-            const refreshSpinner = p.spinner();
-            refreshSpinner.start("Refreshing existing OAuth session...");
-            try {
-              const tokenResult = await getOrRefreshOAuthToken(oauthProviderName);
-              if (tokenResult) {
-                process.env[tokenEnvVar] = tokenResult.accessToken;
-                selectedAuthMethod = "oauth";
-                if (!isGemini) internalProviderId = "codex";
-                refreshSpinner.stop("OAuth session ready");
-                console.log(chalk.dim(`\nUsing existing OAuth session...`));
-              } else {
-                // Token refresh failed, need to re-authenticate
-                refreshSpinner.stop("OAuth refresh failed, re-authentication required");
-                const oauthStartSpinner = p.spinner();
-                oauthStartSpinner.start("Starting OAuth sign-in...");
-                const result = await runOAuthFlow(newProvider.id);
-                oauthStartSpinner.stop(
-                  result ? "OAuth sign-in completed" : "OAuth sign-in cancelled",
-                );
-                if (!result) return false;
-                process.env[tokenEnvVar] = result.accessToken;
-                selectedAuthMethod = "oauth";
-                if (!isGemini) internalProviderId = "codex";
-              }
-            } catch {
-              // Token expired, need to re-authenticate
+        if (oauthConnected) {
+          // Use existing OAuth session
+          const refreshSpinner = p.spinner();
+          refreshSpinner.start("Refreshing existing OAuth session...");
+          try {
+            const tokenResult = await getOrRefreshOAuthToken(oauthProviderName);
+            if (tokenResult) {
+              process.env[tokenEnvVar] = tokenResult.accessToken;
+              selectedAuthMethod = "oauth";
+              if (!isGemini) internalProviderId = "codex";
+              refreshSpinner.stop("OAuth session ready");
+              console.log(chalk.dim(`\nUsing existing OAuth session...`));
+            } else {
+              // Token refresh failed, need to re-authenticate
               refreshSpinner.stop("OAuth refresh failed, re-authentication required");
               const oauthStartSpinner = p.spinner();
               oauthStartSpinner.start("Starting OAuth sign-in...");
@@ -456,8 +442,9 @@ async function switchProvider(
               selectedAuthMethod = "oauth";
               if (!isGemini) internalProviderId = "codex";
             }
-          } else {
-            // New OAuth flow
+          } catch {
+            // Token expired, need to re-authenticate
+            refreshSpinner.stop("OAuth refresh failed, re-authentication required");
             const oauthStartSpinner = p.spinner();
             oauthStartSpinner.start("Starting OAuth sign-in...");
             const result = await runOAuthFlow(newProvider.id);
@@ -467,111 +454,122 @@ async function switchProvider(
             selectedAuthMethod = "oauth";
             if (!isGemini) internalProviderId = "codex";
           }
+        } else {
+          // New OAuth flow
+          const oauthStartSpinner = p.spinner();
+          oauthStartSpinner.start("Starting OAuth sign-in...");
+          const result = await runOAuthFlow(newProvider.id);
+          oauthStartSpinner.stop(result ? "OAuth sign-in completed" : "OAuth sign-in cancelled");
+          if (!result) return false;
+          process.env[tokenEnvVar] = result.accessToken;
+          selectedAuthMethod = "oauth";
+          if (!isGemini) internalProviderId = "codex";
         }
+      }
     }
     // Handle gcloud ADC flow
     else if (authChoice === "gcloud") {
-        const adcResult = await setupGcloudADCForProvider(newProvider);
-        if (!adcResult) return false;
-        selectedAuthMethod = "gcloud";
-        if (newProvider.id === "vertex") {
-          const settings = await promptVertexSettings({
-            project: session.config.provider.project,
-            location: session.config.provider.location,
-          });
-          if (!settings) return false;
-          vertexSettings = settings;
-        }
+      const adcResult = await setupGcloudADCForProvider(newProvider);
+      if (!adcResult) return false;
+      selectedAuthMethod = "gcloud";
+      if (newProvider.id === "vertex") {
+        const settings = await promptVertexSettings({
+          project: session.config.provider.project,
+          location: session.config.provider.location,
+        });
+        if (!settings) return false;
+        vertexSettings = settings;
+      }
     }
     // Handle API key flow
     else if (authChoice === "apikey") {
-        if (apiKey) {
-          // Use existing API key
-          selectedAuthMethod = "apikey";
-          console.log(chalk.dim(`\nUsing existing API key...`));
-        } else {
-          // Need to enter new API key
-          const key = await p.password({
-            message: `Enter your ${newProvider.name} API key:`,
-            validate: (v) => (!v || v.length < 10 ? "API key too short" : undefined),
-          });
-
-          if (p.isCancel(key)) {
-            return false;
-          }
-
-          process.env[newProvider.envVar] = key;
-          selectedAuthMethod = "apikey";
-          newApiKeyForSaving = key;
-        }
-
-        if (newProvider.id === "vertex") {
-          const settings = await promptVertexSettings({
-            project: session.config.provider.project,
-            location: session.config.provider.location,
-          });
-          if (!settings) return false;
-          vertexSettings = settings;
-        }
-    }
-    // Handle remove credentials
-    else if (authChoice === "remove") {
-        const removeOptions: Array<{ value: string; label: string }> = [];
-
-        if (oauthConnected) {
-          removeOptions.push({
-            value: "oauth",
-            label: "🔐 Remove OAuth session",
-          });
-        }
-
-        if (apiKey) {
-          removeOptions.push({
-            value: "apikey",
-            label: "🔑 Remove API key",
-          });
-        }
-
-        if (oauthConnected && apiKey) {
-          removeOptions.push({
-            value: "all",
-            label: "🗑️  Remove all credentials",
-          });
-        }
-
-        removeOptions.push({
-          value: "cancel",
-          label: "❌ Cancel",
+      if (apiKey) {
+        // Use existing API key
+        selectedAuthMethod = "apikey";
+        console.log(chalk.dim(`\nUsing existing API key...`));
+      } else {
+        // Need to enter new API key
+        const key = await p.password({
+          message: `Enter your ${newProvider.name} API key:`,
+          validate: (v) => (!v || v.length < 10 ? "API key too short" : undefined),
         });
 
-        const removeChoice = await p.select({
-          message: "What would you like to remove?",
-          options: removeOptions,
-        });
-
-        if (p.isCancel(removeChoice) || removeChoice === "cancel") {
+        if (p.isCancel(key)) {
           return false;
         }
 
-        if (removeChoice === "oauth" || removeChoice === "all") {
-          if (oauthProviderName === "copilot") {
-            await deleteCopilotCredentials();
-          } else {
-            await deleteTokens(oauthProviderName);
-          }
-          await clearAuthMethod(newProvider.id as ProviderType);
-          console.log(chalk.green("✓ OAuth session removed"));
-        }
+        process.env[newProvider.envVar] = key;
+        selectedAuthMethod = "apikey";
+        newApiKeyForSaving = key;
+      }
 
-        if (removeChoice === "apikey" || removeChoice === "all") {
-          // Clear API key from env (it will need to be re-entered)
-          delete process.env[newProvider.envVar];
-          console.log(chalk.green("✓ API key removed from session"));
-          console.log(chalk.dim(`  Note: If key is in ~/.coco/.env, remove it there too`));
-        }
+      if (newProvider.id === "vertex") {
+        const settings = await promptVertexSettings({
+          project: session.config.provider.project,
+          location: session.config.provider.location,
+        });
+        if (!settings) return false;
+        vertexSettings = settings;
+      }
+    }
+    // Handle remove credentials
+    else if (authChoice === "remove") {
+      const removeOptions: Array<{ value: string; label: string }> = [];
 
-        console.log("");
+      if (oauthConnected) {
+        removeOptions.push({
+          value: "oauth",
+          label: "🔐 Remove OAuth session",
+        });
+      }
+
+      if (apiKey) {
+        removeOptions.push({
+          value: "apikey",
+          label: "🔑 Remove API key",
+        });
+      }
+
+      if (oauthConnected && apiKey) {
+        removeOptions.push({
+          value: "all",
+          label: "🗑️  Remove all credentials",
+        });
+      }
+
+      removeOptions.push({
+        value: "cancel",
+        label: "❌ Cancel",
+      });
+
+      const removeChoice = await p.select({
+        message: "What would you like to remove?",
+        options: removeOptions,
+      });
+
+      if (p.isCancel(removeChoice) || removeChoice === "cancel") {
         return false;
+      }
+
+      if (removeChoice === "oauth" || removeChoice === "all") {
+        if (oauthProviderName === "copilot") {
+          await deleteCopilotCredentials();
+        } else {
+          await deleteTokens(oauthProviderName);
+        }
+        await clearAuthMethod(newProvider.id as ProviderType);
+        console.log(chalk.green("✓ OAuth session removed"));
+      }
+
+      if (removeChoice === "apikey" || removeChoice === "all") {
+        // Clear API key from env (it will need to be re-entered)
+        delete process.env[newProvider.envVar];
+        console.log(chalk.green("✓ API key removed from session"));
+        console.log(chalk.dim(`  Note: If key is in ~/.coco/.env, remove it there too`));
+      }
+
+      console.log("");
+      return false;
     }
   }
 
