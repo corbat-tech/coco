@@ -441,7 +441,9 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
   console.log();
 
   if (provider.id === "vertex") {
-    console.log(chalk.dim("   Vertex AI does not use API keys in Coco. Configure ADC, then retry."));
+    console.log(
+      chalk.dim("   Vertex AI does not use API keys in Coco. Configure ADC, then retry."),
+    );
     console.log();
     return null;
   }

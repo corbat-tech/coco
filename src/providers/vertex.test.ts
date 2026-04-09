@@ -111,7 +111,9 @@ describe("VertexProvider", () => {
     await provider.chat([{ role: "user", content: "hi" }], { model: "gemini-2.5-pro" });
 
     const url = String(vi.mocked(globalThis.fetch).mock.calls[0]?.[0]);
-    expect(url).toContain("https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/");
+    expect(url).toContain(
+      "https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/",
+    );
   });
 
   it("uses a regional endpoint for regional locations", async () => {
@@ -130,6 +132,8 @@ describe("VertexProvider", () => {
     await provider.chat([{ role: "user", content: "hi" }], { model: "gemini-2.5-pro" });
 
     const url = String(vi.mocked(globalThis.fetch).mock.calls[0]?.[0]);
-    expect(url).toContain("https://europe-west1-aiplatform.googleapis.com/v1/projects/test-project/locations/europe-west1/");
+    expect(url).toContain(
+      "https://europe-west1-aiplatform.googleapis.com/v1/projects/test-project/locations/europe-west1/",
+    );
   });
 });
