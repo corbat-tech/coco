@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.27.0] - 2026-04-09
+
+### Changed
+- **Release version alignment** — prepare the next release version and metadata after shipping `2.26.0` so upcoming changes continue from a clean `Unreleased` state.
+
 ## [2.26.0] - 2026-04-09
 
 ### Added
@@ -1279,7 +1284,10 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.25.0...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.27.0...HEAD
+[2.27.0]: https://github.com/corbat/corbat-coco/compare/v2.26.0...v2.27.0
+[2.26.0]: https://github.com/corbat/corbat-coco/compare/v2.25.15...v2.26.0
+[2.25.15]: https://github.com/corbat/corbat-coco/compare/v2.25.14...v2.25.15
 [2.25.0]: https://github.com/corbat/corbat-coco/compare/v2.24.2...v2.25.0
 [2.22.2]: https://github.com/corbat/corbat-coco/compare/v2.22.1...v2.22.2
 [2.22.1]: https://github.com/corbat/corbat-coco/compare/v2.22.0...v2.22.1

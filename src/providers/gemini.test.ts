@@ -171,7 +171,9 @@ describe("GeminiProvider", () => {
             { role: "user", parts: [{ text: "Read a.txt" }] },
             {
               role: "model",
-              parts: [{ functionCall: { id: "call-123", name: "read_file", args: { path: "a.txt" } } }],
+              parts: [
+                { functionCall: { id: "call-123", name: "read_file", args: { path: "a.txt" } } },
+              ],
             },
             {
               role: "user",
@@ -245,15 +247,18 @@ describe("GeminiProvider", () => {
       await provider.initialize({ apiKey: "test-key" });
 
       const chunks = [];
-      for await (const chunk of provider.streamWithTools([{ role: "user", content: "Read a.txt" }], {
-        tools: [
-          {
-            name: "read_file",
-            description: "Read a file",
-            input_schema: { type: "object", properties: { path: { type: "string" } } },
-          },
-        ],
-      })) {
+      for await (const chunk of provider.streamWithTools(
+        [{ role: "user", content: "Read a.txt" }],
+        {
+          tools: [
+            {
+              name: "read_file",
+              description: "Read a file",
+              input_schema: { type: "object", properties: { path: { type: "string" } } },
+            },
+          ],
+        },
+      )) {
         chunks.push(chunk);
       }
 

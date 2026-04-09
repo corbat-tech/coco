@@ -101,7 +101,10 @@ export class VertexProvider implements LLMProvider {
       process.env["GCLOUD_PROJECT"] ??
       "";
     this.location =
-      config.location ?? process.env["VERTEX_LOCATION"] ?? process.env["GOOGLE_CLOUD_LOCATION"] ?? DEFAULT_LOCATION;
+      config.location ??
+      process.env["VERTEX_LOCATION"] ??
+      process.env["GOOGLE_CLOUD_LOCATION"] ??
+      DEFAULT_LOCATION;
     if (!this.project.trim()) {
       throw new ProviderError(
         "Vertex AI project not configured. Set provider.project, VERTEX_PROJECT, or GOOGLE_CLOUD_PROJECT.",
@@ -134,7 +137,12 @@ export class VertexProvider implements LLMProvider {
     this.ensureInitialized();
 
     return withRetry(async () => {
-      const response = await this.generateContent(messages, options, options.tools, options.toolChoice);
+      const response = await this.generateContent(
+        messages,
+        options,
+        options.tools,
+        options.toolChoice,
+      );
       return this.parseResponseWithTools(response, options.model);
     }, this.retryConfig);
   }
@@ -165,7 +173,12 @@ export class VertexProvider implements LLMProvider {
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
 
-    const stream = await this.streamGenerateContent(messages, options, options.tools, options.toolChoice);
+    const stream = await this.streamGenerateContent(
+      messages,
+      options,
+      options.tools,
+      options.toolChoice,
+    );
     let stopReason: StreamChunk["stopReason"] = "end_turn";
     let streamToolCallCounter = 0;
 
@@ -196,8 +209,9 @@ export class VertexProvider implements LLMProvider {
           };
         }
       }
-      stopReason =
-        parts.some((part) => part.functionCall) ? "tool_use" : this.mapFinishReason(candidate?.finishReason);
+      stopReason = parts.some((part) => part.functionCall)
+        ? "tool_use"
+        : this.mapFinishReason(candidate?.finishReason);
     }
 
     yield { type: "done", stopReason };
@@ -372,7 +386,9 @@ export class VertexProvider implements LLMProvider {
 
   private convertToolChoice(
     choice: ChatWithToolsOptions["toolChoice"],
-  ): { functionCallingConfig: { mode: "AUTO" | "ANY"; allowedFunctionNames?: string[] } } | undefined {
+  ):
+    | { functionCallingConfig: { mode: "AUTO" | "ANY"; allowedFunctionNames?: string[] } }
+    | undefined {
     if (!choice || choice === "auto") {
       return { functionCallingConfig: { mode: "AUTO" } };
     }
@@ -503,10 +519,7 @@ export class VertexProvider implements LLMProvider {
     }
   }
 
-  private parseResponse(
-    response: VertexGenerateContentResponse,
-    model?: string,
-  ): ChatResponse {
+  private parseResponse(response: VertexGenerateContentResponse, model?: string): ChatResponse {
     const candidate = response.candidates?.[0];
     const text = (candidate?.content?.parts ?? [])
       .filter((part) => part.text)

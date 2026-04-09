@@ -375,9 +375,7 @@ export class GeminiProvider implements LLMProvider {
     }));
   }
 
-  private convertToolChoice(
-    choice: ChatWithToolsOptions["toolChoice"],
-  ): {
+  private convertToolChoice(choice: ChatWithToolsOptions["toolChoice"]): {
     mode: FunctionCallingConfigMode;
     allowedFunctionNames?: string[];
   } {
