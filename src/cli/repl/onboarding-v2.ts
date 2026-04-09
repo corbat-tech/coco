@@ -29,6 +29,7 @@ import {
   supportsOAuth,
   isGcloudInstalled,
   inspectADC,
+  runGcloudADCLogin,
   isOAuthConfigured,
   getOrRefreshOAuthToken,
 } from "../../auth/index.js";
@@ -399,7 +400,7 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
     return { type: provider.id, model, apiKey };
   }
 
-  const adc = await inspectADC();
+  let adc = await inspectADC();
 
   if (adc.status === "ok" && adc.token) {
     console.log(chalk.green("   ✓ gcloud ADC is already configured!"));
@@ -427,6 +428,42 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
     console.log(chalk.dim(`   ${adc.message}`));
     console.log();
   }
+  const runLoginNow = await p.confirm({
+    message: "Authenticate with gcloud now from Coco?",
+    initialValue: true,
+  });
+  if (p.isCancel(runLoginNow)) return null;
+
+  if (runLoginNow) {
+    p.log.step("Running `gcloud auth application-default login`...");
+    const loginOk = await runGcloudADCLogin();
+    if (loginOk) {
+      adc = await inspectADC();
+      if (adc.status === "ok" && adc.token) {
+        console.log(chalk.green("   ✓ gcloud ADC is now configured."));
+        console.log();
+        p.log.success("Authentication verified");
+
+        const vertexSettings = provider.id === "vertex" ? await promptVertexSettings() : undefined;
+        if (provider.id === "vertex" && !vertexSettings) return null;
+
+        const model = await selectModel(provider);
+        if (!model) return null;
+
+        return {
+          type: provider.id,
+          model,
+          apiKey: "__gcloud_adc__",
+          project: vertexSettings?.project,
+          location: vertexSettings?.location,
+        };
+      }
+    }
+
+    p.log.error("Could not complete gcloud ADC login from Coco.");
+    console.log();
+  }
+
   console.log(chalk.dim("   Check the current machine-wide ADC state with:"));
   console.log(chalk.cyan("   $ gcloud auth application-default print-access-token"));
   console.log();
