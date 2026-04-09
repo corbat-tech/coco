@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.28.2] - 2026-04-10
+
+### Fixed
+- **`web_search` now degrades gracefully without paid search keys** — when a model requests `engine: "brave"` or `engine: "serpapi"` but the corresponding API key is not configured, Coco now falls back automatically to DuckDuckGo instead of failing the tool call.
+- **Provider-dependent search failures during internet queries** — resolved an issue where different providers/models could emit alternate `web_search` engines and trigger avoidable hard failures despite DuckDuckGo being available.
+
 ## [2.28.1] - 2026-04-09
 
 ### Changed
@@ -1356,7 +1362,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.28.1...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.28.2...HEAD
+[2.28.2]: https://github.com/corbat/corbat-coco/compare/v2.28.1...v2.28.2
 [2.28.1]: https://github.com/corbat/corbat-coco/compare/v2.28.0...v2.28.1
 [2.28.0]: https://github.com/corbat/corbat-coco/compare/v2.27.5...v2.28.0
 [2.27.5]: https://github.com/corbat/corbat-coco/compare/v2.27.4...v2.27.5

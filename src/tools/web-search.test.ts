@@ -349,7 +349,9 @@ describe("web-search", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            web: { results: [{ title: "Brave Result", url: "https://example.com", description: "ok" }] },
+            web: {
+              results: [{ title: "Brave Result", url: "https://example.com", description: "ok" }],
+            },
           }),
       });
 
@@ -379,7 +381,9 @@ describe("web-search", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            organic_results: [{ title: "SerpAPI Result", link: "https://example.com", snippet: "ok" }],
+            organic_results: [
+              { title: "SerpAPI Result", link: "https://example.com", snippet: "ok" },
+            ],
           }),
       });
 
