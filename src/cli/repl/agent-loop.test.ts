@@ -234,6 +234,60 @@ describe("executeAgentTurn", () => {
     expect(result.toolCalls[0]?.name).toBe("get_env");
   });
 
+  it("deduplicates repeated bash_exec calls that only differ in metadata", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+    const { requiresConfirmation, confirmToolExecutionWithFallback } =
+      await import("./confirmation.js");
+
+    (requiresConfirmation as Mock).mockReturnValue(true);
+    (confirmToolExecutionWithFallback as Mock).mockResolvedValue("yes");
+
+    let providerCalls = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      providerCalls++;
+      if (providerCalls === 1) {
+        return toAsyncIterable(
+          (function* (): Generator<StreamChunk> {
+            const first: ToolCall = {
+              id: "call-a",
+              name: "bash_exec",
+              input: { command: "npx @mermaid-js/mermaid-cli -v || true", timeout: 120000 },
+            };
+            const second: ToolCall = {
+              id: "call-b",
+              name: "bash_exec",
+              input: { command: "npx   @mermaid-js/mermaid-cli -v || true", timeout: 30000 },
+            };
+            yield { type: "tool_use_start", toolCall: { id: first.id, name: first.name } };
+            yield { type: "tool_use_end", toolCall: first };
+            yield { type: "tool_use_start", toolCall: { id: second.id, name: second.name } };
+            yield { type: "tool_use_end", toolCall: second };
+            yield { type: "done", stopReason: "tool_use" };
+          })(),
+        );
+      }
+      return createTextStreamMock("ok", "end_turn")();
+    });
+
+    (mockToolRegistry.execute as Mock).mockResolvedValue({
+      success: true,
+      data: "ok",
+      duration: 1,
+    });
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "run mermaid check",
+      mockProvider,
+      mockToolRegistry,
+    );
+
+    expect(confirmToolExecutionWithFallback).toHaveBeenCalledTimes(1);
+    expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0]?.name).toBe("bash_exec");
+  });
+
   it("blocks bash_exec with `coco mcp` when user asked to use MCP", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 

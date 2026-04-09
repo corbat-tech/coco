@@ -678,7 +678,6 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         description: "Most capable Vertex Gemini 3 model (preview)",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
-        recommended: true,
       },
       {
         id: "gemini-3-flash-preview",
@@ -693,6 +692,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
         description: "Stable high-quality Vertex model for coding and complex reasoning",
         contextWindow: 1048576,
         maxOutputTokens: 65536,
+        recommended: true,
       },
       {
         id: "gemini-2.5-flash",

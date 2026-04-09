@@ -248,6 +248,41 @@ export async function executeAgentTurn(
     );
   }
 
+  function stableSerialize(value: unknown): string {
+    if (value === null || typeof value !== "object") {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return "null";
+      }
+    }
+
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+    }
+
+    const objectValue = value as Record<string, unknown>;
+    const keys = Object.keys(objectValue).sort();
+    return `{${keys
+      .map((key) => `${JSON.stringify(key)}:${stableSerialize(objectValue[key])}`)
+      .join(",")}}`;
+  }
+
+  function getToolCallDedupeFingerprint(toolCall: ToolCall): string {
+    if (toolCall.name === "bash_exec") {
+      const input = (toolCall.input ?? {}) as Record<string, unknown>;
+      const command = String(input.command ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const cwd = String(input.cwd ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+      return `bash_exec:${command}:cwd=${cwd}`;
+    }
+
+    return `${toolCall.name}:${stableSerialize(toolCall.input ?? {})}`;
+  }
+
   function shouldRecoverNoToolTurn(
     stopReason: StreamChunk["stopReason"] | undefined,
     content: string,
@@ -561,13 +596,7 @@ export async function executeAgentTurn(
     const dedupedToolCalls: ToolCall[] = [];
     const seenToolCallFingerprints = new Set<string>();
     for (const toolCall of collectedToolCalls) {
-      let inputSerialized = "{}";
-      try {
-        inputSerialized = JSON.stringify(toolCall.input ?? {});
-      } catch {
-        inputSerialized = "{}";
-      }
-      const fingerprint = `${toolCall.name}:${inputSerialized}`;
+      const fingerprint = getToolCallDedupeFingerprint(toolCall);
       if (seenToolCallFingerprints.has(fingerprint)) {
         continue;
       }
