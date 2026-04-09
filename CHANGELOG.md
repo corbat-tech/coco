@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.28.0] - 2026-04-09
+
+### Added
+- **Google account switching for Vertex ADC auth** — Coco now lets you revoke and re-login Application Default Credentials directly during `/provider` setup, so switching accounts no longer requires leaving the CLI.
+
+### Improved
+- **Vertex provider setup guidance in `/provider`** — setup now surfaces practical `gcloud` commands for discovering and setting project/location values, reducing friction during first-time configuration.
+
+### Fixed
+- **REPL exit can no longer hang after `Goodbye` on MCP shutdown** — timeout timers used by MCP lifecycle now always clean up, preventing lingering event-loop handles from blocking process exit.
+- **Duplicate Vertex streamed tool calls are now filtered** — repeated function-call chunks with the same payload/signature are deduplicated before emission, reducing duplicate tool execution risk.
+- **Credential removal flow now includes gcloud ADC revoke** — `/provider` credential cleanup now supports revoking ADC sessions (including safe handling when no active credentials exist).
+
 ## [2.27.5] - 2026-04-09
 
 ### Changed
@@ -1334,7 +1347,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.27.5...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.28.0...HEAD
+[2.28.0]: https://github.com/corbat/corbat-coco/compare/v2.27.5...v2.28.0
 [2.27.5]: https://github.com/corbat/corbat-coco/compare/v2.27.4...v2.27.5
 [2.27.4]: https://github.com/corbat/corbat-coco/compare/v2.27.3...v2.27.4
 [2.27.3]: https://github.com/corbat/corbat-coco/compare/v2.27.2...v2.27.3

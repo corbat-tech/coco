@@ -604,7 +604,9 @@ async function promptVertexSettings(): Promise<{ project: string; location: stri
     chalk.cyan("   $ gcloud config set compute/region <LOCATION>    # e.g. global, europe-west1"),
   );
   console.log(
-    chalk.dim("   (If compute/region is unset, set it as above, then use that value for Vertex location)\n"),
+    chalk.dim(
+      "   (If compute/region is unset, set it as above, then use that value for Vertex location)\n",
+    ),
   );
 
   const project = await p.text({

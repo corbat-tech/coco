@@ -225,13 +225,9 @@ describe("executeAgentTurn", () => {
       duration: 1,
     });
 
-    const result = await executeAgentTurn(
-      mockSession,
-      "hola",
-      mockProvider,
-      mockToolRegistry,
-      { skipConfirmation: true },
-    );
+    const result = await executeAgentTurn(mockSession, "hola", mockProvider, mockToolRegistry, {
+      skipConfirmation: true,
+    });
 
     expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
     expect(result.toolCalls).toHaveLength(1);
