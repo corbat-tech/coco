@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.27.5] - 2026-04-09
+
+### Changed
+- **Recommended permissions are now strictly project-scoped** — onboarding copy and storage paths now align with per-project behavior (`.coco/` inside each repo) instead of implying global recommended-permission application.
+- **Provider catalogs and defaults were refreshed** — OpenAI/Codex defaults now align to `gpt-5.3-codex`, deprecated external `gpt-5.4-codex` usage was removed, and Copilot model metadata was expanded with updated premium multipliers.
+
+### Improved
+- **Vertex/Gemini setup UX and resilience** — provider onboarding now preserves project/location config more consistently across auth flows and improves recovery paths when provider initialization partially succeeds.
+- **Copilot auth flow diagnostics** — OAuth/token-exchange messages now provide clearer account/subscription context to reduce false-positive confusion during sign-in.
+
+### Fixed
+- **Vertex Gemini 3 tool-calling compatibility** — thought-signature handling is now preserved across streamed tool turns, preventing `400 INVALID_ARGUMENT` failures such as missing `thought_signature` on follow-up function calls.
+- **Agent loop/tool confirmation continuity** — tool execution and confirmation fallbacks now avoid silent flow drops and preserve continuation behavior after prompt/tool interruptions.
+- **Per-project permission decision persistence** — apply/no-thanks/later decisions for recommended permissions now persist correctly by project, avoiding repeated prompts on every reopen for the same repo.
+
 ## [2.27.4] - 2026-04-09
 
 ### Changed
@@ -1319,7 +1334,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.27.4...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.27.5...HEAD
+[2.27.5]: https://github.com/corbat/corbat-coco/compare/v2.27.4...v2.27.5
 [2.27.4]: https://github.com/corbat/corbat-coco/compare/v2.27.3...v2.27.4
 [2.27.3]: https://github.com/corbat/corbat-coco/compare/v2.27.2...v2.27.3
 [2.27.2]: https://github.com/corbat/corbat-coco/compare/v2.27.1...v2.27.2
