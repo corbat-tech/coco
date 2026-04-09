@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.15] - 2026-04-09
+
+### Fixed
+- **Release CI formatting for MCP transport** — normalized formatting for the updated HTTP MCP transport so CI and release state are consistent after the streamable HTTP compliance changes.
+
 ## [2.25.14] - 2026-04-09
 
 ### Fixed

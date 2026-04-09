@@ -420,7 +420,9 @@ export class HTTPTransport implements MCPTransport {
             "protocolVersion" in retryData.result &&
             typeof (retryData.result as { protocolVersion?: unknown }).protocolVersion === "string"
           ) {
-            this.protocolVersion = (retryData.result as { protocolVersion: string }).protocolVersion;
+            this.protocolVersion = (
+              retryData.result as { protocolVersion: string }
+            ).protocolVersion;
           }
           this.messageCallback?.(retryData);
           return;
