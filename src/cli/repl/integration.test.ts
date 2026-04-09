@@ -60,7 +60,7 @@ vi.mock("./session.js", () => ({
 // Mock confirmation module
 vi.mock("./confirmation.js", () => ({
   requiresConfirmation: vi.fn(),
-  confirmToolExecution: vi.fn(),
+  confirmToolExecutionWithFallback: vi.fn(),
   createConfirmationState: vi.fn(() => ({ allowAll: false })),
 }));
 
@@ -432,10 +432,11 @@ describe("REPL Integration Tests", () => {
 
     it("should skip tool when confirmation is denied", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
-      const { requiresConfirmation, confirmToolExecution } = await import("./confirmation.js");
+      const { requiresConfirmation, confirmToolExecutionWithFallback } =
+        await import("./confirmation.js");
 
       (requiresConfirmation as Mock).mockReturnValue(true);
-      (confirmToolExecution as Mock).mockResolvedValue("no");
+      (confirmToolExecutionWithFallback as Mock).mockResolvedValue("no");
 
       const toolCall: ToolCall = {
         id: "tool-1",

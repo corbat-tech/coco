@@ -54,6 +54,12 @@ vi.mock("node:readline/promises", () => ({
   })),
 }));
 
+vi.mock("@clack/prompts", () => ({
+  select: vi.fn(),
+  text: vi.fn(),
+  isCancel: vi.fn(() => false),
+}));
+
 /**
  * Helper: Create a mock stdin emitter and patch process.stdin for testing.
  * Simulates keypress by emitting "data" events with Buffer payloads.
@@ -687,5 +693,45 @@ describe("confirmToolExecution", () => {
 
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("more lines"));
     });
+  });
+});
+
+describe("confirmToolExecutionWithFallback", () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+  let stdoutWriteSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    stdoutWriteSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+    stdoutWriteSpy.mockRestore();
+  });
+
+  it("falls back to clack selector when interactive renderer throws", async () => {
+    const mockStdin = createMockStdin();
+    const { confirmToolExecutionWithFallback } = await import("./confirmation.js");
+    const prompts = await import("@clack/prompts");
+    vi.mocked(prompts.select).mockResolvedValue("yes" as never);
+    mockStdin.setRawModeSpy.mockImplementationOnce(() => {
+      throw new Error("tty failure");
+    });
+
+    const toolCall: ToolCall = {
+      id: "tool-1",
+      name: "write_file",
+      input: { path: "/tmp/test.ts", content: "test" },
+    };
+
+    try {
+      const result = await confirmToolExecutionWithFallback(toolCall);
+      expect(result).toBe("yes");
+      expect(prompts.select).toHaveBeenCalled();
+    } finally {
+      mockStdin.restore();
+    }
   });
 });

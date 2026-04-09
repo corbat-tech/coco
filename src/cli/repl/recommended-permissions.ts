@@ -627,12 +627,13 @@ export async function shouldShowPermissionSuggestion(
 
 /**
  * Apply the recommended permissions template.
- * All tools (read + write) are saved as global — apply once, works everywhere.
+ * All tools (read + write) are saved for current project scope.
  */
 export async function applyRecommendedPermissions(projectPath = process.cwd()): Promise<void> {
-  // Apply all recommended tools as global
+  // Apply all recommended tools to current project only.
+  // This avoids surprising cross-project permission drift.
   for (const tool of [...RECOMMENDED_GLOBAL, ...RECOMMENDED_PROJECT]) {
-    await saveTrustedTool(tool, null, true);
+    await saveTrustedTool(tool, projectPath, false);
   }
 
   // Mark as applied for this project.
@@ -658,7 +659,7 @@ export async function showPermissionSuggestion(projectPath = process.cwd()): Pro
   console.log();
   console.log(chalk.magenta.bold("  📋 Recommended Permissions"));
   console.log();
-  console.log(chalk.dim("  Coco has a curated set of tool permissions for developers:"));
+  console.log(chalk.dim("  Coco has a curated set of tool permissions for this project:"));
   console.log(chalk.dim("  • Allow: file read/write, search, git staging, build, tests..."));
   console.log(
     chalk.dim("  • Ask each time: git commit, curl, rm, git pull, docker exec, cloud..."),
@@ -667,13 +668,18 @@ export async function showPermissionSuggestion(projectPath = process.cwd()): Pro
   console.log();
   console.log(chalk.dim("  Stored in ~/.coco/trusted-tools.json — edit manually or let"));
   console.log(chalk.dim("  Coco manage it when you approve actions from the prompt."));
+  console.log(chalk.dim("  Note: applying here affects only the current project."));
   console.log();
 
   const action = await p.select({
     message: "Apply recommended permissions?",
     options: [
       { value: "view", label: "View details", hint: "See the full list before deciding" },
-      { value: "apply", label: "Apply", hint: "Apply recommended permissions now" },
+      {
+        value: "apply",
+        label: "Apply",
+        hint: "Apply recommended permissions for this project",
+      },
       { value: "later", label: "Later", hint: "Remind me next time" },
       { value: "dismiss", label: "No thanks", hint: "Don't show again" },
     ],

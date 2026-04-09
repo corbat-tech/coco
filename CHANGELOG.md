@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.27.3] - 2026-04-09
+
+### Changed
+- **Quality mode now defaults to OFF for new sessions** — Coco now starts in fast mode by default to reduce token usage, while keeping `/quality on` as a global persisted preference.
+- **Startup hint now highlights quality mode value and activation command** — the initial panel now explains that quality mode is Coco’s key robustness advantage and shows `/quality on` explicitly.
+
+### Fixed
+- **Recommended permissions “Apply” now scopes to current project only** — accepting recommended permissions no longer grants global trust unexpectedly across unrelated repositories.
+- **Tool confirmation prompt now has a safe fallback selector** — when raw-key interactive confirmation fails, Coco now degrades to a `clack` selector instead of dropping or stalling the flow.
+- **Agent loop handles confirmation failures without silent termination** — confirmation prompt errors now surface as skipped-tool context and cleanly abort the affected turn instead of ending in ambiguous flow stops.
+
 ## [2.27.2] - 2026-04-09
 
 ### Changed
@@ -1301,7 +1312,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.27.2...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.27.3...HEAD
+[2.27.3]: https://github.com/corbat/corbat-coco/compare/v2.27.2...v2.27.3
 [2.27.2]: https://github.com/corbat/corbat-coco/compare/v2.27.1...v2.27.2
 [2.27.1]: https://github.com/corbat/corbat-coco/compare/v2.27.0...v2.27.1
 [2.27.0]: https://github.com/corbat/corbat-coco/compare/v2.26.0...v2.27.0

@@ -255,10 +255,11 @@ converged: true
       expect(loaded).toBe(true);
     });
 
-    it("should default to true when config file is missing", async () => {
-      setQualityLoop(false); // Reset in-memory state
+    it("should default to false when config file is missing", async () => {
+      setQualityLoop(true); // Reset in-memory state
       const loaded = await loadQualityLoopPreference();
-      expect(loaded).toBe(true);
+      expect(loaded).toBe(false);
+      expect(isQualityLoop()).toBe(false);
     });
 
     it("should preserve existing config keys when saving", async () => {

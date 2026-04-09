@@ -31,7 +31,8 @@ export async function analyzeAndSuggest(
   filePath: string,
   _context?: string,
 ): Promise<CodeSuggestion[]> {
-  const content = await fs.readFile(filePath, "utf-8");
+  const rawContent = await fs.readFile(filePath, "utf-8");
+  const content = typeof rawContent === "string" ? rawContent : String(rawContent ?? "");
   const lines = content.split("\n");
   const suggestions: CodeSuggestion[] = [];
 

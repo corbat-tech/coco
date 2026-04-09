@@ -5,6 +5,7 @@
 import * as readline from "node:readline/promises";
 import fs from "node:fs/promises";
 import chalk from "chalk";
+import * as p from "@clack/prompts";
 import type { ToolCall } from "../../providers/types.js";
 import { getTrustPattern } from "./bash-patterns.js";
 import { getRiskDescription, getEffectDescription } from "../../tools/permissions.js";
@@ -920,6 +921,62 @@ export async function confirmToolExecution(toolCall: ToolCall): Promise<Confirma
 
     process.stdin.on("data", onData);
   });
+}
+
+/**
+ * Fallback confirmation prompt for environments where raw key handling fails.
+ * Uses clack selectors (cooked mode) so the turn can continue reliably.
+ */
+async function confirmToolExecutionFallback(toolCall: ToolCall): Promise<ConfirmationResult> {
+  const { description } = formatToolCallForConfirmation(toolCall);
+  const isBashExec = toolCall.name === "bash_exec";
+
+  console.log();
+  console.log(chalk.yellow("  ⚠ Interactive tool selector unavailable. Using safe fallback."));
+
+  const options: Array<{ value: string; label: string; hint?: string }> = [
+    { value: "yes", label: "yes", hint: "Allow once" },
+    { value: "no", label: "no", hint: "Skip this action" },
+    { value: "trust_project", label: "trust (project)", hint: "Always allow in this project" },
+    { value: "trust_global", label: "trust (global)", hint: "Always allow everywhere" },
+  ];
+  if (isBashExec) {
+    options.splice(2, 0, { value: "edit", label: "edit command", hint: "Modify before running" });
+  }
+
+  const choice = await p.select({
+    message: `Confirm tool action:\n${description}`,
+    options,
+  });
+
+  if (p.isCancel(choice)) return "abort";
+  if (choice === "edit") {
+    const currentCommand = String(toolCall.input.command ?? "");
+    const edited = await p.text({
+      message: "Edit command:",
+      placeholder: currentCommand,
+      initialValue: currentCommand,
+      validate: (value) => (!value?.trim() ? "Command is required" : undefined),
+    });
+    if (p.isCancel(edited)) return "abort";
+    return { type: "edit", newCommand: edited.trim() };
+  }
+
+  return choice as ConfirmationResult;
+}
+
+/**
+ * Wrapper that preserves the rich interactive selector but degrades gracefully
+ * to a clack selector when terminal key handling is unavailable.
+ */
+export async function confirmToolExecutionWithFallback(
+  toolCall: ToolCall,
+): Promise<ConfirmationResult> {
+  try {
+    return await confirmToolExecution(toolCall);
+  } catch {
+    return await confirmToolExecutionFallback(toolCall);
+  }
 }
 
 /**

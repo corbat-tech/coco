@@ -87,6 +87,7 @@ vi.mock("./session.js", () => ({
 vi.mock("./confirmation.js", () => ({
   requiresConfirmation: vi.fn(),
   confirmToolExecution: vi.fn(),
+  confirmToolExecutionWithFallback: vi.fn(),
 }));
 
 // Mock allow-path prompt
@@ -543,7 +544,8 @@ describe("executeAgentTurn", () => {
   describe("confirmation handling", () => {
     it("should skip confirmation for trusted tools", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
-      const { requiresConfirmation, confirmToolExecution } = await import("./confirmation.js");
+      const { requiresConfirmation, confirmToolExecutionWithFallback } =
+        await import("./confirmation.js");
 
       (requiresConfirmation as Mock).mockReturnValue(true);
 
@@ -574,12 +576,13 @@ describe("executeAgentTurn", () => {
       await executeAgentTurn(mockSession, "Write file", mockProvider, mockToolRegistry);
 
       // Should not prompt for confirmation
-      expect(confirmToolExecution).not.toHaveBeenCalled();
+      expect(confirmToolExecutionWithFallback).not.toHaveBeenCalled();
     });
 
     it("should skip confirmation when skipConfirmation option is true", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
-      const { requiresConfirmation, confirmToolExecution } = await import("./confirmation.js");
+      const { requiresConfirmation, confirmToolExecutionWithFallback } =
+        await import("./confirmation.js");
 
       (requiresConfirmation as Mock).mockReturnValue(true);
 
@@ -608,15 +611,16 @@ describe("executeAgentTurn", () => {
         skipConfirmation: true,
       });
 
-      expect(confirmToolExecution).not.toHaveBeenCalled();
+      expect(confirmToolExecutionWithFallback).not.toHaveBeenCalled();
     });
 
     it("should prompt for confirmation for destructive tools", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
-      const { requiresConfirmation, confirmToolExecution } = await import("./confirmation.js");
+      const { requiresConfirmation, confirmToolExecutionWithFallback } =
+        await import("./confirmation.js");
 
       (requiresConfirmation as Mock).mockReturnValue(true);
-      (confirmToolExecution as Mock).mockResolvedValue("yes");
+      (confirmToolExecutionWithFallback as Mock).mockResolvedValue("yes");
 
       const toolCall: ToolCall = {
         id: "tool-1",
@@ -641,16 +645,17 @@ describe("executeAgentTurn", () => {
 
       await executeAgentTurn(mockSession, "Write file", mockProvider, mockToolRegistry);
 
-      expect(confirmToolExecution).toHaveBeenCalled();
+      expect(confirmToolExecutionWithFallback).toHaveBeenCalled();
       expect(mockToolRegistry.execute).toHaveBeenCalled();
     });
 
     it("should skip tool when user declines confirmation", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
-      const { requiresConfirmation, confirmToolExecution } = await import("./confirmation.js");
+      const { requiresConfirmation, confirmToolExecutionWithFallback } =
+        await import("./confirmation.js");
 
       (requiresConfirmation as Mock).mockReturnValue(true);
-      (confirmToolExecution as Mock).mockResolvedValue("no");
+      (confirmToolExecutionWithFallback as Mock).mockResolvedValue("no");
 
       const toolCall: ToolCall = {
         id: "tool-1",
@@ -682,10 +687,11 @@ describe("executeAgentTurn", () => {
 
     it("should abort turn when user chooses abort", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
-      const { requiresConfirmation, confirmToolExecution } = await import("./confirmation.js");
+      const { requiresConfirmation, confirmToolExecutionWithFallback } =
+        await import("./confirmation.js");
 
       (requiresConfirmation as Mock).mockReturnValue(true);
-      (confirmToolExecution as Mock).mockResolvedValue("abort");
+      (confirmToolExecutionWithFallback as Mock).mockResolvedValue("abort");
 
       const toolCall: ToolCall = {
         id: "tool-1",
@@ -710,10 +716,11 @@ describe("executeAgentTurn", () => {
 
     it("should trust tool for project when user chooses trust_project", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
-      const { requiresConfirmation, confirmToolExecution } = await import("./confirmation.js");
+      const { requiresConfirmation, confirmToolExecutionWithFallback } =
+        await import("./confirmation.js");
 
       (requiresConfirmation as Mock).mockReturnValue(true);
-      (confirmToolExecution as Mock).mockResolvedValue("trust_project");
+      (confirmToolExecutionWithFallback as Mock).mockResolvedValue("trust_project");
 
       const toolCall: ToolCall = { id: "tool-1", name: "bash_exec", input: { command: "ls" } };
 
@@ -740,10 +747,11 @@ describe("executeAgentTurn", () => {
 
     it("should trust tool globally when user chooses trust_global", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
-      const { requiresConfirmation, confirmToolExecution } = await import("./confirmation.js");
+      const { requiresConfirmation, confirmToolExecutionWithFallback } =
+        await import("./confirmation.js");
 
       (requiresConfirmation as Mock).mockReturnValue(true);
-      (confirmToolExecution as Mock).mockResolvedValue("trust_global");
+      (confirmToolExecutionWithFallback as Mock).mockResolvedValue("trust_global");
 
       const toolCall: ToolCall = {
         id: "tool-1",

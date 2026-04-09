@@ -16,9 +16,10 @@ import { CONFIG_PATHS } from "../../config/paths.js";
 
 /**
  * Quality loop state
- * Default: enabled for better quality (users can disable with /quality off)
+ * Default: disabled to optimize token/cost by default.
+ * Users can enable globally with /quality on (persisted in config).
  */
-let qualityLoopEnabled = true;
+let qualityLoopEnabled = false;
 
 /**
  * Whether the contextual hint has been shown this session
@@ -112,8 +113,8 @@ export function formatQualityLoopIndicator(): string {
 export function formatQualityLoopHint(): string {
   return (
     chalk.dim("  tip: ") +
-    chalk.magenta("/quality") +
-    chalk.dim(" enables auto-test & iterate until quality converges")
+    chalk.magenta("/quality on") +
+    chalk.dim(" enables Coco quality mode: auto-test, self-review, and iterate until robust")
   );
 }
 
@@ -198,9 +199,10 @@ export async function loadQualityLoopPreference(): Promise<boolean> {
       return value;
     }
   } catch {
-    // No config or parse error - default is ON
+    // No config or parse error - keep default (OFF)
   }
-  return true; // Default to enabled
+  qualityLoopEnabled = false;
+  return false; // Default to disabled
 }
 
 /**

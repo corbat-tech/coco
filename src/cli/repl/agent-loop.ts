@@ -31,7 +31,7 @@ import {
   saveDeniedTool,
   removeDeniedTool,
 } from "./session.js";
-import { requiresConfirmation, confirmToolExecution } from "./confirmation.js";
+import { requiresConfirmation, confirmToolExecutionWithFallback } from "./confirmation.js";
 import { getTrustPattern } from "./bash-patterns.js";
 import { ParallelToolExecutor } from "./parallel-executor.js";
 import {
@@ -600,18 +600,19 @@ export async function executeAgentTurn(
       if (needsConfirmation) {
         // Notify UI to clear any spinners before showing confirmation
         options.onBeforeConfirmation?.();
-        let confirmResult: Awaited<ReturnType<typeof confirmToolExecution>>;
+        let confirmResult: Awaited<ReturnType<typeof confirmToolExecutionWithFallback>>;
         try {
-          confirmResult = await confirmToolExecution(toolCall);
+          confirmResult = await confirmToolExecutionWithFallback(toolCall);
         } catch (confirmError) {
           // Confirmation prompt failed (e.g. terminal/readline error).
-          // Treat as declined so the agent loop continues without crashing.
+          // Abort this turn instead of silently skipping critical tool actions.
           options.onAfterConfirmation?.();
-          declinedTools.set(
-            toolCall.id,
+          declinedTools.set(toolCall.id, "Confirmation failed");
+          options.onToolSkipped?.(
+            toolCall,
             `Confirmation failed: ${confirmError instanceof Error ? confirmError.message : String(confirmError)}`,
           );
-          options.onToolSkipped?.(toolCall, "Confirmation error");
+          turnAborted = true;
           continue;
         }
         options.onAfterConfirmation?.();

@@ -96,7 +96,7 @@ export async function renderStartupPanel(
     ? chalk.magenta("  🔄 quality mode: ") +
       chalk.green.bold("on") +
       chalk.dim(" — iterates until quality ≥ 85. /quality to disable")
-    : chalk.dim("  💡 /quality on — enable auto-test & quality iteration");
+    : chalk.dim("  💡 quality mode is Coco's edge for robust code. Enable with /quality on");
   console.log(cocoStatus);
 
   const skillTotal = session.skillRegistry?.size ?? 0;
