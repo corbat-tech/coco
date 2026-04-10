@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.28.5] - 2026-04-10
+
+### Fixed
+- **VS Code extension release version drift** — ship/release version updates now keep `vscode-extension/package.json` in sync with the root `package.json`, so VS Code Marketplace publishes do not reuse a stale version after a CLI release.
+
 ## [2.28.4] - 2026-04-10
 
 ### Added
@@ -1382,7 +1387,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.4...HEAD
+[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.5...HEAD
+[2.28.5]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.4...v2.28.5
 [2.28.4]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.3...v2.28.4
 [2.28.3]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.2...v2.28.3
 [2.28.2]: https://github.com/corbat/corbat-coco/compare/v2.28.1...v2.28.2

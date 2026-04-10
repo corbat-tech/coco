@@ -25,6 +25,8 @@ const VERSION_FILES: Array<{
   { file: "pom.xml", stack: "java", field: "version" },
 ];
 
+const NODE_VERSION_SYNC_TARGETS = ["vscode-extension/package.json"] as const;
+
 /**
  * Detect the version file in a project directory.
  */
@@ -145,6 +147,28 @@ export async function writeVersion(
   }
 
   await writeFile(fullPath, updated, "utf-8");
+
+  if (versionFile.stack === "node" && versionFile.path === "package.json") {
+    await syncCompanionNodeVersions(cwd, newVersion);
+  }
+}
+
+async function syncCompanionNodeVersions(cwd: string, newVersion: string): Promise<void> {
+  for (const relativePath of NODE_VERSION_SYNC_TARGETS) {
+    const fullPath = path.join(cwd, relativePath);
+    if (!(await fileExists(fullPath))) {
+      continue;
+    }
+
+    const content = await readFile(fullPath, "utf-8");
+    const pkg = JSON.parse(content) as Record<string, unknown>;
+    if (typeof pkg["version"] !== "string") {
+      continue;
+    }
+
+    pkg["version"] = newVersion;
+    await writeFile(fullPath, JSON.stringify(pkg, null, 2) + "\n", "utf-8");
+  }
 }
 
 // ============================================================================

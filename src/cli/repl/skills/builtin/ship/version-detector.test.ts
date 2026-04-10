@@ -2,8 +2,11 @@
  * Tests for the version detector module
  */
 
-import { describe, it, expect } from "vitest";
-import { bumpVersion, detectBumpFromCommits } from "./version-detector.js";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { bumpVersion, detectBumpFromCommits, writeVersion } from "./version-detector.js";
 
 describe("bumpVersion", () => {
   it("bumps patch version", () => {
@@ -70,5 +73,48 @@ describe("detectBumpFromCommits", () => {
   it("handles feature with scope", () => {
     const messages = ["feat(auth): add oauth support"];
     expect(detectBumpFromCommits(messages)).toBe("minor");
+  });
+});
+
+describe("writeVersion", () => {
+  const tempDirs: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  it("syncs vscode-extension/package.json when bumping the root node package version", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "coco-version-detector-"));
+    tempDirs.push(cwd);
+
+    await writeFile(
+      path.join(cwd, "package.json"),
+      JSON.stringify({ name: "@corbat-tech/coco", version: "1.2.3" }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const extensionDir = path.join(cwd, "vscode-extension");
+    await mkdir(extensionDir, { recursive: true });
+    await writeFile(
+      path.join(extensionDir, "package.json"),
+      JSON.stringify({ name: "corbat-coco", version: "1.2.3" }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    await writeVersion(
+      cwd,
+      { path: "package.json", stack: "node", currentVersion: "1.2.3", field: "version" },
+      "1.2.4",
+    );
+
+    const rootPackage = JSON.parse(await readFile(path.join(cwd, "package.json"), "utf-8")) as {
+      version: string;
+    };
+    const extensionPackage = JSON.parse(
+      await readFile(path.join(extensionDir, "package.json"), "utf-8"),
+    ) as { version: string };
+
+    expect(rootPackage.version).toBe("1.2.4");
+    expect(extensionPackage.version).toBe("1.2.4");
   });
 });
