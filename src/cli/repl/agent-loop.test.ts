@@ -4,6 +4,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
+import { access, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { LLMProvider, StreamChunk, ToolCall } from "../../providers/types.js";
 
 /**
@@ -377,6 +380,124 @@ describe("executeAgentTurn", () => {
       expect.anything(),
     );
     expect(addMessage).toHaveBeenCalled();
+  });
+
+  it("should block non-read-only tools in strict plan mode", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    const toolCall: ToolCall = {
+      id: "tool-write-1",
+      name: "write_file",
+      input: { path: "/test/file.ts", content: "blocked" },
+    };
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("Planning only.", [toolCall])();
+      }
+      return createTextStreamMock("Plan completed without writes.")();
+    });
+
+    mockSession.planMode = true;
+    mockSession.config.agent.planModeStrict = true;
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "Create a plan only",
+      mockProvider,
+      mockToolRegistry,
+    );
+
+    expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+    expect(result.toolCalls).toHaveLength(0);
+    expect(result.content).toContain("Plan completed");
+  });
+
+  it("should record output offload observations without changing tool execution", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    const toolCall: ToolCall = {
+      id: "tool-large-1",
+      name: "read_file",
+      input: { path: "/test/large.log" },
+    };
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("Reading log.", [toolCall])();
+      }
+      return createTextStreamMock("Done.")();
+    });
+
+    mockSession.config.agent.outputOffload = true;
+    (mockToolRegistry.execute as Mock).mockResolvedValue({
+      success: true,
+      data: { content: "x".repeat(13050) },
+      duration: 10,
+    });
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "Inspect the large log",
+      mockProvider,
+      mockToolRegistry,
+    );
+
+    expect(result.quality?.observedLargeOutputs).toBe(1);
+    expect(result.quality?.observedLargeOutputChars).toBeGreaterThan(12000);
+    expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("should persist very large outputs to local artifacts when outputOffload is enabled", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+    const tempProject = await mkdtemp(path.join(tmpdir(), "coco-offload-"));
+
+    const toolCall: ToolCall = {
+      id: "tool-large-artifact-1",
+      name: "read_file",
+      input: { path: "/test/huge.log" },
+    };
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createToolStreamMock("Reading large file.", [toolCall])();
+      }
+      return createTextStreamMock("Done.")();
+    });
+
+    mockSession.projectPath = tempProject;
+    mockSession.config.agent.outputOffload = true;
+    (mockToolRegistry.execute as Mock).mockResolvedValue({
+      success: true,
+      data: { content: "y".repeat(22050) },
+      duration: 10,
+    });
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "Inspect the huge file",
+      mockProvider,
+      mockToolRegistry,
+    );
+
+    const artifactPath = path.join(
+      tempProject,
+      ".coco",
+      "session-artifacts",
+      mockSession.id,
+      "read_file-tool-large-artifact-1.txt",
+    );
+
+    await expect(access(artifactPath)).resolves.toBeUndefined();
+    expect(result.quality?.observedLargeOutputs).toBe(1);
+
+    await rm(tempProject, { recursive: true, force: true });
   });
 
   it("should handle tool execution errors", async () => {

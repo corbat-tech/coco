@@ -9,7 +9,9 @@ import type { LLMProvider } from "../../providers/types.js";
 import type { ToolRegistry } from "../../tools/registry.js";
 
 describe("agent-loop error handling", () => {
-  const createMockSession = (): ReplSession =>
+  const createMockSession = (
+    agentOverrides?: Partial<ReplSession["config"]["agent"]>,
+  ): ReplSession =>
     ({
       id: "test-session",
       messages: [],
@@ -17,7 +19,12 @@ describe("agent-loop error handling", () => {
       config: {
         provider: { type: "openai", model: "gpt-4", maxTokens: 4000 },
         ui: { theme: "dark", showTimestamps: false, maxHistorySize: 100 },
-        agent: { systemPrompt: "Test", maxToolIterations: 10, confirmDestructive: true },
+        agent: {
+          systemPrompt: "Test",
+          maxToolIterations: 10,
+          confirmDestructive: true,
+          ...agentOverrides,
+        },
       },
       trustedTools: new Set(),
       planMode: false,
@@ -116,7 +123,7 @@ describe("agent-loop error handling", () => {
     });
 
     it("should preserve partial content when error occurs mid-stream", async () => {
-      const session = createMockSession();
+      const session = createMockSession({ recoveryV2: true });
       const mockProvider = {
         streamWithTools: vi.fn().mockImplementation(async function* () {
           yield { type: "text", text: "Partial response" };
@@ -138,6 +145,39 @@ describe("agent-loop error handling", () => {
 
       expect(result.partialContent).toBe("Partial response");
       expect(result.error).toBe("Connection lost");
+      expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(1);
+    });
+
+    it("should retry once on retryable stream errors when recoveryV2 is enabled", async () => {
+      const session = createMockSession({ recoveryV2: true });
+      let attempts = 0;
+      const mockProvider = {
+        streamWithTools: vi.fn().mockImplementation(async function* () {
+          attempts++;
+          if (attempts === 1) {
+            throw new Error("socket hang up");
+          }
+          yield { type: "text", text: "Recovered response" };
+          yield { type: "done" };
+        }),
+        countTokens: vi.fn().mockReturnValue(100),
+      } as unknown as LLMProvider;
+
+      const mockToolRegistry = {
+        getToolDefinitionsForLLM: vi.fn().mockReturnValue([]),
+      } as unknown as ToolRegistry;
+
+      const result = await executeAgentTurn(
+        session,
+        "Test message",
+        mockProvider,
+        mockToolRegistry,
+      );
+
+      expect(result.aborted).toBe(false);
+      expect(result.error).toBeUndefined();
+      expect(result.content).toBe("Recovered response");
+      expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(2);
     });
 
     it("should continue processing when a single chunk is malformed", async () => {

@@ -9,6 +9,8 @@ export interface TurnQualityMetrics {
   failedToolCalls: number;
   hadError: boolean;
   repeatedOutputsSuppressed: number;
+  observedLargeOutputs?: number;
+  observedLargeOutputChars?: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -21,6 +23,8 @@ export function computeTurnQualityMetrics(input: {
   executedTools: ExecutedToolCall[];
   hadError: boolean;
   repeatedOutputsSuppressed: number;
+  observedLargeOutputs?: number;
+  observedLargeOutputChars?: number;
 }): TurnQualityMetrics {
   const executedToolCalls = input.executedTools.length;
   const successfulToolCalls = input.executedTools.filter((t) => t.result.success).length;
@@ -52,6 +56,8 @@ export function computeTurnQualityMetrics(input: {
     failedToolCalls,
     hadError: input.hadError,
     repeatedOutputsSuppressed: input.repeatedOutputsSuppressed,
+    observedLargeOutputs: input.observedLargeOutputs ?? 0,
+    observedLargeOutputChars: input.observedLargeOutputChars ?? 0,
   };
 }
 

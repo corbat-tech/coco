@@ -55,6 +55,7 @@ export const helpCommand: SlashCommand = {
         commands: [
           { cmd: "/model, /m", desc: "View or change the current model" },
           { cmd: "/provider", desc: "View or change the LLM provider" },
+          { cmd: "/doctor, /dr", desc: "Run local diagnostics for config, auth, hooks, and tools" },
           { cmd: "/compact", desc: "Toggle compact mode (less verbose)" },
           { cmd: "/cost, /tokens", desc: "Show token usage and cost" },
           { cmd: "/trust", desc: "Manage project trust permissions" },

@@ -58,6 +58,9 @@ export const planCommand: SlashCommand = {
     if (subcommand === "status") {
       if (session.planMode) {
         p.log.info(chalk.cyan("Plan mode is ACTIVE (read-only tools only)"));
+        if (session.config.agent.planModeStrict) {
+          p.log.info("Strict plan mode is ON. Only the strict read-only allowlist is available.");
+        }
         if (session.pendingPlan) {
           p.log.info("A plan is pending approval. Use /plan approve or /plan reject.");
         }
@@ -82,7 +85,7 @@ export const planCommand: SlashCommand = {
       // We inject it as a message instruction
       session.messages.push({
         role: "user",
-        content: `Execute the following approved plan. Implement each step carefully:\n\n${plan}`,
+      content: `Execute the following approved plan. Implement each step carefully:\n\n${plan}`,
       });
       return false;
     }
@@ -123,6 +126,9 @@ export const planCommand: SlashCommand = {
 
     p.log.success(chalk.cyan("Plan mode ACTIVATED"));
     p.log.info("Agent will explore the codebase and create a plan.");
+    if (session.config.agent.planModeStrict) {
+      p.log.info("Strict plan mode is ON. Execution tools remain blocked until approval.");
+    }
     p.log.info(chalk.dim(`Task: ${instruction}`));
     p.log.info("After the plan is generated, use /plan approve or /plan reject.");
 
