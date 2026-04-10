@@ -535,83 +535,84 @@ export async function executeAgentTurn(
 
             // Wrap each chunk processing in try/catch to prevent single bad chunk from stopping flow
             try {
-          // Handle text chunks - stream them immediately
-          if (chunk.type === "text" && chunk.text) {
-            // End thinking spinner on first text
-            if (!thinkingEnded) {
-              options.onThinkingEnd?.();
-              thinkingEnded = true;
-            }
-            responseContent += chunk.text;
-            finalContent += chunk.text;
-            iterationTextChunks.push(chunk);
-          }
+              // Handle text chunks - stream them immediately
+              if (chunk.type === "text" && chunk.text) {
+                // End thinking spinner on first text
+                if (!thinkingEnded) {
+                  options.onThinkingEnd?.();
+                  thinkingEnded = true;
+                }
+                responseContent += chunk.text;
+                finalContent += chunk.text;
+                iterationTextChunks.push(chunk);
+              }
 
-          // Handle tool call start
-          if (chunk.type === "tool_use_start" && chunk.toolCall) {
-            // Flush any buffered text before showing spinner
-            flushLineBuffer();
+              // Handle tool call start
+              if (chunk.type === "tool_use_start" && chunk.toolCall) {
+                // Flush any buffered text before showing spinner
+                flushLineBuffer();
 
-            // End thinking spinner when tool starts (if no text came first)
-            if (!thinkingEnded) {
-              options.onThinkingEnd?.();
-              thinkingEnded = true;
-            }
-            const id = chunk.toolCall.id ?? `tool_${toolCallBuilders.size}`;
-            const toolName = chunk.toolCall.name ?? "";
-            toolCallBuilders.set(id, {
-              id,
-              name: toolName,
-              input: {},
-              geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
-            });
-            // Notify that a tool is being prepared/parsed
-            if (toolName) {
-              options.onToolPreparing?.(toolName);
-            }
-          }
+                // End thinking spinner when tool starts (if no text came first)
+                if (!thinkingEnded) {
+                  options.onThinkingEnd?.();
+                  thinkingEnded = true;
+                }
+                const id = chunk.toolCall.id ?? `tool_${toolCallBuilders.size}`;
+                const toolName = chunk.toolCall.name ?? "";
+                toolCallBuilders.set(id, {
+                  id,
+                  name: toolName,
+                  input: {},
+                  geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
+                });
+                // Notify that a tool is being prepared/parsed
+                if (toolName) {
+                  options.onToolPreparing?.(toolName);
+                }
+              }
 
-          // Handle tool call end - finalize the tool call
-          if (chunk.type === "tool_use_end" && chunk.toolCall) {
-            const id = chunk.toolCall.id ?? "";
-            const builder = toolCallBuilders.get(id);
-            if (builder) {
-              const finalToolCall: ToolCall = {
-                id: builder.id,
-                name: chunk.toolCall.name ?? builder.name,
-                input: chunk.toolCall.input ?? builder.input,
-                geminiThoughtSignature:
-                  chunk.toolCall.geminiThoughtSignature ?? builder.geminiThoughtSignature,
-              };
-              collectedToolCalls.push(finalToolCall);
-            } else if (chunk.toolCall.id && chunk.toolCall.name) {
-              // Direct tool call without builder
-              collectedToolCalls.push({
-                id: chunk.toolCall.id,
-                name: chunk.toolCall.name,
-                input: chunk.toolCall.input ?? {},
-                geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
-              });
-            }
-          }
+              // Handle tool call end - finalize the tool call
+              if (chunk.type === "tool_use_end" && chunk.toolCall) {
+                const id = chunk.toolCall.id ?? "";
+                const builder = toolCallBuilders.get(id);
+                if (builder) {
+                  const finalToolCall: ToolCall = {
+                    id: builder.id,
+                    name: chunk.toolCall.name ?? builder.name,
+                    input: chunk.toolCall.input ?? builder.input,
+                    geminiThoughtSignature:
+                      chunk.toolCall.geminiThoughtSignature ?? builder.geminiThoughtSignature,
+                  };
+                  collectedToolCalls.push(finalToolCall);
+                } else if (chunk.toolCall.id && chunk.toolCall.name) {
+                  // Direct tool call without builder
+                  collectedToolCalls.push({
+                    id: chunk.toolCall.id,
+                    name: chunk.toolCall.name,
+                    input: chunk.toolCall.input ?? {},
+                    geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
+                  });
+                }
+              }
 
-          // Handle done
-          if (chunk.type === "done") {
-            // Capture stopReason from the done chunk
-            if (chunk.stopReason) {
-              lastStopReason = chunk.stopReason;
-            }
-            // Ensure thinking ended
-            if (!thinkingEnded) {
-              options.onThinkingEnd?.();
-              thinkingEnded = true;
-            }
-            break;
-          }
+              // Handle done
+              if (chunk.type === "done") {
+                // Capture stopReason from the done chunk
+                if (chunk.stopReason) {
+                  lastStopReason = chunk.stopReason;
+                }
+                // Ensure thinking ended
+                if (!thinkingEnded) {
+                  options.onThinkingEnd?.();
+                  thinkingEnded = true;
+                }
+                break;
+              }
             } catch (chunkError) {
               // Log chunk processing error but continue with next chunk
               // This prevents a single malformed chunk from stopping the entire flow
-              const errorMsg = chunkError instanceof Error ? chunkError.message : String(chunkError);
+              const errorMsg =
+                chunkError instanceof Error ? chunkError.message : String(chunkError);
               console.error(`[agent-loop] Error processing chunk: ${errorMsg}`);
               // Continue to next chunk
             }
@@ -821,10 +822,7 @@ export async function executeAgentTurn(
         continue;
       }
 
-      if (
-        strictPlanModeEnabled &&
-        !STRICT_PLAN_MODE_ALLOWED_TOOLS.has(toolCall.name)
-      ) {
+      if (strictPlanModeEnabled && !STRICT_PLAN_MODE_ALLOWED_TOOLS.has(toolCall.name)) {
         declinedTools.set(
           toolCall.id,
           `Blocked by strict plan mode: tool '${toolCall.name}' is not read-only`,
