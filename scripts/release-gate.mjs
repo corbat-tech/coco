@@ -1,22 +1,46 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
+
+function resolveLocalBin(name) {
+  const binName = process.platform === "win32" ? `${name}.cmd` : name;
+  let current = process.cwd();
+
+  while (true) {
+    const candidate = path.join(current, "node_modules", ".bin", binName);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+
+  return name;
+}
+
+const tscBin = resolveLocalBin("tsc");
+const oxlintBin = resolveLocalBin("oxlint");
+const vitestBin = resolveLocalBin("vitest");
 
 const checks = [
   {
     name: "Typecheck",
-    cmd: ["pnpm", "-s", "tsc", "--noEmit"],
+    cmd: [tscBin, "--noEmit"],
   },
   {
     name: "Lint",
-    cmd: ["pnpm", "-s", "lint"],
+    cmd: [oxlintBin, "src", "test"],
   },
   {
     name: "Stable Provider/Agent Suites",
     cmd: [
-      "pnpm",
-      "-s",
-      "vitest",
+      vitestBin,
       "run",
       "src/providers/openai.test.ts",
       "src/providers/codex.test.ts",

@@ -63,6 +63,14 @@ export interface ReplConfig {
     confirmDestructive: boolean;
     /** If true, Coco may switch provider automatically after repeated provider failures */
     enableAutoSwitchProvider?: boolean;
+    /** Enables bounded stream/provider recovery retries inside the agent loop */
+    recoveryV2?: boolean;
+    /** Enforces stricter read-only guarantees while plan mode is active */
+    planModeStrict?: boolean;
+    /** Enables the expanded read-only doctor diagnostics command */
+    doctorV2?: boolean;
+    /** Enables output offload instrumentation without changing context behavior */
+    outputOffload?: boolean;
   };
 }
 
@@ -96,6 +104,8 @@ export interface AgentTurnQuality {
   failedToolCalls: number;
   hadError: boolean;
   repeatedOutputsSuppressed: number;
+  observedLargeOutputs?: number;
+  observedLargeOutputChars?: number;
 }
 
 /**

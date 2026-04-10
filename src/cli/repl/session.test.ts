@@ -18,6 +18,26 @@ vi.mock("../../config/env.js", () => ({
 }));
 
 describe("createDefaultReplConfig", () => {
+  it("should enable agent feature flags from environment variables", async () => {
+    process.env["COCO_AGENT_RECOVERY_V2"] = "true";
+    process.env["COCO_AGENT_PLAN_MODE_STRICT"] = "1";
+    process.env["COCO_AGENT_DOCTOR_V2"] = "yes";
+    process.env["COCO_AGENT_OUTPUT_OFFLOAD"] = "on";
+
+    const { createDefaultReplConfig } = await import("./session.js");
+    const config = await createDefaultReplConfig();
+
+    expect(config.agent.recoveryV2).toBe(true);
+    expect(config.agent.planModeStrict).toBe(true);
+    expect(config.agent.doctorV2).toBe(true);
+    expect(config.agent.outputOffload).toBe(true);
+
+    delete process.env["COCO_AGENT_RECOVERY_V2"];
+    delete process.env["COCO_AGENT_PLAN_MODE_STRICT"];
+    delete process.env["COCO_AGENT_DOCTOR_V2"];
+    delete process.env["COCO_AGENT_OUTPUT_OFFLOAD"];
+  });
+
   it("should create config with provider settings", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
 
@@ -46,6 +66,27 @@ describe("createDefaultReplConfig", () => {
     expect(config.agent.systemPrompt).toContain("Corbat-Coco");
     expect(config.agent.maxToolIterations).toBe(25);
     expect(config.agent.confirmDestructive).toBe(true);
+    expect(config.agent.recoveryV2).toBe(true);
+    expect(config.agent.planModeStrict).toBe(true);
+    expect(config.agent.doctorV2).toBe(true);
+    expect(config.agent.outputOffload).toBe(false);
+  });
+
+  it("should allow disabling default-on agent flags via environment variables", async () => {
+    process.env["COCO_AGENT_RECOVERY_V2"] = "false";
+    process.env["COCO_AGENT_PLAN_MODE_STRICT"] = "false";
+    process.env["COCO_AGENT_DOCTOR_V2"] = "false";
+
+    const { createDefaultReplConfig } = await import("./session.js");
+    const config = await createDefaultReplConfig();
+
+    expect(config.agent.recoveryV2).toBe(false);
+    expect(config.agent.planModeStrict).toBe(false);
+    expect(config.agent.doctorV2).toBe(false);
+
+    delete process.env["COCO_AGENT_RECOVERY_V2"];
+    delete process.env["COCO_AGENT_PLAN_MODE_STRICT"];
+    delete process.env["COCO_AGENT_DOCTOR_V2"];
   });
 
   it("should fall back to default model when saved model is empty", async () => {

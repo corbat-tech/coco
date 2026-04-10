@@ -203,6 +203,7 @@ Priority (highest to lowest):
 /check         # quality gate
 /preflight     # pre-release validation only
 /hotfix        # fast-track patch release
+/doctor        # local diagnostics for config/auth/hooks/tools
 ```
 
 ### Creating a project skill

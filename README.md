@@ -97,9 +97,12 @@ Quality mode is configurable and can be turned on/off per session.
 - Agent turns include quality telemetry (`score`, iteration usage, tool success/failure, repeated-output suppression).
 - Repeated identical tool outputs are suppressed in context to reduce token waste in multi-iteration loops.
 - Agent loop now recovers from common "silent stop" cases (e.g. `tool_use` without reconstructed tool calls, empty `max_tokens` turns, short planning-only replies) before giving control back.
+- Streaming turns now retry once on empty retryable provider failures before surfacing an error, reducing transient dead-end turns without re-running partial tool work.
 - Recovery replay also covers multimodal prompts (image + text / image-only) by rebuilding a retryable task prompt when possible.
 - Iteration budget can auto-extend when the task is still making real progress to reduce manual `continue` prompts.
 - Automatic provider switching is **opt-in** via `agent.enableAutoSwitchProvider` (default: `false`).
+- Plan mode now has a strict read-only allowlist by default, so `/plan` cannot drift into write-capable tools unless you explicitly disable `agent.planModeStrict`.
+- `/doctor` provides a read-only local diagnostics pass for project access, config parsing, provider auth, hooks, and tool registry health.
 - Release readiness can be gated with `pnpm check:release` (typecheck + lint + stable provider/agent suites).
 
 ## Commands (REPL)
@@ -113,6 +116,8 @@ Common commands:
 - `/check` run checks in project context.
 - `/review` run code review workflow.
 - `/diff` inspect current changes.
+- `/plan` explore and design with read-only tools only.
+- `/doctor` run local diagnostics for config, auth, hooks, and tools.
 - `/ship` run release-oriented workflow.
 - `/permissions` inspect/update tool trust.
 - `/compact` compact session context.

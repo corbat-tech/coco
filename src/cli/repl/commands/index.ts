@@ -47,6 +47,7 @@ import { fullPowerRiskCommand } from "./full-power-risk.js";
 import { buildAppCommand } from "./build-app.js";
 import { contextCommand } from "./context.js";
 import { bestOfNCommand } from "./best-of-n.js";
+import { doctorCommand } from "./doctor.js";
 import { renderError } from "../output/renderer.js";
 import { createDefaultRegistry } from "../skills/index.js";
 import type { SkillRegistry } from "../skills/index.js";
@@ -91,6 +92,7 @@ const commands: SlashCommand[] = [
   buildAppCommand,
   contextCommand,
   bestOfNCommand,
+  doctorCommand,
 ];
 
 /**

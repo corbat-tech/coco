@@ -69,12 +69,19 @@ These keys apply to the interactive REPL agent loop (`~/.coco/config.json` / run
 | `agent.maxToolIterations` | number | 25 | Base maximum tool-call iterations per turn |
 | `agent.confirmDestructive` | boolean | true | Ask before destructive operations |
 | `agent.enableAutoSwitchProvider` | boolean | false | Allow automatic provider switching after repeated provider failures |
+| `agent.recoveryV2` | boolean | true | Retry one empty retryable stream failure before surfacing an agent-loop error |
+| `agent.planModeStrict` | boolean | true | Enforce the strict read-only allowlist while `/plan` is active |
+| `agent.doctorV2` | boolean | true | Enable the expanded `/doctor` diagnostics command |
+| `agent.outputOffload` | boolean | false | Persist very large tool outputs to local artifacts instead of keeping them inline |
 
 Notes:
 - `agent.enableAutoSwitchProvider` is disabled by default to avoid unexpected cost/provider changes.
 - Even with auto-switch disabled, Coco suggests `/provider` and `/model` when repeated provider errors are detected.
 - The agent loop includes recovery for non-productive turns (e.g. `tool_use` without reconstructed tool calls, empty `max_tokens` output) before ending a turn.
 - Recovery also reconstructs retry prompts for multimodal inputs, so image-driven turns are not excluded from automatic retry logic.
+- `agent.recoveryV2` stays bounded: it retries once and only when no partial text or tool calls were already produced.
+- `agent.planModeStrict` is enabled by default so `/plan` behaves as a genuinely read-only planning mode.
+- `agent.outputOffload` remains disabled by default because it changes how very large tool outputs are persisted and recalled.
 
 **Available Models:**
 - `claude-sonnet-4-20250514` - Fast, good for most tasks
@@ -147,6 +154,10 @@ coco config set quality.minCoverage 60
 | `COCO_CONFIG_PATH` | Custom config file path |
 | `COCO_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`) |
 | `COCO_NO_COLOR` | Disable colored output |
+| `COCO_AGENT_RECOVERY_V2` | Override `agent.recoveryV2` |
+| `COCO_AGENT_PLAN_MODE_STRICT` | Override `agent.planModeStrict` |
+| `COCO_AGENT_DOCTOR_V2` | Override `agent.doctorV2` |
+| `COCO_AGENT_OUTPUT_OFFLOAD` | Override `agent.outputOffload` |
 
 ### Precedence
 

@@ -12,6 +12,8 @@
  */
 
 import chalk from "chalk";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type {
   LLMProvider,
   ToolCall,
@@ -108,7 +110,12 @@ export async function executeAgentTurn(
   let finalContent = "";
   let hadTurnError = false;
   let repeatedOutputsSuppressed = 0;
+  let observedLargeOutputs = 0;
+  let observedLargeOutputChars = 0;
   const repeatedOutputSuppressor = new RepeatedOutputSuppressor();
+  const recoveryV2Enabled = session.config.agent.recoveryV2 === true;
+  const strictPlanModeEnabled = session.planMode && session.config.agent.planModeStrict === true;
+  const outputOffloadObservationEnabled = session.config.agent.outputOffload === true;
 
   const buildQualityMetrics = (): TurnQualityMetrics =>
     computeTurnQualityMetrics({
@@ -117,6 +124,8 @@ export async function executeAgentTurn(
       executedTools,
       hadError: hadTurnError,
       repeatedOutputsSuppressed,
+      observedLargeOutputs,
+      observedLargeOutputChars,
     });
 
   // Helper: abort return with rollback
@@ -137,7 +146,11 @@ export async function executeAgentTurn(
   // Get tool definitions for LLM (cast to provider's ToolDefinition type)
   // In plan mode, restrict to read-only tools only
   const allTools = toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
-  const tools = session.planMode ? filterReadOnlyTools(allTools) : allTools;
+  const tools = session.planMode
+    ? strictPlanModeEnabled
+      ? filterStrictPlanModeTools(allTools)
+      : filterReadOnlyTools(allTools)
+    : allTools;
   const availableMcpToolNames = allTools
     .map((t) => t.name)
     .filter((name) => name.startsWith("mcp_"));
@@ -234,6 +247,52 @@ export async function executeAgentTurn(
   const INLINE_RESULT_MAX_CHARS = 8000;
   const INLINE_RESULT_HEAD_CHARS = 6500;
   const INLINE_RESULT_TAIL_CHARS = 1000;
+  const OUTPUT_OFFLOAD_OBSERVATION_THRESHOLD = 12000;
+  const OUTPUT_OFFLOAD_PERSIST_THRESHOLD = 20000;
+
+  function shouldRetryStreamError(
+    classification: ReturnType<typeof classifyAgentLoopError>,
+    responseSoFar: string,
+    toolCallsSoFar: ToolCall[],
+    attempt: number,
+    maxAttempts: number,
+  ): boolean {
+    if (!recoveryV2Enabled) return false;
+    if (attempt >= maxAttempts) return false;
+    if (toolCallsSoFar.length > 0) return false;
+    if (responseSoFar.trim().length > 0) return false;
+    return classification.kind === "provider_retryable" || classification.kind === "unexpected";
+  }
+
+  async function pauseBeforeRetry(attempt: number): Promise<void> {
+    const delayMs = Math.min(1200, 250 * attempt);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  async function offloadLargeOutput(
+    toolCall: ToolCall,
+    content: string,
+  ): Promise<{ artifactPath: string; toolResultContent: string }> {
+    const artifactDir = path.join(session.projectPath, ".coco", "session-artifacts", session.id);
+    const safeToolName = toolCall.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const artifactPath = path.join(artifactDir, `${safeToolName}-${toolCall.id}.txt`);
+    const relativeArtifactPath = path.relative(session.projectPath, artifactPath);
+
+    await mkdir(artifactDir, { recursive: true });
+    await writeFile(artifactPath, content, "utf-8");
+
+    return {
+      artifactPath,
+      toolResultContent: [
+        `Large tool output stored in local artifact: ${relativeArtifactPath}`,
+        `Original size: ${content.length.toLocaleString()} characters.`,
+        "Use read_file on the artifact path if you need the full output.",
+        "",
+        "Preview:",
+        truncateInlineResult(content, toolCall.name),
+      ].join("\n"),
+    };
+  }
 
   function truncateInlineResult(content: string, toolName: string): string {
     if (content.length <= INLINE_RESULT_MAX_CHARS) return content;
@@ -439,114 +498,148 @@ export async function executeAgentTurn(
 
     // Use streaming API for real-time text output
     let responseContent = "";
-    const collectedToolCalls: ToolCall[] = [];
+    let collectedToolCalls: ToolCall[] = [];
     let thinkingEnded = false;
     let lastStopReason: StreamChunk["stopReason"];
-
-    // Track tool call builders for streaming
-    const toolCallBuilders: Map<
-      string,
-      {
-        id: string;
-        name: string;
-        input: Record<string, unknown>;
-        geminiThoughtSignature?: string;
-      }
-    > = new Map();
+    const maxStreamAttempts = recoveryV2Enabled ? 2 : 1;
 
     // Wrap streaming in try/catch to handle provider errors gracefully
     try {
-      for await (const chunk of provider.streamWithTools(messages, {
-        tools,
-        maxTokens: session.config.provider.maxTokens,
-        signal: options.signal,
-      })) {
-        // Check for abort
-        if (options.signal?.aborted) {
-          break;
-        }
+      let streamAttempt = 0;
+      while (streamAttempt < maxStreamAttempts) {
+        responseContent = "";
+        collectedToolCalls = [];
+        lastStopReason = undefined;
 
-        // Wrap each chunk processing in try/catch to prevent single bad chunk from stopping flow
+        // Track tool call builders for streaming
+        const toolCallBuilders: Map<
+          string,
+          {
+            id: string;
+            name: string;
+            input: Record<string, unknown>;
+            geminiThoughtSignature?: string;
+          }
+        > = new Map();
+
         try {
-          // Handle text chunks - stream them immediately
-          if (chunk.type === "text" && chunk.text) {
-            // End thinking spinner on first text
-            if (!thinkingEnded) {
-              options.onThinkingEnd?.();
-              thinkingEnded = true;
+          for await (const chunk of provider.streamWithTools(messages, {
+            tools,
+            maxTokens: session.config.provider.maxTokens,
+            signal: options.signal,
+          })) {
+            // Check for abort
+            if (options.signal?.aborted) {
+              break;
             }
-            responseContent += chunk.text;
-            finalContent += chunk.text;
-            iterationTextChunks.push(chunk);
-          }
 
-          // Handle tool call start
-          if (chunk.type === "tool_use_start" && chunk.toolCall) {
-            // Flush any buffered text before showing spinner
-            flushLineBuffer();
+            // Wrap each chunk processing in try/catch to prevent single bad chunk from stopping flow
+            try {
+              // Handle text chunks - stream them immediately
+              if (chunk.type === "text" && chunk.text) {
+                // End thinking spinner on first text
+                if (!thinkingEnded) {
+                  options.onThinkingEnd?.();
+                  thinkingEnded = true;
+                }
+                responseContent += chunk.text;
+                finalContent += chunk.text;
+                iterationTextChunks.push(chunk);
+              }
 
-            // End thinking spinner when tool starts (if no text came first)
-            if (!thinkingEnded) {
-              options.onThinkingEnd?.();
-              thinkingEnded = true;
-            }
-            const id = chunk.toolCall.id ?? `tool_${toolCallBuilders.size}`;
-            const toolName = chunk.toolCall.name ?? "";
-            toolCallBuilders.set(id, {
-              id,
-              name: toolName,
-              input: {},
-              geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
-            });
-            // Notify that a tool is being prepared/parsed
-            if (toolName) {
-              options.onToolPreparing?.(toolName);
+              // Handle tool call start
+              if (chunk.type === "tool_use_start" && chunk.toolCall) {
+                // Flush any buffered text before showing spinner
+                flushLineBuffer();
+
+                // End thinking spinner when tool starts (if no text came first)
+                if (!thinkingEnded) {
+                  options.onThinkingEnd?.();
+                  thinkingEnded = true;
+                }
+                const id = chunk.toolCall.id ?? `tool_${toolCallBuilders.size}`;
+                const toolName = chunk.toolCall.name ?? "";
+                toolCallBuilders.set(id, {
+                  id,
+                  name: toolName,
+                  input: {},
+                  geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
+                });
+                // Notify that a tool is being prepared/parsed
+                if (toolName) {
+                  options.onToolPreparing?.(toolName);
+                }
+              }
+
+              // Handle tool call end - finalize the tool call
+              if (chunk.type === "tool_use_end" && chunk.toolCall) {
+                const id = chunk.toolCall.id ?? "";
+                const builder = toolCallBuilders.get(id);
+                if (builder) {
+                  const finalToolCall: ToolCall = {
+                    id: builder.id,
+                    name: chunk.toolCall.name ?? builder.name,
+                    input: chunk.toolCall.input ?? builder.input,
+                    geminiThoughtSignature:
+                      chunk.toolCall.geminiThoughtSignature ?? builder.geminiThoughtSignature,
+                  };
+                  collectedToolCalls.push(finalToolCall);
+                } else if (chunk.toolCall.id && chunk.toolCall.name) {
+                  // Direct tool call without builder
+                  collectedToolCalls.push({
+                    id: chunk.toolCall.id,
+                    name: chunk.toolCall.name,
+                    input: chunk.toolCall.input ?? {},
+                    geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
+                  });
+                }
+              }
+
+              // Handle done
+              if (chunk.type === "done") {
+                // Capture stopReason from the done chunk
+                if (chunk.stopReason) {
+                  lastStopReason = chunk.stopReason;
+                }
+                // Ensure thinking ended
+                if (!thinkingEnded) {
+                  options.onThinkingEnd?.();
+                  thinkingEnded = true;
+                }
+                break;
+              }
+            } catch (chunkError) {
+              // Log chunk processing error but continue with next chunk
+              // This prevents a single malformed chunk from stopping the entire flow
+              const errorMsg =
+                chunkError instanceof Error ? chunkError.message : String(chunkError);
+              console.error(`[agent-loop] Error processing chunk: ${errorMsg}`);
+              // Continue to next chunk
             }
           }
-
-          // Handle tool call end - finalize the tool call
-          if (chunk.type === "tool_use_end" && chunk.toolCall) {
-            const id = chunk.toolCall.id ?? "";
-            const builder = toolCallBuilders.get(id);
-            if (builder) {
-              const finalToolCall: ToolCall = {
-                id: builder.id,
-                name: chunk.toolCall.name ?? builder.name,
-                input: chunk.toolCall.input ?? builder.input,
-                geminiThoughtSignature:
-                  chunk.toolCall.geminiThoughtSignature ?? builder.geminiThoughtSignature,
-              };
-              collectedToolCalls.push(finalToolCall);
-            } else if (chunk.toolCall.id && chunk.toolCall.name) {
-              // Direct tool call without builder
-              collectedToolCalls.push({
-                id: chunk.toolCall.id,
-                name: chunk.toolCall.name,
-                input: chunk.toolCall.input ?? {},
-                geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
-              });
-            }
+          break;
+        } catch (streamError) {
+          const classification = classifyAgentLoopError(streamError, options.signal);
+          if (classification.kind === "abort") {
+            throw classification.original;
           }
-
-          // Handle done
-          if (chunk.type === "done") {
-            // Capture stopReason from the done chunk
-            if (chunk.stopReason) {
-              lastStopReason = chunk.stopReason;
-            }
-            // Ensure thinking ended
-            if (!thinkingEnded) {
-              options.onThinkingEnd?.();
-              thinkingEnded = true;
-            }
-            break;
+          if (classification.kind === "provider_non_retryable") {
+            throw classification.original;
           }
-        } catch (chunkError) {
-          // Log chunk processing error but continue with next chunk
-          // This prevents a single malformed chunk from stopping the entire flow
-          const errorMsg = chunkError instanceof Error ? chunkError.message : String(chunkError);
-          console.error(`[agent-loop] Error processing chunk: ${errorMsg}`);
-          // Continue to next chunk
+          streamAttempt++;
+          if (
+            shouldRetryStreamError(
+              classification,
+              responseContent,
+              collectedToolCalls,
+              streamAttempt,
+              maxStreamAttempts,
+            )
+          ) {
+            await pauseBeforeRetry(streamAttempt);
+            continue;
+          }
+          throw classification.original;
         }
       }
     } catch (streamError) {
@@ -726,6 +819,15 @@ export async function executeAgentTurn(
           "Use the native mcp_list_servers tool to inspect configured and connected MCP services in this session. Do not shell out to `coco mcp ...` for runtime MCP diagnosis unless the user explicitly asked for the CLI command.",
         );
         options.onToolSkipped?.(toolCall, "Use mcp_list_servers instead of coco mcp CLI");
+        continue;
+      }
+
+      if (strictPlanModeEnabled && !STRICT_PLAN_MODE_ALLOWED_TOOLS.has(toolCall.name)) {
+        declinedTools.set(
+          toolCall.id,
+          `Blocked by strict plan mode: tool '${toolCall.name}' is not read-only`,
+        );
+        options.onToolSkipped?.(toolCall, "Blocked by strict plan mode");
         continue;
       }
 
@@ -937,10 +1039,29 @@ export async function executeAgentTurn(
       // Find the executed result
       const executedCall = executedTools.find((e) => e.id === toolCall.id);
       if (executedCall) {
-        const truncatedOutput = truncateInlineResult(executedCall.result.output, toolCall.name);
+        if (
+          outputOffloadObservationEnabled &&
+          executedCall.result.output.length > OUTPUT_OFFLOAD_OBSERVATION_THRESHOLD
+        ) {
+          observedLargeOutputs++;
+          observedLargeOutputChars += executedCall.result.output.length;
+        }
+        let toolResultContent = truncateInlineResult(executedCall.result.output, toolCall.name);
+        if (
+          outputOffloadObservationEnabled &&
+          executedCall.result.success &&
+          executedCall.result.output.length > OUTPUT_OFFLOAD_PERSIST_THRESHOLD
+        ) {
+          try {
+            const offloaded = await offloadLargeOutput(toolCall, executedCall.result.output);
+            toolResultContent = offloaded.toolResultContent;
+          } catch {
+            // Fallback to inline truncation if artifact persistence fails.
+          }
+        }
         const transformedOutput = repeatedOutputSuppressor.transform(
           toolCall.name,
-          truncatedOutput,
+          toolResultContent,
         );
         if (transformedOutput.suppressed) {
           repeatedOutputsSuppressed++;
@@ -1282,9 +1403,32 @@ const PLAN_MODE_ALLOWED_TOOLS = new Set([
   "checkAgentCapability",
 ]);
 
+const STRICT_PLAN_MODE_ALLOWED_TOOLS = new Set([
+  "glob",
+  "read_file",
+  "list_dir",
+  "tree",
+  "grep",
+  "find_in_file",
+  "semantic_search",
+  "codebase_map",
+  "git_status",
+  "git_log",
+  "git_diff",
+  "git_show",
+  "git_branch",
+  "recall_memory",
+  "list_memories",
+  "list_checkpoints",
+]);
+
 /**
  * Filter tool definitions to only read-only tools for plan mode.
  */
 function filterReadOnlyTools(tools: ToolDefinition[]): ToolDefinition[] {
   return tools.filter((tool) => PLAN_MODE_ALLOWED_TOOLS.has(tool.name));
+}
+
+function filterStrictPlanModeTools(tools: ToolDefinition[]): ToolDefinition[] {
+  return tools.filter((tool) => STRICT_PLAN_MODE_ALLOWED_TOOLS.has(tool.name));
 }

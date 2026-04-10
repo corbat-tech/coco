@@ -300,8 +300,29 @@ export async function createDefaultReplConfig(): Promise<ReplConfig> {
       maxToolIterations: 25,
       confirmDestructive: true,
       enableAutoSwitchProvider: false,
+      recoveryV2: readBooleanFlag("COCO_AGENT_RECOVERY_V2", true),
+      planModeStrict: readBooleanFlag("COCO_AGENT_PLAN_MODE_STRICT", true),
+      doctorV2: readBooleanFlag("COCO_AGENT_DOCTOR_V2", true),
+      outputOffload: readBooleanFlag("COCO_AGENT_OUTPUT_OFFLOAD", false),
     },
   };
+}
+
+function readBooleanFlag(envName: string, defaultValue: boolean): boolean {
+  const value = process.env[envName]?.trim().toLowerCase();
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  if (value === "1" || value === "true" || value === "yes" || value === "on") {
+    return true;
+  }
+
+  if (value === "0" || value === "false" || value === "no" || value === "off") {
+    return false;
+  }
+
+  return defaultValue;
 }
 
 /**
