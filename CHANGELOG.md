@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.28.4] - 2026-04-10
+
+### Added
+- **`/doctor` local diagnostics command** — Coco now ships a read-only diagnostics pass for project access, config parsing, provider auth, hooks, and tool registry health.
+
+### Changed
+- **Strict `/plan` mode is now enabled by default** — planning sessions now use a tighter read-only allowlist so architecture exploration cannot drift into write-capable tools unless explicitly disabled.
+- **Release gate now resolves local binaries from worktrees** — `pnpm check:release` behaves the same from the main checkout and from Git worktrees.
+
+### Fixed
+- **Retryable empty stream failures in the REPL agent loop** — Coco now retries one bounded time before surfacing an error when a provider fails before emitting any text or tool calls.
+- **Claude/Gemini style stream reconstruction remains compatible with latest mainline changes** — conservative recovery, strict plan-mode enforcement, MCP routing guards, and streamed thought-signature handling now coexist cleanly in the same loop.
+
 ## [2.28.3] - 2026-04-10
 
 ### Fixed
@@ -1369,8 +1382,9 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.28.3...HEAD
-[2.28.3]: https://github.com/corbat/corbat-coco/compare/v2.28.2...v2.28.3
+[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.4...HEAD
+[2.28.4]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.3...v2.28.4
+[2.28.3]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.2...v2.28.3
 [2.28.2]: https://github.com/corbat/corbat-coco/compare/v2.28.1...v2.28.2
 [2.28.1]: https://github.com/corbat/corbat-coco/compare/v2.28.0...v2.28.1
 [2.28.0]: https://github.com/corbat/corbat-coco/compare/v2.27.5...v2.28.0
