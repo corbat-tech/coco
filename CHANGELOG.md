@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.28.3] - 2026-04-10
+
+### Fixed
+- **Silent-stop recovery in the agent loop** — turns that end with empty or planning-only output now trigger explicit recovery instead of quietly returning control to the prompt.
+- **Exhausted no-tool recovery now produces a usable handoff** — after repeated empty/non-actionable turns, Coco requests a final text-only explanation and falls back to a static user-facing message if the provider still fails.
+- **Regression coverage for empty `end_turn` / fallback handoff paths** — added focused tests so future changes do not reintroduce abrupt exits after tool errors or provider drift.
+
 ## [2.28.2] - 2026-04-10
 
 ### Fixed
@@ -1362,7 +1369,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.28.2...HEAD
+[Unreleased]: https://github.com/corbat/corbat-coco/compare/v2.28.3...HEAD
+[2.28.3]: https://github.com/corbat/corbat-coco/compare/v2.28.2...v2.28.3
 [2.28.2]: https://github.com/corbat/corbat-coco/compare/v2.28.1...v2.28.2
 [2.28.1]: https://github.com/corbat/corbat-coco/compare/v2.28.0...v2.28.1
 [2.28.0]: https://github.com/corbat/corbat-coco/compare/v2.27.5...v2.28.0

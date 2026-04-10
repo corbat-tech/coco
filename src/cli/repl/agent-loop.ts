@@ -286,8 +286,21 @@ export async function executeAgentTurn(
   function shouldRecoverNoToolTurn(
     stopReason: StreamChunk["stopReason"] | undefined,
     content: string,
-  ): { recover: boolean; reason: string } {
+  ): {
+    recover: boolean;
+    reason: string;
+    category: "empty" | "tool_use" | "planning_only" | "none";
+  } {
     const trimmed = content.trim();
+
+    if (trimmed.length === 0) {
+      return {
+        recover: true,
+        reason:
+          "The previous response produced no usable output. Continue the task immediately or explain the blocker in one concise sentence.",
+        category: "empty",
+      };
+    }
 
     // Model says it is in tool-use mode but no tool call reached the loop.
     // This usually means provider stream shape drift or dropped tool events.
@@ -296,6 +309,7 @@ export async function executeAgentTurn(
         recover: true,
         reason:
           "The previous response indicated tool use, but no tool calls were received. Re-emit the tool call(s) now.",
+        category: "tool_use",
       };
     }
 
@@ -305,6 +319,7 @@ export async function executeAgentTurn(
         recover: true,
         reason:
           "The previous response was cut off before producing any usable output. Continue immediately.",
+        category: "empty",
       };
     }
 
@@ -312,17 +327,75 @@ export async function executeAgentTurn(
     const planningOnly =
       trimmed.length > 0 &&
       trimmed.length < 320 &&
-      /^(voy a|ahora voy|i('| )?ll|i will|let me|starting|preparing|activating|continuo|contin[uú]o|de acuerdo[, ]+voy)\b/i.test(
+      /^(voy a|ahora voy|voy a revisar|voy a comprobar|voy a mirar|déjame|dejame|a continuación|i('| )?ll|i will|let me|starting|preparing|activating|checking|reviewing|looking into|working on|continuo|contin[uú]o|de acuerdo[, ]+voy)\b/i.test(
         trimmed,
       );
     if (planningOnly) {
       return {
         recover: true,
         reason: "Do not only describe the next step. Execute it now with concrete tool calls.",
+        category: "planning_only",
       };
     }
 
-    return { recover: false, reason: "" };
+    return { recover: false, reason: "", category: "none" };
+  }
+
+  async function requestNoToolFallbackExplanation(
+    priorContent: string,
+    reason: string,
+  ): Promise<string> {
+    let explanation = "";
+    let explanationThinkingEnded = false;
+
+    options.onThinkingStart?.();
+    try {
+      const finalMessages = [
+        ...getConversationContext(session, toolRegistry),
+        {
+          role: "assistant" as const,
+          content: priorContent || "[No output returned in previous step.]",
+        },
+        {
+          role: "user" as const,
+          content:
+            `[System: ${reason} ` +
+            `Do not call tools. Either explain the exact blocker and ask the user for the smallest missing input, ` +
+            `or, if the task is already complete, summarize it briefly. Do not return an empty response.]`,
+        },
+      ];
+
+      for await (const chunk of provider.streamWithTools(finalMessages, {
+        tools: [],
+        maxTokens: session.config.provider.maxTokens,
+        signal: options.signal,
+      })) {
+        if (options.signal?.aborted) break;
+        if (chunk.type === "text" && chunk.text) {
+          if (!explanationThinkingEnded) {
+            options.onThinkingEnd?.();
+            explanationThinkingEnded = true;
+          }
+          explanation += chunk.text;
+          options.onStream?.(chunk);
+        }
+        if (chunk.type === "done") break;
+      }
+    } catch {
+      // Fall through to static fallback below.
+    } finally {
+      if (!explanationThinkingEnded) options.onThinkingEnd?.();
+    }
+
+    const trimmed = explanation.trim();
+    if (trimmed.length > 0) {
+      return explanation;
+    }
+
+    return (
+      "I could not continue because the model stopped returning actionable output. " +
+      "Please retry, switch provider/model, or tell me the exact next step you want me to take."
+    );
   }
 
   function shouldAutoExtendIterationBudget(
@@ -581,6 +654,16 @@ export async function executeAgentTurn(
           content: `[System: ${noToolRecovery.reason}]`,
         });
         continue;
+      }
+
+      if (noToolRecovery.recover) {
+        noToolRecoveryAttempts = 0;
+        finalContent += await requestNoToolFallbackExplanation(
+          responseContent,
+          noToolRecovery.reason,
+        );
+        addMessage(session, { role: "assistant", content: finalContent });
+        break;
       }
       noToolRecoveryAttempts = 0;
 
