@@ -1338,6 +1338,30 @@ describe("max_tokens auto-continue", () => {
     expect(result.aborted).toBe(false);
   });
 
+  it("should recover when end_turn returns empty content", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return createTextStreamMock("", "end_turn")();
+      }
+      return createTextStreamMock("Recovered after empty end_turn.")();
+    });
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "Keep working",
+      mockProvider,
+      mockToolRegistry,
+    );
+
+    expect(callCount).toBe(2);
+    expect(result.content).toContain("Recovered after empty end_turn.");
+    expect(result.aborted).toBe(false);
+  });
+
   it("should recover when stopReason is tool_use but no tool calls were reconstructed", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
@@ -1362,6 +1386,57 @@ describe("max_tokens auto-continue", () => {
 
     expect(callCount).toBeGreaterThanOrEqual(2);
     expect(result.toolCalls.length).toBeGreaterThan(0);
+    expect(result.aborted).toBe(false);
+  });
+
+  it("should force a final textual explanation after repeated empty turns", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount <= 4) {
+        return createTextStreamMock("", "end_turn")();
+      }
+      return createTextStreamMock(
+        "The provider kept returning empty output. Please retry or switch model.",
+      )();
+    });
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "Continue the task",
+      mockProvider,
+      mockToolRegistry,
+    );
+
+    expect(callCount).toBe(5);
+    expect(result.content).toContain("provider kept returning empty output");
+    expect(result.content.trim().length).toBeGreaterThan(0);
+    expect(result.aborted).toBe(false);
+  });
+
+  it("should return a static fallback when the forced explanation also fails", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+
+    let callCount = 0;
+    (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+      callCount++;
+      if (callCount <= 4) {
+        return createTextStreamMock("", "end_turn")();
+      }
+      throw new Error("provider unavailable");
+    });
+
+    const result = await executeAgentTurn(
+      mockSession,
+      "Continue the task",
+      mockProvider,
+      mockToolRegistry,
+    );
+
+    expect(callCount).toBe(5);
+    expect(result.content).toContain("model stopped returning actionable output");
     expect(result.aborted).toBe(false);
   });
 
