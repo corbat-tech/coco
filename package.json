@@ -79,7 +79,7 @@
     }
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.81.0",
+    "@anthropic-ai/sdk": "^0.88.0",
     "@clack/prompts": "^1.1.0",
     "@google/genai": "^1.49.0",
     "@typescript-eslint/parser": "^8.56.1",
