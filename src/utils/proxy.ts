@@ -99,25 +99,34 @@ export function describeFetchError(error: unknown): {
   summary: string;
 } {
   if (!(error instanceof Error)) {
-    return { summary: String(error) };
+    return { summary: "Unknown non-Error value thrown" };
   }
 
   const cause = unwrapCause(error);
   const code = cause?.code;
   const hostname = cause?.hostname;
 
-  const hostSuffix = hostname ? ` (${hostname})` : "";
+  // Only hostnames are included in user-facing output. Values from cause.message
+  // and error.message are deliberately NOT logged: fetch errors from OAuth flows
+  // can surface under the cause chain with tokens or client secrets in query
+  // strings (e.g. "fetch failed: unable to resolve ... https://foo?token=xxx"),
+  // and Node's error messages are not a contract. Static descriptions only.
+  const hostSuffix = hostname ? ` (${safeHostname(hostname)})` : "";
 
   if (code) {
     return { code, hostname, summary: `${humanizeCode(code)}${hostSuffix}` };
   }
 
-  const causeMessage = cause?.message;
-  if (causeMessage && causeMessage !== error.message) {
-    return { hostname, summary: `${causeMessage}${hostSuffix}` };
-  }
+  return { hostname, summary: `Unidentified network failure${hostSuffix}` };
+}
 
-  return { hostname, summary: error.message };
+/**
+ * Defensive hostname sanitizer. DNS hostnames can only contain
+ * [A-Za-z0-9.-]; anything else came from a weird cause shape and gets
+ * stripped so it cannot be used to smuggle data into logs.
+ */
+function safeHostname(value: string): string {
+  return value.replace(/[^a-zA-Z0-9.\-:]/g, "").slice(0, 253) || "unknown";
 }
 
 function unwrapCause(error: Error): FetchErrorShape | undefined {

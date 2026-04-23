@@ -132,17 +132,34 @@ describe("describeFetchError", () => {
     expect(describeFetchError(error).summary).toMatch(/corporate TLS interceptor/);
   });
 
-  it("falls back to cause message when no code is present", () => {
-    const cause = new Error("socket hang up");
+  it("returns a static fallback when no code is present (never leaks error.message)", () => {
+    const cause = new Error("socket hang up — https://foo?token=leaked");
     const error = new TypeError("fetch failed", { cause });
-    expect(describeFetchError(error).summary).toBe("socket hang up");
+    const result = describeFetchError(error);
+    expect(result.summary).toBe("Unidentified network failure");
+    expect(result.summary).not.toContain("token");
+    expect(result.summary).not.toContain("leaked");
   });
 
-  it("returns the top-level message when no cause is present", () => {
-    expect(describeFetchError(new Error("boom")).summary).toBe("boom");
+  it("uses static fallback when no cause is present", () => {
+    expect(describeFetchError(new Error("boom")).summary).toBe("Unidentified network failure");
   });
 
-  it("handles non-Error inputs", () => {
-    expect(describeFetchError("plain string").summary).toBe("plain string");
+  it("handles non-Error inputs with a static sentinel", () => {
+    expect(describeFetchError("plain string").summary).toBe("Unknown non-Error value thrown");
+  });
+
+  it("strips control + URL characters from hostnames before logging", () => {
+    const cause = Object.assign(new Error("dns"), {
+      code: "ENOTFOUND",
+      hostname: "evil.com\n<script>\n?foo=bar",
+    });
+    const error = new TypeError("fetch failed", { cause });
+    const result = describeFetchError(error);
+    expect(result.summary).not.toContain("<");
+    expect(result.summary).not.toContain(">");
+    expect(result.summary).not.toContain("\n");
+    expect(result.summary).not.toContain("?");
+    expect(result.summary).not.toContain("=");
   });
 });
