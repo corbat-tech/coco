@@ -96,3 +96,4 @@ export {
 // Utilities
 export { CocoError, ConfigError, PhaseError, TaskError } from "./utils/errors.js";
 export { createLogger } from "./utils/logger.js";
+export { installProxyDispatcher } from "./utils/proxy.js";
