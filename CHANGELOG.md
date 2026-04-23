@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.29.0] - 2026-04-23
+
+### Added
+- **HTTP(S) proxy support for the built-in fetch layer** — Coco now honors `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` environment variables for every outbound request (auth flows, providers, MCP HTTP transport), making `/provider copilot` and OAuth sign-ins work on corporate networks that previously surfaced opaque "Network Error" failures.
+- **`installProxyDispatcher` exported from the SDK entrypoint** — programmatic consumers can opt in to proxy-aware fetch without pulling internal paths.
+
+### Improved
+- **Copilot and browser OAuth error messages** — `/provider` now surfaces the real underlying cause of network failures (DNS lookup, connection refused, self-signed TLS certificate, timeout…) together with actionable remediation hints (proxy in use, `NODE_EXTRA_CA_CERTS`, DNS checks) instead of a generic "Network Error".
+
+### Changed
+- **Bundled dependency refresh** — TypeScript bumped from 5.9.3 to 6.0.3, `diff` from 8.x to 9.x, and the CI toolchain upgraded (`pnpm/action-setup@v6`, `codecov/codecov-action@v6`, `softprops/action-gh-release@v3`, `dependabot/fetch-metadata@v3`). `tsconfig.json` now sets `ignoreDeprecations: "6.0"` to keep `.d.ts` generation working under the TS 6 → 7 migration path.
+
 ## [2.28.5] - 2026-04-10
 
 ### Fixed
@@ -1388,6 +1400,8 @@ Future versions will include upgrade guides here.
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
 [Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.5...HEAD
+[unreleased]: https://github.com/corbat-tech/coco/compare/v2.29.0...HEAD
+[2.29.0]: https://github.com/corbat-tech/coco/compare/v2.28.5...v2.29.0
 [2.28.5]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.4...v2.28.5
 [2.28.4]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.3...v2.28.4
 [2.28.3]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.2...v2.28.3
