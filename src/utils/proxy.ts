@@ -2,21 +2,27 @@
  * HTTP(S) Proxy support for Node's global fetch.
  *
  * Node's built-in fetch (undici) does NOT honor HTTP_PROXY / HTTPS_PROXY /
- * NO_PROXY by default. Corporate networks routinely fail without this wiring
- * — the failures surface as opaque "fetch failed" errors with no indication
- * that a proxy is in play.
+ * NO_PROXY by default, nor does it read OS-level proxy configuration (macOS
+ * System Preferences → Network → Proxies, Windows WinHTTP). Corporate networks
+ * routinely fail without this wiring — the failures surface as opaque
+ * "fetch failed" errors with no indication that a proxy is in play.
  *
- * installProxyDispatcher() reads the standard env vars via undici's
- * EnvHttpProxyAgent and installs it as the global dispatcher, so every
- * fetch() call (auth flows, providers, MCP HTTP transport, etc.) goes
- * through the proxy. Returns a short description for logging, or null
- * when no proxy is configured.
+ * installProxyDispatcher() resolves a proxy in this order:
+ *   1. Standard env vars (HTTPS_PROXY, HTTP_PROXY, lowercase variants).
+ *   2. Operating-system proxy config (macOS scutil, Windows netsh winhttp).
+ *
+ * Whatever source it finds, it seeds the env vars and installs undici's
+ * EnvHttpProxyAgent as the global dispatcher, so every fetch() call (auth
+ * flows, providers, MCP HTTP transport, etc.) goes through the proxy.
+ * Seeding the env also means spawned subprocesses (gh CLI, MCP servers)
+ * inherit the same proxy config.
  *
  * describeFetchError() unwraps the `cause` chain on Node fetch errors so
  * we can surface the real reason (ENOTFOUND, ECONNREFUSED, certificate
  * errors, etc.) instead of a generic "Network error".
  */
 
+import { execFileSync } from "node:child_process";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 
 const PROXY_ENV_VARS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] as const;
@@ -51,24 +57,170 @@ export function maskProxyUrl(url: string): string {
   }
 }
 
-let installed = false;
+export interface SystemProxyConfig {
+  proxyUrl: string;
+  noProxy?: string;
+}
+
+export type CommandRunner = (cmd: string, args: string[]) => string | null;
+
+function defaultRunner(cmd: string, args: string[]): string | null {
+  try {
+    return execFileSync(cmd, args, {
+      encoding: "utf-8",
+      timeout: 2000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+}
 
 /**
- * Install an undici EnvHttpProxyAgent as the global dispatcher when any
- * proxy env var is set. Safe to call multiple times (idempotent).
+ * Parse `scutil --proxy` output (macOS). Prefers HTTPS over HTTP. Returns
+ * null when only a PAC URL is configured (we can't evaluate PAC scripts
+ * without a JS proxy runtime) or when no proxy is enabled.
+ */
+export function parseMacOsProxy(output: string): SystemProxyConfig | null {
+  const getField = (name: string): string | undefined => {
+    const re = new RegExp(`^\\s*${name}\\s*:\\s*(.+?)\\s*$`, "m");
+    return output.match(re)?.[1];
+  };
+
+  if (getField("ProxyAutoConfigEnable") === "1") {
+    return null;
+  }
+
+  const pick = (prefix: "HTTPS" | "HTTP"): string | null => {
+    if (getField(`${prefix}Enable`) !== "1") return null;
+    const host = getField(`${prefix}Proxy`);
+    const port = getField(`${prefix}Port`);
+    if (!host) return null;
+    return `http://${host}${port ? `:${port}` : ""}`;
+  };
+
+  const proxyUrl = pick("HTTPS") ?? pick("HTTP");
+  if (!proxyUrl) return null;
+
+  const exceptionsMatch = output.match(/ExceptionsList\s*:\s*<array>\s*\{([\s\S]*?)\}/);
+  const exceptions: string[] = [];
+  const exceptionsBody = exceptionsMatch?.[1];
+  if (exceptionsBody) {
+    for (const line of exceptionsBody.split("\n")) {
+      const entry = line.match(/^\s*\d+\s*:\s*(.+?)\s*$/)?.[1];
+      if (entry) exceptions.push(entry);
+    }
+  }
+
+  return {
+    proxyUrl,
+    noProxy: exceptions.length > 0 ? exceptions.join(",") : undefined,
+  };
+}
+
+/**
+ * Parse `netsh winhttp show proxy` output (Windows). Returns null for
+ * "Direct access" or when the output can't be parsed (e.g. localised to
+ * a non-English locale).
+ */
+export function parseWindowsProxy(output: string): SystemProxyConfig | null {
+  if (/Direct access/i.test(output)) return null;
+
+  const raw = output.match(/Proxy\s+Server\(s\)\s*:\s*(\S.*?)\s*$/m)?.[1]?.trim();
+  if (!raw) return null;
+
+  // netsh may emit "host:port" OR "http=host:port;https=host:port".
+  // Prefer the https entry when present.
+  let hostPort = raw;
+  if (raw.includes("=")) {
+    const parts = raw.split(";").map((p) => p.trim());
+    const httpsEntry = parts.find((p) => p.toLowerCase().startsWith("https="));
+    const httpEntry = parts.find((p) => p.toLowerCase().startsWith("http="));
+    const chosen = httpsEntry ?? httpEntry;
+    if (!chosen) return null;
+    hostPort = chosen.split("=", 2)[1]?.trim() ?? "";
+    if (!hostPort) return null;
+  }
+
+  const proxyUrl = /^https?:\/\//i.test(hostPort) ? hostPort : `http://${hostPort}`;
+
+  let noProxy: string | undefined;
+  const bypass = output.match(/Bypass\s+List\s*:\s*(\S.*?)\s*$/m)?.[1]?.trim();
+  if (bypass && !/\(none\)/i.test(bypass)) {
+    noProxy = bypass.replace(/;/g, ",");
+  }
+
+  return { proxyUrl, noProxy };
+}
+
+/**
+ * Read proxy configuration from the operating system.
+ * Returns null on Linux (no standardised OS proxy) or when nothing is set.
+ */
+export function getProxyFromSystem(
+  platform: NodeJS.Platform = process.platform,
+  run: CommandRunner = defaultRunner,
+): SystemProxyConfig | null {
+  if (platform === "darwin") {
+    const out = run("scutil", ["--proxy"]);
+    return out ? parseMacOsProxy(out) : null;
+  }
+  if (platform === "win32") {
+    const out = run("netsh", ["winhttp", "show", "proxy"]);
+    return out ? parseWindowsProxy(out) : null;
+  }
+  return null;
+}
+
+let installed = false;
+const seededEnvKeys: string[] = [];
+
+/**
+ * Install an undici EnvHttpProxyAgent as the global dispatcher. Resolves
+ * the proxy from env vars first, then from OS-level config as a fallback.
+ * Safe to call multiple times (idempotent).
  *
  * Returns a masked proxy URL when a proxy is installed, or null otherwise.
  */
-export function installProxyDispatcher(): string | null {
-  if (installed) return getProxyFromEnv() ? maskProxyUrl(getProxyFromEnv()!) : null;
+export function installProxyDispatcher(
+  resolveSystem: () => SystemProxyConfig | null = () => getProxyFromSystem(),
+): string | null {
+  if (installed) {
+    const existing = getProxyFromEnv();
+    return existing ? maskProxyUrl(existing) : null;
+  }
 
-  const proxy = getProxyFromEnv();
-  if (!proxy) return null;
+  const envProxy = getProxyFromEnv();
+  if (envProxy) {
+    return applyDispatcher(envProxy);
+  }
 
+  const sys = resolveSystem();
+  if (sys) {
+    // Seed env so EnvHttpProxyAgent picks it up and so spawned subprocesses
+    // (gh CLI, MCP servers, etc.) inherit the same proxy.
+    seedEnv("HTTPS_PROXY", sys.proxyUrl);
+    seedEnv("HTTP_PROXY", sys.proxyUrl);
+    if (sys.noProxy && !process.env.NO_PROXY && !process.env.no_proxy) {
+      seedEnv("NO_PROXY", sys.noProxy);
+    }
+    return applyDispatcher(sys.proxyUrl);
+  }
+
+  return null;
+}
+
+function seedEnv(key: string, value: string): void {
+  if (process.env[key] !== undefined) return;
+  process.env[key] = value;
+  seededEnvKeys.push(key);
+}
+
+function applyDispatcher(proxyUrl: string): string | null {
   try {
     setGlobalDispatcher(new EnvHttpProxyAgent());
     installed = true;
-    return maskProxyUrl(proxy);
+    return maskProxyUrl(proxyUrl);
   } catch {
     return null;
   }
@@ -79,6 +231,10 @@ export function installProxyDispatcher(): string | null {
  */
 export function __resetProxyDispatcher(): void {
   installed = false;
+  while (seededEnvKeys.length > 0) {
+    const key = seededEnvKeys.pop();
+    if (key) delete process.env[key];
+  }
 }
 
 interface FetchErrorShape {

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.30.0] - 2026-04-23
+
+### Added
+- **Automatic detection of operating-system proxy configuration** — on macOS (`scutil --proxy`) and Windows (`netsh winhttp show proxy`), Coco now discovers the system-wide HTTP/HTTPS proxy and bypass list when no `HTTPS_PROXY` / `HTTP_PROXY` environment variable is set. Corporate users whose proxy is configured through System Preferences → Network or WinHTTP no longer need to export variables by hand — `coco`, `gh`, and other tools now behave consistently out of the box.
+- **Seeding of proxy environment variables into spawned subprocesses** — when Coco resolves a proxy (from env or from the OS), it seeds `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` so that child processes (MCP servers, `gh` CLI, etc.) inherit the same network configuration automatically.
+- **`parseMacOsProxy`, `parseWindowsProxy`, `getProxyFromSystem` exported helpers** — the OS proxy parsers are exported from `src/utils/proxy.ts` for programmatic consumers and to allow dependency-injected testing of the resolver.
+
+### Improved
+- **Proxy diagnostics on authentication failures** — the existing "Network error reaching GitHub / provider" troubleshooting block now correctly reflects OS-detected proxies in addition to env vars, because the resolver seeds `HTTPS_PROXY` during startup.
+
 ## [2.29.0] - 2026-04-23
 
 ### Added
@@ -1405,8 +1415,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.5...HEAD
-[unreleased]: https://github.com/corbat-tech/coco/compare/v2.29.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.30.0...HEAD
+[2.30.0]: https://github.com/corbat-tech/coco/compare/v2.29.0...v2.30.0
 [2.29.0]: https://github.com/corbat-tech/coco/compare/v2.28.5...v2.29.0
 [2.28.5]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.4...v2.28.5
 [2.28.4]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.3...v2.28.4
