@@ -5,6 +5,7 @@ import {
   getProxyFromEnv,
   installProxyDispatcher,
   maskProxyUrl,
+  safeHostname,
 } from "./proxy.js";
 
 const PROXY_VARS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] as const;
@@ -106,7 +107,7 @@ describe("installProxyDispatcher", () => {
 });
 
 describe("describeFetchError", () => {
-  it("unwraps cause and returns code + hostname", () => {
+  it("returns only code + hostname from the cause chain", () => {
     const cause = Object.assign(new Error("getaddrinfo ENOTFOUND github.com"), {
       code: "ENOTFOUND",
       hostname: "github.com",
@@ -116,50 +117,56 @@ describe("describeFetchError", () => {
     const result = describeFetchError(error);
     expect(result.code).toBe("ENOTFOUND");
     expect(result.hostname).toBe("github.com");
-    expect(result.summary).toContain("DNS lookup failed");
-    expect(result.summary).toContain("github.com");
+    // No `summary` / message-derived field must be exposed.
+    expect(Object.keys(result).sort()).toEqual(["code", "hostname"]);
   });
 
-  it("handles ECONNREFUSED with a human message", () => {
+  it("returns just the code when no hostname is present", () => {
     const cause = Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" });
     const error = new TypeError("fetch failed", { cause });
-    expect(describeFetchError(error).summary).toMatch(/Connection refused/);
-  });
-
-  it("flags self-signed cert as TLS interceptor hint", () => {
-    const cause = Object.assign(new Error("cert"), { code: "SELF_SIGNED_CERT_IN_CHAIN" });
-    const error = new TypeError("fetch failed", { cause });
-    expect(describeFetchError(error).summary).toMatch(/corporate TLS interceptor/);
-  });
-
-  it("returns a static fallback when no code is present (never leaks error.message)", () => {
-    const cause = new Error("socket hang up — https://foo?token=leaked");
-    const error = new TypeError("fetch failed", { cause });
     const result = describeFetchError(error);
-    expect(result.summary).toBe("Unidentified network failure");
-    expect(result.summary).not.toContain("token");
-    expect(result.summary).not.toContain("leaked");
+    expect(result.code).toBe("ECONNREFUSED");
+    expect(result.hostname).toBeUndefined();
   });
 
-  it("uses static fallback when no cause is present", () => {
-    expect(describeFetchError(new Error("boom")).summary).toBe("Unidentified network failure");
+  it("returns empty fields when no cause is present", () => {
+    const result = describeFetchError(new Error("boom"));
+    expect(result.code).toBeUndefined();
+    expect(result.hostname).toBeUndefined();
   });
 
-  it("handles non-Error inputs with a static sentinel", () => {
-    expect(describeFetchError("plain string").summary).toBe("Unknown non-Error value thrown");
+  it("returns empty object for non-Error inputs", () => {
+    expect(describeFetchError("plain string")).toEqual({});
   });
 
-  it("strips control + URL characters from hostnames before logging", () => {
-    const cause = Object.assign(new Error("dns"), {
-      code: "ENOTFOUND",
-      hostname: "evil.com\n<script>\n?foo=bar",
+  it("never includes error or cause message strings", () => {
+    const cause = Object.assign(new Error("fetch https://api.example.com?token=SECRET123"), {
+      code: "ECONNRESET",
     });
     const error = new TypeError("fetch failed", { cause });
-    const result = describeFetchError(error);
-    expect(result.summary).not.toContain("<");
-    expect(result.summary).not.toContain(">");
-    expect(result.summary).not.toContain("\n");
-    expect(result.summary).not.toContain("?");
-    expect(result.summary).not.toContain("=");
+    const serialized = JSON.stringify(describeFetchError(error));
+    expect(serialized).not.toContain("SECRET123");
+    expect(serialized).not.toContain("token");
+    expect(serialized).not.toContain("api.example.com");
+  });
+});
+
+describe("safeHostname", () => {
+  it("strips control and URL characters", () => {
+    const result = safeHostname("evil.com\n<script>\n?foo=bar");
+    expect(result).not.toContain("<");
+    expect(result).not.toContain(">");
+    expect(result).not.toContain("\n");
+    expect(result).not.toContain("?");
+    expect(result).not.toContain("=");
+  });
+
+  it("returns 'unknown' for a string that sanitizes to empty", () => {
+    expect(safeHostname("!!!***###")).toBe("unknown");
+  });
+
+  it("caps the length at 253 characters (DNS max)", () => {
+    const input = "a".repeat(500);
+    expect(safeHostname(input)).toHaveLength(253);
   });
 });

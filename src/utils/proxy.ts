@@ -89,35 +89,30 @@ interface FetchErrorShape {
 }
 
 /**
- * Unwrap a Node fetch error to surface the underlying cause.
+ * Unwrap a Node fetch error to surface the underlying cause's code +
+ * hostname only. No string derived from `error.message` / `cause.message`
+ * ever leaves this function — callers must emit their own static labels
+ * keyed by the returned `code`.
+ *
  * Node's fetch throws "TypeError: fetch failed" and puts the real error
- * (ENOTFOUND, ECONNREFUSED, SELF_SIGNED_CERT_IN_CHAIN, etc.) on `.cause`.
+ * (ENOTFOUND, ECONNREFUSED, SELF_SIGNED_CERT_IN_CHAIN, etc.) on `.cause`,
+ * sometimes with a URL in the message that could include OAuth tokens or
+ * client secrets. This narrow return shape is the hard boundary preventing
+ * that data from reaching logs (CodeQL: js/clear-text-logging).
  */
 export function describeFetchError(error: unknown): {
   code?: string;
   hostname?: string;
-  summary: string;
 } {
   if (!(error instanceof Error)) {
-    return { summary: "Unknown non-Error value thrown" };
+    return {};
   }
 
   const cause = unwrapCause(error);
-  const code = cause?.code;
-  const hostname = cause?.hostname;
-
-  // Only hostnames are included in user-facing output. Values from cause.message
-  // and error.message are deliberately NOT logged: fetch errors from OAuth flows
-  // can surface under the cause chain with tokens or client secrets in query
-  // strings (e.g. "fetch failed: unable to resolve ... https://foo?token=xxx"),
-  // and Node's error messages are not a contract. Static descriptions only.
-  const hostSuffix = hostname ? ` (${safeHostname(hostname)})` : "";
-
-  if (code) {
-    return { code, hostname, summary: `${humanizeCode(code)}${hostSuffix}` };
-  }
-
-  return { hostname, summary: `Unidentified network failure${hostSuffix}` };
+  return {
+    code: cause?.code,
+    hostname: cause?.hostname,
+  };
 }
 
 /**
@@ -125,7 +120,7 @@ export function describeFetchError(error: unknown): {
  * [A-Za-z0-9.-]; anything else came from a weird cause shape and gets
  * stripped so it cannot be used to smuggle data into logs.
  */
-function safeHostname(value: string): string {
+export function safeHostname(value: string): string {
   return value.replace(/[^a-zA-Z0-9.\-:]/g, "").slice(0, 253) || "unknown";
 }
 
@@ -143,34 +138,4 @@ function unwrapCause(error: Error): FetchErrorShape | undefined {
     return current as FetchErrorShape;
   }
   return undefined;
-}
-
-function humanizeCode(code: string): string {
-  switch (code) {
-    case "ENOTFOUND":
-      return "DNS lookup failed — host not found";
-    case "ECONNREFUSED":
-      return "Connection refused";
-    case "ECONNRESET":
-      return "Connection reset by peer";
-    case "ETIMEDOUT":
-    case "UND_ERR_CONNECT_TIMEOUT":
-      return "Connection timed out";
-    case "EHOSTUNREACH":
-      return "Host unreachable";
-    case "ENETUNREACH":
-      return "Network unreachable";
-    case "CERT_HAS_EXPIRED":
-      return "TLS certificate has expired";
-    case "SELF_SIGNED_CERT_IN_CHAIN":
-    case "DEPTH_ZERO_SELF_SIGNED_CERT":
-      return "Self-signed TLS certificate — likely a corporate TLS interceptor";
-    case "UNABLE_TO_VERIFY_LEAF_SIGNATURE":
-    case "UNABLE_TO_GET_ISSUER_CERT_LOCALLY":
-      return "TLS certificate could not be verified — likely a corporate TLS interceptor";
-    case "UND_ERR_SOCKET":
-      return "Socket error during request";
-    default:
-      return code;
-  }
 }

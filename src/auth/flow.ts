@@ -551,8 +551,12 @@ async function runBrowserOAuthFlow(
       errorMsg.includes("ETIMEDOUT");
 
     if (isNetwork) {
-      const { code, summary } = describeFetchError(error);
-      console.log(chalk.dim(`   Error: Network error — ${summary}`));
+      // Only the narrow `code` from describeFetchError is passed downstream;
+      // no string derived from `error`/`error.message` is ever interpolated
+      // into console output. printNetworkTroubleshooting() emits only static
+      // literals so CodeQL cannot flag this as clear-text sensitive logging.
+      const { code } = describeFetchError(error);
+      console.log(chalk.dim("   Error: Network error"));
       printNetworkTroubleshooting(code);
     } else {
       const errorCategory =
@@ -990,11 +994,14 @@ async function runCopilotDeviceFlow(): Promise<{
     } else if (errorMsg.includes("denied")) {
       console.log(chalk.yellow("   ⚠ Access was denied."));
     } else if (errorMsg.includes("fetch failed") || errorMsg.toLowerCase().includes("network")) {
-      const { code, summary } = describeFetchError(error);
-      console.log(chalk.red(`   ✗ Network error reaching GitHub: ${summary}`));
+      // See the corresponding block in runBrowserOAuthFlow for the rationale:
+      // only the narrow `code` is surfaced to the logger; detail messages live
+      // inside printNetworkTroubleshooting() as static literal strings.
+      const { code } = describeFetchError(error);
+      console.log(chalk.red("   ✗ Network error reaching GitHub"));
       printNetworkTroubleshooting(code);
     } else {
-      console.log(chalk.red(`   ✗ Authentication error: ${errorMsg}`));
+      console.log(chalk.red("   ✗ Authentication error — see debug logs for details"));
     }
     console.log();
 
