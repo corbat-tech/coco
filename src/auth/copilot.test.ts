@@ -21,6 +21,24 @@ vi.mock("node:fs/promises", async () => {
   };
 });
 
+// Mock child_process so getGitHubCliToken() cannot leak the host's `gh auth`
+// state into tests. Without this, machines with an active `gh` session cause
+// "no credentials" scenarios to fall through to a real token exchange.
+vi.mock("node:child_process", async () => {
+  const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+  return {
+    ...actual,
+    execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb?: unknown) => {
+      const callback = typeof _opts === "function" ? _opts : cb;
+      const err = new Error("gh not mocked in this test") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      if (typeof callback === "function") {
+        (callback as (e: Error | null, out?: string, errOut?: string) => void)(err);
+      }
+    }),
+  };
+});
+
 import {
   requestGitHubDeviceCode,
   pollGitHubForToken,

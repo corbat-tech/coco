@@ -5,7 +5,12 @@
  */
 
 import { Command } from "commander";
+import { installProxyDispatcher } from "../utils/proxy.js";
 import { VERSION } from "../version.js";
+
+// Install HTTP(S)_PROXY dispatcher before any fetch() call happens.
+// Node's built-in fetch does not honor proxy env vars without this.
+installProxyDispatcher();
 import { registerInitCommand } from "./commands/init.js";
 import { registerPlanCommand } from "./commands/plan.js";
 import { registerBuildCommand } from "./commands/build.js";

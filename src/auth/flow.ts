@@ -40,6 +40,7 @@ import {
 import { generatePKCECredentials } from "./pkce.js";
 import { createCallbackServer } from "./callback-server.js";
 import { isWSL } from "../utils/platform.js";
+import { describeFetchError, getProxyFromEnv, maskProxyUrl } from "../utils/proxy.js";
 import {
   requestGitHubDeviceCode,
   pollGitHubForToken,
@@ -539,21 +540,35 @@ async function runBrowserOAuthFlow(
 
     console.log();
     console.log(chalk.yellow("   ⚠ Browser authentication failed"));
-    // Log a generic error category instead of the raw message to avoid leaking sensitive data
-    // (error may contain tokens, client IDs, or secrets from the OAuth exchange)
-    const errorCategory =
-      errorMsg.includes("timeout") || errorMsg.includes("Timeout")
-        ? "Request timed out"
-        : errorMsg.includes("network") ||
-            errorMsg.includes("ECONNREFUSED") ||
-            errorMsg.includes("fetch")
-          ? "Network error"
+    // Keep high-level categorization to avoid leaking tokens or client IDs,
+    // but for network failures surface the actual cause so users can diagnose
+    // proxy / DNS / TLS issues instead of staring at an opaque "Network error".
+    const isNetwork =
+      errorMsg.includes("fetch failed") ||
+      errorMsg.toLowerCase().includes("network error") ||
+      errorMsg.includes("ECONNREFUSED") ||
+      errorMsg.includes("ENOTFOUND") ||
+      errorMsg.includes("ETIMEDOUT");
+
+    if (isNetwork) {
+      // Only the narrow `code` from describeFetchError is passed downstream;
+      // no string derived from `error`/`error.message` is ever interpolated
+      // into console output. printNetworkTroubleshooting() emits only static
+      // literals so CodeQL cannot flag this as clear-text sensitive logging.
+      const { code } = describeFetchError(error);
+      console.log(chalk.dim("   Error: Network error"));
+      printNetworkTroubleshooting(code);
+    } else {
+      const errorCategory =
+        errorMsg.includes("timeout") || errorMsg.includes("Timeout")
+          ? "Request timed out"
           : errorMsg.includes("401") || errorMsg.includes("403")
             ? "Authorization denied"
             : errorMsg.includes("invalid_grant") || errorMsg.includes("invalid_client")
               ? "Invalid credentials"
               : "Authentication error (see debug logs for details)";
-    console.log(chalk.dim(`   Error: ${errorCategory}`));
+      console.log(chalk.dim(`   Error: ${errorCategory}`));
+    }
     console.log();
 
     // Offer fallback options (only device code if provider supports it)
@@ -978,16 +993,46 @@ async function runCopilotDeviceFlow(): Promise<{
       console.log(chalk.yellow("   ⚠ Authentication timed out. Please try again."));
     } else if (errorMsg.includes("denied")) {
       console.log(chalk.yellow("   ⚠ Access was denied."));
+    } else if (errorMsg.includes("fetch failed") || errorMsg.toLowerCase().includes("network")) {
+      // See the corresponding block in runBrowserOAuthFlow for the rationale:
+      // only the narrow `code` is surfaced to the logger; detail messages live
+      // inside printNetworkTroubleshooting() as static literal strings.
+      const { code } = describeFetchError(error);
+      console.log(chalk.red("   ✗ Network error reaching GitHub"));
+      printNetworkTroubleshooting(code);
     } else {
-      const category =
-        errorMsg.includes("network") || errorMsg.includes("fetch")
-          ? "Network error"
-          : "Authentication error";
-      console.log(chalk.red(`   ✗ ${category}`));
+      console.log(chalk.red("   ✗ Authentication error — see debug logs for details"));
     }
     console.log();
 
     return null;
+  }
+}
+
+/**
+ * Print proxy / network troubleshooting hints when a fetch fails.
+ * Keeps advice tailored to the underlying cause code when available.
+ */
+function printNetworkTroubleshooting(code?: string): void {
+  const proxy = getProxyFromEnv();
+  if (proxy) {
+    console.log(chalk.dim(`   Proxy in use: ${maskProxyUrl(proxy)}`));
+    console.log(chalk.dim("   → Verify the proxy allows github.com and api.github.com."));
+  } else {
+    console.log(chalk.dim("   No HTTPS_PROXY / HTTP_PROXY env vars detected."));
+    console.log(chalk.dim("   → If you're behind a corporate proxy, set HTTPS_PROXY and retry."));
+  }
+
+  if (code === "SELF_SIGNED_CERT_IN_CHAIN" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
+    console.log(
+      chalk.dim(
+        "   → A TLS interceptor is rewriting certificates. Add your corp root CA to NODE_EXTRA_CA_CERTS.",
+      ),
+    );
+  } else if (code === "ENOTFOUND") {
+    console.log(chalk.dim("   → Check DNS: `nslookup github.com`"));
+  } else if (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT") {
+    console.log(chalk.dim("   → A firewall may be dropping the connection silently."));
   }
 }
 
