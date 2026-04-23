@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Copilot auth test host leak** — mocked `node:child_process.execFile` so `getGitHubCliToken()` can no longer fall through to the runner's real `gh auth` state, unblocking CI on machines where GitHub CLI is authenticated.
 
+### Security
+- **Hardened network-error logging in the auth flow** — `describeFetchError()` now returns only static, humanized descriptions plus a sanitized hostname suffix, never propagating `error.message` or `cause.message` from a fetch failure. This closes a `js/clear-text-logging` path flagged by CodeQL where a malformed OAuth error chain could theoretically surface URL fragments containing tokens in console output.
+
 ## [2.28.5] - 2026-04-10
 
 ### Fixed
