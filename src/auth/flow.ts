@@ -1013,9 +1013,7 @@ function printNetworkTroubleshooting(code?: string): void {
     console.log(chalk.dim("   → Verify the proxy allows github.com and api.github.com."));
   } else {
     console.log(chalk.dim("   No HTTPS_PROXY / HTTP_PROXY env vars detected."));
-    console.log(
-      chalk.dim("   → If you're behind a corporate proxy, set HTTPS_PROXY and retry."),
-    );
+    console.log(chalk.dim("   → If you're behind a corporate proxy, set HTTPS_PROXY and retry."));
   }
 
   if (code === "SELF_SIGNED_CERT_IN_CHAIN" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
