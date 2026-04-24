@@ -13,8 +13,11 @@ import {
   getLastUsedProvider,
   getLastUsedModel,
   getLastUsedThinking,
+  getWeakModel,
+  getEditorModel,
 } from "../../config/env.js";
 import { resolveDefaultThinking } from "../../providers/thinking.js";
+import { getTierConfig } from "../../providers/model-tier.js";
 import { createContextManager } from "./context/manager.js";
 import { createContextCompactor, type CompactionResult } from "./context/compactor.js";
 import { createMemoryLoader, type MemoryContext } from "./memory/index.js";
@@ -277,6 +280,22 @@ Responses are short and direct by default. Lead with the answer or action, not r
 **During tool-calling iterations, keep text minimal.** A single short orienting line before tool calls is acceptable. Do NOT explain every step, narrate what you are about to do, or produce paragraphs between tool calls. Reserve explanatory text for your final response after all tools have completed.
 
 **Code blocks in responses are expensive.** Only include a code block when the user explicitly asks to see code, or when the code IS the deliverable (e.g., a script to paste in a terminal). Never include a code block to "show your work" when you can write the file directly instead.`;
+
+/**
+ * Addendum injected for mini-tier models that do not benefit from CoT prompting.
+ * Replaces verbose multi-step reasoning instructions with direct-action rules.
+ */
+const MINI_MODEL_ADDENDUM = `
+## Mini-Model Mode
+
+You are running on a fast, compact model. Keep outputs minimal and actions direct.
+
+- Call ONE tool at a time. Do NOT combine multiple tool calls per turn.
+- Skip multi-step planning — just do the next concrete action.
+- Debugging: read the error, fix it, verify. No analysis phases.
+- Verification: run the command, report the result. No elaborate protocols.
+- Skip "Parallel Execution" — serialize all tool calls for reliability.
+- NEVER narrate your plan. NEVER explain what you are about to do. Just do it.`;
 
 /**
  * Default REPL configuration
@@ -582,6 +601,14 @@ export function getConversationContext(
     systemPrompt = `${systemPrompt}\n\n${PLAN_MODE_SYSTEM_PROMPT}`;
   }
 
+  // Inject mini-model addendum when the active model does not benefit from CoT prompting
+  const providerType = session.config.provider.type;
+  const currentModel = session.config.provider.model ?? "";
+  const tierCfg = getTierConfig(providerType, currentModel);
+  if (!tierCfg.supportsCoT) {
+    systemPrompt = `${systemPrompt}\n\n${MINI_MODEL_ADDENDUM}`;
+  }
+
   return [{ role: "system", content: systemPrompt }, ...session.messages];
 }
 
@@ -870,8 +897,11 @@ export async function initializeSessionTrust(session: ReplSession): Promise<void
  */
 export function initializeContextManager(session: ReplSession, provider: LLMProvider): void {
   const contextWindow = provider.getContextWindow();
+  const providerType = session.config.provider.type;
+  const model = session.config.provider.model ?? "";
+  const tierCfg = getTierConfig(providerType, model);
   session.contextManager = createContextManager(contextWindow, {
-    compactionThreshold: 0.8,
+    compactionThreshold: tierCfg.compactionThreshold,
     reservedTokens: 4096,
   });
 }
@@ -942,7 +972,16 @@ export async function checkAndCompactContext(
   });
 
   try {
-    const result = await compactor.compact(session.messages, provider, signal);
+    // Prefer session-level overrides, then env vars for the summary model
+    const summaryModel =
+      session.config.provider.weakModel ??
+      session.config.provider.editorModel ??
+      getWeakModel() ??
+      getEditorModel();
+    const result = await compactor.compact(session.messages, provider, {
+      signal,
+      ...(summaryModel ? { summaryModel } : {}),
+    });
 
     if (result.wasCompacted) {
       // Update session messages with compacted version

@@ -337,10 +337,74 @@ function isCopilotTokenExpired(creds: CopilotCredentials): boolean {
 }
 
 /**
+ * Exchange for a Copilot token via the `gh` CLI subprocess.
+ *
+ * This is a fallback for corporate networks that use PAC (Proxy Auto-Config)
+ * scripts or TLS interception. Node's fetch (undici) cannot evaluate PAC scripts
+ * and may not trust corporate root CAs, while `gh` (Go's HTTP client) handles
+ * both transparently. If `gh` is installed and authenticated, this will work
+ * in environments where the direct fetch fails.
+ *
+ * Uses a raw callback (not promisify) so tests can mock execFile cleanly
+ * without needing util.promisify.custom semantics.
+ */
+export function exchangeForCopilotTokenViaGhCli(): Promise<CopilotToken | null> {
+  return new Promise((resolve) => {
+    execFile("gh", ["api", "/copilot_internal/v2/token"], { timeout: 10_000 }, (err, stdout) => {
+      if (err || !stdout) {
+        resolve(null);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout) as CopilotToken;
+        resolve(parsed.token && parsed.expires_at ? parsed : null);
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * Check whether the `gh` CLI is currently authenticated with GitHub.com.
+ * Returns the authenticated username or null.
+ *
+ * Uses raw callback (not promisify) for testability — see exchangeForCopilotTokenViaGhCli.
+ */
+export function getGitHubCliAuthStatus(): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      "gh",
+      ["auth", "status", "--hostname", "github.com"],
+      { timeout: 5_000 },
+      (_err, stdout, stderr) => {
+        // gh auth status writes to stdout on success, stderr on failure in some versions.
+        const combined = (stdout ?? "") + (stderr ?? "");
+        const match = combined.match(/Logged in to github\.com account (\S+)/);
+        if (match) {
+          resolve(match[1]!);
+          return;
+        }
+        if (combined.includes("Logged in")) {
+          resolve("authenticated");
+          return;
+        }
+        resolve(null);
+      },
+    );
+  });
+}
+
+/**
  * Get a valid Copilot API token, refreshing if necessary.
  *
  * Returns the bearer token and base URL to use for API calls.
  * If credentials are missing or GitHub token is invalid, returns null.
+ *
+ * On corporate networks using PAC proxies or TLS interception, Node's
+ * direct fetch may fail even if the user has a valid subscription. In that
+ * case we fall back to `gh api` which uses Go's HTTP client (PAC-aware,
+ * system-CA-aware) before concluding that credentials are invalid.
  */
 export async function getValidCopilotToken(): Promise<{
   token: string;
@@ -363,12 +427,8 @@ export async function getValidCopilotToken(): Promise<{
     };
   }
 
-  // Need to refresh the Copilot token
-  try {
-    const copilotToken = await exchangeForCopilotToken(githubToken);
-
-    // Always preserve the file's githubToken — env var overrides are transient
-    // and should not bleed into durable storage
+  // Helper: save and return a freshly-obtained Copilot token
+  const saveAndReturn = async (copilotToken: CopilotToken) => {
     const updatedCreds: CopilotCredentials = {
       ...(creds ?? { githubToken }),
       githubToken: creds?.githubToken ?? githubToken,
@@ -376,23 +436,40 @@ export async function getValidCopilotToken(): Promise<{
       copilotTokenExpiresAt: copilotToken.expires_at * 1000,
       accountType: copilotToken.annotations?.copilot_plan ?? creds?.accountType,
     };
-
     await saveCopilotCredentials(updatedCreds);
-
     return {
       token: copilotToken.token,
       baseUrl: getCopilotBaseUrl(updatedCreds.accountType),
       isNew: true,
     };
+  };
+
+  // Need to refresh the Copilot token — try direct fetch first
+  try {
+    const copilotToken = await exchangeForCopilotToken(githubToken);
+    return saveAndReturn(copilotToken);
   } catch (error) {
-    // Permanent auth failures (401, 403): delete credentials and return null
-    // so the user is prompted to re-authenticate
     if (error instanceof CopilotAuthError && error.permanent) {
+      // 403 received — could be from a corporate proxy, not from GitHub.
+      // Try `gh api` before concluding the credentials are invalid.
+      const ghCliToken = await exchangeForCopilotTokenViaGhCli();
+      if (ghCliToken) {
+        return saveAndReturn(ghCliToken);
+      }
+      // Both direct fetch and gh cli confirm auth failure → delete credentials
       await deleteCopilotCredentials();
       return null;
     }
-    // Transient errors (network, 5xx): re-throw so the retry layer can handle
-    // them instead of silently forcing re-authentication
+
+    // Network / transient error — also try gh api fallback before re-throwing.
+    // This covers PAC proxy environments where Node's fetch cannot route the
+    // request but gh's Go HTTP client can.
+    const ghCliToken = await exchangeForCopilotTokenViaGhCli();
+    if (ghCliToken) {
+      return saveAndReturn(ghCliToken);
+    }
+
+    // Both paths failed — re-throw original error so the retry layer handles it
     throw error;
   }
 }

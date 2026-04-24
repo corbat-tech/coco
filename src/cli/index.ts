@@ -68,6 +68,8 @@ program
   .description("Start interactive chat session with the agent")
   .option("-m, --model <model>", "LLM model to use")
   .option("--provider <provider>", "LLM provider (anthropic, openai, codex, gemini, kimi)")
+  .option("--editor-model <model>", "Cheap model for file edits (architect/editor split)")
+  .option("--weak-model <model>", "Cheap model for background tasks (compaction, summaries)")
   .option("-p, --path <path>", "Project path", process.cwd())
   .option("-P, --print [task]", "Headless mode: run task and print output (no interactive UI)")
   .option("--output <format>", "Output format for headless mode (text or json)", "text")
@@ -80,6 +82,8 @@ program
       print?: string | boolean;
       output?: string;
       setup?: boolean;
+      editorModel?: string;
+      weakModel?: string;
     }) => {
       // Run setup if requested
       if (options.setup) {
@@ -123,6 +127,8 @@ program
             type: providerType as "anthropic" | "openai",
             model: options.model ?? "",
             maxTokens: 8192,
+            editorModel: options.editorModel,
+            weakModel: options.weakModel,
           },
         },
       });

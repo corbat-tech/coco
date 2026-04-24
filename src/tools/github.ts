@@ -39,7 +39,8 @@ export const ghCheckAuthTool: ToolDefinition<
   { authenticated: boolean; user?: string; error?: string }
 > = defineTool({
   name: "gh_check_auth",
-  description: "Check if the GitHub CLI is installed and authenticated.",
+  description:
+    "Verify the gh CLI is installed and the user is logged into GitHub. Call this before any other gh_ tool to confirm authentication is working. Returns the logged-in username if authenticated.",
   category: "git",
   parameters: z.object({
     cwd: z.string().optional(),
@@ -73,7 +74,8 @@ export const ghRepoInfoTool: ToolDefinition<
   }
 > = defineTool({
   name: "gh_repo_info",
-  description: "Get GitHub repository information (name, default branch, URL).",
+  description:
+    "Get the remote GitHub repository's name, owner, default branch, and URL from within the current git working directory. Use before creating PRs to confirm the target repo. Requires gh_check_auth to pass first.",
   category: "git",
   parameters: z.object({
     cwd: z.string().optional(),
@@ -115,7 +117,8 @@ export const ghPrCreateTool: ToolDefinition<
   { number: number; url: string }
 > = defineTool({
   name: "gh_pr_create",
-  description: "Create a GitHub pull request.",
+  description:
+    "Open a pull request on GitHub from the current branch. Requires commits to be pushed first (use git_push with setUpstream: true). Do NOT use this if a PR for this branch already exists — use gh_pr_list to check first. Use draft: true for work in progress.",
   category: "git",
   parameters: z.object({
     title: z.string().describe("PR title"),
@@ -156,7 +159,8 @@ export const ghPrMergeTool: ToolDefinition<
   { merged: boolean; method: string }
 > = defineTool({
   name: "gh_pr_merge",
-  description: "Merge a GitHub pull request.",
+  description:
+    "Merge a pull request into its base branch. Use squash (default) for feature branches to keep history clean. Always confirm with gh_pr_checks first to ensure CI passed. Do NOT merge if anyFailed is true.",
   category: "git",
   parameters: z.object({
     number: z.number().describe("PR number"),
@@ -193,7 +197,8 @@ export const ghPrChecksTool: ToolDefinition<
   { checks: PRCheck[]; allPassed: boolean; anyFailed: boolean; anyPending: boolean }
 > = defineTool({
   name: "gh_pr_checks",
-  description: "Get CI check statuses for a pull request.",
+  description:
+    "Poll the CI check results for a pull request — returns pass/fail/pending per check and convenience flags (allPassed, anyFailed). Call this after pushing to confirm CI is green before merging. Check anyPending to know if results are still arriving.",
   category: "git",
   parameters: z.object({
     number: z.number().describe("PR number"),
@@ -244,7 +249,8 @@ export const ghPrListTool: ToolDefinition<
   { prs: Array<{ number: number; title: string; url: string; state: string }> }
 > = defineTool({
   name: "gh_pr_list",
-  description: "List pull requests, optionally filtered by head branch.",
+  description:
+    "List open (or all) pull requests for this repository, optionally filtered to a specific branch. Use before gh_pr_create to ensure a PR for the current branch doesn't already exist. Returns PR number, title, URL, and state.",
   category: "git",
   parameters: z.object({
     head: z.string().optional().describe("Filter by head branch name"),
@@ -283,7 +289,8 @@ export const ghReleaseCreateTool: ToolDefinition<
   { url: string; tag: string }
 > = defineTool({
   name: "gh_release_create",
-  description: "Create a GitHub release with notes.",
+  description:
+    "Publish a versioned GitHub release attached to a tag. The tag must already exist in the repo (push it with git_push first). Provide markdown release notes. Use prerelease: true for release candidates or beta builds.",
   category: "git",
   parameters: z.object({
     tag: z.string().describe("Tag name (e.g., v1.2.3)"),

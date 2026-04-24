@@ -126,8 +126,7 @@ export const createMemoryTool: ToolDefinition<
   { id: string; key: string; scope: string; created: boolean }
 > = defineTool({
   name: "create_memory",
-  description: `Save a memory (key-value pair) that persists between sessions.
-Use for storing project conventions, patterns, preferences, and learnings.
+  description: `Persist a named key-value fact that survives across sessions — use this for project conventions, patterns, user preferences, or discovered constraints you'll need later. If the key already exists the value is overwritten. Do NOT use this for temporary scratch data within a single session; do NOT use this to store file contents — use write_file for that.
 
 Examples:
 - Save convention: { "key": "naming-convention", "value": "Use camelCase for variables", "tags": ["style"] }
@@ -220,7 +219,7 @@ export const recallMemoryTool: ToolDefinition<
   { memories: Memory[]; totalFound: number }
 > = defineTool({
   name: "recall_memory",
-  description: `Search and recall stored memories by key, tags, or free text query.
+  description: `Search previously saved memories by key substring, tags, or free-text value match. Use this at the start of a task to check if relevant conventions or patterns were already learned. Returns full memory content. Do NOT use this to list all memories (use list_memories) or to search file content (use grep).
 
 Examples:
 - By key substring: { "query": "naming" }
@@ -322,7 +321,7 @@ export const listMemoriesTool: ToolDefinition<
   }
 > = defineTool({
   name: "list_memories",
-  description: `List all stored memories with optional filtering. Returns lightweight index entries.
+  description: `List stored memory keys and tags without loading full values — useful for browsing what has been saved before recalling specific entries. Do NOT use this to get memory content (use recall_memory for that).
 
 Examples:
 - List all: { "scope": "all" }

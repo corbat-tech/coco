@@ -378,7 +378,7 @@ export const webFetchTool: ToolDefinition<
   WebFetchOutput
 > = defineTool({
   name: "web_fetch",
-  description: `Fetch a URL and convert its content to clean markdown. Extracts main content, strips navigation/ads, and returns readable text.
+  description: `Fetch the content of a specific URL and return it as clean, readable markdown text. Use this when you already have the exact URL — for example a documentation page, a GitHub file, or an API response — and want to read its content. Do NOT use this to find information without a URL; use web_search instead to discover relevant URLs first. By default strips navigation menus, headers, and ads to return only the main content; set extractContent: false to get the raw HTML/text.
 
 Examples:
 - Fetch documentation: { "url": "https://docs.example.com/api" }

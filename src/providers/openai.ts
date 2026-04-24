@@ -29,6 +29,7 @@ import {
 } from "./tool-call-normalizer.js";
 import { mapToOpenAIEffort, mapToKimiExtraBody } from "./thinking.js";
 import type { ThinkingMode } from "./thinking.js";
+import { getTierConfig } from "./model-tier.js";
 
 /**
  * Default model - Updated February 2026
@@ -355,6 +356,8 @@ export class OpenAIProvider implements LLMProvider {
       return this.chatWithToolsViaResponses(messages, options);
     }
 
+    const tierCfg = getTierConfig(this.id, model);
+
     return withRetry(async () => {
       try {
         const supportsTemp = this.supportsTemperature(model);
@@ -363,12 +366,14 @@ export class OpenAIProvider implements LLMProvider {
 
         // Build request params
         const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+        const tools = this.limitTools(options.tools, tierCfg.maxTools);
         const requestParams: Record<string, unknown> = {
           model,
           ...buildMaxTokensParam(model, maxTokens),
           messages: this.convertMessages(messages, options?.system),
-          tools: this.convertTools(options.tools),
+          tools: this.convertTools(tools),
           tool_choice: this.convertToolChoice(options.toolChoice),
+          parallel_tool_calls: tierCfg.parallelToolCalls,
         };
 
         if (supportsTemp) {
@@ -467,6 +472,7 @@ export class OpenAIProvider implements LLMProvider {
       return;
     }
 
+    const tierCfg = getTierConfig(this.id, model);
     let timeoutTriggered = false;
     try {
       const supportsTemp = this.supportsTemperature(model);
@@ -475,12 +481,14 @@ export class OpenAIProvider implements LLMProvider {
 
       // Build request params
       const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+      const tools = this.limitTools(options.tools, tierCfg.maxTools);
       const requestParams: Record<string, unknown> = {
         model,
         ...buildMaxTokensParam(model, maxTokens),
         messages: this.convertMessages(messages, options?.system),
-        tools: this.convertTools(options.tools),
+        tools: this.convertTools(tools),
         tool_choice: this.convertToolChoice(options.toolChoice),
+        parallel_tool_calls: tierCfg.parallelToolCalls,
         stream: true,
       };
 
@@ -962,6 +970,19 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   /**
+   * Limit the tool list to at most `max` entries.
+   * Built-in tools (those without an `mcp_server` tag) are prioritised over
+   * MCP tools so core capabilities are never dropped.
+   */
+  protected limitTools(tools: ToolDefinition[], max: number): ToolDefinition[] {
+    if (tools.length <= max) return tools;
+    // Sort: built-in (no server tag) first, MCP tools after
+    const builtin = tools.filter((t) => !("serverName" in t && t.serverName));
+    const mcp = tools.filter((t) => "serverName" in t && t.serverName);
+    return [...builtin, ...mcp].slice(0, max);
+  }
+
+  /**
    * Convert tools to OpenAI format
    */
   private convertTools(tools: ToolDefinition[]): OpenAI.ChatCompletionTool[] {
@@ -971,6 +992,7 @@ export class OpenAIProvider implements LLMProvider {
         name: tool.name,
         description: truncateToolDescription(tool.description),
         parameters: tool.input_schema,
+        strict: true,
       },
     }));
   }
@@ -1147,8 +1169,11 @@ export class OpenAIProvider implements LLMProvider {
     return withRetry(async () => {
       try {
         const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+        const tierCfg = getTierConfig(this.id, model);
         const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-        const tools = this.convertToolsForResponses(options.tools);
+        const tools = this.convertToolsForResponses(
+          this.limitTools(options.tools, tierCfg.maxTools),
+        );
         const supportsTemp = this.supportsTemperature(model);
 
         const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
@@ -1290,9 +1315,11 @@ export class OpenAIProvider implements LLMProvider {
     let timeoutTriggered = false;
     try {
       const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+      const tierCfg = getTierConfig(this.id, model);
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+      const limitedTools = this.limitTools(options.tools, tierCfg.maxTools);
       const tools =
-        options.tools.length > 0 ? this.convertToolsForResponses(options.tools) : undefined;
+        limitedTools.length > 0 ? this.convertToolsForResponses(limitedTools) : undefined;
       const supportsTemp = this.supportsTemperature(model);
 
       const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
@@ -1574,7 +1601,7 @@ export class OpenAIProvider implements LLMProvider {
       name: tool.name,
       description: tool.description ? truncateToolDescription(tool.description) : undefined,
       parameters: tool.input_schema ?? null,
-      strict: false,
+      strict: true,
     }));
   }
 }

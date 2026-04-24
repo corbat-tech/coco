@@ -61,6 +61,8 @@ export interface CompactOptions {
   focusTopic?: string;
   /** Abort signal */
   signal?: AbortSignal;
+  /** Optional model override for the summarization call (e.g. a cheap weak model) */
+  summaryModel?: string;
 }
 
 /**
@@ -213,12 +215,13 @@ export class ContextCompactor {
     // Format messages for summarization
     const conversationText = this.formatMessagesForSummary(messagesToSummarize);
 
-    // Generate summary using the LLM, with optional focus topic
+    // Generate summary using the LLM, with optional focus topic and model override
     const summary = await this.generateSummary(
       conversationText,
       provider,
       signal,
       options.focusTopic,
+      options.summaryModel,
     );
 
     // Create compacted message array
@@ -294,6 +297,7 @@ export class ContextCompactor {
     provider: LLMProvider,
     signal?: AbortSignal,
     focusTopic?: string,
+    summaryModel?: string,
   ): Promise<string> {
     if (signal?.aborted) return "[Compaction cancelled]";
 
@@ -303,6 +307,7 @@ export class ContextCompactor {
       const chatPromise = provider.chat([{ role: "user", content: prompt }], {
         maxTokens: this.config.summaryMaxTokens,
         temperature: 0.3, // Lower temperature for more consistent summaries
+        ...(summaryModel ? { model: summaryModel } : {}),
       });
 
       if (signal) {

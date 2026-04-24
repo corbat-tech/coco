@@ -670,6 +670,34 @@ export async function migrateOldPreferences(): Promise<void> {
 }
 
 /**
+ * Return the editor model override, if configured via COCO_EDITOR_MODEL.
+ * The editor model is used for file write/edit operations in the architect/editor
+ * split pattern: the main (architect) model does reasoning; the editor model
+ * applies file changes. Falls back to COCO_WEAK_MODEL when not set.
+ */
+export function getEditorModel(): string | undefined {
+  const raw = process.env["COCO_EDITOR_MODEL"]?.trim();
+  if (!raw || raw.length === 0) return undefined;
+  if (["none", "default", "null", "undefined"].includes(raw.toLowerCase())) return undefined;
+  return raw;
+}
+
+/**
+ * Return the weak/cheap model override, if configured via COCO_WEAK_MODEL.
+ * Used for background tasks like commit messages, compaction summaries, and
+ * code diffs where response quality is less critical than speed and cost.
+ *
+ * Returns undefined when no weak model is configured (callers fall back to
+ * the primary model or skip the optimization entirely).
+ */
+export function getWeakModel(): string | undefined {
+  const raw = process.env["COCO_WEAK_MODEL"]?.trim();
+  if (!raw || raw.length === 0) return undefined;
+  if (["none", "default", "null", "undefined"].includes(raw.toLowerCase())) return undefined;
+  return raw;
+}
+
+/**
  * Environment configuration object
  */
 export const env = {
@@ -677,4 +705,6 @@ export const env = {
   getApiKey,
   getBaseUrl,
   getDefaultModel,
+  getWeakModel,
+  getEditorModel,
 } as const;

@@ -88,6 +88,8 @@ export function parseMacOsProxy(output: string): SystemProxyConfig | null {
   };
 
   if (getField("ProxyAutoConfigEnable") === "1") {
+    // PAC script detected — we cannot evaluate it, but we record the URL so
+    // callers can surface a targeted hint (e.g. "set HTTPS_PROXY manually").
     return null;
   }
 
@@ -168,6 +170,33 @@ export function getProxyFromSystem(
   if (platform === "win32") {
     const out = run("netsh", ["winhttp", "show", "proxy"]);
     return out ? parseWindowsProxy(out) : null;
+  }
+  return null;
+}
+
+/**
+ * Detect whether macOS is configured with a PAC (Proxy Auto-Config) script.
+ * Returns the PAC URL when present, null otherwise.
+ *
+ * Corporate networks using PAC scripts are invisible to Node's fetch (undici
+ * cannot evaluate PAC scripts), but are fully transparent to Go-based tools
+ * like `gh` CLI. Use this to surface a targeted hint to users on such networks.
+ */
+export function detectPacProxy(
+  run: CommandRunner = defaultRunner,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  if (platform !== "darwin") return null;
+  const out = run("scutil", ["--proxy"]);
+  if (!out) return null;
+
+  const getField = (name: string): string | undefined => {
+    const re = new RegExp(`^\\s*${name}\\s*:\\s*(.+?)\\s*$`, "m");
+    return out.match(re)?.[1];
+  };
+
+  if (getField("ProxyAutoConfigEnable") === "1") {
+    return getField("ProxyAutoConfigURLString") ?? "PAC script";
   }
   return null;
 }

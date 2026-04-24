@@ -151,16 +151,11 @@ export const bashExecTool: ToolDefinition<
   }
 > = defineTool({
   name: "bash_exec",
-  description: `Execute a bash/shell command in the user's shell environment.
+  description: `Execute a shell command and return its stdout, stderr, and exit code. Use this for running build scripts, test runners, linters, package managers, CLI tools, git commands, or any other shell operation. Runs in the user's shell environment with their full PATH and locally-configured credentials (kubeconfig, gcloud auth, AWS profiles, SSH keys) so never claim you cannot run a command due to missing credentials — always attempt and report the actual exit code. Do NOT use this to read or write files (use read_file / write_file / edit_file which are safer); prefer specific file tools for file operations.
 
 Runs with the user's full PATH and inherited environment — any tool installed
 on the user's machine is available: kubectl, gcloud, aws, docker, git, node,
-pnpm, and others. Credentials configured locally are inherited automatically:
-kubeconfig contexts, gcloud auth, AWS profiles, SSH keys, etc.
-
-IMPORTANT: never claim you cannot run a command because you lack credentials
-or access — the environment is the user's own shell. Always attempt; report
-failure only if the command actually returns a non-zero exit code.
+pnpm, and others.
 
 Examples:
 - List files:          { "command": "ls -la" }
