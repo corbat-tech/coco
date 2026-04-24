@@ -24,6 +24,7 @@ import type {
 import { ProviderError } from "../utils/errors.js";
 import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import { getLogger } from "../utils/logger.js";
+import { mapToAnthropic } from "./thinking.js";
 
 /**
  * Default model - Updated February 2026
@@ -104,13 +105,22 @@ export class AnthropicProvider implements LLMProvider {
 
     return withRetry(async () => {
       try {
+        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+        const thinkingParam = mapToAnthropic(options?.thinking, model);
+        const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+
         const response = await this.client!.messages.create({
-          model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
-          max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          temperature: options?.temperature ?? this.config.temperature ?? 0,
+          model,
+          // Anthropic requires max_tokens > budget_tokens
+          max_tokens: thinkingParam
+            ? Math.max(baseMaxTokens, thinkingParam.budget_tokens + 1024)
+            : baseMaxTokens,
+          // Anthropic requires temperature=1 when thinking is enabled
+          temperature: thinkingParam ? 1 : (options?.temperature ?? this.config.temperature ?? 0),
           system: this.extractSystem(messages, options?.system),
           messages: this.convertMessages(messages),
           stop_sequences: options?.stopSequences,
+          ...(thinkingParam && { thinking: thinkingParam }),
         });
 
         return {
@@ -140,14 +150,21 @@ export class AnthropicProvider implements LLMProvider {
 
     return withRetry(async () => {
       try {
+        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+        const thinkingParam = mapToAnthropic(options?.thinking, model);
+        const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+
         const response = await this.client!.messages.create({
-          model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
-          max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          temperature: options?.temperature ?? this.config.temperature ?? 0,
+          model,
+          max_tokens: thinkingParam
+            ? Math.max(baseMaxTokens, thinkingParam.budget_tokens + 1024)
+            : baseMaxTokens,
+          temperature: thinkingParam ? 1 : (options?.temperature ?? this.config.temperature ?? 0),
           system: this.extractSystem(messages, options?.system),
           messages: this.convertMessages(messages),
           tools: this.convertTools(options.tools),
           tool_choice: options.toolChoice ? this.convertToolChoice(options.toolChoice) : undefined,
+          ...(thinkingParam && { thinking: thinkingParam }),
         });
 
         const toolCalls = this.extractToolCalls(response.content);
@@ -177,13 +194,20 @@ export class AnthropicProvider implements LLMProvider {
 
     let timeoutTriggered = false;
     try {
+      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+      const thinkingParam = mapToAnthropic(options?.thinking, model);
+      const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+
       const stream = await this.client!.messages.stream(
         {
-          model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
-          max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          temperature: options?.temperature ?? this.config.temperature ?? 0,
+          model,
+          max_tokens: thinkingParam
+            ? Math.max(baseMaxTokens, thinkingParam.budget_tokens + 1024)
+            : baseMaxTokens,
+          temperature: thinkingParam ? 1 : (options?.temperature ?? this.config.temperature ?? 0),
           system: this.extractSystem(messages, options?.system),
           messages: this.convertMessages(messages),
+          ...(thinkingParam && { thinking: thinkingParam }),
         },
         { signal: options?.signal },
       );
@@ -258,15 +282,22 @@ export class AnthropicProvider implements LLMProvider {
 
     let timeoutTriggered = false;
     try {
+      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+      const thinkingParam = mapToAnthropic(options?.thinking, model);
+      const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+
       const stream = await this.client!.messages.stream(
         {
-          model: options?.model ?? this.config.model ?? DEFAULT_MODEL,
-          max_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          temperature: options?.temperature ?? this.config.temperature ?? 0,
+          model,
+          max_tokens: thinkingParam
+            ? Math.max(baseMaxTokens, thinkingParam.budget_tokens + 1024)
+            : baseMaxTokens,
+          temperature: thinkingParam ? 1 : (options?.temperature ?? this.config.temperature ?? 0),
           system: this.extractSystem(messages, options?.system),
           messages: this.convertMessages(messages),
           tools: this.convertTools(options.tools),
           tool_choice: options.toolChoice ? this.convertToolChoice(options.toolChoice) : undefined,
+          ...(thinkingParam && { thinking: thinkingParam }),
         },
         { signal: options?.signal },
       );

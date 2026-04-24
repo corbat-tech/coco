@@ -17,6 +17,7 @@ import * as path from "node:path";
 import { loadConfig, saveConfig } from "./loader.js";
 import { CONFIG_PATHS } from "./paths.js";
 import type { CocoConfig } from "./schema.js";
+import type { ThinkingMode } from "../providers/thinking.js";
 
 // Load ~/.coco/.env (env vars still take precedence)
 loadGlobalCocoEnv();
@@ -363,6 +364,66 @@ export async function getLastUsedModel(provider: ProviderType): Promise<string |
     // Fall through to default
   }
   return undefined;
+}
+
+/**
+ * Get the last used thinking mode for a provider from global config
+ */
+export async function getLastUsedThinking(
+  provider: ProviderType,
+): Promise<ThinkingMode | undefined> {
+  try {
+    const config = await loadConfig(CONFIG_PATHS.config);
+    const mode = config.providerThinking?.[provider];
+    return mode as ThinkingMode | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Save thinking mode preference for a provider to global config
+ */
+export async function saveThinkingPreference(
+  provider: ProviderType,
+  mode: ThinkingMode,
+): Promise<void> {
+  let config: CocoConfig;
+  try {
+    config = await loadConfig(CONFIG_PATHS.config);
+  } catch {
+    config = {
+      project: { name: "global", version: "0.1.0" },
+      provider: {
+        type: "anthropic",
+        model: "claude-sonnet-4-6",
+        maxTokens: 8192,
+        temperature: 0,
+        timeout: 120000,
+      },
+      quality: {
+        minScore: 85,
+        minCoverage: 80,
+        maxIterations: 10,
+        minIterations: 2,
+        convergenceThreshold: 2,
+        securityThreshold: 100,
+      },
+      persistence: {
+        checkpointInterval: 300000,
+        maxCheckpoints: 50,
+        retentionDays: 7,
+        compressOldCheckpoints: true,
+      },
+    };
+  }
+
+  config.providerThinking = {
+    ...config.providerThinking,
+    [provider]: mode,
+  };
+
+  await saveConfig(config, undefined, true);
 }
 
 /**

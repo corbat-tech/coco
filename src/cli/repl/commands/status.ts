@@ -10,6 +10,7 @@ import { execSync } from "node:child_process";
 import type { SlashCommand, ReplSession } from "../types.js";
 import { getStateManager, formatStateStatus, getStateSummary } from "../state/index.js";
 import { createTrustStore } from "../trust-store.js";
+import { formatThinkingMode, getThinkingCapability } from "../../../providers/thinking.js";
 
 /**
  * Get git status
@@ -180,6 +181,15 @@ export const statusCommand: SlashCommand = {
     p.log.step("Session");
     p.log.message(`  📁 ${session.projectPath}`);
     p.log.message(`  🤖 ${session.config.provider.type} / ${session.config.provider.model}`);
+
+    const cap = getThinkingCapability(session.config.provider.type, session.config.provider.model);
+    if (cap.supported) {
+      const thinkingLabel =
+        session.config.provider.thinking !== undefined
+          ? formatThinkingMode(session.config.provider.thinking)
+          : "off";
+      p.log.message(`  🧠 thinking: ${thinkingLabel}  ${chalk.dim("(/thinking to change)")}`);
+    }
 
     p.outro("Done");
     return false;

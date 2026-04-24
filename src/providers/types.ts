@@ -2,6 +2,8 @@
  * LLM Provider types for Corbat-Coco
  */
 
+import type { ThinkingMode } from "./thinking.js";
+
 /**
  * Message role
  */
@@ -100,6 +102,8 @@ export interface ChatOptions {
   timeout?: number;
   /** Abort signal to cancel in-flight requests */
   signal?: AbortSignal;
+  /** Thinking/reasoning mode to pass to the model (if supported) */
+  thinking?: ThinkingMode;
 }
 
 /**

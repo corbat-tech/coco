@@ -15,6 +15,7 @@ vi.mock("../../config/env.js", () => ({
   getDefaultModel: vi.fn().mockReturnValue("claude-opus-4-6"),
   getLastUsedProvider: vi.fn().mockResolvedValue("anthropic"),
   getLastUsedModel: vi.fn().mockResolvedValue(undefined),
+  getLastUsedThinking: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("createDefaultReplConfig", () => {
