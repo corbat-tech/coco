@@ -8,7 +8,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Message, LLMProvider } from "../../providers/types.js";
 import type { ReplSession, ReplConfig } from "./types.js";
-import { getDefaultModel, getLastUsedProvider, getLastUsedModel } from "../../config/env.js";
+import {
+  getDefaultModel,
+  getLastUsedProvider,
+  getLastUsedModel,
+  getLastUsedThinking,
+} from "../../config/env.js";
+import { resolveDefaultThinking } from "../../providers/thinking.js";
 import { createContextManager } from "./context/manager.js";
 import { createContextCompactor, type CompactionResult } from "./context/compactor.js";
 import { createMemoryLoader, type MemoryContext } from "./memory/index.js";
@@ -283,11 +289,18 @@ export async function createDefaultReplConfig(): Promise<ReplConfig> {
   // Get last used model for this provider, or fall back to default
   const model = (await getLastUsedModel(providerType)) || getDefaultModel(providerType);
 
+  // Get last used thinking mode, or use model-appropriate default
+  const persistedThinking = await getLastUsedThinking(providerType);
+  const thinking = persistedThinking ?? resolveDefaultThinking(providerType, model);
+  // Only store if the default is not "off" (avoids polluting config for unsupported models)
+  const thinkingToStore = thinking === "off" ? undefined : thinking;
+
   return {
     provider: {
       type: providerType,
       model,
       maxTokens: 8192,
+      thinking: thinkingToStore,
     },
     ui: {
       theme: "auto",

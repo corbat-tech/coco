@@ -13,6 +13,7 @@ import type { SlashCommand, ReplSession } from "../types.js";
 import { getProviderDefinition, getAllProviders } from "../providers-config.js";
 import type { ProviderType } from "../../../providers/index.js";
 import { getBaseUrl, saveProviderPreference } from "../../../config/env.js";
+import { getThinkingCapability, resolveDefaultThinking } from "../../../providers/thinking.js";
 
 /**
  * Model item for interactive selection
@@ -319,6 +320,40 @@ async function persistModelPreference(provider: ProviderType, model: string): Pr
   }
 }
 
+/**
+ * Reconcile the session's thinking mode after a model change.
+ * If the new model doesn't support thinking, clears it.
+ * If the current mode is incompatible (budget on effort-only provider), resets to default.
+ */
+function reconcileThinkingAfterModelChange(session: ReplSession, newModel: string): void {
+  const provider = session.config.provider.type;
+  const cap = getThinkingCapability(provider, newModel);
+
+  if (!cap.supported) {
+    if (session.config.provider.thinking !== undefined) {
+      session.config.provider.thinking = undefined;
+      console.log(chalk.dim("  ℹ Thinking not supported on this model — turned off."));
+    }
+    return;
+  }
+
+  const current = session.config.provider.thinking;
+
+  // Budget mode on effort-only provider → reset to default
+  if (current !== undefined && typeof current === "object" && !cap.kinds.includes("budget")) {
+    const newDefault = resolveDefaultThinking(provider, newModel);
+    session.config.provider.thinking = newDefault === "off" ? undefined : newDefault;
+    console.log(chalk.dim(`  ℹ Thinking reset to ${session.config.provider.thinking ?? "off"} (model uses effort levels).`));
+    return;
+  }
+
+  // Set sensible default if model now supports thinking and none was set
+  if (current === undefined) {
+    const def = resolveDefaultThinking(provider, newModel);
+    session.config.provider.thinking = def === "off" ? undefined : def;
+  }
+}
+
 export const modelCommand: SlashCommand = {
   name: "model",
   aliases: ["m"],
@@ -378,6 +413,7 @@ export const modelCommand: SlashCommand = {
       }
 
       session.config.provider.model = selectedModel;
+      reconcileThinkingAfterModelChange(session, selectedModel);
 
       // Save preference for next session
       await persistModelPreference(currentProvider, selectedModel);
@@ -410,6 +446,7 @@ export const modelCommand: SlashCommand = {
       // Allow custom model names (for fine-tunes, etc.)
       console.log(chalk.yellow(`Model "${newModel}" not in known list, setting anyway...`));
       session.config.provider.model = newModel;
+      reconcileThinkingAfterModelChange(session, newModel);
 
       // Save preference for next session
       await persistModelPreference(currentProvider, newModel);
@@ -427,6 +464,7 @@ export const modelCommand: SlashCommand = {
     }
 
     session.config.provider.model = newModel;
+    reconcileThinkingAfterModelChange(session, newModel);
 
     // Save preference for next session
     await persistModelPreference(currentProvider, newModel);

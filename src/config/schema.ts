@@ -5,6 +5,14 @@
 import { z } from "zod";
 
 /**
+ * Thinking/reasoning mode schema — mirrors ThinkingMode in providers/thinking.ts
+ */
+export const ThinkingModeSchema = z.union([
+  z.enum(["off", "auto", "low", "medium", "high"]),
+  z.object({ budget: z.number().int().min(0).max(200000) }),
+]);
+
+/**
  * Provider configuration schema
  */
 export const ProviderConfigSchema = z.object({
@@ -251,6 +259,7 @@ export const CocoConfigSchema = z.object({
     timeout: 120000,
   }),
   providerModels: z.record(z.string(), z.string()).optional(),
+  providerThinking: z.record(z.string(), ThinkingModeSchema).optional(),
   quality: QualityConfigSchema.default({
     minScore: 85,
     minCoverage: 80,

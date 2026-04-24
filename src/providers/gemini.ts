@@ -31,6 +31,7 @@ import type {
   ToolUseContent,
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
+import { mapToGeminiBudget } from "./thinking.js";
 
 const DEFAULT_MODEL = "gemini-3.1-pro-preview";
 const SKIP_THOUGHT_SIGNATURE_VALIDATOR = "skip_thought_signature_validator";
@@ -247,7 +248,11 @@ export class GeminiProvider implements LLMProvider {
         allowedFunctionNames?: string[];
       };
     };
+    thinkingConfig?: { thinkingBudget: number };
   } {
+    const model = this.getModel(options?.model);
+    const thinkingBudget = mapToGeminiBudget(options?.thinking, model);
+
     const config: {
       maxOutputTokens: number;
       temperature: number;
@@ -260,12 +265,17 @@ export class GeminiProvider implements LLMProvider {
           allowedFunctionNames?: string[];
         };
       };
+      thinkingConfig?: { thinkingBudget: number };
     } = {
       maxOutputTokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
       temperature: options?.temperature ?? this.config.temperature ?? 0,
       stopSequences: options?.stopSequences,
       systemInstruction: this.extractSystem(messages, options?.system),
     };
+
+    if (thinkingBudget !== undefined) {
+      config.thinkingConfig = { thinkingBudget };
+    }
 
     if (tools && tools.length > 0) {
       config.tools = [{ functionDeclarations: this.convertTools(tools) }];

@@ -48,6 +48,7 @@ import { buildAppCommand } from "./build-app.js";
 import { contextCommand } from "./context.js";
 import { bestOfNCommand } from "./best-of-n.js";
 import { doctorCommand } from "./doctor.js";
+import { thinkingCommand } from "./thinking.js";
 import { renderError } from "../output/renderer.js";
 import { createDefaultRegistry } from "../skills/index.js";
 import type { SkillRegistry } from "../skills/index.js";
@@ -93,6 +94,7 @@ const commands: SlashCommand[] = [
   contextCommand,
   bestOfNCommand,
   doctorCommand,
+  thinkingCommand,
 ];
 
 /**

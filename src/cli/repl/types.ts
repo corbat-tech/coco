@@ -4,6 +4,7 @@
 
 import type { Message, ToolCall, StreamChunk } from "../../providers/types.js";
 import type { ProviderType } from "../../providers/index.js";
+import type { ThinkingMode } from "../../providers/thinking.js";
 import type { ContextManager } from "./context/manager.js";
 import type { ProgressTracker } from "./progress/tracker.js";
 import type { MemoryContext } from "./memory/types.js";
@@ -49,6 +50,8 @@ export interface ReplConfig {
     maxTokens: number;
     project?: string;
     location?: string;
+    /** Active thinking/reasoning mode (undefined = not supported or use model default) */
+    thinking?: ThinkingMode;
   };
   ui: {
     theme: "dark" | "light" | "auto";

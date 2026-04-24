@@ -27,6 +27,8 @@ import {
   ResponsesToolCallAssembler,
   parseToolCallArguments,
 } from "./tool-call-normalizer.js";
+import { mapToOpenAIEffort, mapToKimiExtraBody } from "./thinking.js";
+import type { ThinkingMode } from "./thinking.js";
 
 /**
  * Default model - Updated February 2026
@@ -160,6 +162,7 @@ const LOCAL_MODEL_PATTERNS: string[] = [
  * Kimi K2.5 has interleaved reasoning that requires reasoning_content to be passed back
  * Disabling thinking mode avoids this complexity with tool calling
  */
+// Kimi model list kept for import-free reference; capability registry in thinking.ts is the SoT
 const MODELS_WITH_THINKING_MODE: string[] = ["kimi-k2.5", "kimi-k2-0324", "kimi-latest"];
 
 /**
@@ -265,29 +268,17 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   /**
-   * Check if a model needs thinking mode disabled for tool use
-   * Kimi models have thinking mode enabled by default which requires
-   * reasoning_content in multi-turn conversations with tools
+   * Get extra body parameters for API calls.
+   * Honors the user's ThinkingMode for Kimi models; defaults to disabled
+   * (preserving existing behavior) when no mode is specified.
    */
-  private needsThinkingDisabled(model: string): boolean {
-    return MODELS_WITH_THINKING_MODE.some((m) => model.toLowerCase().includes(m.toLowerCase()));
-  }
+  private getExtraBody(model: string, thinking?: ThinkingMode): Record<string, unknown> | undefined {
+    const kimiBody = mapToKimiExtraBody(thinking, model);
+    if (kimiBody) return kimiBody;
 
-  /**
-   * Get extra body parameters for API calls
-   * Used to disable thinking mode for Kimi models
-   * See: https://huggingface.co/moonshotai/Kimi-K2.5
-   *
-   * For Official Moonshot API: {'thinking': {'type': 'disabled'}}
-   * For vLLM/SGLang: {'chat_template_kwargs': {"thinking": False}}
-   */
-  private getExtraBody(model: string): Record<string, unknown> | undefined {
-    if (this.needsThinkingDisabled(model)) {
-      // For official Moonshot API, use thinking.type = disabled
-      // This enables "Instant mode" which doesn't require reasoning_content
-      return {
-        thinking: { type: "disabled" },
-      };
+    // Fallback for Kimi models without explicit mode: disable thinking
+    if (MODELS_WITH_THINKING_MODE.some((m) => model.toLowerCase().includes(m.toLowerCase()))) {
+      return { thinking: { type: "disabled" } };
     }
     return undefined;
   }
@@ -308,6 +299,7 @@ export class OpenAIProvider implements LLMProvider {
         const supportsTemp = this.supportsTemperature(model);
 
         const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+        const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
         const response = await this.client!.chat.completions.create({
           model,
           ...buildMaxTokensParam(model, maxTokens),
@@ -316,6 +308,7 @@ export class OpenAIProvider implements LLMProvider {
           ...(supportsTemp && {
             temperature: options?.temperature ?? this.config.temperature ?? 0,
           }),
+          ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
         } as OpenAI.ChatCompletionCreateParamsNonStreaming);
 
         const choice = response.choices[0];
@@ -353,7 +346,8 @@ export class OpenAIProvider implements LLMProvider {
     return withRetry(async () => {
       try {
         const supportsTemp = this.supportsTemperature(model);
-        const extraBody = this.getExtraBody(model);
+        const extraBody = this.getExtraBody(model, options?.thinking);
+        const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
 
         // Build request params
         const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
@@ -369,7 +363,10 @@ export class OpenAIProvider implements LLMProvider {
           requestParams.temperature = options?.temperature ?? this.config.temperature ?? 0;
         }
 
-        // For Kimi models, add chat_template_kwargs directly to disable thinking
+        if (reasoningEffort) {
+          requestParams.reasoning_effort = reasoningEffort;
+        }
+
         if (extraBody) {
           Object.assign(requestParams, extraBody);
         }
@@ -414,12 +411,14 @@ export class OpenAIProvider implements LLMProvider {
       const supportsTemp = this.supportsTemperature(model);
 
       const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+      const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
       const stream = await this.client!.chat.completions.create({
         model,
         ...buildMaxTokensParam(model, maxTokens),
         messages: this.convertMessages(messages, options?.system),
         stream: true,
         ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
+        ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
       } as OpenAI.ChatCompletionCreateParamsStreaming);
 
       let streamStopReason: StreamChunk["stopReason"];
@@ -459,7 +458,8 @@ export class OpenAIProvider implements LLMProvider {
     let timeoutTriggered = false;
     try {
       const supportsTemp = this.supportsTemperature(model);
-      const extraBody = this.getExtraBody(model);
+      const extraBody = this.getExtraBody(model, options?.thinking);
+      const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
 
       // Build request params
       const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
@@ -476,7 +476,10 @@ export class OpenAIProvider implements LLMProvider {
         requestParams.temperature = options?.temperature ?? this.config.temperature ?? 0;
       }
 
-      // For Kimi models, add chat_template_kwargs directly to disable thinking
+      if (reasoningEffort) {
+        requestParams.reasoning_effort = reasoningEffort;
+      }
+
       if (extraBody) {
         Object.assign(requestParams, extraBody);
       }
@@ -1090,6 +1093,7 @@ export class OpenAIProvider implements LLMProvider {
         const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
         const supportsTemp = this.supportsTemperature(model);
 
+        const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
         const response = await this.client!.responses.create({
           model,
           input,
@@ -1098,6 +1102,8 @@ export class OpenAIProvider implements LLMProvider {
           ...(supportsTemp && {
             temperature: options?.temperature ?? this.config.temperature ?? 0,
           }),
+          // Responses API uses nested reasoning.effort (not top-level reasoning_effort)
+          ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
           store: false,
         });
 
@@ -1133,6 +1139,7 @@ export class OpenAIProvider implements LLMProvider {
         const tools = this.convertToolsForResponses(options.tools);
         const supportsTemp = this.supportsTemperature(model);
 
+        const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
         const response = await this.client!.responses.create({
           model,
           input,
@@ -1142,6 +1149,7 @@ export class OpenAIProvider implements LLMProvider {
           ...(supportsTemp && {
             temperature: options?.temperature ?? this.config.temperature ?? 0,
           }),
+          ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
           store: false,
         });
 
@@ -1197,12 +1205,14 @@ export class OpenAIProvider implements LLMProvider {
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
       const supportsTemp = this.supportsTemperature(model);
 
+      const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
       const stream = await this.client!.responses.create({
         model,
         input,
         instructions: instructions ?? undefined,
         max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
         ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
+        ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
         store: false,
         stream: true,
       });
@@ -1273,12 +1283,14 @@ export class OpenAIProvider implements LLMProvider {
         options.tools.length > 0 ? this.convertToolsForResponses(options.tools) : undefined;
       const supportsTemp = this.supportsTemperature(model);
 
+      const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
       const requestParams: Record<string, unknown> = {
         model,
         input,
         instructions: instructions ?? undefined,
         max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
         ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
+        ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
         store: false,
         stream: true,
       };

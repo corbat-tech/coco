@@ -428,6 +428,7 @@ export async function executeAgentTurn(
         tools: [],
         maxTokens: session.config.provider.maxTokens,
         signal: options.signal,
+        // Omit thinking for the final explanation turn to avoid unnecessary cost
       })) {
         if (options.signal?.aborted) break;
         if (chunk.type === "text" && chunk.text) {
@@ -527,6 +528,7 @@ export async function executeAgentTurn(
             tools,
             maxTokens: session.config.provider.maxTokens,
             signal: options.signal,
+            thinking: session.config.provider.thinking,
           })) {
             // Check for abort
             if (options.signal?.aborted) {
