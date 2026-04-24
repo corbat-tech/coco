@@ -846,7 +846,10 @@ describe("onboarding-v2", () => {
       expect(mockedCreateProvider).toHaveBeenCalledWith("codex", { model: "gpt-5.3-codex" });
     });
 
-    it("falls back to another configured cloud provider and persists it when preferred is unavailable", async () => {
+    it("falls back to another configured provider for the session but does NOT persist when preferred was configured", async () => {
+      // Anthropic has a key (was configured) but is temporarily unavailable.
+      // OpenAI is available as fallback.
+      // Expected: session uses OpenAI, but disk preference is NOT overwritten.
       const anthropicDef = makeProviderDef({
         id: "anthropic" as any,
         envVar: "ANTHROPIC_API_KEY",
@@ -881,8 +884,53 @@ describe("onboarding-v2", () => {
 
       const result = await ensureConfiguredV2(config);
 
+      // Session-level switch happens correctly
       expect(result?.provider.type).toBe("openai");
       expect(result?.provider.model).toBe("gpt-5.3-codex");
+      // Preferred was configured → disk preference must NOT be overwritten
+      expect(saveProviderPreference).not.toHaveBeenCalledWith("openai", "gpt-5.3-codex");
+
+      delete process.env["OPENAI_API_KEY"];
+    });
+
+    it("falls back to another provider AND persists when preferred was never configured", async () => {
+      // Anthropic has NO key (never configured). OpenAI is available.
+      // Expected: session uses OpenAI AND disk preference IS written.
+      const anthropicDef = makeProviderDef({
+        id: "anthropic" as any,
+        envVar: "ANTHROPIC_API_KEY",
+      });
+      const openaiDef = makeProviderDef({
+        id: "openai" as any,
+        name: "OpenAI",
+        envVar: "OPENAI_API_KEY",
+      });
+
+      mockedGetAllProviders.mockReturnValue([anthropicDef, openaiDef]);
+      mockedGetConfiguredProviders.mockReturnValue([]);
+      delete process.env["ANTHROPIC_API_KEY"];
+      process.env["OPENAI_API_KEY"] = "sk-openai-existing-key";
+      mockedGetRecommendedModel.mockImplementation((providerId: any) => {
+        if (providerId === "openai") return { id: "gpt-5.3-codex" } as any;
+        return { id: "claude-sonnet-4-20250514" } as any;
+      });
+
+      mockedCreateProvider.mockImplementation(async (providerId: any) => {
+        if (providerId === "openai") {
+          return { isAvailable: vi.fn().mockResolvedValue(true), id: "openai" } as any;
+        }
+        return { isAvailable: vi.fn().mockResolvedValue(false), id: "anthropic" } as any;
+      });
+
+      const config = {
+        provider: { type: "anthropic", model: "claude-sonnet-4-20250514", maxTokens: 8192 },
+      } as any;
+
+      const result = await ensureConfiguredV2(config);
+
+      expect(result?.provider.type).toBe("openai");
+      expect(result?.provider.model).toBe("gpt-5.3-codex");
+      // Preferred was NOT configured → persist the working provider
       expect(saveProviderPreference).toHaveBeenCalledWith("openai", "gpt-5.3-codex");
 
       delete process.env["OPENAI_API_KEY"];

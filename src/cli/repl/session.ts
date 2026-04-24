@@ -292,8 +292,15 @@ export async function createDefaultReplConfig(): Promise<ReplConfig> {
   // Get last used thinking mode, or use model-appropriate default
   const persistedThinking = await getLastUsedThinking(providerType);
   const thinking = persistedThinking ?? resolveDefaultThinking(providerType, model);
-  // Only store if the default is not "off" (avoids polluting config for unsupported models)
-  const thinkingToStore = thinking === "off" ? undefined : thinking;
+  // Honor explicit user choices (including "off") verbatim.
+  // Only strip "off" when it came from resolveDefaultThinking — never when the
+  // user deliberately set it (e.g. /thinking off on a Gemini model whose default is "auto").
+  const thinkingToStore =
+    persistedThinking !== undefined
+      ? persistedThinking // explicit user choice — always keep, even "off"
+      : thinking === "off"
+        ? undefined // resolved default of "off" — don't pollute config
+        : thinking;
 
   return {
     provider: {

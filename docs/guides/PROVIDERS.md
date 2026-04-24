@@ -301,6 +301,55 @@ export HUGGINGFACE_API_KEY=your-key  # also works
 | Local (Qwen/DeepSeek) | ⚠️ Variable | ⚠️ Variable | ⚠️ Variable | Test First |
 | Kimi/Moonshot | ❌ Poor | ❌ Poor | ❌ Poor | **NOT RECOMMENDED** |
 
+## Reasoning Modes
+
+Many models support extended reasoning (also called "thinking") — a mode where the model performs extra computation before producing its answer. Coco exposes this through the `/thinking` command (aliases `/think`, `/reason`).
+
+### How to use it
+
+```
+/thinking              # interactive arrow-key selector
+/thinking off          # disable reasoning
+/thinking auto         # provider default / dynamic budget
+/thinking low          # minimal reasoning
+/thinking medium       # balanced reasoning
+/thinking high         # maximum reasoning
+/thinking 8000         # explicit token budget (Anthropic / Gemini only)
+```
+
+The active mode is always visible in the status bar and the startup panel:
+```
+anthropic/claude-opus-4-6/high   ← provider/model/mode
+🧠 reasoning: high  ·  /thinking to change
+```
+
+### Per-provider behavior
+
+| Provider | Models | Kind | API parameter | Default |
+|----------|--------|------|---------------|---------|
+| **Anthropic** | claude-3-7-sonnet, claude-opus-4, claude-sonnet-4, claude-haiku-4-5, claude-4+ | budget | `thinking.budget_tokens` (+ `temperature: 1`) | `off` |
+| **OpenAI Chat Completions** | o1, o3, o4-mini, gpt-5+ | effort | `reasoning_effort: "low\|medium\|high"` | `medium` |
+| **OpenAI Responses API** | same o-series / gpt-5+ models | effort | `reasoning.effort: "low\|medium\|high"` | `medium` |
+| **Gemini** | gemini-2.5-pro, gemini-2.5-flash, gemini-3+ | budget | `thinkingConfig.thinkingBudget` (-1=auto, 0=off) | `auto` |
+| **Kimi** | kimi-k2.5, kimi-k2-0324, kimi-latest | toggle | `thinking.type: "enabled\|disabled"` | `off` |
+| **Copilot (Claude models)** | claude-* via Copilot endpoint | — | not supported | — |
+| **Other providers** | gpt-4o, claude-3-5-sonnet, gemini-1.5, etc. | — | not supported | — |
+
+**Budget levels** map to token budgets:
+
+| Level | Anthropic | Gemini |
+|-------|-----------|--------|
+| `low` | 2 048 tokens | 2 048 tokens |
+| `medium` | 8 000 tokens | 8 000 tokens |
+| `high` | 16 000 tokens | 16 000 tokens |
+| `auto` | 8 000 tokens (default) | dynamic (model decides) |
+
+### Persistence
+
+Your explicit choice (including `off`) is saved per provider in `~/.coco/config.json` under `providerThinking` and restored on next startup. If you have never set a preference for a provider, Coco uses the model's sensible default (e.g. `medium` for o3, `auto` for Gemini 2.5, `off` for Anthropic).
+
+> **Kimi warning**: enabling thinking on Kimi models may cause tool-calling errors. If you experience issues, run `/thinking off` to restore default behavior.
+
 ## Provider Auto-Switch (Opt-In)
 
 Corbat-Coco can switch providers automatically after repeated provider failures, but this is **disabled by default**.

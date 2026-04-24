@@ -1721,6 +1721,9 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
     preferredProviderDef?.id === "copilot" && isProviderConfigured("copilot");
   const preferredIsConfigured =
     preferredIsLocal || preferredHasApiKey || preferredHasOpenAIOAuth || preferredHasCopilotCreds;
+  // True when the user's preferred provider had credentials at startup.
+  // Used to prevent silent fallbacks from overwriting the user's persisted preference.
+  const preferredWasConfigured = Boolean(preferredProviderDef && preferredIsConfigured);
   let preferredWasConfiguredButUnavailable = false;
   let preferredUnavailableWasLocal = false;
 
@@ -1786,8 +1789,13 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
 
         const provider = await createProvider(providerId, { model });
         if (await provider.isAvailable()) {
-          // Persist the last known working provider so startup uses it by default next time.
-          await saveProviderPreference(prov.id, model);
+          // Only persist when the preferred provider was never configured.
+          // If it was configured but temporarily unavailable (e.g. expired token,
+          // network blip), do the in-session switch but keep the disk preference
+          // intact so the next startup retries the user's actual choice.
+          if (!preferredWasConfigured) {
+            await saveProviderPreference(prov.id, model);
+          }
           // Silently use this provider - no warning needed
           return {
             ...config,
@@ -1823,8 +1831,10 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
 
         const provider = await createProvider("codex", { model });
         if (await provider.isAvailable()) {
-          // Save as openai with oauth authMethod
-          await saveProviderPreference("openai", model);
+          // Same guard as section 2: only persist when preferred was never configured.
+          if (!preferredWasConfigured) {
+            await saveProviderPreference("openai", model);
+          }
           return {
             ...config,
             provider: {

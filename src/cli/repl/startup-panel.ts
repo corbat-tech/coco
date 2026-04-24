@@ -105,6 +105,15 @@ export async function renderStartupPanel(
     : chalk.dim("  💡 quality mode is Coco's edge for robust code. Enable with /quality on");
   console.log(cocoStatus);
 
+  if (thinkingCapability.supported) {
+    const modeLabel = formatThinkingMode(session.config.provider.thinking ?? "off");
+    console.log(
+      chalk.dim("  🧠 reasoning: ") +
+        chalk.magenta(modeLabel) +
+        chalk.dim("  ·  /thinking to change"),
+    );
+  }
+
   const skillTotal = session.skillRegistry?.size ?? 0;
   const hasSomething = skillTotal > 0 || mcpServers.length > 0;
   if (hasSomething) {

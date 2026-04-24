@@ -102,6 +102,63 @@ describe("createDefaultReplConfig", () => {
     expect(config.provider.type).toBe("copilot");
     expect(config.provider.model).toBe("claude-sonnet-4.6");
   });
+
+  describe("thinking persistence", () => {
+    it("preserves explicit 'off' choice even on models whose default is 'auto' (Gemini)", async () => {
+      const env = await import("../../config/env.js");
+      vi.mocked(env.getLastUsedProvider).mockResolvedValue("gemini" as any);
+      vi.mocked(env.getLastUsedModel).mockResolvedValue("gemini-2.5-pro");
+      vi.mocked(env.getDefaultModel).mockReturnValue("gemini-2.5-pro");
+      vi.mocked(env.getLastUsedThinking).mockResolvedValue("off" as any);
+
+      const { createDefaultReplConfig } = await import("./session.js");
+      const config = await createDefaultReplConfig();
+
+      // User explicitly set "off" — must survive restart even though Gemini default is "auto"
+      expect(config.provider.thinking).toBe("off");
+    });
+
+    it("falls back to model default when no thinking preference is stored (Gemini → auto)", async () => {
+      const env = await import("../../config/env.js");
+      vi.mocked(env.getLastUsedProvider).mockResolvedValue("gemini" as any);
+      vi.mocked(env.getLastUsedModel).mockResolvedValue("gemini-2.5-pro");
+      vi.mocked(env.getDefaultModel).mockReturnValue("gemini-2.5-pro");
+      vi.mocked(env.getLastUsedThinking).mockResolvedValue(undefined);
+
+      const { createDefaultReplConfig } = await import("./session.js");
+      const config = await createDefaultReplConfig();
+
+      // No explicit preference → resolveDefaultThinking("gemini", "gemini-2.5-pro") = "auto"
+      expect(config.provider.thinking).toBe("auto");
+    });
+
+    it("preserves explicit 'high' on Anthropic models", async () => {
+      const env = await import("../../config/env.js");
+      vi.mocked(env.getLastUsedProvider).mockResolvedValue("anthropic" as any);
+      vi.mocked(env.getLastUsedModel).mockResolvedValue("claude-opus-4-6");
+      vi.mocked(env.getDefaultModel).mockReturnValue("claude-opus-4-6");
+      vi.mocked(env.getLastUsedThinking).mockResolvedValue("high" as any);
+
+      const { createDefaultReplConfig } = await import("./session.js");
+      const config = await createDefaultReplConfig();
+
+      expect(config.provider.thinking).toBe("high");
+    });
+
+    it("does not pollute config for unsupported models when default resolves to off", async () => {
+      const env = await import("../../config/env.js");
+      vi.mocked(env.getLastUsedProvider).mockResolvedValue("anthropic" as any);
+      vi.mocked(env.getLastUsedModel).mockResolvedValue("claude-3-5-sonnet-20241022");
+      vi.mocked(env.getDefaultModel).mockReturnValue("claude-3-5-sonnet-20241022");
+      vi.mocked(env.getLastUsedThinking).mockResolvedValue(undefined);
+
+      const { createDefaultReplConfig } = await import("./session.js");
+      const config = await createDefaultReplConfig();
+
+      // Unsupported model + no persisted choice → thinking stays undefined (not "off" string)
+      expect(config.provider.thinking).toBeUndefined();
+    });
+  });
 });
 
 describe("createSession", () => {
