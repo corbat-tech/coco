@@ -15,7 +15,7 @@ import { isQualityLoop } from "./quality-loop.js";
 import { isFullAccessMode } from "./full-access-mode.js";
 import type { ReplConfig } from "./types.js";
 import { type GitContext, formatGitShort } from "./git-context.js";
-import { formatThinkingMode } from "../../providers/thinking.js";
+import { formatThinkingMode, getThinkingCapability } from "../../providers/thinking.js";
 
 /**
  * Format context usage as a colored string based on usage level.
@@ -50,14 +50,14 @@ export function formatStatusBar(
   const projectName = path.basename(projectPath);
   parts.push(chalk.dim("📁 ") + chalk.magenta(projectName));
 
-  // Provider/model (+ thinking mode when active)
+  // Provider/model/thinking
   const providerName = config.provider.type;
   const modelName = getDisplayModel(config);
+  const capability = getThinkingCapability(providerName, modelName);
   const thinkingMode = config.provider.thinking;
-  const thinkingSuffix =
-    thinkingMode !== undefined
-      ? chalk.dim(" [") + chalk.magenta(formatThinkingMode(thinkingMode)) + chalk.dim("]")
-      : "";
+  const thinkingSuffix = capability.supported
+    ? chalk.dim("/") + chalk.magenta(formatThinkingMode(thinkingMode ?? "off"))
+    : "";
   parts.push(chalk.dim(`${providerName}/`) + chalk.cyan(modelName) + thinkingSuffix);
 
   // Quality loop indicator
