@@ -369,7 +369,9 @@ export async function getLastUsedModel(provider: ProviderType): Promise<string |
 /**
  * Get the last used thinking mode for a provider from global config
  */
-export async function getLastUsedThinking(provider: ProviderType): Promise<ThinkingMode | undefined> {
+export async function getLastUsedThinking(
+  provider: ProviderType,
+): Promise<ThinkingMode | undefined> {
   try {
     const config = await loadConfig(CONFIG_PATHS.config);
     const mode = config.providerThinking?.[provider];

@@ -55,7 +55,9 @@ export const thinkingCommand: SlashCommand = {
       if (!capability.supported) {
         console.log(
           chalk.yellow(`\n⚠  Thinking not supported for ${model} on ${provider}.\n`) +
-            chalk.dim("   Compatible models: claude-3-7+, claude-4+, o3, o4-mini, gpt-5*, gemini-2.5+\n"),
+            chalk.dim(
+              "   Compatible models: claude-3-7+, claude-4+, o3, o4-mini, gpt-5*, gemini-2.5+\n",
+            ),
         );
         return false;
       }
@@ -93,14 +95,18 @@ export const thinkingCommand: SlashCommand = {
 
     if (parsed === null) {
       console.log(chalk.red(`\n✗ Unknown thinking mode: "${args[0]}"`));
-      console.log(chalk.dim("  Valid options: off, auto, low, medium, high, or a token budget number\n"));
+      console.log(
+        chalk.dim("  Valid options: off, auto, low, medium, high, or a token budget number\n"),
+      );
       return false;
     }
 
     if (!capability.supported && parsed !== "off") {
       console.log(
         chalk.yellow(`\n⚠  Thinking not supported for ${model} on ${provider}.\n`) +
-          chalk.dim("   Compatible models: claude-3-7+, claude-4+, o3, o4-mini, gpt-5*, gemini-2.5+\n"),
+          chalk.dim(
+            "   Compatible models: claude-3-7+, claude-4+, o3, o4-mini, gpt-5*, gemini-2.5+\n",
+          ),
       );
       return false;
     }

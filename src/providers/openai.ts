@@ -272,7 +272,10 @@ export class OpenAIProvider implements LLMProvider {
    * Honors the user's ThinkingMode for Kimi models; defaults to disabled
    * (preserving existing behavior) when no mode is specified.
    */
-  private getExtraBody(model: string, thinking?: ThinkingMode): Record<string, unknown> | undefined {
+  private getExtraBody(
+    model: string,
+    thinking?: ThinkingMode,
+  ): Record<string, unknown> | undefined {
     const kimiBody = mapToKimiExtraBody(thinking, model);
     if (kimiBody) return kimiBody;
 

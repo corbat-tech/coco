@@ -112,6 +112,7 @@ Common commands:
 - `/help` show available commands and skills.
 - `/provider` switch provider.
 - `/model` switch model.
+- `/thinking [off|auto|low|medium|high|<tokens>]` control the reasoning/thinking budget (claude-4+, o3/o4-mini, gpt-5+, gemini-2.5+).
 - `/quality [on|off]` toggle convergence mode.
 - `/check` run checks in project context.
 - `/review` run code review workflow.

@@ -343,7 +343,11 @@ function reconcileThinkingAfterModelChange(session: ReplSession, newModel: strin
   if (current !== undefined && typeof current === "object" && !cap.kinds.includes("budget")) {
     const newDefault = resolveDefaultThinking(provider, newModel);
     session.config.provider.thinking = newDefault === "off" ? undefined : newDefault;
-    console.log(chalk.dim(`  ℹ Thinking reset to ${session.config.provider.thinking ?? "off"} (model uses effort levels).`));
+    console.log(
+      chalk.dim(
+        `  ℹ Thinking reset to ${session.config.provider.thinking ?? "off"} (model uses effort levels).`,
+      ),
+    );
     return;
   }
 

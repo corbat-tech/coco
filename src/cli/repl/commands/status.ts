@@ -184,9 +184,10 @@ export const statusCommand: SlashCommand = {
 
     const cap = getThinkingCapability(session.config.provider.type, session.config.provider.model);
     if (cap.supported) {
-      const thinkingLabel = session.config.provider.thinking !== undefined
-        ? formatThinkingMode(session.config.provider.thinking)
-        : "off";
+      const thinkingLabel =
+        session.config.provider.thinking !== undefined
+          ? formatThinkingMode(session.config.provider.thinking)
+          : "off";
       p.log.message(`  🧠 thinking: ${thinkingLabel}  ${chalk.dim("(/thinking to change)")}`);
     }
 

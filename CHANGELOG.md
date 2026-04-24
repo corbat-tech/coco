@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.31.0] - 2026-04-24
+
+### Added
+- **Reasoning/thinking mode support across all LLM providers** — a new `/thinking` slash command (aliases `/think`, `/reason`) lets you control how much reasoning budget your model uses. Supports `off`, `auto`, `low`, `medium`, `high`, and an explicit token budget (e.g. `/thinking 8000`). The active mode persists across sessions in `~/.coco/config.json`.
+- **Anthropic extended thinking** — for `claude-3-7-sonnet` and all `claude-4+` models, thinking maps to `thinking: { type: "enabled", budget_tokens: N }` with automatic `max_tokens` bump and `temperature: 1` coercion as required by the API. Budgets: low=2048, medium=8000, high=16000 tokens.
+- **OpenAI reasoning effort** — for `o1`, `o3`, `o4-mini`, and all `gpt-5+`/Codex models, thinking maps to `reasoning_effort: "low|medium|high"` (Chat Completions) or `reasoning: { effort }` (Responses API). Default for these models is `medium`.
+- **Gemini thinking budget** — for `gemini-2.5-pro`, `gemini-2.5-flash`, and `gemini-3+` models, thinking maps to `thinkingConfig: { thinkingBudget: N }` where `auto` sets a dynamic budget (`-1`) and `off` disables it entirely (`0`). Default for supported Gemini models is `auto`.
+- **Kimi thinking toggle** — for `kimi-k2.5`, `kimi-k2-0324`, and `kimi-latest`, thinking enables or disables Kimi's interleaved reasoning mode. Default remains `off` to preserve existing tool-calling behavior; enabling shows a warning about potential tool-call compatibility issues.
+- **Per-model capability registry** (`src/providers/thinking.ts`) — a unified `getThinkingCapability(provider, model)` function that returns the supported modes, kind (`effort` vs `budget`), budget range, and sensible default for every model. Unsupported models (e.g. `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`, Claude models via Copilot) correctly report as unsupported.
+- **Status bar thinking indicator** — when thinking is active, the model segment in the status bar shows the mode label: e.g. `anthropic/claude-opus-4-6 [high]` or `openai/o3 [medium]`.
+
+### Improved
+- **`/status` command** — now shows the active thinking mode alongside provider/model when the current model supports reasoning, with a hint to use `/thinking` to change it.
+- **`/model` command** — automatically reconciles the thinking mode after switching models: clears it for models that don't support thinking, and resets incompatible modes (e.g. a token budget on an effort-only provider) to the new model's default.
+- **`/help` command** — `/thinking` entry added to the Model & Settings section.
+
 ## [2.30.0] - 2026-04-23
 
 ### Added
@@ -1416,6 +1432,7 @@ Future versions will include upgrade guides here.
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
 [Unreleased]: https://github.com/corbat-tech/coco/compare/v2.30.0...HEAD
+[2.31.0]: https://github.com/corbat-tech/coco/compare/v2.30.0...v2.31.0
 [2.30.0]: https://github.com/corbat-tech/coco/compare/v2.29.0...v2.30.0
 [2.29.0]: https://github.com/corbat-tech/coco/compare/v2.28.5...v2.29.0
 [2.28.5]: https://github.com/corbat-tech/corbat-coco/compare/v2.28.4...v2.28.5
