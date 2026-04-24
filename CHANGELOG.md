@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.33.0] - 2026-04-24
+
+### Improved
+- **Status bar always shows thinking mode for supported models** — the provider/model segment now reads `provider/model/mode` (e.g. `copilot/gpt-5-mini/off`, `anthropic/claude-opus-4-6/high`) for every model that supports reasoning. Previously the mode was only shown when actively enabled; now `off` is always visible so you always know the current reasoning state at a glance. Models that do not support thinking (e.g. `gpt-4o`, legacy Claude 3.5) continue to show only `provider/model`.
+
 ## [2.32.0] - 2026-04-24
 
 ### Improved
@@ -1436,7 +1441,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.32.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.33.0...HEAD
+[2.33.0]: https://github.com/corbat-tech/coco/compare/v2.32.0...v2.33.0
 [2.32.0]: https://github.com/corbat-tech/coco/compare/v2.31.0...v2.32.0
 [2.31.0]: https://github.com/corbat-tech/coco/compare/v2.30.0...v2.31.0
 [2.30.0]: https://github.com/corbat-tech/coco/compare/v2.29.0...v2.30.0
