@@ -157,11 +157,7 @@ async function applyMode(
   const capability = getThinkingCapability(provider, model);
 
   // Warn about Kimi + tool use
-  if (
-    (provider === "kimi" || provider === "kimi-code") &&
-    parsed !== "off" &&
-    parsed !== "auto"
-  ) {
+  if ((provider === "kimi" || provider === "kimi-code") && parsed !== "off" && parsed !== "auto") {
     console.log(
       chalk.yellow(
         "\n⚠  Enabling thinking on Kimi may cause issues with tool calling.\n" +
@@ -223,7 +219,9 @@ export const thinkingCommand: SlashCommand = {
       );
       if (hasBudget && capability.budgetRange) {
         const { min, max } = capability.budgetRange;
-        console.log(chalk.dim(`  Budget range: ${min}–${max} tokens  (/thinking 8000 for custom)\n`));
+        console.log(
+          chalk.dim(`  Budget range: ${min}–${max} tokens  (/thinking 8000 for custom)\n`),
+        );
       } else {
         console.log();
       }
