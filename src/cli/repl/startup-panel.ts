@@ -13,6 +13,7 @@ import { isQualityLoop } from "./quality-loop.js";
 import { formatGitLine, type GitContext } from "./git-context.js";
 import type { ReplConfig } from "./types.js";
 import type { UnifiedSkillRegistry } from "../../skills/registry.js";
+import { getThinkingCapability, formatThinkingMode } from "../../providers/thinking.js";
 
 export async function renderStartupPanel(
   session: {
@@ -83,9 +84,14 @@ export async function renderStartupPanel(
 
   console.log();
   console.log(chalk.dim(`  📁 ${parentPath}`) + chalk.magenta.bold(projectName));
+  const thinkingCapability = getThinkingCapability(providerName, modelName);
+  const thinkingSuffix = thinkingCapability.supported
+    ? chalk.dim("/") + chalk.magenta(formatThinkingMode(session.config.provider.thinking ?? "off"))
+    : "";
   console.log(
     chalk.dim(`  🤖 ${providerName}/`) +
       chalk.magenta(modelName) +
+      thinkingSuffix +
       (trustText ? chalk.dim(` • 🔐 ${trustText}`) : ""),
   );
   if (gitCtx) {
