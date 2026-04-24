@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.33.1] - 2026-04-24
+
+### Fixed
+- **Startup panel missing thinking mode** — the `provider/model/mode` thinking indicator was already shown in the persistent status bar (rendered after each agent turn) but was absent from the startup panel displayed on boot and on `/clear`. Both now consistently show `provider/model/mode` (e.g. `copilot/gpt-5-mini/off`) for models that support reasoning.
+
 ## [2.33.0] - 2026-04-24
 
 ### Improved
@@ -1441,7 +1446,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.33.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.33.1...HEAD
+[2.33.1]: https://github.com/corbat-tech/coco/compare/v2.33.0...v2.33.1
 [2.33.0]: https://github.com/corbat-tech/coco/compare/v2.32.0...v2.33.0
 [2.32.0]: https://github.com/corbat-tech/coco/compare/v2.31.0...v2.32.0
 [2.31.0]: https://github.com/corbat-tech/coco/compare/v2.30.0...v2.31.0
