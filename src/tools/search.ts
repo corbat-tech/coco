@@ -51,7 +51,7 @@ export const grepTool: ToolDefinition<
   SearchResult
 > = defineTool({
   name: "grep",
-  description: `Search for text patterns in files using regex.
+  description: `Search for a regex pattern across all files in a directory and return matching lines with file paths and line numbers. Use this when you know a symbol name, string literal, or pattern and want to find where it appears in the codebase (function definitions, imports, error messages, config keys). Do NOT use this to find files by name — use glob for that. Do NOT use this when you already know the file path — use read_file directly. Searches are recursive by default; narrow with the include glob to restrict to specific file types.
 
 Examples:
 - Simple search: { "pattern": "TODO" }
@@ -222,7 +222,7 @@ export const findInFileTool: ToolDefinition<
   { matches: Array<{ line: number; content: string }>; count: number }
 > = defineTool({
   name: "find_in_file",
-  description: `Search for a pattern in a single file.
+  description: `Search for a text or regex pattern inside a single known file and return matching line numbers and content. Use this when you already have the file path and want to quickly find which lines match (e.g. locate a function signature, find an import, or confirm a value exists). Do NOT use this to search across the whole project — use grep for that. Returns line numbers so you can navigate directly to the match.
 
 Examples:
 - Find text: { "file": "src/app.ts", "pattern": "export" }

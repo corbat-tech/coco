@@ -66,7 +66,7 @@ export const gitStatusTool: ToolDefinition<
   }
 > = defineTool({
   name: "git_status",
-  description: `Get the current git repository status including branch, staged, modified, and untracked files.
+  description: `Return the current git repository state: branch name, staged files, modified files, and untracked files. Use this before committing to see what has changed, or to check which branch is active. Do NOT use this to see the content of changes (use git_diff), or to view history (use git_log). Returns isClean: true when the working tree is clean with nothing to commit.
 
 Examples:
 - Current dir: {} → { "branch": "main", "isClean": false, "modified": ["src/app.ts"] }
@@ -108,7 +108,7 @@ export const gitDiffTool: ToolDefinition<
   { diff: string; filesChanged: number; insertions: number; deletions: number }
 > = defineTool({
   name: "git_diff",
-  description: `Get git diff showing file changes.
+  description: `Show the unified diff of changes in the working tree or staging area. Use this to see exactly what lines changed in files before committing, or to review changes the user just made. Use staged: true to see only what has been staged (git add), or omit it to see all unstaged changes. Do NOT use this to see commit history (use git_log) or file status summary (use git_status).
 
 Examples:
 - All changes: {} → { "diff": "...", "filesChanged": 3, "insertions": 42, "deletions": 10 }
@@ -155,7 +155,7 @@ Examples:
 export const gitAddTool: ToolDefinition<{ cwd?: string; files: string[] }, { added: string[] }> =
   defineTool({
     name: "git_add",
-    description: `Stage files for commit.
+    description: `Stage one or more files (or patterns) so they are included in the next git commit. Use this after making file edits to mark them ready for commit. Pass ["."] to stage all changes, or list specific file paths to stage selectively. Do NOT use this to commit (use git_commit after staging) or to view what is staged (use git_status or git_diff with staged: true).
 
 Examples:
 - Stage all: { "files": ["."] }
@@ -189,7 +189,7 @@ export const gitCommitTool: ToolDefinition<
   { hash: string; summary: string }
 > = defineTool({
   name: "git_commit",
-  description: `Create a git commit with the staged changes.
+  description: `Create a git commit from whatever is currently staged (git add must run first). Use conventional commit format (feat/fix/docs/chore). Do NOT use this when nothing is staged — check git_status first; do NOT use this to stage files (use git_add) or to see what will be committed (use git_diff with staged: true).
 
 Examples:
 - Simple commit: { "message": "fix: resolve auth bug" }
@@ -241,7 +241,7 @@ export const gitLogTool: ToolDefinition<
   }
 > = defineTool({
   name: "git_log",
-  description: `Get git commit history.
+  description: `Show git commit history with hashes, messages, authors, and dates. Use this to understand what changed recently, find the commit that introduced a bug, or check whether a feature was already merged. Do NOT use this to see the content of changes — use git_diff; do NOT use this to check current file state — use git_status.
 
 Examples:
 - Last 10 commits: {} (default)
@@ -291,7 +291,7 @@ export const gitBranchTool: ToolDefinition<
   { branches: string[]; current: string }
 > = defineTool({
   name: "git_branch",
-  description: `Manage git branches (list, create, delete).
+  description: `List all local branches, create a new branch from the current HEAD, or delete a branch. Use this to see available branches before checking out, or to create a feature branch. Do NOT use this to switch the active branch — use git_checkout; do NOT delete branches that have unmerged work.
 
 Examples:
 - List branches: {} → { "branches": ["main", "feature/x"], "current": "main" }
@@ -346,7 +346,7 @@ export const gitCheckoutTool: ToolDefinition<
   { branch: string }
 > = defineTool({
   name: "git_checkout",
-  description: `Switch branches or create and switch to a new branch.
+  description: `Switch the working directory to an existing branch, or create a new branch and switch to it in one step. Use this to move between branches or start a new feature branch. Do NOT use this with unsaved file edits (stage or stash first); do NOT use this to just list branches — use git_branch.
 
 Examples:
 - Switch branch: { "branch": "main" }
@@ -385,7 +385,7 @@ export const gitPushTool: ToolDefinition<
   { pushed: boolean; remote: string; branch: string }
 > = defineTool({
   name: "git_push",
-  description: `Push commits to remote repository.
+  description: `Upload local commits to a remote repository. Use setUpstream: true the first time you push a new branch to create the tracking relationship. Do NOT use this on main/master without explicit user confirmation — it modifies shared history; do NOT push without first checking git_status to confirm all commits are clean.
 
 Examples:
 - Push current: {} → pushes to origin
@@ -433,7 +433,7 @@ export const gitPullTool: ToolDefinition<
   { updated: boolean; summary: string }
 > = defineTool({
   name: "git_pull",
-  description: `Pull changes from remote repository.
+  description: `Fetch and integrate remote commits into the current branch. Use rebase: true to keep a linear history (preferred for feature branches). Do NOT use this when you have uncommitted local changes — stage or stash them first; if a merge conflict is reported, use read_file / edit_file to resolve then git_add and git_commit.
 
 Examples:
 - Pull current: {} → pulls from origin

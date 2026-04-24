@@ -206,7 +206,7 @@ export class ToolRegistry {
           const field = issue.path.join(".") || "input";
           return `${field} (${issue.message.toLowerCase()})`;
         });
-        errorMessage = `Invalid tool input — ${fields.join(", ")}`;
+        errorMessage = `Invalid tool input for '${name}' — ${fields.join(", ")}`;
         // When every required field is undefined, the JSON likely failed to parse on
         // our side (not an LLM mistake). Tell the model to retry unchanged.
         const allUndefined = error.issues.every((i) =>
@@ -215,6 +215,14 @@ export class ToolRegistry {
         if (allUndefined && error.issues.length > 1) {
           errorMessage +=
             ". All parameters are missing — this is likely a JSON serialization error on our side. Please retry with the same arguments.";
+        }
+        // Append the tool's JSON schema so the model can self-correct
+        // (critical for mini-tier models that may not remember the schema)
+        try {
+          const schema = zodToJsonSchema(tool.parameters);
+          errorMessage += `\n\nExpected schema for '${name}':\n${JSON.stringify(schema, null, 2)}`;
+        } catch {
+          // Schema serialization failed — skip the hint
         }
       } else if (isCocoError(error)) {
         const causeMsg = error.cause instanceof Error ? error.cause.message : "";

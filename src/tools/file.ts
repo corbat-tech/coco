@@ -307,7 +307,7 @@ export const readFileTool: ToolDefinition<
   { content: string; lines: number; size: number; truncated: boolean }
 > = defineTool({
   name: "read_file",
-  description: `Read the contents of a file.
+  description: `Read the full text content of a file at the given path and return it as a string. Use this when you need the actual source code, configuration values, or text content of a specific file you already know the path to. Do NOT use this to list files in a directory (use list_directory), to check if a file exists (use file_exists), or to search for files by name pattern (use find_files). Returns an error if the path does not exist or is not a readable text file.
 
 Examples:
 - Read config: { "path": "package.json" }
@@ -375,7 +375,7 @@ export const writeFileTool: ToolDefinition<
   { path: string; size: number; dryRun: boolean; wouldCreate: boolean }
 > = defineTool({
   name: "write_file",
-  description: `Write content to a file, creating it if it doesn't exist.
+  description: `Write text content to a file, replacing it entirely if it already exists or creating it if it does not. Use this when you want to create a new file or fully replace an existing file's content. Do NOT use this to make a small change to an existing file (use edit_file instead, which performs a targeted find-and-replace without rewriting the whole file). Set createDirs: true to automatically create missing parent directories; otherwise the parent directory must already exist.
 
 Examples:
 - Create file: { "path": "src/utils.ts", "content": "export const foo = 1;" }
@@ -458,7 +458,7 @@ export const editFileTool: ToolDefinition<
   { path: string; replacements: number; dryRun: boolean; preview?: string }
 > = defineTool({
   name: "edit_file",
-  description: `Edit a file by replacing text (find and replace).
+  description: `Make a targeted text replacement inside an existing file by finding oldText and replacing it with newText. Use this for surgical edits to source code, configuration files, or documentation — it is much safer than rewriting the whole file with write_file because it only touches the exact bytes you specify. The oldText must match exactly (including whitespace and indentation); if it appears more than once in the file, use all: true to replace every occurrence or make oldText longer to be unique. Do NOT use this to create new files (use write_file) or to rename/move files (use move_path).
 
 Examples:
 - Single replace: { "path": "src/app.ts", "oldText": "TODO:", "newText": "DONE:" }
@@ -560,7 +560,7 @@ export const globTool: ToolDefinition<
   { files: string[]; count: number }
 > = defineTool({
   name: "glob",
-  description: `Find files matching a glob pattern.
+  description: `Find files whose paths match a glob pattern and return their relative paths as a list. Use this when you know the file extension or naming convention but not the exact path (e.g. find all TypeScript test files, all JSON configs). Do NOT use this to search inside file contents — use grep or search for that. Returns an empty list when nothing matches; does not throw an error for zero results. node_modules, .git, and dist directories are excluded by default.
 
 Examples:
 - All TypeScript: { "pattern": "**/*.ts" }
@@ -610,7 +610,7 @@ export const fileExistsTool: ToolDefinition<
   { exists: boolean; isFile: boolean; isDirectory: boolean }
 > = defineTool({
   name: "file_exists",
-  description: `Check if a file or directory exists.
+  description: `Check whether a path exists on disk and whether it is a file or directory. Use this before attempting to read or write a path when you are unsure it exists — it never throws, always returning { exists: false } for missing paths. Do NOT use this to read file contents (use read_file) or to list directory contents (use list_directory). Returns isFile and isDirectory flags so you can distinguish files from directories in a single call.
 
 Examples:
 - Check file: { "path": "package.json" } → { "exists": true, "isFile": true, "isDirectory": false }
@@ -648,7 +648,7 @@ export const listDirTool: ToolDefinition<
   { entries: Array<{ name: string; type: "file" | "directory"; size?: number }> }
 > = defineTool({
   name: "list_dir",
-  description: `List contents of a directory.
+  description: `List the immediate entries (files and subdirectories) inside a directory and return their names, types, and sizes. Use this to understand what's in a folder before deciding which files to read. Do NOT use this to find files matching a pattern across the whole project (use glob) or to read file contents (use read_file). Returns an error if the path does not exist or is not a directory.
 
 Examples:
 - List src: { "path": "src" }

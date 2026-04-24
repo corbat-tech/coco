@@ -52,6 +52,10 @@ export interface ReplConfig {
     location?: string;
     /** Active thinking/reasoning mode (undefined = not supported or use model default) */
     thinking?: ThinkingMode;
+    /** Optional cheap model for background tasks (compaction, summarization) */
+    weakModel?: string;
+    /** Optional cheap model for file write/edit operations (architect/editor split) */
+    editorModel?: string;
   };
   ui: {
     theme: "dark" | "light" | "auto";

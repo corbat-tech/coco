@@ -40,12 +40,15 @@ import {
 import { generatePKCECredentials } from "./pkce.js";
 import { createCallbackServer } from "./callback-server.js";
 import { isWSL } from "../utils/platform.js";
-import { describeFetchError, getProxyFromEnv, maskProxyUrl } from "../utils/proxy.js";
+import { describeFetchError, detectPacProxy, getProxyFromEnv, maskProxyUrl } from "../utils/proxy.js";
 import {
   requestGitHubDeviceCode,
   pollGitHubForToken,
   exchangeForCopilotToken,
+  exchangeForCopilotTokenViaGhCli,
   getGitHubLogin,
+  getGitHubCliToken,
+  getGitHubCliAuthStatus,
   getValidCopilotToken,
   saveCopilotCredentials,
   loadCopilotCredentials,
@@ -850,6 +853,70 @@ async function runApiKeyFlow(
 }
 
 /**
+ * Authenticate Copilot by reusing an existing `gh` CLI session.
+ *
+ * Skips the browser/device-code flow entirely: reads the GitHub token
+ * from `gh auth token` and exchanges it for a Copilot API token using
+ * the `gh api` subprocess (Go HTTP client, PAC-aware, system-CA-aware).
+ * This is the reliable path on corporate networks.
+ */
+async function runCopilotAuthViaGhCli(ghCliUser: string): Promise<{
+  tokens: OAuthTokens;
+  accessToken: string;
+} | null> {
+  const spinner = p.spinner();
+  spinner.start("Exchanging GitHub CLI credentials for Copilot token...");
+
+  try {
+    const githubToken = await getGitHubCliToken();
+    if (!githubToken) {
+      spinner.stop(chalk.red("✗ Could not read gh auth token"));
+      return null;
+    }
+
+    // Try direct exchange first, fall back to gh api subprocess
+    let copilotToken;
+    try {
+      copilotToken = await exchangeForCopilotToken(githubToken);
+    } catch {
+      copilotToken = await exchangeForCopilotTokenViaGhCli();
+    }
+
+    if (!copilotToken) {
+      spinner.stop(chalk.red("✗ Could not obtain Copilot token via gh CLI"));
+      console.log(chalk.dim("   Ensure your GitHub account has an active Copilot subscription:"));
+      console.log(chalk.cyan("   → https://github.com/settings/copilot"));
+      return null;
+    }
+
+    const creds: CopilotCredentials = {
+      githubToken,
+      copilotToken: copilotToken.token,
+      copilotTokenExpiresAt: copilotToken.expires_at * 1000,
+      accountType: copilotToken.annotations?.copilot_plan,
+    };
+    await saveCopilotCredentials(creds);
+
+    spinner.stop(chalk.green("✓ GitHub Copilot authenticated via gh CLI!"));
+    const userLabel = ghCliUser !== "authenticated" ? ` (@${ghCliUser})` : "";
+    console.log(chalk.dim(`   Account${userLabel} · Plan: ${creds.accountType ?? "individual"}`));
+    console.log(chalk.dim("   Credentials stored in ~/.coco/tokens/copilot.json\n"));
+
+    const tokens: OAuthTokens = {
+      accessToken: copilotToken.token,
+      tokenType: "Bearer",
+      expiresAt: copilotToken.expires_at * 1000,
+    };
+    return { tokens, accessToken: copilotToken.token };
+  } catch (error) {
+    const { code } = describeFetchError(error);
+    spinner.stop(chalk.red("✗ Failed to authenticate via gh CLI"));
+    printNetworkTroubleshooting(code);
+    return null;
+  }
+}
+
+/**
  * Run GitHub Copilot device flow authentication
  *
  * This uses GitHub's OAuth Device Flow:
@@ -875,6 +942,30 @@ async function runCopilotDeviceFlow(): Promise<{
   console.log(chalk.dim("   Requires an active GitHub Copilot subscription."));
   console.log(chalk.dim("   https://github.com/settings/copilot"));
   console.log();
+
+  // On corporate networks (PAC proxy, TLS interception) Node's fetch cannot
+  // reach GitHub, but the `gh` CLI can (Go's HTTP stack handles PAC/system CAs).
+  // If the user already has a `gh` session, offer it as the preferred path —
+  // this avoids the device flow entirely and works on any network where gh works.
+  const ghCliUser = await getGitHubCliAuthStatus();
+  if (ghCliUser) {
+    console.log(
+      chalk.dim(`   ℹ  GitHub CLI session detected`) +
+        (ghCliUser !== "authenticated" ? chalk.dim(` (@${ghCliUser})`) : "") +
+        chalk.dim("."),
+    );
+    const useGhSession = await p.confirm({
+      message: "Use your existing `gh` session? (recommended on corporate networks)",
+      initialValue: true,
+    });
+
+    if (p.isCancel(useGhSession)) return null;
+
+    if (useGhSession) {
+      return runCopilotAuthViaGhCli(ghCliUser);
+    }
+    console.log();
+  }
 
   try {
     // Step 1: Request device code
@@ -1015,24 +1106,40 @@ async function runCopilotDeviceFlow(): Promise<{
  */
 function printNetworkTroubleshooting(code?: string): void {
   const proxy = getProxyFromEnv();
+  const pacUrl = detectPacProxy();
+
   if (proxy) {
     console.log(chalk.dim(`   Proxy in use: ${maskProxyUrl(proxy)}`));
     console.log(chalk.dim("   → Verify the proxy allows github.com and api.github.com."));
+  } else if (pacUrl) {
+    // Corporate PAC script detected — Node's fetch cannot evaluate PAC scripts.
+    // Guide the user toward options that work: gh CLI or manual HTTPS_PROXY.
+    console.log(chalk.dim("   Automatic proxy (PAC script) detected — Node.js cannot evaluate it."));
+    console.log(chalk.dim("   You have two options:"));
+    console.log(chalk.dim("   1. Run `gh auth login` first, then re-run /provider copilot."));
+    console.log(
+      chalk.dim(
+        "      Coco will reuse your `gh` session (Go HTTP client handles PAC automatically).",
+      ),
+    );
+    console.log(chalk.dim("   2. Set HTTPS_PROXY=http://<your-proxy>:<port> manually and retry."));
   } else {
     console.log(chalk.dim("   No HTTPS_PROXY / HTTP_PROXY env vars detected."));
     console.log(chalk.dim("   → If you're behind a corporate proxy, set HTTPS_PROXY and retry."));
+    console.log(chalk.dim("   → Or run `gh auth login` first — Coco will reuse the gh session."));
   }
 
   if (code === "SELF_SIGNED_CERT_IN_CHAIN" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
     console.log(
       chalk.dim(
-        "   → A TLS interceptor is rewriting certificates. Add your corp root CA to NODE_EXTRA_CA_CERTS.",
+        "   → TLS interceptor detected. Add your corporate root CA to NODE_EXTRA_CA_CERTS.",
       ),
     );
+    console.log(chalk.dim("      Example: NODE_EXTRA_CA_CERTS=/path/to/corp-ca.crt coco"));
   } else if (code === "ENOTFOUND") {
     console.log(chalk.dim("   → Check DNS: `nslookup github.com`"));
   } else if (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT") {
-    console.log(chalk.dim("   → A firewall may be dropping the connection silently."));
+    console.log(chalk.dim("   → A firewall may be blocking the connection. Try `gh auth login`."));
   }
 }
 

@@ -360,7 +360,7 @@ export const webSearchTool: ToolDefinition<
   WebSearchOutput
 > = defineTool({
   name: "web_search",
-  description: `Search the web for information, documentation, error solutions, and API references.
+  description: `Search the web using a natural-language query and return a list of result titles, URLs, and short excerpts. Use this when you need to find documentation, research an error message, discover API references, or learn about a library before you have a specific URL. Do NOT use this when you already have the URL — use web_fetch to read a known page directly. Returns result titles and URLs you can then fetch with web_fetch for full content.
 
 Examples:
 - Basic search: { "query": "typescript zod validation examples" }

@@ -499,6 +499,63 @@ Approximate costs per 1M tokens (input/output):
 
 ---
 
+## Model Tier System
+
+Coco automatically detects the capability tier of the active model (`mini`, `standard`, or `advanced`) and adjusts its behavior accordingly.
+
+| Tier | Examples | Max tools | Parallel calls | Compaction at | CoT prompts |
+|------|----------|-----------|----------------|---------------|-------------|
+| mini | gpt-4o-mini, claude-haiku, gemini-flash, codex-mini | 12 | off | 50% context | disabled |
+| standard | claude-sonnet, gpt-4o, gemini-pro | 40 | on | 75% context | enabled |
+| advanced | claude-opus, gpt-5+, gemini-ultra | 128 | on | 80% context | enabled |
+
+**Why this matters:**
+- Mini models get fewer tools to prevent wrong-tool selection errors
+- Parallel tool calls are disabled for mini models (they're less reliable with concurrent calls)
+- Context is compacted earlier for mini models, which suffer "context rot" sooner
+- Chain-of-thought system prompt sections are omitted for mini models (CoT hurts small models)
+
+### Weak and Editor Models
+
+You can offload cheaper background work to a fast, inexpensive model while keeping the strong model for reasoning:
+
+```bash
+# Use a cheap model for context compaction summaries
+COCO_WEAK_MODEL=gpt-4o-mini coco chat
+
+# Use a cheap model for file edit operations (architect/editor split)
+COCO_EDITOR_MODEL=gpt-4o-mini coco chat
+
+# Or pass via CLI flags
+coco chat --weak-model gpt-4o-mini --editor-model gpt-4o-mini
+```
+
+These models use the same provider as the main model. The `COCO_WEAK_MODEL` is used for context compaction summaries; `COCO_EDITOR_MODEL` is stored in session config for future routing of file write/edit operations.
+
+---
+
+## GitHub Copilot on Corporate Networks
+
+If Coco shows "Requires active Copilot subscription" or "Network error reaching GitHub" on a corporate machine where `gh` CLI and other tools work fine, the issue is almost certainly a **PAC proxy script**.
+
+**Root cause:** Corporate networks often use Proxy Auto-Config (PAC) scripts to route traffic. Node.js/undici (Coco's HTTP client) cannot evaluate PAC scripts — it sees no proxy and connects directly, which the corporate firewall blocks. Go's HTTP client (used by `gh`) CAN evaluate PAC scripts.
+
+**Fix:** Coco automatically falls back to `gh api /copilot_internal/v2/token` when the direct API call fails. This routes the token exchange through `gh`'s Go HTTP client, which respects PAC proxies.
+
+**Prerequisites:**
+1. Install `gh` CLI: `brew install gh` (macOS) or `winget install gh` (Windows)
+2. Authenticate: `gh auth login`
+3. Verify: `gh api /copilot_internal/v2/token` — should return a JSON token
+
+**If the fallback also fails:**
+- Check if your corporate proxy requires explicit `HTTPS_PROXY` config in Node.js: `HTTPS_PROXY=http://proxy.corp.com:8080 coco chat`
+- Run `scutil --proxy` (macOS) to see if a PAC URL is configured
+- Ask your IT team for the explicit proxy URL (PAC scripts cannot be evaluated programmatically)
+
+**Corporate 403 errors:** If GitHub returns 403 (not a network timeout), Coco now tries the `gh` fallback before treating it as a permanent auth failure. This handles corporate proxies that return 403 instead of TCP-level blocking.
+
+---
+
 **See also:**
 - [Configuration Guide](CONFIGURATION.md)
 - [COCO Mode Analysis](../../ANALISIS_COCO_MODE.md)
