@@ -268,6 +268,15 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   /**
+   * Whether this provider instance supports the Responses API for the given model.
+   * Subclasses (e.g. CopilotProvider) can override to force Chat Completions
+   * when their endpoint does not expose /v1/responses.
+   */
+  protected modelNeedsResponsesApi(model: string): boolean {
+    return needsResponsesApi(model);
+  }
+
+  /**
    * Get extra body parameters for API calls.
    * Honors the user's ThinkingMode for Kimi models; defaults to disabled
    * (preserving existing behavior) when no mode is specified.
@@ -293,7 +302,7 @@ export class OpenAIProvider implements LLMProvider {
     this.ensureInitialized();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-    if (needsResponsesApi(model)) {
+    if (this.modelNeedsResponsesApi(model)) {
       return this.chatViaResponses(messages, options);
     }
 
@@ -342,7 +351,7 @@ export class OpenAIProvider implements LLMProvider {
     this.ensureInitialized();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-    if (needsResponsesApi(model)) {
+    if (this.modelNeedsResponsesApi(model)) {
       return this.chatWithToolsViaResponses(messages, options);
     }
 
@@ -405,7 +414,7 @@ export class OpenAIProvider implements LLMProvider {
     this.ensureInitialized();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-    if (needsResponsesApi(model)) {
+    if (this.modelNeedsResponsesApi(model)) {
       yield* this.streamViaResponses(messages, options);
       return;
     }
@@ -453,7 +462,7 @@ export class OpenAIProvider implements LLMProvider {
     this.ensureInitialized();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-    if (needsResponsesApi(model)) {
+    if (this.modelNeedsResponsesApi(model)) {
       yield* this.streamWithToolsViaResponses(messages, options);
       return;
     }
@@ -785,7 +794,7 @@ export class OpenAIProvider implements LLMProvider {
       // This works better for OpenAI-compatible APIs like Kimi
       try {
         const model = this.config.model || DEFAULT_MODEL;
-        if (needsResponsesApi(model)) {
+        if (this.modelNeedsResponsesApi(model)) {
           await (this.client as any).responses.create({
             model,
             input: [{ role: "user", content: [{ type: "input_text", text: "Hi" }] }],
@@ -960,7 +969,7 @@ export class OpenAIProvider implements LLMProvider {
       type: "function" as const,
       function: {
         name: tool.name,
-        description: tool.description,
+        description: truncateToolDescription(tool.description),
         parameters: tool.input_schema,
       },
     }));
@@ -1563,11 +1572,24 @@ export class OpenAIProvider implements LLMProvider {
     return tools.map((tool) => ({
       type: "function" as const,
       name: tool.name,
-      description: tool.description ?? undefined,
+      description: tool.description ? truncateToolDescription(tool.description) : undefined,
       parameters: tool.input_schema ?? null,
       strict: false,
     }));
   }
+}
+
+/**
+ * OpenAI enforces a 1024-character limit on tool descriptions.
+ * Truncate gracefully so MCP tools with long descriptions (e.g. Atlassian)
+ * don't cause silent request failures.
+ * https://platform.openai.com/docs/guides/function-calling
+ */
+const MAX_TOOL_DESCRIPTION_LENGTH = 1024;
+
+function truncateToolDescription(description: string): string {
+  if (description.length <= MAX_TOOL_DESCRIPTION_LENGTH) return description;
+  return description.slice(0, MAX_TOOL_DESCRIPTION_LENGTH - 1) + "…";
 }
 
 /**

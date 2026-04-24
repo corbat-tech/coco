@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.33.2] - 2026-04-24
+
+### Fixed
+- **Provider preference not remembered after restart** — if a configured provider (e.g. Copilot) failed its availability check temporarily (expired token, network blip), Coco silently overwrote the saved preference with the fallback provider. On next restart, the wrong provider was loaded. The session-level fallback now happens without touching the persisted preference, so Copilot (or any other previously-configured provider) is correctly restored on the next launch.
+- **Explicit `/thinking off` not surviving restart on models whose default is not `off`** — on providers like Gemini where the default thinking mode is `auto`, setting `/thinking off` was stored as `undefined` (indistinguishable from "never configured"), so the next restart reverted to `auto`. Explicit user choices — including `off` — are now stored and restored faithfully.
+- **MCP tool calls failing on `gpt-5-mini` and similar small models via GitHub Copilot** — two root causes: (1) the `gpt-5*` model prefix caused Coco to route requests to the `/v1/responses` endpoint, which the Copilot API endpoint does not support (only Chat Completions is available); (2) MCP tool descriptions frequently exceed the 1024-character limit enforced by the OpenAI tool schema, causing silent schema validation failures. Copilot now always uses Chat Completions, and tool descriptions are truncated to 1024 characters before being sent to any OpenAI-compatible endpoint.
+
 ## [2.33.1] - 2026-04-24
 
 ### Fixed
