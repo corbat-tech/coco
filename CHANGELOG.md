@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.32.0] - 2026-04-24
+
+### Improved
+- **`/thinking` interactive selector** — the `/thinking` command (no arguments) now opens a fully navigable TUI menu instead of a static list. Use ↑/↓ to move, Enter to confirm, and Esc/q/ctrl-c to cancel. The selected row is highlighted in blue (▶), the currently active mode is marked in green (●), and unavailable rows are dimmed. Only modes supported by the active model are shown, preventing errors from choosing an unsupported reasoning level.
+
 ## [2.31.0] - 2026-04-24
 
 ### Added
@@ -1431,7 +1436,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.30.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.32.0...HEAD
+[2.32.0]: https://github.com/corbat-tech/coco/compare/v2.31.0...v2.32.0
 [2.31.0]: https://github.com/corbat-tech/coco/compare/v2.30.0...v2.31.0
 [2.30.0]: https://github.com/corbat-tech/coco/compare/v2.29.0...v2.30.0
 [2.29.0]: https://github.com/corbat-tech/coco/compare/v2.28.5...v2.29.0
