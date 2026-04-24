@@ -213,6 +213,15 @@ export class CopilotProvider extends OpenAIProvider {
   /**
    * Count tokens (approximate — Copilot models vary in tokenizer)
    */
+  /**
+   * The GitHub Copilot endpoint (api.githubcopilot.com) does not expose the
+   * OpenAI Responses API (/v1/responses). Always use Chat Completions so that
+   * gpt-5-mini and similar models work correctly with MCP tools.
+   */
+  protected override modelNeedsResponsesApi(_model: string): boolean {
+    return false;
+  }
+
   override countTokens(text: string): number {
     if (!text) return 0;
     return Math.ceil(text.length / 3.5);
