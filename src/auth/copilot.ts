@@ -350,23 +350,18 @@ function isCopilotTokenExpired(creds: CopilotCredentials): boolean {
  */
 export function exchangeForCopilotTokenViaGhCli(): Promise<CopilotToken | null> {
   return new Promise((resolve) => {
-    execFile(
-      "gh",
-      ["api", "/copilot_internal/v2/token"],
-      { timeout: 10_000 },
-      (err, stdout) => {
-        if (err || !stdout) {
-          resolve(null);
-          return;
-        }
-        try {
-          const parsed = JSON.parse(stdout) as CopilotToken;
-          resolve(parsed.token && parsed.expires_at ? parsed : null);
-        } catch {
-          resolve(null);
-        }
-      },
-    );
+    execFile("gh", ["api", "/copilot_internal/v2/token"], { timeout: 10_000 }, (err, stdout) => {
+      if (err || !stdout) {
+        resolve(null);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout) as CopilotToken;
+        resolve(parsed.token && parsed.expires_at ? parsed : null);
+      } catch {
+        resolve(null);
+      }
+    });
   });
 }
 

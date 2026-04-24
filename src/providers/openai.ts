@@ -1171,7 +1171,9 @@ export class OpenAIProvider implements LLMProvider {
         const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
         const tierCfg = getTierConfig(this.id, model);
         const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-        const tools = this.convertToolsForResponses(this.limitTools(options.tools, tierCfg.maxTools));
+        const tools = this.convertToolsForResponses(
+          this.limitTools(options.tools, tierCfg.maxTools),
+        );
         const supportsTemp = this.supportsTemperature(model);
 
         const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);

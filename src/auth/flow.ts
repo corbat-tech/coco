@@ -40,7 +40,12 @@ import {
 import { generatePKCECredentials } from "./pkce.js";
 import { createCallbackServer } from "./callback-server.js";
 import { isWSL } from "../utils/platform.js";
-import { describeFetchError, detectPacProxy, getProxyFromEnv, maskProxyUrl } from "../utils/proxy.js";
+import {
+  describeFetchError,
+  detectPacProxy,
+  getProxyFromEnv,
+  maskProxyUrl,
+} from "../utils/proxy.js";
 import {
   requestGitHubDeviceCode,
   pollGitHubForToken,
@@ -1114,7 +1119,9 @@ function printNetworkTroubleshooting(code?: string): void {
   } else if (pacUrl) {
     // Corporate PAC script detected — Node's fetch cannot evaluate PAC scripts.
     // Guide the user toward options that work: gh CLI or manual HTTPS_PROXY.
-    console.log(chalk.dim("   Automatic proxy (PAC script) detected — Node.js cannot evaluate it."));
+    console.log(
+      chalk.dim("   Automatic proxy (PAC script) detected — Node.js cannot evaluate it."),
+    );
     console.log(chalk.dim("   You have two options:"));
     console.log(chalk.dim("   1. Run `gh auth login` first, then re-run /provider copilot."));
     console.log(

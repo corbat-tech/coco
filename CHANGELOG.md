@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.34.0] - 2026-04-24
+
+### Added
+- **Model tier system** — Coco now automatically detects the capability tier (`mini`, `standard`, `advanced`) of the active model and adjusts its behavior: mini-tier models (e.g. gpt-4o-mini, claude-haiku, codex-mini, gemini-flash) receive at most 12 tools, have parallel tool calls disabled, compact context earlier (50% threshold), and skip chain-of-thought system prompt sections that hurt small models rather than helping them. Standard and advanced tiers keep current behavior unchanged.
+- **Weak/editor model support** — set `COCO_WEAK_MODEL` (or `--weak-model`) to route context compaction summaries through a cheap fast model while keeping the strong model for reasoning. Set `COCO_EDITOR_MODEL` (or `--editor-model`) to configure a separate model for file write/edit operations (architect/editor split pattern, infrastructure ready for full routing in a future release).
+- **GitHub Copilot corporate network fix** — on machines behind PAC-script proxies (common in enterprises), Coco's Node.js HTTP client cannot evaluate the proxy script and is blocked by the corporate firewall. Coco now falls back to `gh api /copilot_internal/v2/token` which routes through Go's HTTP client (`gh` CLI) that fully evaluates PAC scripts. Both 403 errors and network failures now trigger the `gh` fallback before treating the session as permanently unauthenticated.
+- **PAC proxy detection** — on macOS, Coco reads `scutil --proxy` on auth failure and shows a targeted recovery message ("Run `gh auth login` first") when a PAC proxy is detected, instead of generic troubleshooting advice.
+
+### Improved
+- **Tool descriptions rewritten for LLM reliability** — all built-in tool descriptions now follow a consistent what/when/when-not/preconditions pattern (3–4 sentences). This is Anthropic's #1 recommended improvement for tool-calling accuracy. Affects `read_file`, `write_file`, `edit_file`, `glob`, `list_dir`, `file_exists`, `grep`, `find_in_file`, `bash_exec`, `web_search`, `web_fetch`, all `git_*` tools, `create_memory`, `recall_memory`, `list_memories`, and all `gh_*` GitHub tools.
+- **OpenAI strict mode enabled** — `strict: true` is now passed in all Chat Completions and Responses API tool schemas. This reduces hallucinated tool arguments on GPT-4o, GPT-5+, and Copilot models.
+- **Schema injection on validation errors** — when a tool call fails with an invalid-input error, the full JSON schema for that tool is appended to the error message returned to the model. This allows the model to self-correct its parameters without needing operator intervention (especially effective for mini-tier models).
+
+### Documentation
+- **Model tier system, weak/editor model config, and corporate network troubleshooting** added to `docs/guides/PROVIDERS.md`.
+
 ## [2.33.2] - 2026-04-24
 
 ### Fixed
