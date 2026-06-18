@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { chmod, mkdtemp, readFile } from "node:fs/promises";
+import { once } from "node:events";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { z } from "zod";
@@ -8,18 +9,66 @@ import { defineTool, ToolRegistry } from "../tools/registry.js";
 import { createAgentRuntime } from "./agent-runtime.js";
 import { createEventLog, createFileEventLog } from "./event-log.js";
 import { createMcpToolPolicy } from "./extension-manifests.js";
+import { createRuntimeHttpServer } from "./http-server.js";
 import { createPermissionPolicy } from "./permission-policy.js";
 import { createProviderRegistry } from "./provider-registry.js";
+import { createFileRuntimeSessionStore } from "./runtime-session-store.js";
+import { createWorkflowEngine } from "./workflow-engine.js";
 import { createWorkflowCatalog } from "./workflow-registry.js";
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return (await response.json()) as T;
+}
+
+async function withRuntimeHttpServer<T>(
+  callback: (baseUrl: string) => Promise<T>,
+  options: { maxBodyBytes?: number } = {},
+): Promise<T> {
+  const runtime = await createAgentRuntime({
+    providerType: "openai",
+    model: "gpt-5.4",
+    provider: createMockProvider(),
+    toolRegistry: createRegistry(),
+  });
+  const server = createRuntimeHttpServer(runtime, options);
+  server.listen(0);
+  await once(server, "listening");
+
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected TCP server address");
+    }
+    return await callback(`http://127.0.0.1:${address.port}`);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+}
 
 function createMockProvider(): LLMProvider {
   return {
     id: "mock",
     name: "Mock",
     initialize: vi.fn(),
-    chat: vi.fn(),
+    chat: vi.fn(async () => ({
+      id: "chat-1",
+      content: "runtime reply",
+      stopReason: "end_turn",
+      usage: { inputTokens: 2, outputTokens: 3 },
+      model: "mock-model",
+    })),
     chatWithTools: vi.fn(),
-    stream: vi.fn(),
+    stream: vi.fn(async function* () {
+      yield { type: "text", text: "stream " };
+      yield { type: "text", text: "reply" };
+      yield { type: "done", stopReason: "end_turn" };
+    }),
     streamWithTools: vi.fn(),
     countTokens: vi.fn((text: string) => text.length),
     getContextWindow: vi.fn(() => 128000),
@@ -34,8 +83,8 @@ function createRegistry(): ToolRegistry {
       name: "read_file",
       description: "Read a file",
       category: "file",
-      parameters: z.object({}),
-      execute: async () => "ok",
+      parameters: z.object({ path: z.string().optional() }),
+      execute: async ({ path }) => ({ content: `read:${path ?? "default"}` }),
     }),
   );
   registry.register(
@@ -43,8 +92,8 @@ function createRegistry(): ToolRegistry {
       name: "write_file",
       description: "Write a file",
       category: "file",
-      parameters: z.object({}),
-      execute: async () => "ok",
+      parameters: z.object({ path: z.string().optional(), content: z.string().optional() }),
+      execute: async ({ path }) => ({ written: path ?? "default" }),
     }),
   );
   registry.register(
@@ -61,8 +110,8 @@ function createRegistry(): ToolRegistry {
       name: "run_linter",
       description: "Run linter, optionally with fixes",
       category: "quality",
-      parameters: z.object({}),
-      execute: async () => "ok",
+      parameters: z.object({ fix: z.boolean().optional() }),
+      execute: async ({ fix }) => ({ fixed: fix === true }),
     }),
   );
   return registry;
@@ -128,8 +177,255 @@ describe("reusable agent runtime", () => {
     expect(runtime.assertToolAllowed("plan", "write_file")).toBe(false);
     expect(runtime.assertToolAllowed("plan", "authorize_path")).toBe(false);
     expect(runtime.assertToolAllowed("plan", "run_linter")).toBe(false);
+    expect(runtime.assertToolAllowed("plan", "run_linter", { fix: false })).toBe(true);
+    expect(runtime.assertToolAllowed("plan", "run_linter", { fix: true })).toBe(false);
     expect(runtime.assertToolAllowed("build", "write_file")).toBe(true);
     expect(runtime.assertToolAllowed("build", "run_linter")).toBe(true);
+    expect(runtime.assertToolAllowed("build", "run_linter", { fix: true })).toBe(true);
+  });
+
+  it("runs chat turns through runtime sessions without the CLI REPL", async () => {
+    const eventLog = createEventLog();
+    const provider = createMockProvider();
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider,
+      toolRegistry: createRegistry(),
+      eventLog,
+    });
+
+    const session = runtime.createSession({
+      mode: "ask",
+      instructions: "Answer as a support assistant.",
+      metadata: { surface: "web" },
+    });
+    const result = await runtime.runTurn({
+      sessionId: session.id,
+      content: "hello",
+    });
+    const updated = runtime.getSession(session.id);
+
+    expect(result).toMatchObject({
+      sessionId: session.id,
+      content: "runtime reply",
+      model: "mock-model",
+      mode: "ask",
+    });
+    expect(updated?.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(provider.chat).toHaveBeenCalledWith(
+      [{ role: "user", content: "hello" }],
+      expect.objectContaining({ system: "Answer as a support assistant." }),
+    );
+    expect(eventLog.list().map((event) => event.type)).toEqual([
+      "provider.attached",
+      "runtime.initialized",
+      "session.created",
+      "turn.started",
+      "session.updated",
+      "turn.completed",
+    ]);
+    expect(eventLog.list().find((event) => event.type === "session.created")?.data).toEqual({
+      sessionId: session.id,
+      mode: "ask",
+      metadataKeys: ["surface"],
+    });
+  });
+
+  it("defaults runtime-created sessions to ask mode", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+    });
+
+    const direct = runtime.createSession();
+    const turn = await runtime.runTurn({ content: "hello" });
+
+    expect(direct.mode).toBe("ask");
+    expect(turn.mode).toBe("ask");
+    expect(runtime.getSession(turn.sessionId)?.mode).toBe("ask");
+  });
+
+  it("defaults file-backed runtime sessions to ask mode", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "coco-runtime-sessions-"));
+    const store = createFileRuntimeSessionStore(join(dir, "sessions.json"));
+
+    expect(store.create().mode).toBe("ask");
+  });
+
+  it("streams runtime turns and persists the completed assistant message", async () => {
+    const eventLog = createEventLog();
+    const provider = createMockProvider();
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider,
+      toolRegistry: createRegistry(),
+      eventLog,
+    });
+    const session = runtime.createSession({
+      mode: "ask",
+      instructions: "Stream as support assistant.",
+    });
+
+    const events = [];
+    for await (const event of runtime.streamTurn({
+      sessionId: session.id,
+      content: "hello",
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "text", sessionId: session.id, text: "stream " },
+      { type: "text", sessionId: session.id, text: "reply" },
+      {
+        type: "done",
+        sessionId: session.id,
+        result: {
+          sessionId: session.id,
+          content: "stream reply",
+          usage: { inputTokens: 5, outputTokens: 12, estimated: true },
+          model: "gpt-5.4",
+          mode: "ask",
+        },
+      },
+    ]);
+    expect(runtime.getSession(session.id)?.messages).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "stream reply" },
+    ]);
+    expect(provider.stream).toHaveBeenCalledWith(
+      [{ role: "user", content: "hello" }],
+      expect.objectContaining({ system: "Stream as support assistant." }),
+    );
+    expect(eventLog.list().map((event) => event.type)).toEqual([
+      "provider.attached",
+      "runtime.initialized",
+      "session.created",
+      "turn.started",
+      "session.updated",
+      "turn.completed",
+    ]);
+  });
+
+  it("records cancelled streaming turns when consumers stop early", async () => {
+    const eventLog = createEventLog();
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+      eventLog,
+    });
+    const session = runtime.createSession({ mode: "ask" });
+
+    for await (const event of runtime.streamTurn({
+      sessionId: session.id,
+      content: "hello",
+    })) {
+      expect(event).toEqual({ type: "text", sessionId: session.id, text: "stream " });
+      break;
+    }
+
+    expect(runtime.getSession(session.id)?.messages).toEqual([]);
+    expect(eventLog.list().map((event) => event.type)).toEqual([
+      "provider.attached",
+      "runtime.initialized",
+      "session.created",
+      "turn.started",
+      "turn.cancelled",
+    ]);
+  });
+
+  it("executes runtime tools with permission events and confirmation gates", async () => {
+    const eventLog = createEventLog();
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+      eventLog,
+    });
+    const session = runtime.createSession({ mode: "build" });
+
+    const read = await runtime.executeTool({
+      sessionId: session.id,
+      toolName: "read_file",
+      input: { path: "README.md" },
+    });
+    const blockedWrite = await runtime.executeTool({
+      sessionId: session.id,
+      toolName: "write_file",
+      input: { path: "README.md", content: "x" },
+    });
+    const confirmedWrite = await runtime.executeTool({
+      sessionId: session.id,
+      toolName: "write_file",
+      input: { path: "README.md", content: "x" },
+      confirmed: true,
+    });
+    const blockedPlanFix = await runtime.executeTool({
+      mode: "plan",
+      toolName: "run_linter",
+      input: { fix: true },
+      confirmed: true,
+    });
+    const missingSession = await runtime.executeTool({
+      sessionId: "rt_missing",
+      toolName: "read_file",
+      input: { path: "README.md" },
+    });
+    const defaultReadOnlyWrite = await runtime.executeTool({
+      toolName: "write_file",
+      input: { path: "README.md", content: "x" },
+      confirmed: true,
+    });
+
+    expect(read).toMatchObject({
+      toolName: "read_file",
+      success: true,
+      output: { content: "read:README.md" },
+    });
+    expect(blockedWrite).toMatchObject({
+      toolName: "write_file",
+      success: false,
+      error: "write_file can change repository state and should be confirmed.",
+    });
+    expect(confirmedWrite).toMatchObject({
+      toolName: "write_file",
+      success: true,
+      output: { written: "README.md" },
+    });
+    expect(blockedPlanFix).toMatchObject({
+      toolName: "run_linter",
+      success: false,
+    });
+    expect(missingSession).toMatchObject({
+      toolName: "read_file",
+      success: false,
+      error: "Runtime session not found: rt_missing",
+    });
+    expect(defaultReadOnlyWrite).toMatchObject({
+      toolName: "write_file",
+      success: false,
+      error: "Ask mode is read-only; write_file is a file tool.",
+    });
+    expect(eventLog.list().map((event) => event.type)).toEqual([
+      "provider.attached",
+      "runtime.initialized",
+      "session.created",
+      "tool.started",
+      "tool.completed",
+      "tool.blocked",
+      "tool.started",
+      "tool.completed",
+      "tool.blocked",
+      "tool.blocked",
+      "tool.blocked",
+    ]);
   });
 
   it("marks destructive tools as confirmation-worthy", () => {
@@ -159,6 +455,63 @@ describe("reusable agent runtime", () => {
     const raw = await readFile(eventLogPath, "utf-8");
     expect(raw.trim().split("\n")).toHaveLength(2);
     expect(log.list().map((event) => event.type)).toEqual(["runtime.initialized", "tool.blocked"]);
+  });
+
+  it("persists runtime sessions to a JSON file store", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "coco-runtime-sessions-"));
+    const filePath = join(dir, "sessions.json");
+    const store = createFileRuntimeSessionStore(filePath);
+
+    const created = store.create({
+      id: "rt_test",
+      mode: "ask",
+      metadata: { surface: "web", nested: { tenant: "corbat" } },
+      messages: [{ role: "user", content: "hello" }],
+    });
+    created.metadata["surface"] = "mutated";
+    (created.metadata["nested"] as Record<string, unknown>)["tenant"] = "mutated";
+    created.messages.push({ role: "assistant", content: "mutated" });
+
+    const reloaded = createFileRuntimeSessionStore(filePath);
+    const session = reloaded.get("rt_test");
+    expect(session).toMatchObject({
+      id: "rt_test",
+      mode: "ask",
+      metadata: { surface: "web", nested: { tenant: "corbat" } },
+    });
+    expect(session?.messages).toEqual([{ role: "user", content: "hello" }]);
+
+    reloaded.update({
+      ...session!,
+      messages: [...session!.messages, { role: "assistant", content: "hi" }],
+    });
+    expect(createFileRuntimeSessionStore(filePath).get("rt_test")?.messages).toHaveLength(2);
+
+    expect(reloaded.delete("rt_test")).toBe(true);
+    expect(createFileRuntimeSessionStore(filePath).get("rt_test")).toBeUndefined();
+  });
+
+  it("merges file-backed runtime session writes from multiple store instances", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "coco-runtime-sessions-"));
+    const filePath = join(dir, "sessions.json");
+    const first = createFileRuntimeSessionStore(filePath);
+    const second = createFileRuntimeSessionStore(filePath);
+
+    first.create({ id: "rt_first", mode: "ask" });
+    second.create({ id: "rt_second", mode: "review" });
+
+    const ids = createFileRuntimeSessionStore(filePath)
+      .list()
+      .map((session) => session.id)
+      .sort();
+    expect(ids).toEqual(["rt_first", "rt_second"]);
+
+    expect(first.delete("rt_first")).toBe(true);
+    expect(
+      createFileRuntimeSessionStore(filePath)
+        .list()
+        .map((session) => session.id),
+    ).toEqual(["rt_second"]);
   });
 
   it("falls back to in-memory events after file writes fail", async () => {
@@ -208,5 +561,111 @@ describe("reusable agent runtime", () => {
 
     expect(catalog.get("release")?.checks).not.toContain("mutated");
     expect(catalog.get("release")?.steps[0]?.requiredTools).not.toContain("mutated_tool");
+  });
+
+  it("executes registered workflow handlers with structured events", async () => {
+    const eventLog = createEventLog();
+    const engine = createWorkflowEngine(undefined, eventLog);
+
+    engine.registerHandler("provider-diagnosis", async (input, context) => ({
+      provider: input["provider"],
+      steps: context.workflow.steps.map((step) => step.id),
+      planId: context.plan.id,
+    }));
+
+    const result = await engine.run({
+      workflowId: "provider-diagnosis",
+      input: { provider: "openai" },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toMatchObject({
+      provider: "openai",
+      steps: ["capability", "fallbacks"],
+    });
+    expect(eventLog.list().map((event) => event.type)).toEqual([
+      "workflow.planned",
+      "workflow.started",
+      "workflow.completed",
+    ]);
+  });
+
+  it("returns failed workflow results instead of throwing handler errors", async () => {
+    const eventLog = createEventLog();
+    const engine = createWorkflowEngine(undefined, eventLog);
+
+    engine.registerHandler("provider-diagnosis", async () => {
+      throw new Error("probe failed");
+    });
+
+    const result = await engine.run({
+      workflowId: "provider-diagnosis",
+      input: { provider: "openai" },
+    });
+
+    expect(result).toMatchObject({
+      workflowId: "provider-diagnosis",
+      status: "failed",
+      error: "probe failed",
+    });
+    expect(eventLog.list().map((event) => event.type)).toEqual([
+      "workflow.planned",
+      "workflow.started",
+      "workflow.failed",
+    ]);
+  });
+
+  it("exposes runtime sessions through the HTTP adapter", async () => {
+    await withRuntimeHttpServer(async (baseUrl) => {
+      const session = await postJson<{ id: string }>(`${baseUrl}/sessions`, {
+        mode: "ask",
+        instructions: "Answer as web assistant.",
+      });
+      const turn = await postJson<{ content: string; sessionId: string }>(
+        `${baseUrl}/sessions/${session.id}/messages`,
+        { content: "hello" },
+      );
+      const events = (await (await fetch(`${baseUrl}/sessions/${session.id}/events`)).json()) as {
+        events: Array<{ type: string }>;
+      };
+
+      expect(turn).toMatchObject({ sessionId: session.id, content: "runtime reply" });
+      expect(events.events.map((event) => event.type)).toContain("turn.completed");
+    });
+  });
+
+  it("returns client errors for invalid HTTP adapter requests", async () => {
+    await withRuntimeHttpServer(
+      async (baseUrl) => {
+        const invalidJson = await fetch(`${baseUrl}/sessions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{",
+        });
+        const oversized = await fetch(`${baseUrl}/sessions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ metadata: { value: "x".repeat(128) } }),
+        });
+        const invalidMode = await fetch(`${baseUrl}/sessions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mode: "ship" }),
+        });
+        const missingSession = await fetch(`${baseUrl}/sessions/rt_missing/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: "hello" }),
+        });
+
+        expect(invalidJson.status).toBe(400);
+        expect(await invalidJson.json()).toMatchObject({ error: "Invalid JSON request body." });
+        expect(oversized.status).toBe(413);
+        expect(invalidMode.status).toBe(400);
+        expect(await invalidMode.json()).toMatchObject({ error: "Invalid runtime mode." });
+        expect(missingSession.status).toBe(404);
+      },
+      { maxBodyBytes: 32 },
+    );
   });
 });

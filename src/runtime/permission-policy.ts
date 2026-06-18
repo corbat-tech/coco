@@ -1,4 +1,4 @@
-import { getAgentMode, type AgentModeId } from "../cli/repl/modes.js";
+import { getAgentMode, type AgentModeId } from "./agent-modes.js";
 import type { ToolDefinition } from "../tools/registry.js";
 import type { PermissionDecision, PermissionPolicy, RuntimeMode } from "./types.js";
 
@@ -77,6 +77,32 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
     }
 
     return { allowed: true, risk };
+  }
+
+  canExecuteToolInput(
+    mode: RuntimeMode,
+    tool: ToolDefinition,
+    input: Record<string, unknown>,
+  ): PermissionDecision {
+    if (tool.name !== "run_linter") {
+      return this.canExecuteTool(mode, tool);
+    }
+
+    const definition = getAgentMode(mode as AgentModeId);
+    const fixEnabled = input["fix"] === true;
+    const decision: PermissionDecision = fixEnabled
+      ? { allowed: true, risk: "write" }
+      : { allowed: true, risk: "read-only" };
+
+    if (definition.readOnly && fixEnabled) {
+      return {
+        allowed: false,
+        reason: `${definition.label} mode is read-only; run_linter with fix=true can modify files.`,
+        risk: "write",
+      };
+    }
+
+    return decision;
   }
 }
 
