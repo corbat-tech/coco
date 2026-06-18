@@ -20,6 +20,8 @@ import type {
   RuntimeSession,
   RuntimeSessionCreateOptions,
   RuntimeSessionStore,
+  RuntimeToolExecutionInput,
+  RuntimeToolExecutionResult,
   RuntimeTurnInput,
   RuntimeTurnResult,
   RuntimeTurnRunner,
@@ -207,6 +209,112 @@ export class AgentRuntime {
       });
       throw error;
     }
+  }
+
+  async executeTool(input: RuntimeToolExecutionInput): Promise<RuntimeToolExecutionResult> {
+    const startedAt = performance.now();
+    const session = input.sessionId ? this.getSession(input.sessionId) : undefined;
+
+    if (input.sessionId && !session) {
+      const decision = {
+        allowed: false,
+        reason: `Runtime session not found: ${input.sessionId}`,
+        risk: "read-only" as const,
+      };
+      this.eventLog.record("tool.blocked", {
+        sessionId: input.sessionId,
+        mode: input.mode ?? "ask",
+        tool: input.toolName,
+        reason: decision.reason,
+        runtimeApi: true,
+      });
+      return {
+        toolName: input.toolName,
+        success: false,
+        error: decision.reason,
+        duration: performance.now() - startedAt,
+        decision,
+      };
+    }
+
+    const mode = input.mode ?? session?.mode ?? "ask";
+    const tool = this.toolRegistry.get(input.toolName);
+
+    if (!tool) {
+      const decision = {
+        allowed: false,
+        reason: "Tool not registered.",
+        risk: "read-only" as const,
+      };
+      this.eventLog.record("tool.blocked", {
+        sessionId: input.sessionId,
+        mode,
+        tool: input.toolName,
+        reason: decision.reason,
+        runtimeApi: true,
+      });
+      return {
+        toolName: input.toolName,
+        success: false,
+        error: decision.reason,
+        duration: performance.now() - startedAt,
+        decision,
+      };
+    }
+
+    const decision = this.permissionPolicy.canExecuteToolInput
+      ? this.permissionPolicy.canExecuteToolInput(mode, tool, input.input)
+      : this.permissionPolicy.canExecuteTool(mode, tool);
+    if (!decision.allowed || (decision.requiresConfirmation && input.confirmed !== true)) {
+      const reason =
+        decision.reason ??
+        (decision.requiresConfirmation
+          ? "Tool requires explicit runtime confirmation."
+          : "Tool is not allowed.");
+      this.eventLog.record("tool.blocked", {
+        sessionId: input.sessionId,
+        mode,
+        tool: input.toolName,
+        reason,
+        risk: decision.risk,
+        requiresConfirmation: decision.requiresConfirmation,
+        runtimeApi: true,
+      });
+      return {
+        toolName: input.toolName,
+        success: false,
+        error: reason,
+        duration: performance.now() - startedAt,
+        decision,
+      };
+    }
+
+    this.eventLog.record("tool.started", {
+      sessionId: input.sessionId,
+      mode,
+      tool: input.toolName,
+      risk: decision.risk,
+      runtimeApi: true,
+      metadataKeys: Object.keys(input.metadata ?? {}).sort(),
+    });
+    const result = await this.toolRegistry.execute(input.toolName, input.input);
+    this.eventLog.record("tool.completed", {
+      sessionId: input.sessionId,
+      mode,
+      tool: input.toolName,
+      success: result.success,
+      duration: result.duration,
+      runtimeApi: true,
+    });
+
+    return {
+      toolName: input.toolName,
+      success: result.success,
+      output: result.data,
+      error: result.error,
+      duration: result.duration,
+      decision,
+    };
   }
 
   assertToolAllowed(mode: RuntimeMode, toolName: string, input?: Record<string, unknown>): boolean {

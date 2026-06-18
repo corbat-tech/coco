@@ -159,3 +159,21 @@ export interface RuntimeTurnContext {
 export interface RuntimeTurnRunner {
   run(input: RuntimeTurnInput, context: RuntimeTurnContext): Promise<RuntimeTurnResult>;
 }
+
+export interface RuntimeToolExecutionInput {
+  sessionId?: string;
+  mode?: RuntimeMode;
+  toolName: string;
+  input: Record<string, unknown>;
+  confirmed?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RuntimeToolExecutionResult {
+  toolName: string;
+  success: boolean;
+  output?: unknown;
+  error?: string;
+  duration: number;
+  decision: PermissionDecision;
+}

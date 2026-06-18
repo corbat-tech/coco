@@ -78,8 +78,8 @@ function createRegistry(): ToolRegistry {
       name: "read_file",
       description: "Read a file",
       category: "file",
-      parameters: z.object({}),
-      execute: async () => "ok",
+      parameters: z.object({ path: z.string().optional() }),
+      execute: async ({ path }) => ({ content: `read:${path ?? "default"}` }),
     }),
   );
   registry.register(
@@ -87,8 +87,8 @@ function createRegistry(): ToolRegistry {
       name: "write_file",
       description: "Write a file",
       category: "file",
-      parameters: z.object({}),
-      execute: async () => "ok",
+      parameters: z.object({ path: z.string().optional(), content: z.string().optional() }),
+      execute: async ({ path }) => ({ written: path ?? "default" }),
     }),
   );
   registry.register(
@@ -105,8 +105,8 @@ function createRegistry(): ToolRegistry {
       name: "run_linter",
       description: "Run linter, optionally with fixes",
       category: "quality",
-      parameters: z.object({}),
-      execute: async () => "ok",
+      parameters: z.object({ fix: z.boolean().optional() }),
+      execute: async ({ fix }) => ({ fixed: fix === true }),
     }),
   );
   return registry;
@@ -225,6 +225,94 @@ describe("reusable agent runtime", () => {
       mode: "ask",
       metadataKeys: ["surface"],
     });
+  });
+
+  it("executes runtime tools with permission events and confirmation gates", async () => {
+    const eventLog = createEventLog();
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+      eventLog,
+    });
+    const session = runtime.createSession({ mode: "build" });
+
+    const read = await runtime.executeTool({
+      sessionId: session.id,
+      toolName: "read_file",
+      input: { path: "README.md" },
+    });
+    const blockedWrite = await runtime.executeTool({
+      sessionId: session.id,
+      toolName: "write_file",
+      input: { path: "README.md", content: "x" },
+    });
+    const confirmedWrite = await runtime.executeTool({
+      sessionId: session.id,
+      toolName: "write_file",
+      input: { path: "README.md", content: "x" },
+      confirmed: true,
+    });
+    const blockedPlanFix = await runtime.executeTool({
+      mode: "plan",
+      toolName: "run_linter",
+      input: { fix: true },
+      confirmed: true,
+    });
+    const missingSession = await runtime.executeTool({
+      sessionId: "rt_missing",
+      toolName: "read_file",
+      input: { path: "README.md" },
+    });
+    const defaultReadOnlyWrite = await runtime.executeTool({
+      toolName: "write_file",
+      input: { path: "README.md", content: "x" },
+      confirmed: true,
+    });
+
+    expect(read).toMatchObject({
+      toolName: "read_file",
+      success: true,
+      output: { content: "read:README.md" },
+    });
+    expect(blockedWrite).toMatchObject({
+      toolName: "write_file",
+      success: false,
+      error: "write_file can change repository state and should be confirmed.",
+    });
+    expect(confirmedWrite).toMatchObject({
+      toolName: "write_file",
+      success: true,
+      output: { written: "README.md" },
+    });
+    expect(blockedPlanFix).toMatchObject({
+      toolName: "run_linter",
+      success: false,
+    });
+    expect(missingSession).toMatchObject({
+      toolName: "read_file",
+      success: false,
+      error: "Runtime session not found: rt_missing",
+    });
+    expect(defaultReadOnlyWrite).toMatchObject({
+      toolName: "write_file",
+      success: false,
+      error: "Ask mode is read-only; write_file is a file tool.",
+    });
+    expect(eventLog.list().map((event) => event.type)).toEqual([
+      "provider.attached",
+      "runtime.initialized",
+      "session.created",
+      "tool.started",
+      "tool.completed",
+      "tool.blocked",
+      "tool.started",
+      "tool.completed",
+      "tool.blocked",
+      "tool.blocked",
+      "tool.blocked",
+    ]);
   });
 
   it("marks destructive tools as confirmation-worthy", () => {

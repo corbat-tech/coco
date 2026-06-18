@@ -48,6 +48,8 @@ export type {
   RuntimeSession,
   RuntimeSessionCreateOptions,
   RuntimeSessionStore,
+  RuntimeToolExecutionInput,
+  RuntimeToolExecutionResult,
   RuntimeTurnContext,
   RuntimeTurnInput,
   RuntimeTurnResult,

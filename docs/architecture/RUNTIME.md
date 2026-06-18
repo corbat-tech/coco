@@ -56,6 +56,21 @@ const result = await runtime.runTurn({
 Embedders that need tool execution can provide a custom `RuntimeTurnRunner`
 while reusing provider selection, permissions, sessions, and event logging.
 
+Runtime consumers can execute registered tools through the same policy layer:
+
+```ts
+const result = await runtime.executeTool({
+  sessionId: session.id,
+  toolName: "read_file",
+  input: { path: "README.md" },
+});
+```
+
+Tools that can mutate state may return `requiresConfirmation`. The runtime
+does not treat the CLI UI as implicit approval: embedders must pass
+`confirmed: true` for those calls. Read-only modes still block write-capable
+inputs such as `run_linter` with `fix: true`.
+
 For simple prototypes, `createRuntimeHttpServer(runtime)` exposes:
 
 - `POST /sessions`
