@@ -158,7 +158,8 @@ function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
 
   const frontmatter = normalized.slice(3, closeIndex).trim();
   const afterMarkerStart = closeIndex + closeMarker.length;
-  const contentStart = normalized[afterMarkerStart] === "\n" ? afterMarkerStart + 1 : afterMarkerStart;
+  const contentStart =
+    normalized[afterMarkerStart] === "\n" ? afterMarkerStart + 1 : afterMarkerStart;
   const parsed = frontmatter.length > 0 ? parseYaml(frontmatter) : {};
 
   return {
