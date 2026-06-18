@@ -232,6 +232,29 @@ describe("reusable agent runtime", () => {
     });
   });
 
+  it("defaults runtime-created sessions to ask mode", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+    });
+
+    const direct = runtime.createSession();
+    const turn = await runtime.runTurn({ content: "hello" });
+
+    expect(direct.mode).toBe("ask");
+    expect(turn.mode).toBe("ask");
+    expect(runtime.getSession(turn.sessionId)?.mode).toBe("ask");
+  });
+
+  it("defaults file-backed runtime sessions to ask mode", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "coco-runtime-sessions-"));
+    const store = createFileRuntimeSessionStore(join(dir, "sessions.json"));
+
+    expect(store.create().mode).toBe("ask");
+  });
+
   it("streams runtime turns and persists the completed assistant message", async () => {
     const eventLog = createEventLog();
     const provider = createMockProvider();

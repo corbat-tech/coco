@@ -35,11 +35,13 @@ Runtime consumers can use Coco without the interactive CLI:
 
 ```ts
 const runtimeSessionStore = createFileRuntimeSessionStore(".coco/runtime-sessions.json");
+const toolRegistry = new ToolRegistry();
 
 const runtime = await createAgentRuntime({
   providerType: "openai",
   model: "gpt-5.4",
   runtimeSessionStore,
+  toolRegistry,
 });
 
 const session = runtime.createSession({
@@ -96,6 +98,10 @@ processes. `createFileRuntimeSessionStore(path)` persists sessions to one JSON
 file for local products, prototypes, and replay fixtures. Hosted or multi-tenant
 products should provide their own `RuntimeSessionStore` backed by their database
 and tenant isolation model.
+
+If `toolRegistry` is omitted, Coco uses the full coding-agent registry for CLI
+compatibility. Embedded assistants should pass an explicit narrow registry with
+only domain-safe tools.
 
 For simple prototypes, `createRuntimeHttpServer(runtime)` exposes:
 
