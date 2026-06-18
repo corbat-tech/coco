@@ -8,6 +8,9 @@
 
 Corbat-Coco follows a **phase-based architecture** inspired by modern software development methodologies. The system is designed to transform natural language requirements into production-ready code through iterative refinement.
 
+For the reusable runtime boundary used by the CLI and future agent products, see
+[Coco Reusable Runtime](./RUNTIME.md).
+
 ## System Context (C4 Level 1)
 
 ```mermaid

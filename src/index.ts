@@ -85,6 +85,48 @@ export type { Task, TaskVersion, TaskHistory, Sprint, Story, Epic, Backlog } fro
 export { AnthropicProvider, createAnthropicProvider, createProvider } from "./providers/index.js";
 export type { LLMProvider, Message, ChatResponse, ChatOptions } from "./providers/types.js";
 
+// Reusable agent runtime
+export {
+  AgentRuntime,
+  ProviderRegistry,
+  InMemoryEventLog,
+  DefaultPermissionPolicy,
+  FileEventLog,
+  createAgentRuntime,
+  createProviderRegistry,
+  createEventLog,
+  createFileEventLog,
+  createPermissionPolicy,
+  createMcpToolPolicy,
+  createWorkflowCatalog,
+  createWorkflowRegistry,
+  DEFAULT_WORKFLOWS,
+  WorkflowCatalog,
+  WorkflowRegistry,
+} from "./runtime/index.js";
+export type {
+  AgentRuntimeOptions,
+  AgentRuntimeSnapshot,
+  EventLog,
+  PermissionDecision,
+  PermissionPolicy,
+  ProviderRuntimeSelection,
+  ReasoningEffort,
+  RuntimeEvent,
+  RuntimeEventType,
+  RuntimeMode,
+  AgentSurface,
+  ExtensionRisk,
+  McpToolPolicy,
+  RecipeManifest,
+  RecipeStep,
+  SkillManifest,
+  WorkflowDefinition,
+  WorkflowPlan,
+  WorkflowRisk,
+  WorkflowStepDefinition,
+} from "./runtime/index.js";
+
 // Tools
 export {
   ToolRegistry,

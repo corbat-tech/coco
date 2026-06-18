@@ -15,12 +15,12 @@
 import { createSession, initializeSessionTrust, initializeContextManager } from "./repl/session.js";
 import { executeAgentTurn } from "./repl/agent-loop.js";
 import { createProvider } from "../providers/index.js";
-import { createFullToolRegistry } from "../tools/index.js";
-import { setAgentProvider, setAgentToolRegistry } from "../agents/provider-bridge.js";
+import { createAgentRuntime } from "../runtime/index.js";
 import { loadAllowedPaths } from "../tools/allowed-paths.js";
 import { registerGlobalCleanup } from "../utils/subprocess-registry.js";
 import type { ReplConfig } from "./repl/types.js";
 import type { ProviderType } from "../providers/index.js";
+import path from "node:path";
 
 /**
  * Options for headless execution
@@ -132,10 +132,16 @@ export async function runHeadless(options: HeadlessOptions): Promise<HeadlessRes
       model: session.config.provider.model || undefined,
     });
 
-    // Create tool registry
-    const toolRegistry = createFullToolRegistry();
-    setAgentProvider(provider);
-    setAgentToolRegistry(toolRegistry);
+    // Create reusable runtime facade and tool registry.
+    const runtime = await createAgentRuntime({
+      providerType,
+      model: session.config.provider.model || undefined,
+      provider,
+      eventLogPath: path.join(options.projectPath, ".coco", "events", `${session.id}.jsonl`),
+      publishToGlobalBridge: true,
+    });
+    session.runtime = runtime;
+    const toolRegistry = runtime.toolRegistry;
 
     // Load allowed paths
     await loadAllowedPaths(options.projectPath);

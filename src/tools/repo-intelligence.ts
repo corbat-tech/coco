@@ -224,6 +224,10 @@ export async function getRepoContext(request: RepoContextRequest): Promise<RepoC
   };
 }
 
+export async function repoContext(request: RepoContextRequest): Promise<RepoContextResult> {
+  return getRepoContext(request);
+}
+
 export const repoContextTool: ToolDefinition<RepoContextRequest, RepoContextResult> = defineTool({
   name: "repo_context",
   description:

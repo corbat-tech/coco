@@ -51,6 +51,9 @@ export const statsCommand: SlashCommand = {
     console.log(`  Model: ${chalk.cyan(session.config.provider.model)}`);
     console.log(`  Endpoint: ${chalk.yellow(runtime.endpoint)}`);
     console.log(`  Mode: ${session.agentMode ?? (session.planMode ? "plan" : "build")}`);
+    if (session.runtime) {
+      console.log(`  Runtime events: ${chalk.yellow(String(session.runtime.eventLog.count()))}`);
+    }
     console.log();
     console.log(chalk.dim("  Messages:"));
     console.log(chalk.dim(`    user:          ${userMessages}`));

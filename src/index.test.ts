@@ -210,6 +210,32 @@ describe("Main module exports", () => {
     });
   });
 
+  describe("runtime", () => {
+    it("should export AgentRuntime", () => {
+      expect(CocoExports.AgentRuntime).toBeDefined();
+    });
+
+    it("should export createAgentRuntime", () => {
+      expect(CocoExports.createAgentRuntime).toBeDefined();
+      expect(typeof CocoExports.createAgentRuntime).toBe("function");
+    });
+
+    it("should export reusable runtime registries and policies", () => {
+      expect(CocoExports.ProviderRegistry).toBeDefined();
+      expect(CocoExports.InMemoryEventLog).toBeDefined();
+      expect(CocoExports.DefaultPermissionPolicy).toBeDefined();
+      expect(CocoExports.WorkflowCatalog).toBeDefined();
+      expect(CocoExports.WorkflowRegistry).toBeDefined();
+      expect(CocoExports.DEFAULT_WORKFLOWS).toBeDefined();
+      expect(typeof CocoExports.createProviderRegistry).toBe("function");
+      expect(typeof CocoExports.createEventLog).toBe("function");
+      expect(typeof CocoExports.createPermissionPolicy).toBe("function");
+      expect(typeof CocoExports.createMcpToolPolicy).toBe("function");
+      expect(typeof CocoExports.createWorkflowCatalog).toBe("function");
+      expect(typeof CocoExports.createWorkflowRegistry).toBe("function");
+    });
+  });
+
   describe("tools", () => {
     it("should export ToolRegistry", () => {
       expect(CocoExports.ToolRegistry).toBeDefined();

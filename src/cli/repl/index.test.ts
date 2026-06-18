@@ -13,6 +13,7 @@ vi.mock("../../providers/index.js", () => ({
 vi.mock("./session.js", () => ({
   createSession: vi.fn(),
   initializeSessionTrust: vi.fn().mockResolvedValue(undefined),
+  initializeSessionMemory: vi.fn().mockResolvedValue(undefined),
   initializeContextManager: vi.fn(),
   checkAndCompactContext: vi.fn().mockResolvedValue(null),
   getContextUsagePercent: vi.fn(() => 50),
@@ -158,6 +159,37 @@ vi.mock("../../agents/provider-bridge.js", () => ({
   setAgentToolRegistry: vi.fn(),
 }));
 
+vi.mock("../../runtime/index.js", () => ({
+  createAgentRuntime: vi.fn(async (options: { provider?: LLMProvider }) => {
+    const { createFullToolRegistry } = await import("../../tools/index.js");
+    const { setAgentProvider, setAgentToolRegistry } =
+      await import("../../agents/provider-bridge.js");
+    const toolRegistry = createFullToolRegistry();
+    if (options.provider) {
+      setAgentProvider(options.provider);
+    }
+    setAgentToolRegistry(toolRegistry);
+    return {
+      toolRegistry,
+      eventLog: {
+        append: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue([]),
+        count: vi.fn().mockResolvedValue(0),
+      },
+      updateProvider: vi.fn(),
+      getSnapshot: vi.fn(() => ({})),
+      providerRegistry: {},
+      sessionStore: {},
+      permissionPolicy: {},
+    };
+  }),
+}));
+
+vi.mock("../../utils/subprocess-registry.js", () => ({
+  registerGlobalCleanup: vi.fn(),
+  killOrphanedTestProcesses: vi.fn().mockResolvedValue(0),
+}));
+
 // Mock unified skill registry to prevent filesystem scanning (discoverAllSkills)
 vi.mock("../../skills/index.js", () => ({
   createUnifiedSkillRegistry: vi.fn(() => ({
@@ -210,27 +242,46 @@ vi.mock("../../config/loader.js", () => ({
   loadConfig: vi.fn().mockResolvedValue({ skills: undefined }),
 }));
 
+vi.mock("../../utils/logger.js", () => ({
+  getLogger: vi.fn(() => ({
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+    error: vi.fn(),
+  })),
+}));
+
 // Mock MCP lifecycle manager
 vi.mock("../../mcp/lifecycle.js", () => ({
   createMCPServerManager: vi.fn(() => ({
     startAll: vi.fn().mockResolvedValue(new Map()),
+    startServer: vi.fn(),
     stopAll: vi.fn().mockResolvedValue(undefined),
     getConnectedServers: vi.fn().mockReturnValue([]),
+    getConnection: vi.fn().mockReturnValue(undefined),
   })),
-  getMCPServerManager: vi.fn(),
+  getMCPServerManager: vi.fn(() => ({
+    startAll: vi.fn().mockResolvedValue(new Map()),
+    startServer: vi.fn(),
+    stopAll: vi.fn().mockResolvedValue(undefined),
+    getConnectedServers: vi.fn().mockReturnValue([]),
+    getConnection: vi.fn().mockReturnValue(undefined),
+  })),
 }));
 
 // Mock MCP registry
 vi.mock("../../mcp/registry.js", () => ({
-  MCPRegistryImpl: vi.fn().mockImplementation(() => ({
-    load: vi.fn().mockResolvedValue(undefined),
-    listEnabledServers: vi.fn().mockReturnValue([]),
-    listServers: vi.fn().mockReturnValue([]),
-    addServer: vi.fn().mockResolvedValue(undefined),
-    removeServer: vi.fn().mockResolvedValue(true),
-    getServer: vi.fn().mockReturnValue(undefined),
-    hasServer: vi.fn().mockReturnValue(false),
-  })),
+  MCPRegistryImpl: vi.fn().mockImplementation(function () {
+    return {
+      load: vi.fn().mockResolvedValue(undefined),
+      listEnabledServers: vi.fn().mockReturnValue([]),
+      listServers: vi.fn().mockReturnValue([]),
+      addServer: vi.fn().mockResolvedValue(undefined),
+      removeServer: vi.fn().mockResolvedValue(true),
+      getServer: vi.fn().mockReturnValue(undefined),
+      hasServer: vi.fn().mockReturnValue(false),
+    };
+  }),
   createMCPRegistry: vi.fn(),
 }));
 
@@ -315,6 +366,8 @@ vi.mock("./commands/index.js", () => ({
   addTokenUsage: vi.fn(),
   hasPendingImage: vi.fn().mockReturnValue(false),
   consumePendingImage: vi.fn().mockReturnValue(null),
+  consumePendingImages: vi.fn().mockReturnValue([]),
+  isIntentRecognitionEnabled: vi.fn().mockReturnValue(false),
   setPendingImage: vi.fn(),
 }));
 
@@ -1073,6 +1126,22 @@ describe("REPL index", () => {
       const { createProvider } = await import("../../providers/index.js");
       const { createSession } = await import("./session.js");
       const { createInputHandler } = await import("./input/handler.js");
+      const { loadProjectMCPFile, loadMCPServersFromCOCOConfig, mergeMCPConfigs } =
+        await import("../../mcp/config-loader.js");
+
+      vi.mocked(loadProjectMCPFile).mockResolvedValue([]);
+      vi.mocked(loadMCPServersFromCOCOConfig).mockResolvedValue([]);
+      vi.mocked(mergeMCPConfigs).mockImplementation(
+        (...configs: Array<Array<{ name: string; enabled?: boolean }>>) => {
+          const map = new Map<string, { name: string; enabled?: boolean }>();
+          for (const cfg of configs) {
+            for (const server of cfg) {
+              map.set(server.name, server);
+            }
+          }
+          return Array.from(map.values()) as any;
+        },
+      );
 
       const mockProvider: Partial<import("../../providers/types.js").LLMProvider> = {
         isAvailable: vi.fn().mockResolvedValue(true),
@@ -1112,29 +1181,34 @@ describe("REPL index", () => {
 
     it("skips MCP init when registry has no enabled servers", async () => {
       const { MCPRegistryImpl } = await import("../../mcp/registry.js");
-      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
 
       // Registry returns empty list of enabled servers
-      vi.mocked(MCPRegistryImpl).mockImplementation(
-        () =>
-          ({
-            load: vi.fn().mockResolvedValue(undefined),
-            listEnabledServers: vi.fn().mockReturnValue([]),
-          }) as any,
-      );
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([]),
+        };
+      } as any);
 
       await setupMinimalRepl();
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([]),
+        };
+      } as any);
 
       const { startRepl } = await import("./index.js");
       await startRepl({ projectPath: "/test" });
 
-      // createMCPServerManager should NOT be called when there are no enabled servers
-      expect(createMCPServerManager).not.toHaveBeenCalled();
+      // The singleton manager is only requested when there are enabled servers.
+      expect(getMCPServerManager).not.toHaveBeenCalled();
     });
 
     it("starts MCP servers and registers tools when servers are configured", async () => {
       const { MCPRegistryImpl } = await import("../../mcp/registry.js");
-      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
       const { registerMCPTools } = await import("../../mcp/tools.js");
       const { createFullToolRegistry } = await import("../../tools/index.js");
 
@@ -1147,22 +1221,21 @@ describe("REPL index", () => {
         stopAll: vi.fn().mockResolvedValue(undefined),
         getConnectedServers: vi.fn().mockReturnValue(["test-server"]),
       };
-      vi.mocked(createMCPServerManager).mockReturnValue(mockManager as any);
+      vi.mocked(getMCPServerManager).mockReturnValue(mockManager as any);
 
-      vi.mocked(MCPRegistryImpl).mockImplementation(
-        () =>
-          ({
-            load: vi.fn().mockResolvedValue(undefined),
-            listEnabledServers: vi.fn().mockReturnValue([
-              {
-                name: "test-server",
-                transport: "stdio",
-                enabled: true,
-                stdio: { command: "node", args: ["server.js"] },
-              },
-            ]),
-          }) as any,
-      );
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "test-server",
+              transport: "stdio",
+              enabled: true,
+              stdio: { command: "node", args: ["server.js"] },
+            },
+          ]),
+        };
+      } as any);
 
       const mockRegistry = {
         getAll: vi.fn(() => []),
@@ -1173,12 +1246,26 @@ describe("REPL index", () => {
       vi.mocked(registerMCPTools).mockResolvedValue([]);
 
       await setupMinimalRepl();
+      vi.mocked(getMCPServerManager).mockReturnValue(mockManager as any);
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "test-server",
+              transport: "stdio",
+              enabled: true,
+              stdio: { command: "node", args: ["server.js"] },
+            },
+          ]),
+        };
+      } as any);
 
       const { startRepl } = await import("./index.js");
       await startRepl({ projectPath: "/test" });
 
-      // MCP server manager should have been created and startAll called
-      expect(createMCPServerManager).toHaveBeenCalled();
+      // MCP server manager should have been requested and startAll called
+      expect(getMCPServerManager).toHaveBeenCalled();
       expect(mockManager.startAll).toHaveBeenCalledWith(
         expect.arrayContaining([expect.objectContaining({ name: "test-server" })]),
       );
@@ -1188,16 +1275,15 @@ describe("REPL index", () => {
 
     it("loads MCP servers from coco config when registry is empty", async () => {
       const { MCPRegistryImpl } = await import("../../mcp/registry.js");
-      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
       const { loadMCPServersFromCOCOConfig } = await import("../../mcp/config-loader.js");
 
-      vi.mocked(MCPRegistryImpl).mockImplementation(
-        () =>
-          ({
-            load: vi.fn().mockResolvedValue(undefined),
-            listEnabledServers: vi.fn().mockReturnValue([]),
-          }) as any,
-      );
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([]),
+        };
+      } as any);
 
       vi.mocked(loadMCPServersFromCOCOConfig).mockResolvedValue([
         {
@@ -1213,9 +1299,18 @@ describe("REPL index", () => {
         stopAll: vi.fn().mockResolvedValue(undefined),
         getConnectedServers: vi.fn().mockReturnValue([]),
       };
-      vi.mocked(createMCPServerManager).mockReturnValue(mockManager as any);
+      vi.mocked(getMCPServerManager).mockReturnValue(mockManager as any);
 
       await setupMinimalRepl();
+      vi.mocked(loadMCPServersFromCOCOConfig).mockResolvedValue([
+        {
+          name: "atlassian",
+          transport: "http",
+          enabled: true,
+          http: { url: "https://mcp.atlassian.com/v1/mcp" },
+        } as any,
+      ]);
+      vi.mocked(getMCPServerManager).mockReturnValue(mockManager as any);
 
       const { startRepl } = await import("./index.js");
       await startRepl({ projectPath: "/test" });
@@ -1229,15 +1324,20 @@ describe("REPL index", () => {
       const { MCPRegistryImpl } = await import("../../mcp/registry.js");
 
       // Make registry.load() throw to simulate MCP init failure
-      vi.mocked(MCPRegistryImpl).mockImplementation(
-        () =>
-          ({
-            load: vi.fn().mockRejectedValue(new Error("Registry file corrupted")),
-            listEnabledServers: vi.fn().mockReturnValue([]),
-          }) as any,
-      );
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockRejectedValue(new Error("Registry file corrupted")),
+          listEnabledServers: vi.fn().mockReturnValue([]),
+        };
+      } as any);
 
       await setupMinimalRepl();
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockRejectedValue(new Error("Registry file corrupted")),
+          listEnabledServers: vi.fn().mockReturnValue([]),
+        };
+      } as any);
 
       const { startRepl } = await import("./index.js");
 
@@ -1249,29 +1349,28 @@ describe("REPL index", () => {
 
     it("calls mcpManager.stopAll() when SIGTERM is received", async () => {
       const { MCPRegistryImpl } = await import("../../mcp/registry.js");
-      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
 
       const mockMcpManager = {
         startAll: vi.fn().mockResolvedValue(new Map()),
         stopAll: vi.fn().mockResolvedValue(undefined),
         getConnectedServers: vi.fn().mockReturnValue([]),
       };
-      vi.mocked(createMCPServerManager).mockReturnValue(mockMcpManager as any);
+      vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
 
-      vi.mocked(MCPRegistryImpl).mockImplementation(
-        () =>
-          ({
-            load: vi.fn().mockResolvedValue(undefined),
-            listEnabledServers: vi.fn().mockReturnValue([
-              {
-                name: "sigterm-server",
-                transport: "stdio",
-                enabled: true,
-                stdio: { command: "node", args: ["server.js"] },
-              },
-            ]),
-          }) as any,
-      );
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "sigterm-server",
+              transport: "stdio",
+              enabled: true,
+              stdio: { command: "node", args: ["server.js"] },
+            },
+          ]),
+        };
+      } as any);
 
       // Prompt will block until we resolve it; we control it via a deferred promise
       let resolvePrompt!: (value: null) => void;
@@ -1310,13 +1409,31 @@ describe("REPL index", () => {
       };
       vi.mocked(createInputHandler).mockReturnValue(mockInputHandler);
 
+      vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "sigterm-server",
+              transport: "stdio",
+              enabled: true,
+              stdio: { command: "node", args: ["server.js"] },
+            },
+          ]),
+        };
+      } as any);
+
       const { startRepl } = await import("./index.js");
 
       // Start REPL without awaiting — it will block at prompt()
       const replPromise = startRepl({ projectPath: "/test" });
 
-      // Allow the event loop to run so startRepl registers the SIGTERM handler
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      // Wait until startRepl has reached the input prompt and registered the SIGTERM handler.
+      for (let i = 0; i < 20 && mockInputHandler.prompt.mock.calls.length === 0; i++) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(mockInputHandler.prompt).toHaveBeenCalled();
 
       // Emit SIGTERM — triggers cleanup: stopAll() then process.exit(0)
       process.emit("SIGTERM");
@@ -1335,7 +1452,7 @@ describe("REPL index", () => {
 
     it("warns and continues when registerMCPTools throws for a specific server", async () => {
       const { MCPRegistryImpl } = await import("../../mcp/registry.js");
-      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
       const { registerMCPTools } = await import("../../mcp/tools.js");
 
       const fakeClient = { isConnected: vi.fn().mockReturnValue(true), listTools: vi.fn() };
@@ -1347,27 +1464,40 @@ describe("REPL index", () => {
         stopAll: vi.fn().mockResolvedValue(undefined),
         getConnectedServers: vi.fn().mockReturnValue(["failing-server"]),
       };
-      vi.mocked(createMCPServerManager).mockReturnValue(mockMcpManager as any);
+      vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
 
-      vi.mocked(MCPRegistryImpl).mockImplementation(
-        () =>
-          ({
-            load: vi.fn().mockResolvedValue(undefined),
-            listEnabledServers: vi.fn().mockReturnValue([
-              {
-                name: "failing-server",
-                transport: "stdio",
-                enabled: true,
-                stdio: { command: "node", args: ["server.js"] },
-              },
-            ]),
-          }) as any,
-      );
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "failing-server",
+              transport: "stdio",
+              enabled: true,
+              stdio: { command: "node", args: ["server.js"] },
+            },
+          ]),
+        };
+      } as any);
 
       // registerMCPTools throws for this server
       vi.mocked(registerMCPTools).mockRejectedValue(new Error("Tool registration failed"));
 
       await setupMinimalRepl();
+      vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "failing-server",
+              transport: "stdio",
+              enabled: true,
+              stdio: { command: "node", args: ["server.js"] },
+            },
+          ]),
+        };
+      } as any);
 
       const { startRepl } = await import("./index.js");
 
@@ -1379,31 +1509,44 @@ describe("REPL index", () => {
 
     it("handles startAll throwing without leaking the manager", async () => {
       const { MCPRegistryImpl } = await import("../../mcp/registry.js");
-      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
 
       const mockMcpManager = {
         startAll: vi.fn().mockRejectedValue(new Error("Failed to start servers")),
         stopAll: vi.fn().mockResolvedValue(undefined),
         getConnectedServers: vi.fn().mockReturnValue([]),
       };
-      vi.mocked(createMCPServerManager).mockReturnValue(mockMcpManager as any);
+      vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
 
-      vi.mocked(MCPRegistryImpl).mockImplementation(
-        () =>
-          ({
-            load: vi.fn().mockResolvedValue(undefined),
-            listEnabledServers: vi.fn().mockReturnValue([
-              {
-                name: "broken-server",
-                transport: "stdio",
-                enabled: true,
-                stdio: { command: "node", args: ["server.js"] },
-              },
-            ]),
-          }) as any,
-      );
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "broken-server",
+              transport: "stdio",
+              enabled: true,
+              stdio: { command: "node", args: ["server.js"] },
+            },
+          ]),
+        };
+      } as any);
 
       await setupMinimalRepl();
+      vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "broken-server",
+              transport: "stdio",
+              enabled: true,
+              stdio: { command: "node", args: ["server.js"] },
+            },
+          ]),
+        };
+      } as any);
 
       const { startRepl } = await import("./index.js");
 
@@ -1431,20 +1574,19 @@ describe("REPL index", () => {
       };
       vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
 
-      vi.mocked(MCPRegistryImpl).mockImplementation(
-        () =>
-          ({
-            load: vi.fn().mockResolvedValue(undefined),
-            listEnabledServers: vi.fn().mockReturnValue([
-              {
-                name: "atlassian",
-                transport: "http",
-                enabled: true,
-                http: { url: "https://mcp.atlassian.com/v1/mcp" },
-              },
-            ]),
-          }) as any,
-      );
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "atlassian",
+              transport: "http",
+              enabled: true,
+              http: { url: "https://mcp.atlassian.com/v1/mcp" },
+            },
+          ]),
+        };
+      } as any);
 
       vi.mocked(registerMCPTools).mockResolvedValue([]);
       vi.mocked(executeAgentTurn).mockResolvedValue({
@@ -1455,6 +1597,20 @@ describe("REPL index", () => {
       } as any);
 
       await setupMinimalRepl({ inputPromptValues: ["usa el mcp de atlassian", null] });
+      vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "atlassian",
+              transport: "http",
+              enabled: true,
+              http: { url: "https://mcp.atlassian.com/v1/mcp" },
+            },
+          ]),
+        };
+      } as any);
 
       const { startRepl } = await import("./index.js");
       await startRepl({ projectPath: "/test" });
@@ -1467,7 +1623,7 @@ describe("REPL index", () => {
 
     it("calls mcpManager.stopAll() on normal REPL exit (EOF)", async () => {
       const { MCPRegistryImpl } = await import("../../mcp/registry.js");
-      const { createMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
       const { registerMCPTools } = await import("../../mcp/tools.js");
 
       const fakeClient = { isConnected: vi.fn().mockReturnValue(true), listTools: vi.fn() };
@@ -1479,27 +1635,40 @@ describe("REPL index", () => {
         stopAll: vi.fn().mockResolvedValue(undefined),
         getConnectedServers: vi.fn().mockReturnValue(["eof-server"]),
       };
-      vi.mocked(createMCPServerManager).mockReturnValue(mockMcpManager as any);
+      vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
 
-      vi.mocked(MCPRegistryImpl).mockImplementation(
-        () =>
-          ({
-            load: vi.fn().mockResolvedValue(undefined),
-            listEnabledServers: vi.fn().mockReturnValue([
-              {
-                name: "eof-server",
-                transport: "stdio",
-                enabled: true,
-                stdio: { command: "node", args: ["server.js"] },
-              },
-            ]),
-          }) as any,
-      );
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "eof-server",
+              transport: "stdio",
+              enabled: true,
+              stdio: { command: "node", args: ["server.js"] },
+            },
+          ]),
+        };
+      } as any);
 
       vi.mocked(registerMCPTools).mockResolvedValue([]);
 
       // Simulate normal exit: prompt returns null (EOF) on first call
       await setupMinimalRepl({ inputPromptValues: [null] });
+      vi.mocked(getMCPServerManager).mockReturnValue(mockMcpManager as any);
+      vi.mocked(MCPRegistryImpl).mockImplementation(function () {
+        return {
+          load: vi.fn().mockResolvedValue(undefined),
+          listEnabledServers: vi.fn().mockReturnValue([
+            {
+              name: "eof-server",
+              transport: "stdio",
+              enabled: true,
+              stdio: { command: "node", args: ["server.js"] },
+            },
+          ]),
+        };
+      } as any);
 
       const { startRepl } = await import("./index.js");
 
