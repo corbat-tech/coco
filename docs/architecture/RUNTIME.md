@@ -59,6 +59,23 @@ const result = await runtime.runTurn({
 Embedders that need tool execution can provide a custom `RuntimeTurnRunner`
 while reusing provider selection, permissions, sessions, and event logging.
 
+For streaming UI surfaces, use `streamTurn()`:
+
+```ts
+for await (const event of runtime.streamTurn({ sessionId: session.id, content })) {
+  if (event.type === "text") sendToClient(event.text);
+  if (event.type === "done") saveUsage(event.result.usage);
+  if (event.type === "error") reportFailure(event.error);
+}
+```
+
+Streaming currently covers text-only provider turns. Tool streaming should be
+implemented as a separate runtime runner so embedders can keep confirmation and
+permission UX explicit. If a consumer disconnects or stops iteration before the
+`done` event, the runtime records `turn.cancelled` and does not persist a partial
+assistant message. Streaming token usage is estimated with provider token counts
+because most provider streaming APIs do not return final usage consistently.
+
 Runtime consumers can execute registered tools through the same policy layer:
 
 ```ts

@@ -64,7 +64,11 @@ function createMockProvider(): LLMProvider {
       model: "mock-model",
     })),
     chatWithTools: vi.fn(),
-    stream: vi.fn(),
+    stream: vi.fn(async function* () {
+      yield { type: "text", text: "stream " };
+      yield { type: "text", text: "reply" };
+      yield { type: "done", stopReason: "end_turn" };
+    }),
     streamWithTools: vi.fn(),
     countTokens: vi.fn((text: string) => text.length),
     getContextWindow: vi.fn(() => 128000),
@@ -226,6 +230,91 @@ describe("reusable agent runtime", () => {
       mode: "ask",
       metadataKeys: ["surface"],
     });
+  });
+
+  it("streams runtime turns and persists the completed assistant message", async () => {
+    const eventLog = createEventLog();
+    const provider = createMockProvider();
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider,
+      toolRegistry: createRegistry(),
+      eventLog,
+    });
+    const session = runtime.createSession({
+      mode: "ask",
+      instructions: "Stream as support assistant.",
+    });
+
+    const events = [];
+    for await (const event of runtime.streamTurn({
+      sessionId: session.id,
+      content: "hello",
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "text", sessionId: session.id, text: "stream " },
+      { type: "text", sessionId: session.id, text: "reply" },
+      {
+        type: "done",
+        sessionId: session.id,
+        result: {
+          sessionId: session.id,
+          content: "stream reply",
+          usage: { inputTokens: 5, outputTokens: 12, estimated: true },
+          model: "gpt-5.4",
+          mode: "ask",
+        },
+      },
+    ]);
+    expect(runtime.getSession(session.id)?.messages).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "stream reply" },
+    ]);
+    expect(provider.stream).toHaveBeenCalledWith(
+      [{ role: "user", content: "hello" }],
+      expect.objectContaining({ system: "Stream as support assistant." }),
+    );
+    expect(eventLog.list().map((event) => event.type)).toEqual([
+      "provider.attached",
+      "runtime.initialized",
+      "session.created",
+      "turn.started",
+      "session.updated",
+      "turn.completed",
+    ]);
+  });
+
+  it("records cancelled streaming turns when consumers stop early", async () => {
+    const eventLog = createEventLog();
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+      eventLog,
+    });
+    const session = runtime.createSession({ mode: "ask" });
+
+    for await (const event of runtime.streamTurn({
+      sessionId: session.id,
+      content: "hello",
+    })) {
+      expect(event).toEqual({ type: "text", sessionId: session.id, text: "stream " });
+      break;
+    }
+
+    expect(runtime.getSession(session.id)?.messages).toEqual([]);
+    expect(eventLog.list().map((event) => event.type)).toEqual([
+      "provider.attached",
+      "runtime.initialized",
+      "session.created",
+      "turn.started",
+      "turn.cancelled",
+    ]);
   });
 
   it("executes runtime tools with permission events and confirmation gates", async () => {

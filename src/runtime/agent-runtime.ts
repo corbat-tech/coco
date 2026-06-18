@@ -24,6 +24,7 @@ import type {
   RuntimeToolExecutionResult,
   RuntimeTurnInput,
   RuntimeTurnResult,
+  RuntimeTurnStreamEvent,
   RuntimeTurnRunner,
   RuntimeMode,
 } from "./types.js";
@@ -208,6 +209,121 @@ export class AgentRuntime {
         runtimeApi: true,
       });
       throw error;
+    }
+  }
+
+  async *streamTurn(input: RuntimeTurnInput): AsyncIterable<RuntimeTurnStreamEvent> {
+    const provider = this.provider;
+    if (!provider) {
+      throw new Error("Runtime provider is not initialized.");
+    }
+
+    const session = input.sessionId
+      ? this.runtimeSessionStore.get(input.sessionId)
+      : this.createSession({ mode: input.mode, metadata: input.metadata });
+    if (!session) {
+      throw new Error(`Runtime session not found: ${input.sessionId}`);
+    }
+    const effectiveSession =
+      input.mode && input.mode !== session.mode ? { ...session, mode: input.mode } : session;
+    const messages = [
+      ...effectiveSession.messages,
+      {
+        role: "user" as const,
+        content: input.content,
+      },
+    ];
+
+    this.eventLog.record("turn.started", {
+      sessionId: effectiveSession.id,
+      provider: this.providerType,
+      model: this.getModel(),
+      mode: effectiveSession.mode,
+      streaming: true,
+      runtimeApi: true,
+    });
+
+    let content = "";
+    let completed = false;
+    let failed = false;
+    try {
+      for await (const chunk of provider.stream(messages, {
+        model: input.options?.model,
+        maxTokens: input.options?.maxTokens,
+        temperature: input.options?.temperature,
+        stopSequences: input.options?.stopSequences,
+        system: effectiveSession.instructions ?? input.options?.system,
+        timeout: input.options?.timeout,
+        signal: input.options?.signal,
+        thinking: input.options?.thinking,
+      })) {
+        if (chunk.type === "text" && chunk.text) {
+          content += chunk.text;
+          yield {
+            type: "text",
+            sessionId: effectiveSession.id,
+            text: chunk.text,
+          };
+        }
+      }
+
+      const updatedSession = this.runtimeSessionStore.update({
+        ...effectiveSession,
+        messages: [
+          ...effectiveSession.messages,
+          { role: "user", content: input.content },
+          { role: "assistant", content },
+        ],
+      });
+      const result: RuntimeTurnResult = {
+        sessionId: updatedSession.id,
+        content,
+        usage: {
+          inputTokens: provider.countTokens(input.content),
+          outputTokens: provider.countTokens(content),
+          estimated: true,
+        },
+        model: input.options?.model ?? this.getModel(),
+        mode: updatedSession.mode,
+      };
+
+      this.eventLog.record("session.updated", {
+        sessionId: updatedSession.id,
+        messages: updatedSession.messages.length,
+      });
+      this.eventLog.record("turn.completed", {
+        sessionId: updatedSession.id,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        model: result.model,
+        streaming: true,
+        runtimeApi: true,
+      });
+      completed = true;
+      yield { type: "done", sessionId: updatedSession.id, result };
+    } catch (error) {
+      failed = true;
+      const message = error instanceof Error ? error.message : String(error);
+      this.eventLog.record("turn.failed", {
+        sessionId: effectiveSession.id,
+        error: message,
+        streaming: true,
+        runtimeApi: true,
+      });
+      yield {
+        type: "error",
+        sessionId: effectiveSession.id,
+        error: message,
+      };
+    } finally {
+      if (!completed && !failed) {
+        this.eventLog.record("turn.cancelled", {
+          sessionId: effectiveSession.id,
+          outputTokens: provider.countTokens(content),
+          streaming: true,
+          runtimeApi: true,
+        });
+      }
     }
   }
 

@@ -47,6 +47,25 @@ const answer = await runtime.runTurn({
 console.log(answer.content);
 ```
 
+For a streaming chat UI:
+
+```ts
+for await (const event of runtime.streamTurn({
+  sessionId: session.id,
+  content: "What can Corbat build for my company?",
+})) {
+  if (event.type === "text") {
+    process.stdout.write(event.text);
+  }
+  if (event.type === "error") {
+    throw new Error(event.error);
+  }
+}
+```
+
+If the client disconnects before `done`, stop consuming the iterator. Coco will
+record `turn.cancelled` and will not persist a partial assistant message.
+
 ## HTTP Adapter
 
 For a web app, expose the runtime behind your own authenticated server:

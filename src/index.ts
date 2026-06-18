@@ -133,6 +133,7 @@ export type {
   RuntimeTurnContext,
   RuntimeTurnInput,
   RuntimeTurnResult,
+  RuntimeTurnStreamEvent,
   RuntimeTurnRunner,
   AgentSurface,
   ExtensionRisk,

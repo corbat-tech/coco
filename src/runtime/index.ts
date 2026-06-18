@@ -58,5 +58,6 @@ export type {
   RuntimeTurnContext,
   RuntimeTurnInput,
   RuntimeTurnResult,
+  RuntimeTurnStreamEvent,
   RuntimeTurnRunner,
 } from "./types.js";

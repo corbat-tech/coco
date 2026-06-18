@@ -51,6 +51,7 @@ export type RuntimeEventType =
   | "provider.updated"
   | "turn.started"
   | "turn.completed"
+  | "turn.cancelled"
   | "turn.failed"
   | "tool.started"
   | "tool.completed"
@@ -142,10 +143,28 @@ export interface RuntimeTurnResult {
   usage: {
     inputTokens: number;
     outputTokens: number;
+    estimated?: boolean;
   };
   model: string;
   mode: RuntimeMode;
 }
+
+export type RuntimeTurnStreamEvent =
+  | {
+      type: "text";
+      sessionId: string;
+      text: string;
+    }
+  | {
+      type: "done";
+      sessionId: string;
+      result: RuntimeTurnResult;
+    }
+  | {
+      type: "error";
+      sessionId: string;
+      error: string;
+    };
 
 export interface RuntimeTurnContext {
   runtime: unknown;
