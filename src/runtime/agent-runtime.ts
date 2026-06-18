@@ -1,5 +1,4 @@
 import { setAgentProvider, setAgentToolRegistry } from "../agents/provider-bridge.js";
-import { createSessionStore } from "../cli/repl/sessions/storage.js";
 import { getDefaultModel } from "../config/env.js";
 import type { ProviderType } from "../providers/index.js";
 import type { LLMProvider } from "../providers/types.js";
@@ -37,7 +36,7 @@ import type {
 export class AgentRuntime {
   readonly providerRegistry: ProviderRegistry;
   readonly toolRegistry: ToolRegistry;
-  readonly sessionStore;
+  readonly sessionStore: unknown;
   readonly runtimeSessionStore: RuntimeSessionStore;
   readonly workflowEngine: WorkflowEngine;
   readonly permissionPolicy: PermissionPolicy;
@@ -50,7 +49,7 @@ export class AgentRuntime {
   constructor(private readonly options: AgentRuntimeOptions) {
     this.providerRegistry = createProviderRegistry();
     this.toolRegistry = options.toolRegistry ?? createFullToolRegistry();
-    this.sessionStore = options.sessionStore ?? createSessionStore({});
+    this.sessionStore = options.sessionStore;
     this.runtimeSessionStore = options.runtimeSessionStore ?? createRuntimeSessionStore();
     this.eventLog =
       options.eventLog ??

@@ -1,4 +1,3 @@
-import type { SessionStore } from "../cli/repl/sessions/storage.js";
 import type { ProviderType } from "../providers/index.js";
 import type { ChatOptions, LLMProvider, Message, ProviderConfig } from "../providers/types.js";
 import type { ProviderRuntimeCapability } from "../providers/runtime-capabilities.js";
@@ -17,7 +16,8 @@ export interface AgentRuntimeOptions {
   providerConfig?: ProviderConfig;
   provider?: LLMProvider;
   toolRegistry?: ToolRegistry;
-  sessionStore?: SessionStore;
+  /** Legacy CLI session store passthrough. Runtime APIs use runtimeSessionStore. */
+  sessionStore?: unknown;
   runtimeSessionStore?: RuntimeSessionStore;
   workflowEngine?: WorkflowEngine;
   permissionPolicy?: PermissionPolicy;
