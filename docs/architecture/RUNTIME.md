@@ -15,6 +15,12 @@ a reusable layer for other products and future client-specific agents.
   consumers can match the REPL's read-only and destructive-action rules.
 - `EventLog` records runtime/provider/tool decisions for replay, debugging, and
   future observability.
+- `RuntimeSessionStore` stores model-facing session state outside the CLI REPL.
+- `RuntimeTurnRunner` runs a single model turn against a provider. The default
+  runner is intentionally conservative: it calls chat only and does not execute
+  tools by itself.
+- `WorkflowEngine` executes registered workflow handlers from reusable workflow
+  definitions and records structured events.
 
 ## CLI Relationship
 
@@ -22,6 +28,65 @@ The CLI is the first application moving onto the runtime. REPL and headless mode
 now create a runtime facade to publish the active provider and tools to the
 subagent bridge without changing user-facing behavior. Tool execution still keeps
 the existing REPL confirmation and filtering path until the next migration phase.
+
+## Runtime APIs
+
+Runtime consumers can use Coco without the interactive CLI:
+
+```ts
+const runtime = await createAgentRuntime({
+  providerType: "openai",
+  model: "gpt-5.4",
+});
+
+const session = runtime.createSession({
+  mode: "ask",
+  instructions: "Answer as a product assistant.",
+  metadata: { tenantId: "corbat" },
+});
+
+const result = await runtime.runTurn({
+  sessionId: session.id,
+  content: "What can you help with?",
+});
+```
+
+`runTurn()` appends user and assistant messages to the runtime session and emits
+`turn.started`, `session.updated`, `turn.completed`, or `turn.failed` events.
+Embedders that need tool execution can provide a custom `RuntimeTurnRunner`
+while reusing provider selection, permissions, sessions, and event logging.
+
+For simple prototypes, `createRuntimeHttpServer(runtime)` exposes:
+
+- `POST /sessions`
+- `GET /sessions/:id`
+- `POST /sessions/:id/messages`
+- `GET /sessions/:id/events`
+- `GET /state`
+
+This adapter is deliberately minimal. Production web products must wrap it with
+authentication, tenant isolation, quotas, rate limiting, streaming policy, and
+audit storage.
+
+## Workflow Execution
+
+`WorkflowCatalog` remains the source for reusable workflow definitions. The
+`WorkflowEngine` adds a small execution layer:
+
+```ts
+runtime.workflowEngine.registerHandler("provider-diagnosis", async (input) => {
+  return { provider: input.provider, ok: true };
+});
+
+const run = await runtime.workflowEngine.run({
+  workflowId: "provider-diagnosis",
+  input: { provider: "openai" },
+});
+```
+
+Handlers are explicit opt-ins. Unknown workflows or workflows without handlers
+fail fast, while handler failures return structured failed results and are
+recorded in the `EventLog`.
 
 ## Extensibility
 

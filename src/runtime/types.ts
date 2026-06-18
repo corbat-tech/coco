@@ -1,10 +1,11 @@
 import type { AgentModeDefinition, AgentModeId } from "../cli/repl/modes.js";
 import type { SessionStore } from "../cli/repl/sessions/storage.js";
 import type { ProviderType } from "../providers/index.js";
-import type { LLMProvider, ProviderConfig } from "../providers/types.js";
+import type { ChatOptions, LLMProvider, Message, ProviderConfig } from "../providers/types.js";
 import type { ProviderRuntimeCapability } from "../providers/runtime-capabilities.js";
 import type { ToolDefinition, ToolRegistry } from "../tools/registry.js";
 import type { ThinkingMode } from "../providers/thinking.js";
+import type { WorkflowEngine } from "./workflow-engine.js";
 
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "max";
 
@@ -17,9 +18,12 @@ export interface AgentRuntimeOptions {
   provider?: LLMProvider;
   toolRegistry?: ToolRegistry;
   sessionStore?: SessionStore;
+  runtimeSessionStore?: RuntimeSessionStore;
+  workflowEngine?: WorkflowEngine;
   permissionPolicy?: PermissionPolicy;
   eventLog?: EventLog;
   eventLogPath?: string;
+  turnRunner?: RuntimeTurnRunner;
   /**
    * Publish provider/tools into Coco's legacy process-global subagent bridge.
    * CLI/headless use this for compatibility; embedders should leave it false.
@@ -58,6 +62,7 @@ export type RuntimeEventType =
   | "workflow.completed"
   | "workflow.failed"
   | "session.created"
+  | "session.updated"
   | "checkpoint.created"
   | "error";
 
@@ -84,10 +89,73 @@ export interface PermissionDecision {
 
 export interface PermissionPolicy {
   canExecuteTool(mode: RuntimeMode, tool: ToolDefinition): PermissionDecision;
+  canExecuteToolInput?(
+    mode: RuntimeMode,
+    tool: ToolDefinition,
+    input: Record<string, unknown>,
+  ): PermissionDecision;
 }
 
 export interface ProviderRuntimeSelection {
   provider: ProviderType;
   model: string;
   thinking?: ThinkingMode;
+}
+
+export interface RuntimeSession {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  mode: RuntimeMode;
+  messages: Message[];
+  instructions?: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface RuntimeSessionCreateOptions {
+  id?: string;
+  mode?: RuntimeMode;
+  instructions?: string;
+  metadata?: Record<string, unknown>;
+  messages?: Message[];
+}
+
+export interface RuntimeSessionStore {
+  create(options?: RuntimeSessionCreateOptions): RuntimeSession;
+  get(id: string): RuntimeSession | undefined;
+  update(session: RuntimeSession): RuntimeSession;
+  list(): RuntimeSession[];
+  delete(id: string): boolean;
+}
+
+export interface RuntimeTurnInput {
+  content: string;
+  sessionId?: string;
+  mode?: RuntimeMode;
+  options?: ChatOptions;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RuntimeTurnResult {
+  sessionId: string;
+  content: string;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+  model: string;
+  mode: RuntimeMode;
+}
+
+export interface RuntimeTurnContext {
+  runtime: unknown;
+  session: RuntimeSession;
+  provider: LLMProvider;
+  toolRegistry: ToolRegistry;
+  permissionPolicy: PermissionPolicy;
+  eventLog: EventLog;
+}
+
+export interface RuntimeTurnRunner {
+  run(input: RuntimeTurnInput, context: RuntimeTurnContext): Promise<RuntimeTurnResult>;
 }

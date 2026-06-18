@@ -6,14 +6,23 @@ import type { ProviderType } from "../providers/index.js";
 import type { LLMProvider } from "../providers/types.js";
 import { createFullToolRegistry } from "../tools/index.js";
 import type { ToolRegistry } from "../tools/registry.js";
+import { createDefaultRuntimeTurnRunner } from "./default-turn-runner.js";
 import { createEventLog, createFileEventLog } from "./event-log.js";
 import { createPermissionPolicy } from "./permission-policy.js";
 import { createProviderRegistry, ProviderRegistry } from "./provider-registry.js";
+import { createRuntimeSessionStore } from "./runtime-session-store.js";
+import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.js";
 import type {
   AgentRuntimeOptions,
   AgentRuntimeSnapshot,
   EventLog,
   PermissionPolicy,
+  RuntimeSession,
+  RuntimeSessionCreateOptions,
+  RuntimeSessionStore,
+  RuntimeTurnInput,
+  RuntimeTurnResult,
+  RuntimeTurnRunner,
   RuntimeMode,
 } from "./types.js";
 
@@ -26,19 +35,26 @@ export class AgentRuntime {
   readonly providerRegistry: ProviderRegistry;
   readonly toolRegistry: ToolRegistry;
   readonly sessionStore;
+  readonly runtimeSessionStore: RuntimeSessionStore;
+  readonly workflowEngine: WorkflowEngine;
   readonly permissionPolicy: PermissionPolicy;
   readonly eventLog: EventLog;
+  readonly turnRunner: RuntimeTurnRunner;
   private providerType: ProviderType;
   private model: string;
+  private provider?: LLMProvider;
 
   constructor(private readonly options: AgentRuntimeOptions) {
     this.providerRegistry = createProviderRegistry();
     this.toolRegistry = options.toolRegistry ?? createFullToolRegistry();
     this.sessionStore = options.sessionStore ?? createSessionStore({});
-    this.permissionPolicy = options.permissionPolicy ?? createPermissionPolicy();
+    this.runtimeSessionStore = options.runtimeSessionStore ?? createRuntimeSessionStore();
     this.eventLog =
       options.eventLog ??
       (options.eventLogPath ? createFileEventLog(options.eventLogPath) : createEventLog());
+    this.workflowEngine = options.workflowEngine ?? createWorkflowEngine(undefined, this.eventLog);
+    this.permissionPolicy = options.permissionPolicy ?? createPermissionPolicy();
+    this.turnRunner = options.turnRunner ?? createDefaultRuntimeTurnRunner();
     this.providerType = options.providerType;
     this.model =
       options.model ?? options.providerConfig?.model ?? getDefaultModel(options.providerType);
@@ -52,6 +68,7 @@ export class AgentRuntime {
         ...this.options.providerConfig,
         model: this.getModel(),
       }));
+    this.provider = provider;
 
     this.publishToGlobalBridge(provider);
 
@@ -74,6 +91,7 @@ export class AgentRuntime {
   ): void {
     this.providerType = providerType;
     this.model = model ?? getDefaultModel(providerType);
+    this.provider = provider;
     this.publishToGlobalBridge(provider);
     this.eventLog.record("provider.updated", {
       provider: this.providerType,
@@ -108,7 +126,90 @@ export class AgentRuntime {
     };
   }
 
-  assertToolAllowed(mode: RuntimeMode, toolName: string): boolean {
+  createSession(options: RuntimeSessionCreateOptions = {}): RuntimeSession {
+    const session = this.runtimeSessionStore.create(options);
+    this.eventLog.record("session.created", {
+      sessionId: session.id,
+      mode: session.mode,
+      metadataKeys: Object.keys(session.metadata).sort(),
+    });
+    return session;
+  }
+
+  getSession(sessionId: string): RuntimeSession | undefined {
+    return this.runtimeSessionStore.get(sessionId);
+  }
+
+  listSessions(): RuntimeSession[] {
+    return this.runtimeSessionStore.list();
+  }
+
+  async runTurn(input: RuntimeTurnInput): Promise<RuntimeTurnResult> {
+    const provider = this.provider;
+    if (!provider) {
+      throw new Error("Runtime provider is not initialized.");
+    }
+
+    const session = input.sessionId
+      ? this.runtimeSessionStore.get(input.sessionId)
+      : this.createSession({ mode: input.mode, metadata: input.metadata });
+    if (!session) {
+      throw new Error(`Runtime session not found: ${input.sessionId}`);
+    }
+    const effectiveSession =
+      input.mode && input.mode !== session.mode ? { ...session, mode: input.mode } : session;
+
+    this.eventLog.record("turn.started", {
+      sessionId: effectiveSession.id,
+      provider: this.providerType,
+      model: this.getModel(),
+      mode: effectiveSession.mode,
+      runtimeApi: true,
+    });
+
+    try {
+      const result = await this.turnRunner.run(input, {
+        runtime: this,
+        session: effectiveSession,
+        provider,
+        toolRegistry: this.toolRegistry,
+        permissionPolicy: this.permissionPolicy,
+        eventLog: this.eventLog,
+      });
+
+      const updatedSession = this.runtimeSessionStore.update({
+        ...effectiveSession,
+        messages: [
+          ...effectiveSession.messages,
+          { role: "user", content: input.content },
+          { role: "assistant", content: result.content },
+        ],
+      });
+
+      this.eventLog.record("session.updated", {
+        sessionId: updatedSession.id,
+        messages: updatedSession.messages.length,
+      });
+      this.eventLog.record("turn.completed", {
+        sessionId: updatedSession.id,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        model: result.model,
+        runtimeApi: true,
+      });
+
+      return { ...result, sessionId: updatedSession.id, mode: updatedSession.mode };
+    } catch (error) {
+      this.eventLog.record("turn.failed", {
+        sessionId: effectiveSession.id,
+        error: error instanceof Error ? error.message : String(error),
+        runtimeApi: true,
+      });
+      throw error;
+    }
+  }
+
+  assertToolAllowed(mode: RuntimeMode, toolName: string, input?: Record<string, unknown>): boolean {
     const tool = this.toolRegistry.get(toolName);
     if (!tool) {
       this.eventLog.record("tool.blocked", {
@@ -119,7 +220,10 @@ export class AgentRuntime {
       return false;
     }
 
-    const decision = this.permissionPolicy.canExecuteTool(mode, tool);
+    const decision =
+      input && this.permissionPolicy.canExecuteToolInput
+        ? this.permissionPolicy.canExecuteToolInput(mode, tool, input)
+        : this.permissionPolicy.canExecuteTool(mode, tool);
     this.eventLog.record(decision.allowed ? "tool.allowed" : "tool.blocked", {
       mode,
       tool: toolName,

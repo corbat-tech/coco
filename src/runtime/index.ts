@@ -1,7 +1,10 @@
 export { AgentRuntime, createAgentRuntime } from "./agent-runtime.js";
+export { createDefaultRuntimeTurnRunner, DefaultRuntimeTurnRunner } from "./default-turn-runner.js";
 export { createEventLog, createFileEventLog, FileEventLog, InMemoryEventLog } from "./event-log.js";
+export { createRuntimeHttpServer, type RuntimeHttpServerOptions } from "./http-server.js";
 export { createPermissionPolicy, DefaultPermissionPolicy } from "./permission-policy.js";
 export { createProviderRegistry, ProviderRegistry } from "./provider-registry.js";
+export { createRuntimeSessionStore, InMemoryRuntimeSessionStore } from "./runtime-session-store.js";
 export { createMcpToolPolicy } from "./extension-manifests.js";
 export {
   createWorkflowCatalog,
@@ -14,6 +17,15 @@ export {
   type WorkflowRisk,
   type WorkflowStepDefinition,
 } from "./workflow-registry.js";
+export {
+  createWorkflowEngine,
+  WorkflowEngine,
+  type WorkflowHandler,
+  type WorkflowRunContext,
+  type WorkflowRunInput,
+  type WorkflowRunResult,
+  type WorkflowRunStatus,
+} from "./workflow-engine.js";
 export type {
   AgentSurface,
   ExtensionRisk,
@@ -33,4 +45,11 @@ export type {
   RuntimeEvent,
   RuntimeEventType,
   RuntimeMode,
+  RuntimeSession,
+  RuntimeSessionCreateOptions,
+  RuntimeSessionStore,
+  RuntimeTurnContext,
+  RuntimeTurnInput,
+  RuntimeTurnResult,
+  RuntimeTurnRunner,
 } from "./types.js";
