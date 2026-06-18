@@ -34,6 +34,7 @@ Best fit:
 - Native tool use: files, git, shell, search/web, review, diff, build/test, MCP servers.
 - Multi-provider support (API, subscription, and local models).
 - Session-oriented REPL with slash commands, context compaction, and resumable workflows.
+- Reusable runtime foundation for building future Coco-powered agents beyond the CLI.
 - Reliability features for long sessions: provider retry/circuit-breaker, robust tool-call parsing, and safer stream error handling.
 - Replay harness support to reproduce agent-loop behaviors from fixtures for regression testing.
 
@@ -154,6 +155,12 @@ Notes:
 For setup details and model matrix:
 
 - [Provider Guide](docs/guides/PROVIDERS.md)
+
+## Runtime Reuse
+
+Coco's CLI runs on a reusable agent runtime that wires providers, tools, permissions, sessions, event logs, and workflow metadata behind a stable internal boundary. This keeps the programming CLI as the main product while making the same foundation reusable for future client-specific agents.
+
+- [Runtime Architecture](docs/architecture/RUNTIME.md)
 
 ## Skills
 
