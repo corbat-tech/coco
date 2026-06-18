@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.37.0] - 2026-06-18
+
+### Added
+- **Reusable runtime APIs for embedded agents**
+  - Add session-first runtime APIs for creating sessions, running turns, streaming turns, executing guarded tools, and recording workflow runs.
+  - Add in-memory and file-backed runtime session stores for tests, local products, prototypes, and replay fixtures.
+  - Add a minimal HTTP adapter for local/prototype embedding surfaces.
+- **Runtime workflow execution**
+  - Add `WorkflowEngine` so reusable workflow definitions can be planned, executed by explicit handlers, and observed through runtime events.
+- **Web assistant embedding example**
+  - Add a Corbat-style web assistant example showing safe runtime embedding with explicit, narrow tool registries.
+
+### Changed
+- **Agent modes now live in the runtime layer**
+  - Move `ask`, `plan`, `build`, `debug`, `review`, and `architect` mode definitions into the runtime boundary.
+  - Keep the existing CLI import path as a compatibility re-export.
+- **Runtime is less coupled to the CLI**
+  - Remove direct runtime imports from `cli/repl` session storage while preserving legacy `sessionStore` passthrough compatibility.
+
+### Improved
+- **Safer defaults for embedders**
+  - Runtime-created sessions now default to `ask` mode instead of `build`.
+  - Runtime tool execution requires explicit confirmation for write-capable or destructive tools.
+  - Streaming turns record cancellation events and mark token usage as estimated when provider streaming usage is unavailable.
+- **Runtime documentation**
+  - Document runtime sessions, streaming, guarded tools, workflow execution, file-backed stores, HTTP prototype boundaries, and production safety guidance.
+
 ## [2.36.0] - 2026-06-18
 
 ### Added
@@ -1536,7 +1563,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.36.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.37.0...HEAD
+[2.37.0]: https://github.com/corbat-tech/coco/compare/v2.36.0...v2.37.0
 [2.36.0]: https://github.com/corbat-tech/coco/compare/v2.35.0...v2.36.0
 [2.35.0]: https://github.com/corbat-tech/coco/compare/v2.34.0...v2.35.0
 [2.34.0]: https://github.com/corbat-tech/coco/compare/v2.33.2...v2.34.0
