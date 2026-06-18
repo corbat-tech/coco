@@ -1,4 +1,4 @@
-import { getAgentMode, type AgentModeId } from "../cli/repl/modes.js";
+import { getAgentMode, type AgentModeId } from "./agent-modes.js";
 import type { ToolDefinition } from "../tools/registry.js";
 import type { PermissionDecision, PermissionPolicy, RuntimeMode } from "./types.js";
 

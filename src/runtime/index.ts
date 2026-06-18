@@ -1,4 +1,5 @@
 export { AgentRuntime, createAgentRuntime } from "./agent-runtime.js";
+export { AGENT_MODES, getAgentMode, isAgentMode, listAgentModes } from "./agent-modes.js";
 export { createDefaultRuntimeTurnRunner, DefaultRuntimeTurnRunner } from "./default-turn-runner.js";
 export { createEventLog, createFileEventLog, FileEventLog, InMemoryEventLog } from "./event-log.js";
 export { createRuntimeHttpServer, type RuntimeHttpServerOptions } from "./http-server.js";
@@ -31,6 +32,7 @@ export {
   type WorkflowRunResult,
   type WorkflowRunStatus,
 } from "./workflow-engine.js";
+export type { AgentModeDefinition, AgentModeId } from "./agent-modes.js";
 export type {
   AgentSurface,
   ExtensionRisk,

@@ -1,11 +1,11 @@
 import { setAgentProvider, setAgentToolRegistry } from "../agents/provider-bridge.js";
-import { listAgentModes } from "../cli/repl/modes.js";
 import { createSessionStore } from "../cli/repl/sessions/storage.js";
 import { getDefaultModel } from "../config/env.js";
 import type { ProviderType } from "../providers/index.js";
 import type { LLMProvider } from "../providers/types.js";
 import { createFullToolRegistry } from "../tools/index.js";
 import type { ToolRegistry } from "../tools/registry.js";
+import { listAgentModes } from "./agent-modes.js";
 import { createDefaultRuntimeTurnRunner } from "./default-turn-runner.js";
 import { createEventLog, createFileEventLog } from "./event-log.js";
 import { createPermissionPolicy } from "./permission-policy.js";

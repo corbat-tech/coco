@@ -1,10 +1,10 @@
-import type { AgentModeDefinition, AgentModeId } from "../cli/repl/modes.js";
 import type { SessionStore } from "../cli/repl/sessions/storage.js";
 import type { ProviderType } from "../providers/index.js";
 import type { ChatOptions, LLMProvider, Message, ProviderConfig } from "../providers/types.js";
 import type { ProviderRuntimeCapability } from "../providers/runtime-capabilities.js";
 import type { ToolDefinition, ToolRegistry } from "../tools/registry.js";
 import type { ThinkingMode } from "../providers/thinking.js";
+import type { AgentModeDefinition, AgentModeId } from "./agent-modes.js";
 import type { WorkflowEngine } from "./workflow-engine.js";
 
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "max";

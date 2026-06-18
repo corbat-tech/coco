@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { isAgentMode } from "../cli/repl/modes.js";
 import type { AgentRuntime } from "./agent-runtime.js";
+import { isAgentMode } from "./agent-modes.js";
 import type { RuntimeMode, RuntimeTurnInput } from "./types.js";
 
 export interface RuntimeHttpServerOptions {

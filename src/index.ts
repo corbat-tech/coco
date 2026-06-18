@@ -88,6 +88,7 @@ export type { LLMProvider, Message, ChatResponse, ChatOptions } from "./provider
 // Reusable agent runtime
 export {
   AgentRuntime,
+  AGENT_MODES,
   DefaultRuntimeTurnRunner,
   ProviderRegistry,
   InMemoryEventLog,
@@ -97,6 +98,9 @@ export {
   FileEventLog,
   createAgentRuntime,
   createDefaultRuntimeTurnRunner,
+  getAgentMode,
+  isAgentMode,
+  listAgentModes,
   createProviderRegistry,
   createEventLog,
   createFileRuntimeSessionStore,
@@ -114,6 +118,8 @@ export {
   WorkflowRegistry,
 } from "./runtime/index.js";
 export type {
+  AgentModeDefinition,
+  AgentModeId,
   AgentRuntimeOptions,
   AgentRuntimeSnapshot,
   EventLog,
