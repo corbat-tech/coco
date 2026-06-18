@@ -49,6 +49,13 @@ import { contextCommand } from "./context.js";
 import { bestOfNCommand } from "./best-of-n.js";
 import { doctorCommand } from "./doctor.js";
 import { thinkingCommand } from "./thinking.js";
+import { repoMapCommand } from "./repo-map.js";
+import { modeCommand } from "./mode.js";
+import { agentsCommand } from "./agents.js";
+import { architectCommand } from "./architect.js";
+import { buildFromPlanCommand } from "./build-from-plan.js";
+import { evalsCommand } from "./evals.js";
+import { statsCommand } from "./stats.js";
 import { renderError } from "../output/renderer.js";
 import { createDefaultRegistry } from "../skills/index.js";
 import type { SkillRegistry } from "../skills/index.js";
@@ -95,6 +102,13 @@ const commands: SlashCommand[] = [
   bestOfNCommand,
   doctorCommand,
   thinkingCommand,
+  repoMapCommand,
+  modeCommand,
+  agentsCommand,
+  architectCommand,
+  buildFromPlanCommand,
+  evalsCommand,
+  statsCommand,
 ];
 
 /**

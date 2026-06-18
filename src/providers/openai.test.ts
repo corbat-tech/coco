@@ -1192,3 +1192,63 @@ describe("responses temperature compatibility", () => {
     expect(req).not.toHaveProperty("temperature");
   });
 });
+
+describe("OpenAI-compatible provider compatibility", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("does not route GPT-5-like models through Responses API for aggregators", async () => {
+    mockCreate.mockResolvedValueOnce({
+      id: "chatcmpl_123",
+      model: "gpt-5.4",
+      choices: [{ finish_reason: "stop", message: { content: "ok" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider("openrouter", "OpenRouter");
+    await provider.initialize({ apiKey: "test", model: "gpt-5.4" });
+
+    await provider.chat([{ role: "user", content: "hi" }], { thinking: "medium" });
+
+    expect(mockCreate).toHaveBeenCalled();
+    expect(mockResponsesCreate).not.toHaveBeenCalled();
+    const req = mockCreate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(req.model).toBe("gpt-5.4");
+    expect(req.reasoning_effort).toBeUndefined();
+  });
+
+  it("omits reasoning_effort for GPT-5-like tool calls on OpenAI-compatible providers", async () => {
+    mockCreate.mockResolvedValueOnce({
+      id: "chatcmpl_123",
+      model: "gpt-5.4",
+      choices: [{ finish_reason: "stop", message: { content: "ok", tool_calls: [] } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider("groq", "Groq");
+    await provider.initialize({ apiKey: "test", model: "gpt-5.4" });
+
+    await provider.chatWithTools([{ role: "user", content: "hi" }], {
+      thinking: "high",
+      tools: [
+        {
+          name: "read_file",
+          description: "Read a file",
+          input_schema: {
+            type: "object",
+            properties: { path: { type: "string" } },
+            required: ["path"],
+          },
+        },
+      ],
+    });
+
+    expect(mockResponsesCreate).not.toHaveBeenCalled();
+    const req = mockCreate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(req.tools).toBeDefined();
+    expect(req.reasoning_effort).toBeUndefined();
+  });
+});

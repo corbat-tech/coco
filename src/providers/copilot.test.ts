@@ -235,6 +235,49 @@ describe("CopilotProvider", () => {
     });
   });
 
+  describe("tool calls", () => {
+    it("omits reasoning_effort for gpt-5.4 with tools on Chat Completions", async () => {
+      mockedGetValidCopilotToken.mockResolvedValue({
+        token: "tid=token",
+        baseUrl: "https://api.githubcopilot.com",
+        isNew: false,
+      });
+      await provider.initialize({ model: "gpt-5.4" });
+
+      mockCreate.mockResolvedValueOnce({
+        id: "chatcmpl-test",
+        model: "gpt-5.4",
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { content: "done", tool_calls: [] },
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 2 },
+      });
+
+      await provider.chatWithTools([{ role: "user", content: "test" }], {
+        thinking: "medium",
+        tools: [
+          {
+            name: "read_file",
+            description: "Read a file",
+            input_schema: {
+              type: "object",
+              properties: { path: { type: "string" } },
+              required: ["path"],
+            },
+          },
+        ],
+      });
+
+      const request = mockCreate.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(request.model).toBe("gpt-5.4");
+      expect(request.tools).toBeDefined();
+      expect(request.reasoning_effort).toBeUndefined();
+    });
+  });
+
   describe("extends OpenAIProvider", () => {
     it("should be an instance of CopilotProvider", () => {
       expect(provider).toBeInstanceOf(CopilotProvider);

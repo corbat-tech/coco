@@ -1025,3 +1025,43 @@ describe("system prompt extraction (regression: bug fix)", () => {
     expect(call?.system).toBe("From options — should win.");
   });
 });
+
+describe("Anthropic adaptive thinking compatibility", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockMessagesCreate.mockResolvedValue({
+      id: "msg_adaptive",
+      type: "message",
+      role: "assistant",
+      content: [{ type: "text", text: "ok" }],
+      model: "claude-opus-4-8",
+      stop_reason: "end_turn",
+      usage: { input_tokens: 5, output_tokens: 5 },
+    });
+  });
+
+  it("uses adaptive thinking and output_config effort for Claude 4.8", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key", model: "claude-opus-4-8" });
+
+    await provider.chat([{ role: "user", content: "analyze" }], { thinking: "medium" });
+
+    const call = mockMessagesCreate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.thinking).toEqual({ type: "adaptive" });
+    expect(call.output_config).toEqual({ effort: "medium" });
+    expect(JSON.stringify(call)).not.toContain("budget_tokens");
+  });
+
+  it("keeps fixed budget thinking for legacy Claude thinking models", async () => {
+    const { AnthropicProvider } = await import("./anthropic.js");
+    const provider = new AnthropicProvider();
+    await provider.initialize({ apiKey: "test-key", model: "claude-3-7-sonnet-20250219" });
+
+    await provider.chat([{ role: "user", content: "analyze" }], { thinking: "low" });
+
+    const call = mockMessagesCreate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.thinking).toEqual({ type: "enabled", budget_tokens: 2048 });
+    expect(call.output_config).toBeUndefined();
+  });
+});

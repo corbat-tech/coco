@@ -217,7 +217,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("anthropic");
 
-    expect(model).toBe("claude-opus-4-6");
+    expect(model).toBe("claude-sonnet-4-6");
   });
 
   it("should return custom OPENAI_MODEL if set", () => {
@@ -233,7 +233,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("openai");
 
-    expect(model).toBe("gpt-5.3-codex");
+    expect(model).toBe("gpt-5.5");
   });
 
   it("should return custom GEMINI_MODEL if set", () => {
@@ -289,7 +289,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("qwen");
 
-    expect(model).toBe("qwen-max");
+    expect(model).toBe("qwen-coder-plus");
   });
 
   it("should return default for unknown provider", () => {

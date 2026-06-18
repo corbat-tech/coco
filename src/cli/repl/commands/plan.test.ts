@@ -11,6 +11,7 @@ vi.mock("@clack/prompts", () => ({
     error: vi.fn(),
     message: vi.fn(),
   },
+  text: vi.fn(),
   confirm: vi.fn(),
   isCancel: vi.fn(),
   spinner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
@@ -120,6 +121,19 @@ describe("plan command", () => {
       await planCommand.execute(["approve"], session);
 
       expect(session.messages).toHaveLength(0); // no message injected
+    });
+  });
+
+  describe("/plan edit", () => {
+    it("should replace a pending plan with inline text", async () => {
+      const session = createMockSession({
+        planMode: true,
+        pendingPlan: "old plan",
+      });
+
+      await planCommand.execute(["edit", "new", "plan"], session);
+
+      expect(session.pendingPlan).toBe("new plan");
     });
   });
 

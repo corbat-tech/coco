@@ -27,14 +27,15 @@ import {
   ResponsesToolCallAssembler,
   parseToolCallArguments,
 } from "./tool-call-normalizer.js";
-import { mapToOpenAIEffort, mapToKimiExtraBody } from "./thinking.js";
+import { getThinkingCapability, mapToOpenAIEffort, mapToKimiExtraBody } from "./thinking.js";
 import type { ThinkingMode } from "./thinking.js";
 import { getTierConfig } from "./model-tier.js";
+import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
 /**
  * Default model - Updated February 2026
  */
-const DEFAULT_MODEL = "gpt-5.3-codex";
+const DEFAULT_MODEL = getCatalogDefaultModel("openai");
 
 /**
  * Context windows for models (Updated March 2026)
@@ -274,7 +275,35 @@ export class OpenAIProvider implements LLMProvider {
    * when their endpoint does not expose /v1/responses.
    */
   protected modelNeedsResponsesApi(model: string): boolean {
-    return needsResponsesApi(model);
+    return this.id === "openai" && needsResponsesApi(model);
+  }
+
+  /**
+   * Map thinking mode to Chat Completions reasoning_effort.
+   * Subclasses can override when an OpenAI-compatible endpoint exposes GPT-5
+   * models but cannot safely combine reasoning_effort with tool calls.
+   */
+  protected getChatCompletionsReasoningEffort(
+    model: string,
+    thinking: ThinkingMode | undefined,
+    _hasTools: boolean,
+  ): "low" | "medium" | "high" | undefined {
+    const capability = getThinkingCapability(this.id, model);
+    if (!capability.supported || !capability.kinds.includes("effort")) {
+      return undefined;
+    }
+    return mapToOpenAIEffort(thinking, model);
+  }
+
+  protected getResponsesReasoningEffort(
+    model: string,
+    thinking: ThinkingMode | undefined,
+  ): "low" | "medium" | "high" | undefined {
+    const capability = getThinkingCapability(this.id, model);
+    if (!capability.supported || !capability.kinds.includes("effort")) {
+      return undefined;
+    }
+    return mapToOpenAIEffort(thinking, model);
   }
 
   /**
@@ -312,7 +341,11 @@ export class OpenAIProvider implements LLMProvider {
         const supportsTemp = this.supportsTemperature(model);
 
         const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
-        const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
+        const reasoningEffort = this.getChatCompletionsReasoningEffort(
+          model,
+          options?.thinking,
+          false,
+        );
         const response = await this.client!.chat.completions.create({
           model,
           ...buildMaxTokensParam(model, maxTokens),
@@ -362,7 +395,11 @@ export class OpenAIProvider implements LLMProvider {
       try {
         const supportsTemp = this.supportsTemperature(model);
         const extraBody = this.getExtraBody(model, options?.thinking);
-        const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
+        const reasoningEffort = this.getChatCompletionsReasoningEffort(
+          model,
+          options?.thinking,
+          true,
+        );
 
         // Build request params
         const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
@@ -428,7 +465,11 @@ export class OpenAIProvider implements LLMProvider {
       const supportsTemp = this.supportsTemperature(model);
 
       const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
-      const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
+      const reasoningEffort = this.getChatCompletionsReasoningEffort(
+        model,
+        options?.thinking,
+        false,
+      );
       const stream = await this.client!.chat.completions.create({
         model,
         ...buildMaxTokensParam(model, maxTokens),
@@ -477,7 +518,11 @@ export class OpenAIProvider implements LLMProvider {
     try {
       const supportsTemp = this.supportsTemperature(model);
       const extraBody = this.getExtraBody(model, options?.thinking);
-      const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
+      const reasoningEffort = this.getChatCompletionsReasoningEffort(
+        model,
+        options?.thinking,
+        true,
+      );
 
       // Build request params
       const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
@@ -742,6 +787,11 @@ export class OpenAIProvider implements LLMProvider {
     // Try exact match first
     if (CONTEXT_WINDOWS[model]) {
       return CONTEXT_WINDOWS[model];
+    }
+
+    const catalogWindow = getCatalogContextWindow(this.id as "openai", model, 0);
+    if (catalogWindow > 0) {
+      return catalogWindow;
     }
 
     // Try partial match for local models
@@ -1127,7 +1177,7 @@ export class OpenAIProvider implements LLMProvider {
         const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
         const supportsTemp = this.supportsTemperature(model);
 
-        const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
+        const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
         const response = await this.client!.responses.create({
           model,
           input,
@@ -1176,7 +1226,7 @@ export class OpenAIProvider implements LLMProvider {
         );
         const supportsTemp = this.supportsTemperature(model);
 
-        const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
+        const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
         const response = await this.client!.responses.create({
           model,
           input,
@@ -1242,7 +1292,7 @@ export class OpenAIProvider implements LLMProvider {
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
       const supportsTemp = this.supportsTemperature(model);
 
-      const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
+      const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
       const stream = await this.client!.responses.create({
         model,
         input,
@@ -1322,7 +1372,7 @@ export class OpenAIProvider implements LLMProvider {
         limitedTools.length > 0 ? this.convertToolsForResponses(limitedTools) : undefined;
       const supportsTemp = this.supportsTemperature(model);
 
-      const reasoningEffort = mapToOpenAIEffort(options?.thinking, model);
+      const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
       const requestParams: Record<string, unknown> = {
         model,
         input,

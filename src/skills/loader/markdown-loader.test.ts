@@ -69,6 +69,9 @@ describe("loadMarkdownMetadata", () => {
     expect(meta!.allowedTools).toEqual(["Bash", "Read", "Edit"]);
     expect(meta!.argumentHint).toBe("[--verbose] <target>");
     expect(meta!.compatibility).toBe("Requires Node.js 22+");
+    expect(meta!.triggers).toEqual(["validate skill manifest", "unified skills"]);
+    expect(meta!.risk).toBe("read-only");
+    expect(meta!.supportedAgents).toEqual(["coco", "claude", "codex"]);
     expect(meta!.model).toBe("claude-sonnet-4-20250514");
     expect(meta!.context).toBe("fork");
   });

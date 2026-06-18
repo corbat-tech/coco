@@ -2,6 +2,31 @@
 
 ## Status Tracker
 
+### 2026-06-18 Implementation Update
+
+This roadmap has been partially implemented in `main` as an incremental compatibility upgrade. Claude compatibility files remain untouched; Coco-specific additions are layered through `AGENTS.md`, runtime metadata, and CLI commands.
+
+Implemented or hardened:
+- Provider runtime capability matrix derived from the catalog, including endpoint strategy, reasoning support, tool support, context window, source URL, and conservative restrictions.
+- `/provider probe [provider] [model] [--live]` for offline capability inspection and optional availability checks.
+- `/reasoning` alias for `/thinking`, plus model-change reasoning selection.
+- `repo_context` tool and `/repo-map` command with cached repo intelligence, ranked context, test awareness, import/export/symbol scoring, and `/context why|add|remove`.
+- First-class `/mode` command and read-only tool filtering for `ask`, `plan`, `review`, and `architect`.
+- `/agents` command exposing existing subagent roles and aliases such as `@researcher`, `@editor`, and `@provider-debugger`.
+- `/architect`, `/plan edit`, and `/build-from-plan` for an architect/editor/verifier handoff flow.
+- Offline replay/eval fixtures through `/evals run`.
+- MCP discoverability improvements: `/mcp search` and `/mcp test`.
+- Skill manifest fields: `triggers`, `risk`, and `supported-agents`; trigger-aware skill matching.
+- `/stats` session observability command.
+- `/best-of-n` no longer performs fake placeholder execution; it queues an explicit directive until real per-worktree agent execution is wired.
+
+Still intentionally incomplete:
+- Real Best-of-N execution from the REPL command with provider/tool registry injected per worktree.
+- GitHub review bot and task-to-PR automation.
+- Full event log persistence and replay across real provider sessions.
+- MCP install/marketplace flow.
+- Full unification/deprecation of the older `src/agents/executor.ts` path.
+
 | # | Feature | Phase | Status | Branch/PR |
 |---|---------|-------|--------|-----------|
 | 1.1 | Subagent Specialization System | 1 | ✅ DONE | work/codex-improvements |

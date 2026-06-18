@@ -35,6 +35,10 @@ import {
   getLastUsedModel,
   type AuthMethod,
 } from "../../../config/env.js";
+import {
+  getProviderRuntimeCapability,
+  probeProviderRuntimeCapability,
+} from "../../../providers/runtime-capabilities.js";
 
 interface ProviderOption {
   id: string;
@@ -172,6 +176,11 @@ export const providerCommand: SlashCommand = {
     const currentProvider = session.config.provider.type as ProviderType;
     const providerDef = getProviderDefinition(currentProvider);
 
+    if (args[0]?.toLowerCase() === "probe") {
+      await runProviderProbe(args.slice(1), session);
+      return false;
+    }
+
     if (args.length === 0) {
       // Interactive provider selection
       console.log(chalk.cyan("\n═══ Provider Selection ═══"));
@@ -228,6 +237,82 @@ export const providerCommand: SlashCommand = {
     return await switchProvider(newProvider, session);
   },
 };
+
+function parseProbeArgs(
+  args: string[],
+  session: ReplSession,
+): { provider: ProviderType; model: string; live: boolean } {
+  const live = args.includes("--live") || args.includes("--check");
+  const positional = args.filter((arg) => arg !== "--live" && arg !== "--check");
+  const allProviders = getAllProviders();
+
+  const maybeProvider = positional[0]?.toLowerCase() as ProviderType | undefined;
+  const provider =
+    maybeProvider && allProviders.some((p) => p.id === maybeProvider)
+      ? maybeProvider
+      : (session.config.provider.type as ProviderType);
+  const model =
+    provider === maybeProvider
+      ? (positional[1] ?? session.config.provider.model)
+      : (positional[0] ?? session.config.provider.model);
+
+  return { provider, model, live };
+}
+
+function formatBool(value: boolean): string {
+  return value ? chalk.green("yes") : chalk.dim("no");
+}
+
+async function runProviderProbe(args: string[], session: ReplSession): Promise<void> {
+  const { provider, model, live } = parseProbeArgs(args, session);
+  const capability = live
+    ? await probeProviderRuntimeCapability(provider, model, async () => {
+        const runtimeProvider = await createProvider(provider, { model });
+        return await runtimeProvider.isAvailable();
+      })
+    : {
+        ...getProviderRuntimeCapability(provider, model),
+        available: "not-checked" as const,
+        checkedAt: new Date().toISOString(),
+      };
+
+  const providerInfo = getProviderDefinition(provider);
+  console.log(chalk.cyan.bold("\n═══ Provider Probe ═══\n"));
+  console.log(`  Provider: ${providerInfo.emoji} ${chalk.cyan(provider)}`);
+  console.log(`  Model: ${chalk.cyan(model)}`);
+  console.log(`  Status: ${capability.status}`);
+  console.log(`  Endpoint: ${chalk.yellow(capability.endpoint)}`);
+  console.log(`  Available: ${String(capability.available)}`);
+  console.log(`  Context: ${capability.contextWindow.toLocaleString()} tokens`);
+  if (capability.maxOutputTokens) {
+    console.log(`  Max output: ${capability.maxOutputTokens.toLocaleString()} tokens`);
+  }
+  console.log(`  Streaming: ${formatBool(capability.supportsStreaming)}`);
+  console.log(`  Tools: ${formatBool(capability.supportsToolUse)}`);
+  console.log(`  Vision: ${formatBool(capability.supportsVision)}`);
+  console.log(
+    `  Reasoning: ${formatBool(capability.supportsReasoning)} ` +
+      chalk.dim(capability.reasoningKinds.join(", ") || "none"),
+  );
+
+  if (capability.sourceUrl) {
+    console.log(`  Source: ${chalk.dim(capability.sourceUrl)}`);
+  }
+
+  if (capability.restrictions.length > 0) {
+    console.log(chalk.yellow("\n  Restrictions:"));
+    for (const restriction of capability.restrictions) {
+      console.log(chalk.dim(`  - ${restriction}`));
+    }
+  }
+
+  if ("error" in capability && capability.error) {
+    console.log(chalk.red(`\n  Error: ${capability.error}`));
+  }
+
+  console.log(chalk.dim(`\n  Checked: ${capability.checkedAt}`));
+  console.log(chalk.dim("  Use /provider probe --live to also check credentials/connectivity.\n"));
+}
 
 /**
  * Switch to a new provider, handling API key setup if needed

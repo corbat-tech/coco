@@ -87,6 +87,9 @@ export async function loadMarkdownMetadata(
       allowedTools: parseAllowedTools(fm["allowed-tools"]),
       argumentHint: fm["argument-hint"],
       compatibility: fm.compatibility,
+      triggers: parseStringList(fm.triggers),
+      risk: fm.risk,
+      supportedAgents: parseStringList(fm["supported-agents"]) as SkillMetadata["supportedAgents"],
       model: fm.model,
       context: fm.context,
     };
@@ -165,6 +168,12 @@ function parseAllowedTools(tools?: string | string[]): string[] | undefined {
   if (Array.isArray(tools)) return tools;
   // Parse space/comma-separated: "Bash, Read, Write" or "Bash Read Write"
   return tools.split(/[,\s]+/).filter(Boolean);
+}
+
+function parseStringList(value?: string | string[]): string[] | undefined {
+  if (!value) return undefined;
+  if (Array.isArray(value)) return value;
+  return value.split(/[,\s]+/).filter(Boolean);
 }
 
 /**

@@ -253,11 +253,11 @@ describe("CodexProvider", () => {
   });
 
   describe("getContextWindow", () => {
-    it("should return 200000 for gpt-5.2-codex (default)", async () => {
+    it("should return catalog context window for the default model", async () => {
       const { CodexProvider } = await import("./codex.js");
       const provider = new CodexProvider();
 
-      expect(provider.getContextWindow()).toBe(200000);
+      expect(provider.getContextWindow()).toBe(1000000);
     });
 
     it("should return 200000 for gpt-5-codex", async () => {
@@ -369,13 +369,13 @@ describe("CodexProvider", () => {
       expect(response.stopReason).toBe("end_turn");
     });
 
-    it("should use default model gpt-5.3-codex", async () => {
+    it("should use default model from catalog", async () => {
       const provider = await initProvider();
       mockSuccessfulChatResponse("Hi");
 
       const response = await provider.chat([{ role: "user", content: "Hello" }]);
 
-      expect(response.model).toBe("gpt-5.3-codex");
+      expect(response.model).toBe("gpt-5.5");
     });
 
     it("should use model from options", async () => {

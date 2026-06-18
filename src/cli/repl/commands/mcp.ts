@@ -7,7 +7,9 @@
  *   /mcp          — list all configured servers (alias for /mcp list)
  *   /mcp list     — list all configured servers with transport and status
  *   /mcp status   — show connected servers with tool count
+ *   /mcp search <query> — search configured servers by name/description
  *   /mcp health [name]  — run health check on one or all servers
+ *   /mcp test [name]    — alias for health
  *   /mcp restart <name> — restart a specific server
  */
 
@@ -74,6 +76,39 @@ async function listServers(session: ReplSession): Promise<void> {
   }
 
   p.outro(`${servers.length} server(s) configured`);
+}
+
+async function searchServers(session: ReplSession, query: string): Promise<void> {
+  const registry = new MCPRegistryImpl();
+  await registry.load();
+  const servers = mergeMCPConfigs(
+    registry.listServers(),
+    await loadMCPServersFromCOCOConfig(),
+    await loadProjectMCPFile(session.projectPath),
+  );
+  const normalized = query.toLowerCase();
+  const matches = servers.filter(
+    (server) =>
+      server.name.toLowerCase().includes(normalized) ||
+      server.description?.toLowerCase().includes(normalized) ||
+      server.transport.toLowerCase().includes(normalized),
+  );
+
+  p.intro(`MCP Search: ${query}`);
+  if (matches.length === 0) {
+    p.log.info("No configured MCP servers matched.");
+    p.outro("Done");
+    return;
+  }
+
+  for (const server of matches) {
+    const enabled = server.enabled !== false ? chalk.green("enabled") : chalk.dim("disabled");
+    p.log.message(`  ${chalk.bold(server.name)}  ${chalk.dim(server.transport)}  ${enabled}`);
+    if (server.description) {
+      p.log.message(chalk.dim(`    ${server.description}`));
+    }
+  }
+  p.outro(`${matches.length} match(es)`);
 }
 
 /**
@@ -190,8 +225,8 @@ async function restartServer(name: string): Promise<void> {
 export const mcpCommand: SlashCommand = {
   name: "mcp",
   aliases: [],
-  description: "Manage MCP servers (list, status, health, restart)",
-  usage: "/mcp [list|status|health [name]|restart <name>]",
+  description: "Manage MCP servers (list, status, search, health, test, restart)",
+  usage: "/mcp [list|status|search <query>|health [name]|test [name]|restart <name>]",
   execute: async (args: string[], session: ReplSession): Promise<boolean> => {
     const subcommand = args[0]?.toLowerCase() ?? "list";
 
@@ -205,7 +240,23 @@ export const mcpCommand: SlashCommand = {
           showStatus();
           break;
 
+        case "search": {
+          const query = args.slice(1).join(" ").trim();
+          if (!query) {
+            p.log.error("Usage: /mcp search <query>");
+            break;
+          }
+          await searchServers(session, query);
+          break;
+        }
+
         case "health": {
+          const serverName = args[1];
+          await runHealthCheck(serverName);
+          break;
+        }
+
+        case "test": {
           const serverName = args[1];
           await runHealthCheck(serverName);
           break;
@@ -223,7 +274,11 @@ export const mcpCommand: SlashCommand = {
 
         default:
           p.log.error(`Unknown subcommand: ${subcommand}`);
-          p.log.message(chalk.dim("  Available: list, status, health [name], restart <name>"));
+          p.log.message(
+            chalk.dim(
+              "  Available: list, status, search <query>, health [name], test [name], restart <name>",
+            ),
+          );
           break;
       }
     } catch (error) {

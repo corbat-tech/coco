@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { LLMProvider } from "../providers/types.js";
 import type { ToolRegistry } from "../tools/registry.js";
-import { AgentExecutor } from "./executor.js";
+import { AGENT_ROLES, AgentExecutor } from "./executor.js";
 import type { AgentDefinition, AgentTask } from "./executor.js";
 
 const mockProvider = {
@@ -513,5 +513,14 @@ describe("AgentExecutor", () => {
       expect(result.output).toBe("Oddly done.");
       expect(result.turns).toBe(1);
     });
+  });
+});
+
+describe("AGENT_ROLES", () => {
+  it("defines architect/editor split agents", () => {
+    expect(AGENT_ROLES["architect"]?.role).toBe("architect");
+    expect(AGENT_ROLES["architect"]?.allowedTools).toContain("create_agent_plan");
+    expect(AGENT_ROLES["editor"]?.role).toBe("editor");
+    expect(AGENT_ROLES["editor"]?.allowedTools).toContain("edit_file");
   });
 });

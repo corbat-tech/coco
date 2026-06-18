@@ -49,6 +49,7 @@ import {
   RepeatedOutputSuppressor,
   type TurnQualityMetrics,
 } from "./turn-quality.js";
+import { getAgentMode } from "./modes.js";
 
 /**
  * Options for executing an agent turn
@@ -114,7 +115,9 @@ export async function executeAgentTurn(
   let observedLargeOutputChars = 0;
   const repeatedOutputSuppressor = new RepeatedOutputSuppressor();
   const recoveryV2Enabled = session.config.agent.recoveryV2 === true;
-  const strictPlanModeEnabled = session.planMode && session.config.agent.planModeStrict === true;
+  const activeMode = session.agentMode ? getAgentMode(session.agentMode) : undefined;
+  const readOnlyModeEnabled = session.planMode === true || activeMode?.readOnly === true;
+  const strictPlanModeEnabled = readOnlyModeEnabled && session.config.agent.planModeStrict === true;
   const outputOffloadObservationEnabled = session.config.agent.outputOffload === true;
 
   const buildQualityMetrics = (): TurnQualityMetrics =>
@@ -146,7 +149,7 @@ export async function executeAgentTurn(
   // Get tool definitions for LLM (cast to provider's ToolDefinition type)
   // In plan mode, restrict to read-only tools only
   const allTools = toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
-  const tools = session.planMode
+  const tools = readOnlyModeEnabled
     ? strictPlanModeEnabled
       ? filterStrictPlanModeTools(allTools)
       : filterReadOnlyTools(allTools)
@@ -1389,6 +1392,12 @@ const PLAN_MODE_ALLOWED_TOOLS = new Set([
   "find_in_file",
   "semantic_search",
   "codebase_map",
+  "repo_context",
+  "lsp_status",
+  "lsp_document_symbols",
+  "lsp_workspace_symbols",
+  "lsp_definition",
+  "lsp_references",
   // Git read-only
   "git_status",
   "git_log",
@@ -1414,6 +1423,12 @@ const STRICT_PLAN_MODE_ALLOWED_TOOLS = new Set([
   "find_in_file",
   "semantic_search",
   "codebase_map",
+  "repo_context",
+  "lsp_status",
+  "lsp_document_symbols",
+  "lsp_workspace_symbols",
+  "lsp_definition",
+  "lsp_references",
   "git_status",
   "git_log",
   "git_diff",

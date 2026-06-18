@@ -12,8 +12,14 @@ import { truncate } from "../../../utils/strings.js";
 import type { SlashCommand, ReplSession } from "../types.js";
 import { getProviderDefinition, getAllProviders } from "../providers-config.js";
 import type { ProviderType } from "../../../providers/index.js";
-import { getBaseUrl, saveProviderPreference } from "../../../config/env.js";
-import { getThinkingCapability, resolveDefaultThinking } from "../../../providers/thinking.js";
+import { getBaseUrl, saveProviderPreference, saveThinkingPreference } from "../../../config/env.js";
+import {
+  formatThinkingMode,
+  getThinkingCapability,
+  resolveDefaultThinking,
+} from "../../../providers/thinking.js";
+import type { ThinkingMode } from "../../../providers/thinking.js";
+import { selectThinkingInteractively } from "./thinking.js";
 
 /**
  * Model item for interactive selection
@@ -358,6 +364,36 @@ function reconcileThinkingAfterModelChange(session: ReplSession, newModel: strin
   }
 }
 
+async function promptThinkingForInteractiveModelChange(
+  session: ReplSession,
+  provider: ProviderType,
+  model: string,
+): Promise<void> {
+  const cap = getThinkingCapability(provider, model);
+  if (!cap.supported) return;
+
+  const currentMode: ThinkingMode = session.config.provider.thinking ?? "off";
+  const hasBudget = cap.kinds.includes("budget");
+
+  console.log(chalk.cyan("Reasoning / thinking"));
+  console.log(
+    chalk.dim(
+      `Current: ${formatThinkingMode(currentMode)}  ·  Enter keeps selection  ·  /thinking changes it later\n`,
+    ),
+  );
+
+  const selected = await selectThinkingInteractively(cap.levels, currentMode, hasBudget);
+  if (selected === null) {
+    console.log(chalk.dim("  Keeping current thinking setting\n"));
+    return;
+  }
+
+  session.config.provider.thinking = selected === "off" ? undefined : selected;
+  await saveThinkingPreference(provider, selected);
+
+  console.log(chalk.green(`✓ Thinking: ${formatThinkingMode(selected)}\n`));
+}
+
 export const modelCommand: SlashCommand = {
   name: "model",
   aliases: ["m"],
@@ -421,6 +457,7 @@ export const modelCommand: SlashCommand = {
 
       // Save preference for next session
       await persistModelPreference(currentProvider, selectedModel);
+      await promptThinkingForInteractiveModelChange(session, currentProvider, selectedModel);
 
       const modelInfo = providerDef.models.find((m) => m.id === selectedModel);
       console.log(chalk.green(`✓ Switched to ${modelInfo?.name ?? selectedModel}\n`));

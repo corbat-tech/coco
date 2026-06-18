@@ -217,6 +217,31 @@ export {
   type ExportInfo,
 } from "./code-analyzer.js";
 
+// Optional LSP-style navigation tools
+export {
+  lspStatusTool,
+  lspDocumentSymbolsTool,
+  lspWorkspaceSymbolsTool,
+  lspDefinitionTool,
+  lspReferencesTool,
+  lspTools,
+  type LspStatusOutput,
+  type LspSymbol,
+  type LspReference,
+} from "./lsp.js";
+
+// Repo intelligence tools
+export {
+  repoContextTool,
+  repoIntelligenceTools,
+  getRepoContext,
+  type RankedContextItem,
+  type RepoContextRequest,
+  type RepoContextResult,
+  type RepoGraphNode,
+  type RepoIntelligenceGraph,
+} from "./repo-intelligence.js";
+
 // Agent coordinator tools
 export {
   createAgentPlanTool,
@@ -315,6 +340,8 @@ import { gitSimpleTools } from "./git-simple.js";
 import { simpleAgentTools } from "./simple-agent.js";
 import { astValidatorTools } from "./ast-validator.js";
 import { codeAnalyzerTools } from "./code-analyzer.js";
+import { lspTools } from "./lsp.js";
+import { repoIntelligenceTools } from "./repo-intelligence.js";
 import { agentCoordinatorTools } from "./agent-coordinator.js";
 import { smartSuggestionsTools } from "./smart-suggestions.js";
 import { contextEnhancerTools } from "./context-enhancer.js";
@@ -351,6 +378,8 @@ export function registerAllTools(registry: ToolRegistry): void {
     ...databaseTools,
     ...astValidatorTools,
     ...codeAnalyzerTools,
+    ...lspTools,
+    ...repoIntelligenceTools,
     ...agentCoordinatorTools,
     ...smartSuggestionsTools,
     ...contextEnhancerTools,

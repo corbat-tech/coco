@@ -24,6 +24,9 @@ const DESC_WEIGHT = 1.5;
 /** Weight for tag matches */
 const TAG_WEIGHT = 2.0;
 
+/** Weight for explicit trigger matches */
+const TRIGGER_WEIGHT = 2.5;
+
 /** Bonus score when skill globs match active files */
 const GLOB_BOOST = 0.3;
 
@@ -180,9 +183,21 @@ function scoreSkill(
     }
   }
 
+  if (skill.triggers && skill.triggers.length > 0) {
+    const triggerTokens = skill.triggers.flatMap((trigger) => tokenize(trigger));
+    const triggerScore = tokenOverlap(queryTokens, triggerTokens);
+    if (triggerScore > 0) {
+      totalScore += triggerScore * TRIGGER_WEIGHT;
+      reasons.push(`trigger match (${(triggerScore * 100).toFixed(0)}%)`);
+    }
+  }
+
   // Normalize: compute maxPossible dynamically so tag-less skills aren't penalized
   const maxPossible =
-    NAME_WEIGHT + DESC_WEIGHT + (skill.tags && skill.tags.length > 0 ? TAG_WEIGHT : 0);
+    NAME_WEIGHT +
+    DESC_WEIGHT +
+    (skill.tags && skill.tags.length > 0 ? TAG_WEIGHT : 0) +
+    (skill.triggers && skill.triggers.length > 0 ? TRIGGER_WEIGHT : 0);
   let normalized = totalScore / maxPossible;
 
   // Glob-aware boosting: if skill has globs and any active file matches, boost score

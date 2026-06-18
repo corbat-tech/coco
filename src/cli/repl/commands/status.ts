@@ -11,6 +11,7 @@ import type { SlashCommand, ReplSession } from "../types.js";
 import { getStateManager, formatStateStatus, getStateSummary } from "../state/index.js";
 import { createTrustStore } from "../trust-store.js";
 import { formatThinkingMode, getThinkingCapability } from "../../../providers/thinking.js";
+import { getProviderRuntimeCapability } from "../../../providers/runtime-capabilities.js";
 
 /**
  * Get git status
@@ -181,6 +182,17 @@ export const statusCommand: SlashCommand = {
     p.log.step("Session");
     p.log.message(`  📁 ${session.projectPath}`);
     p.log.message(`  🤖 ${session.config.provider.type} / ${session.config.provider.model}`);
+    p.log.message(`  🧭 mode: ${session.agentMode ?? (session.planMode ? "plan" : "build")}`);
+
+    const runtime = getProviderRuntimeCapability(
+      session.config.provider.type,
+      session.config.provider.model,
+    );
+    p.log.message(`  🔌 endpoint: ${runtime.endpoint}`);
+    p.log.message(
+      `  🧰 tools: ${runtime.supportsToolUse ? "yes" : "no"}  ` +
+        `streaming: ${runtime.supportsStreaming ? "yes" : "no"}`,
+    );
 
     const cap = getThinkingCapability(session.config.provider.type, session.config.provider.model);
     if (cap.supported) {

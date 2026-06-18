@@ -28,6 +28,7 @@ import { ProviderError } from "../utils/errors.js";
 import { getValidAccessToken } from "../auth/index.js";
 import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import { ResponsesToolCallAssembler, parseToolCallArguments } from "./tool-call-normalizer.js";
+import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
 /**
  * Codex API endpoint (ChatGPT backend)
@@ -39,7 +40,7 @@ const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses";
  * Note: ChatGPT subscription uses different models than the API
  * Updated March 2026
  */
-const DEFAULT_MODEL = "gpt-5.3-codex";
+const DEFAULT_MODEL = getCatalogDefaultModel("codex");
 
 /**
  * Context windows for Codex models (ChatGPT Plus/Pro)
@@ -169,7 +170,15 @@ export class CodexProvider implements LLMProvider {
    */
   getContextWindow(model?: string): number {
     const m = model ?? this.config.model ?? DEFAULT_MODEL;
-    return CONTEXT_WINDOWS[m] ?? 128000;
+    if (CONTEXT_WINDOWS[m]) {
+      return CONTEXT_WINDOWS[m];
+    }
+
+    const catalogWindow = getCatalogContextWindow("codex", m, 0);
+    if (catalogWindow > 0) {
+      return catalogWindow;
+    }
+    return 128000;
   }
 
   /**

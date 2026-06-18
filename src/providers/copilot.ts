@@ -22,9 +22,11 @@ import type {
   ChatWithToolsResponse,
   StreamChunk,
 } from "./types.js";
+import type { ThinkingMode } from "./thinking.js";
 import { ProviderError } from "../utils/errors.js";
 import { OpenAIProvider } from "./openai.js";
 import { getValidCopilotToken } from "../auth/copilot.js";
+import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
 /**
  * Context windows for models available via Copilot.
@@ -70,7 +72,7 @@ const CONTEXT_WINDOWS: Record<string, number> = {
 /**
  * Default model for Copilot
  */
-const DEFAULT_MODEL = "claude-sonnet-4.6";
+const DEFAULT_MODEL = getCatalogDefaultModel("copilot");
 
 function normalizeModel(model: string | undefined): string | undefined {
   if (typeof model !== "string") return undefined;
@@ -222,6 +224,22 @@ export class CopilotProvider extends OpenAIProvider {
     return false;
   }
 
+  /**
+   * Copilot's OpenAI-compatible endpoint currently routes through
+   * Chat Completions. For GPT-5.x models, combining function tools with
+   * reasoning_effort is rejected by the upstream API. Keep tools working by
+   * omitting reasoning_effort on tool calls instead of advertising a broken
+   * combination.
+   */
+  protected override getChatCompletionsReasoningEffort(
+    _model: string,
+    _thinking: ThinkingMode | undefined,
+    hasTools: boolean,
+  ): "low" | "medium" | "high" | undefined {
+    if (hasTools) return undefined;
+    return undefined;
+  }
+
   override countTokens(text: string): number {
     if (!text) return 0;
     return Math.ceil(text.length / 3.5);
@@ -232,6 +250,10 @@ export class CopilotProvider extends OpenAIProvider {
    */
   override getContextWindow(): number {
     const model = this.config.model ?? DEFAULT_MODEL;
+    const catalogWindow = getCatalogContextWindow("copilot", model, 0);
+    if (catalogWindow > 0) {
+      return catalogWindow;
+    }
     return CONTEXT_WINDOWS[model] ?? 128000;
   }
 
