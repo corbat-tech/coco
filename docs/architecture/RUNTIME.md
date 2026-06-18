@@ -34,9 +34,12 @@ the existing REPL confirmation and filtering path until the next migration phase
 Runtime consumers can use Coco without the interactive CLI:
 
 ```ts
+const runtimeSessionStore = createFileRuntimeSessionStore(".coco/runtime-sessions.json");
+
 const runtime = await createAgentRuntime({
   providerType: "openai",
   model: "gpt-5.4",
+  runtimeSessionStore,
 });
 
 const session = runtime.createSession({
@@ -70,6 +73,12 @@ Tools that can mutate state may return `requiresConfirmation`. The runtime
 does not treat the CLI UI as implicit approval: embedders must pass
 `confirmed: true` for those calls. Read-only modes still block write-capable
 inputs such as `run_linter` with `fix: true`.
+
+`createRuntimeSessionStore()` returns an in-memory store for tests and short
+processes. `createFileRuntimeSessionStore(path)` persists sessions to one JSON
+file for local products, prototypes, and replay fixtures. Hosted or multi-tenant
+products should provide their own `RuntimeSessionStore` backed by their database
+and tenant isolation model.
 
 For simple prototypes, `createRuntimeHttpServer(runtime)` exposes:
 

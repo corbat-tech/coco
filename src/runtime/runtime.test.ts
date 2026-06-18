@@ -12,6 +12,7 @@ import { createMcpToolPolicy } from "./extension-manifests.js";
 import { createRuntimeHttpServer } from "./http-server.js";
 import { createPermissionPolicy } from "./permission-policy.js";
 import { createProviderRegistry } from "./provider-registry.js";
+import { createFileRuntimeSessionStore } from "./runtime-session-store.js";
 import { createWorkflowEngine } from "./workflow-engine.js";
 import { createWorkflowCatalog } from "./workflow-registry.js";
 
@@ -342,6 +343,63 @@ describe("reusable agent runtime", () => {
     const raw = await readFile(eventLogPath, "utf-8");
     expect(raw.trim().split("\n")).toHaveLength(2);
     expect(log.list().map((event) => event.type)).toEqual(["runtime.initialized", "tool.blocked"]);
+  });
+
+  it("persists runtime sessions to a JSON file store", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "coco-runtime-sessions-"));
+    const filePath = join(dir, "sessions.json");
+    const store = createFileRuntimeSessionStore(filePath);
+
+    const created = store.create({
+      id: "rt_test",
+      mode: "ask",
+      metadata: { surface: "web", nested: { tenant: "corbat" } },
+      messages: [{ role: "user", content: "hello" }],
+    });
+    created.metadata["surface"] = "mutated";
+    (created.metadata["nested"] as Record<string, unknown>)["tenant"] = "mutated";
+    created.messages.push({ role: "assistant", content: "mutated" });
+
+    const reloaded = createFileRuntimeSessionStore(filePath);
+    const session = reloaded.get("rt_test");
+    expect(session).toMatchObject({
+      id: "rt_test",
+      mode: "ask",
+      metadata: { surface: "web", nested: { tenant: "corbat" } },
+    });
+    expect(session?.messages).toEqual([{ role: "user", content: "hello" }]);
+
+    reloaded.update({
+      ...session!,
+      messages: [...session!.messages, { role: "assistant", content: "hi" }],
+    });
+    expect(createFileRuntimeSessionStore(filePath).get("rt_test")?.messages).toHaveLength(2);
+
+    expect(reloaded.delete("rt_test")).toBe(true);
+    expect(createFileRuntimeSessionStore(filePath).get("rt_test")).toBeUndefined();
+  });
+
+  it("merges file-backed runtime session writes from multiple store instances", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "coco-runtime-sessions-"));
+    const filePath = join(dir, "sessions.json");
+    const first = createFileRuntimeSessionStore(filePath);
+    const second = createFileRuntimeSessionStore(filePath);
+
+    first.create({ id: "rt_first", mode: "ask" });
+    second.create({ id: "rt_second", mode: "review" });
+
+    const ids = createFileRuntimeSessionStore(filePath)
+      .list()
+      .map((session) => session.id)
+      .sort();
+    expect(ids).toEqual(["rt_first", "rt_second"]);
+
+    expect(first.delete("rt_first")).toBe(true);
+    expect(
+      createFileRuntimeSessionStore(filePath)
+        .list()
+        .map((session) => session.id),
+    ).toEqual(["rt_second"]);
   });
 
   it("falls back to in-memory events after file writes fail", async () => {

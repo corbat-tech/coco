@@ -4,7 +4,12 @@ export { createEventLog, createFileEventLog, FileEventLog, InMemoryEventLog } fr
 export { createRuntimeHttpServer, type RuntimeHttpServerOptions } from "./http-server.js";
 export { createPermissionPolicy, DefaultPermissionPolicy } from "./permission-policy.js";
 export { createProviderRegistry, ProviderRegistry } from "./provider-registry.js";
-export { createRuntimeSessionStore, InMemoryRuntimeSessionStore } from "./runtime-session-store.js";
+export {
+  createFileRuntimeSessionStore,
+  createRuntimeSessionStore,
+  FileRuntimeSessionStore,
+  InMemoryRuntimeSessionStore,
+} from "./runtime-session-store.js";
 export { createMcpToolPolicy } from "./extension-manifests.js";
 export {
   createWorkflowCatalog,

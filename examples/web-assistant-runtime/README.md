@@ -12,7 +12,7 @@ The important boundary is:
   package publishing stay out of the web assistant unless explicitly registered.
 
 ```ts
-import { createAgentRuntime } from "@corbat-tech/coco";
+import { createAgentRuntime, createFileRuntimeSessionStore } from "@corbat-tech/coco";
 import { createProvider } from "@corbat-tech/coco";
 
 const provider = await createProvider("openai", {
@@ -23,6 +23,7 @@ const runtime = await createAgentRuntime({
   providerType: "openai",
   model: "gpt-5.4",
   provider,
+  runtimeSessionStore: createFileRuntimeSessionStore(".coco/corbat-web-sessions.json"),
 });
 
 const session = runtime.createSession({
