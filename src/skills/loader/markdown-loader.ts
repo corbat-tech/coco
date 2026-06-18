@@ -7,7 +7,7 @@
  * - Optional references/, scripts/, templates/ subdirectories
  */
 
-import matter from "gray-matter";
+import { parse as parseYaml } from "yaml";
 import type { SkillMetadata, MarkdownSkillContent, SkillScope } from "../types.js";
 import { SkillFrontmatterSchema, resolveCategory } from "../types.js";
 import { getLogger } from "../../utils/logger.js";
@@ -41,7 +41,7 @@ export async function loadMarkdownMetadata(
   try {
     const skillPath = path.join(skillDir, SKILL_FILENAME);
     const raw = await fs.readFile(skillPath, "utf-8");
-    const { data } = matter(raw);
+    const { data } = parseSkillMarkdown(raw);
 
     const parsed = SkillFrontmatterSchema.safeParse(data);
     if (!parsed.success) {
@@ -112,7 +112,7 @@ export async function loadMarkdownContent(skillDir: string): Promise<MarkdownSki
   try {
     const skillPath = path.join(skillDir, SKILL_FILENAME);
     const raw = await fs.readFile(skillPath, "utf-8");
-    const { content } = matter(raw);
+    const { content } = parseSkillMarkdown(raw);
 
     const references = await listSubdirectory(skillDir, "references");
     const scripts = await listSubdirectory(skillDir, "scripts");
@@ -137,6 +137,35 @@ export async function loadMarkdownContent(skillDir: string): Promise<MarkdownSki
 // ============================================================================
 // Helpers
 // ============================================================================
+
+interface ParsedSkillMarkdown {
+  data: unknown;
+  content: string;
+}
+
+function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
+  if (!raw.startsWith("---")) {
+    return { data: {}, content: raw };
+  }
+
+  const normalized = raw.replace(/\r\n/g, "\n");
+  const closeMarker = "\n---";
+  const closeIndex = normalized.indexOf(closeMarker, 3);
+
+  if (closeIndex === -1) {
+    return { data: {}, content: raw };
+  }
+
+  const frontmatter = normalized.slice(3, closeIndex).trim();
+  const afterMarkerStart = closeIndex + closeMarker.length;
+  const contentStart = normalized[afterMarkerStart] === "\n" ? afterMarkerStart + 1 : afterMarkerStart;
+  const parsed = frontmatter.length > 0 ? parseYaml(frontmatter) : {};
+
+  return {
+    data: parsed && typeof parsed === "object" ? parsed : {},
+    content: normalized.slice(contentStart),
+  };
+}
 
 /** List files in a skill subdirectory */
 async function listSubdirectory(skillDir: string, subdir: string): Promise<string[]> {
