@@ -8,6 +8,7 @@ import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { LLMProvider, StreamChunk, ToolCall } from "../../providers/types.js";
+import { createEventLog } from "../../runtime/event-log.js";
 
 /**
  * Create async iterable from generator
@@ -159,6 +160,9 @@ describe("executeAgentTurn", () => {
         },
       },
       trustedTools: new Set<string>(),
+      runtime: {
+        eventLog: createEventLog(),
+      } as ReplSession["runtime"],
     };
 
     // Setup default mocks
@@ -898,7 +902,26 @@ describe("executeAgentTurn", () => {
         expect.objectContaining({ name: "write_file" }),
         "User declined",
       );
+      expect(mockSession.runtime?.eventLog.list().map((event) => event.type)).toContain(
+        "tool.skipped",
+      );
       expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+    });
+
+    it("should record turn.failed for provider stream errors", async () => {
+      const { executeAgentTurn } = await import("./agent-loop.js");
+      const providerError = new Error("400 bad request");
+
+      (mockProvider.streamWithTools as Mock).mockImplementation(() => {
+        throw providerError;
+      });
+
+      const result = await executeAgentTurn(mockSession, "Hello", mockProvider, mockToolRegistry);
+
+      expect(result.error).toBe("400 bad request");
+      expect(mockSession.runtime?.eventLog.list().map((event) => event.type)).toContain(
+        "turn.failed",
+      );
     });
 
     it("should abort turn when user chooses abort", async () => {

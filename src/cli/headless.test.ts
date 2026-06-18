@@ -52,7 +52,7 @@ vi.mock("../tools/index.js", () => ({
     unregister: vi.fn(),
     get: vi.fn(),
     has: vi.fn(),
-    getAll: vi.fn(),
+    getAll: vi.fn(() => []),
     getByCategory: vi.fn(),
   })),
 }));

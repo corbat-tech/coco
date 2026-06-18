@@ -34,8 +34,7 @@ import {
   getUserFacingProviderError,
 } from "./error-resilience.js";
 import { createProvider, type ProviderType } from "../../providers/index.js";
-import { createFullToolRegistry } from "../../tools/index.js";
-import { setAgentProvider, setAgentToolRegistry } from "../../agents/provider-bridge.js";
+import { createAgentRuntime } from "../../runtime/index.js";
 import {
   isSlashCommand,
   parseSlashCommand,
@@ -56,6 +55,7 @@ import type { MCPServerManager, ServerConnection } from "../../mcp/lifecycle.js"
 import { VERSION } from "../../version.js";
 import { createTrustStore, type TrustLevel } from "./trust-store.js";
 import * as p from "@clack/prompts";
+import path from "node:path";
 import { createIntentRecognizer, type Intent } from "./intent/index.js";
 import { ensureConfiguredV2 } from "./onboarding-v2.js";
 import { getDefaultModel, getInternalProviderId } from "../../config/env.js";
@@ -198,10 +198,16 @@ export async function startRepl(
     loadFullPowerRiskPreference(),
   ]);
 
-  // Initialize tool registry
-  const toolRegistry = createFullToolRegistry();
-  setAgentProvider(provider);
-  setAgentToolRegistry(toolRegistry);
+  // Initialize reusable runtime facade and tool registry.
+  const runtime = await createAgentRuntime({
+    providerType: internalProviderId,
+    model: session.config.provider.model || undefined,
+    provider,
+    eventLogPath: path.join(projectPath, ".coco", "events", `${session.id}.jsonl`),
+    publishToGlobalBridge: true,
+  });
+  session.runtime = runtime;
+  const toolRegistry = runtime.toolRegistry;
 
   // Initialize unified skill registry (discover skills across all scopes)
   try {
@@ -450,7 +456,7 @@ export async function startRepl(
   let consecutiveErrors = 0;
   const AUTO_SWITCH_THRESHOLD = 2;
   const autoSwitchHistory = new Set<string>();
-  const enableAutoSwitchProvider = session.config.agent.enableAutoSwitchProvider === true;
+  const enableAutoSwitchProvider = session.config.agent?.enableAutoSwitchProvider === true;
 
   const buildReplayMessage = (message: string | MessageContent): string | null => {
     if (typeof message === "string") {
@@ -577,7 +583,8 @@ export async function startRepl(
         provider = nextProvider;
         session.config.provider.type = candidate;
         session.config.provider.model = getDefaultModel(candidate);
-        setAgentProvider(provider);
+        runtime.updateProvider(nextInternalId, session.config.provider.model, provider);
+        session.runtime = runtime;
         initializeContextManager(session, provider);
         llmClassifier = createLLMClassifier(provider);
         autoSwitchHistory.add(edge);
@@ -673,7 +680,12 @@ export async function startRepl(
               process.env["VERTEX_LOCATION"] ??
               process.env["GOOGLE_CLOUD_LOCATION"],
           });
-          setAgentProvider(provider);
+          runtime.updateProvider(
+            newInternalId,
+            session.config.provider.model || undefined,
+            provider,
+          );
+          session.runtime = runtime;
           initializeContextManager(session, provider);
         } catch (err) {
           // Provider re-init failed — revert session config to previous values so

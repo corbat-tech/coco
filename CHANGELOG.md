@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.36.0] - 2026-06-18
+
+### Added
+- **Reusable agent runtime foundation**
+  - Add `AgentRuntime` as the internal boundary for providers, tools, permissions, sessions, event logging, and runtime snapshots.
+  - Expose runtime building blocks from the SDK entrypoint so future Coco apps can reuse the same foundation without duplicating CLI logic.
+  - Add `ProviderRegistry`, `PermissionPolicy`, event logs, skill/recipe/MCP manifest types, and workflow catalog primitives.
+- **Runtime observability for REPL and headless sessions**
+  - Record turn, provider, tool, workflow, checkpoint, and failure events through a session event log.
+  - Wire the REPL and headless runner through the runtime while preserving the existing CLI behavior.
+  - Extend `/stats` with runtime event counts.
+- **Workflow and extension metadata primitives**
+  - Add reusable workflow definitions for architect/editor/verifier, provider diagnosis, PR review, best-of-N, and release flows.
+  - Add lightweight manifests for skills, recipes, and MCP tool policy metadata.
+
+### Improved
+- **Permission policy safety for reusable runtime consumers**
+  - Treat write-capable quality tools conservatively so read-only modes do not allow autofix-capable linters.
+  - Keep provider bridge publication opt-in for runtime consumers outside the CLI.
+- **Repository intelligence API surface**
+  - Export `repoContext()` as a reusable API alias for ranked repository context.
+
+### Documentation
+- **Runtime architecture documentation**
+  - Add `docs/architecture/RUNTIME.md` describing the reusable runtime boundary, CLI adapter relationship, observability, security, and product extension path.
+
 ## [2.35.0] - 2026-06-18
 
 ### Added
@@ -1510,7 +1536,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.35.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.36.0...HEAD
+[2.36.0]: https://github.com/corbat-tech/coco/compare/v2.35.0...v2.36.0
 [2.35.0]: https://github.com/corbat-tech/coco/compare/v2.34.0...v2.35.0
 [2.34.0]: https://github.com/corbat-tech/coco/compare/v2.33.2...v2.34.0
 [2.33.2]: https://github.com/corbat-tech/coco/compare/v2.33.1...v2.33.2

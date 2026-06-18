@@ -96,6 +96,12 @@ export async function executeAgentTurn(
 ): Promise<AgentTurnResult> {
   // Reset line buffer at start of each turn
   resetLineBuffer();
+  session.runtime?.eventLog.record("turn.started", {
+    sessionId: session.id,
+    provider: session.config.provider.type,
+    model: session.config.provider.model,
+    mode: session.agentMode ?? (session.planMode ? "plan" : "build"),
+  });
 
   // --- Snapshot for transactional rollback on abort ---
   // If the turn is aborted, we roll back session.messages to this length.
@@ -120,6 +126,16 @@ export async function executeAgentTurn(
   const strictPlanModeEnabled = readOnlyModeEnabled && session.config.agent.planModeStrict === true;
   const outputOffloadObservationEnabled = session.config.agent.outputOffload === true;
 
+  const recordToolSkipped = (toolCall: ToolCall, reason: string): void => {
+    session.runtime?.eventLog.record("tool.skipped", {
+      sessionId: session.id,
+      tool: toolCall.name,
+      toolCallId: toolCall.id,
+      reason,
+    });
+    options.onToolSkipped?.(toolCall, reason);
+  };
+
   const buildQualityMetrics = (): TurnQualityMetrics =>
     computeTurnQualityMetrics({
       iterationsUsed: iteration,
@@ -135,7 +151,7 @@ export async function executeAgentTurn(
   const abortReturn = (): AgentTurnResult => {
     // Rollback all session mutations from this turn
     session.messages.length = messageSnapshot;
-    return {
+    const result: AgentTurnResult = {
       content: finalContent,
       toolCalls: executedTools,
       usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
@@ -144,6 +160,14 @@ export async function executeAgentTurn(
       partialContent: finalContent || undefined,
       abortReason: "user_cancel",
     };
+    session.runtime?.eventLog.record("turn.completed", {
+      sessionId: session.id,
+      aborted: true,
+      toolsExecuted: executedTools.length,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+    });
+    return result;
   };
 
   // Get tool definitions for LLM (cast to provider's ToolDefinition type)
@@ -659,10 +683,23 @@ export async function executeAgentTurn(
         return abortReturn();
       }
       if (classification.kind === "provider_non_retryable") {
+        session.runtime?.eventLog.record("turn.failed", {
+          sessionId: session.id,
+          error:
+            classification.original instanceof Error
+              ? classification.original.message
+              : String(classification.original),
+          toolsExecuted: executedTools.length,
+        });
         throw classification.original;
       }
       hadTurnError = true;
       const errorMsg = classification.message;
+      session.runtime?.eventLog.record("turn.failed", {
+        sessionId: session.id,
+        error: errorMsg,
+        toolsExecuted: executedTools.length,
+      });
 
       // Add error as assistant message so LLM can see what happened
       addMessage(session, {
@@ -814,7 +851,7 @@ export async function executeAgentTurn(
           toolCall.id,
           `User explicitly requested MCP, but the model selected '${toolCall.name}' instead. Use an MCP tool (${availableMcpToolNames.join(", ")}) for this service access.`,
         );
-        options.onToolSkipped?.(toolCall, "Use MCP tool instead of generic fetch");
+        recordToolSkipped(toolCall, "Use MCP tool instead of generic fetch");
         continue;
       }
 
@@ -823,7 +860,7 @@ export async function executeAgentTurn(
           toolCall.id,
           "Use the native mcp_list_servers tool to inspect configured and connected MCP services in this session. Do not shell out to `coco mcp ...` for runtime MCP diagnosis unless the user explicitly asked for the CLI command.",
         );
-        options.onToolSkipped?.(toolCall, "Use mcp_list_servers instead of coco mcp CLI");
+        recordToolSkipped(toolCall, "Use mcp_list_servers instead of coco mcp CLI");
         continue;
       }
 
@@ -832,7 +869,7 @@ export async function executeAgentTurn(
           toolCall.id,
           `Blocked by strict plan mode: tool '${toolCall.name}' is not read-only`,
         );
-        options.onToolSkipped?.(toolCall, "Blocked by strict plan mode");
+        recordToolSkipped(toolCall, "Blocked by strict plan mode");
         continue;
       }
 
@@ -855,7 +892,7 @@ export async function executeAgentTurn(
           // Abort this turn instead of silently skipping critical tool actions.
           options.onAfterConfirmation?.();
           declinedTools.set(toolCall.id, "Confirmation failed");
-          options.onToolSkipped?.(
+          recordToolSkipped(
             toolCall,
             `Confirmation failed: ${confirmError instanceof Error ? confirmError.message : String(confirmError)}`,
           );
@@ -879,7 +916,7 @@ export async function executeAgentTurn(
           case "no":
             // Mark as declined, will be reported after parallel execution
             declinedTools.set(toolCall.id, "User declined");
-            options.onToolSkipped?.(toolCall, "User declined");
+            recordToolSkipped(toolCall, "User declined");
             continue;
 
           case "abort":
@@ -923,9 +960,27 @@ export async function executeAgentTurn(
           // Adjust index to account for declined tools for accurate progress
           const originalIndex = response.toolCalls.findIndex((tc) => tc.id === toolCall.id) + 1;
           options.onToolStart?.(toolCall, originalIndex, totalTools);
+          session.runtime?.eventLog.record("tool.started", {
+            sessionId: session.id,
+            tool: toolCall.name,
+            toolCallId: toolCall.id,
+            index: originalIndex,
+            total: totalTools,
+          });
         },
-        onToolEnd: options.onToolEnd,
-        onToolSkipped: options.onToolSkipped,
+        onToolEnd: (result) => {
+          session.runtime?.eventLog.record("tool.completed", {
+            sessionId: session.id,
+            tool: result.name,
+            toolCallId: result.id,
+            success: result.result.success,
+            duration: result.duration,
+          });
+          options.onToolEnd?.(result);
+        },
+        onToolSkipped: (toolCall, reason) => {
+          recordToolSkipped(toolCall, reason);
+        },
         signal: options.signal,
         onPathAccessDenied: async (dirPath: string) => {
           // Clear spinner before showing interactive prompt
@@ -1307,13 +1362,21 @@ export async function executeAgentTurn(
   // Signal completion
   options.onStream?.({ type: "done" });
 
-  return {
+  const result: AgentTurnResult = {
     content: finalContent,
     toolCalls: executedTools,
     usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
     quality: buildQualityMetrics(),
     aborted: false,
   };
+  session.runtime?.eventLog.record("turn.completed", {
+    sessionId: session.id,
+    aborted: false,
+    toolsExecuted: executedTools.length,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+  });
+  return result;
 }
 
 /**

@@ -11,6 +11,7 @@ import type { ProgressTracker } from "./progress/tracker.js";
 import type { MemoryContext } from "./memory/types.js";
 import type { ProjectStackContext } from "./context/stack-detector.js";
 import type { UnifiedSkillRegistry } from "../../skills/registry.js";
+import type { AgentRuntime } from "../../runtime/index.js";
 
 /**
  * REPL session state
@@ -41,6 +42,8 @@ export interface ReplSession {
   pendingPlan?: string | null;
   /** Active workflow mode controlling prompts, tool access, and UX hints */
   agentMode?: AgentModeId;
+  /** Reusable runtime facade for provider/tools/permissions/observability */
+  runtime?: AgentRuntime;
 }
 
 /**

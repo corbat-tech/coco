@@ -233,6 +233,7 @@ export {
 // Repo intelligence tools
 export {
   repoContextTool,
+  repoContext,
   repoIntelligenceTools,
   getRepoContext,
   type RankedContextItem,
