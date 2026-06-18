@@ -21,18 +21,16 @@ describe("MODEL_PRICING", () => {
   });
 
   it("should have pricing for OpenAI models", () => {
-    expect(MODEL_PRICING["gpt-5.4-codex"]).toBeDefined();
+    expect(MODEL_PRICING["gpt-5.5"]).toBeDefined();
     expect(MODEL_PRICING["gpt-4.1"]).toBeDefined();
-    expect(MODEL_PRICING["o4-mini"]).toBeDefined();
   });
 
   it("should have pricing for Gemini models", () => {
-    expect(MODEL_PRICING["gemini-2.5-pro"]).toBeDefined();
-    expect(MODEL_PRICING["gemini-3.1-pro-preview"]).toBeDefined();
+    expect(MODEL_PRICING["gemini-2.5-pro"]).toBeUndefined();
+    expect(MODEL_PRICING["gemini-3.1-pro-preview"]).toBeUndefined();
   });
 
   it("should have pricing for Kimi models", () => {
-    expect(MODEL_PRICING["moonshot-v1-8k"]).toBeDefined();
     expect(MODEL_PRICING["moonshot-v1-128k"]).toBeDefined();
   });
 
@@ -75,13 +73,13 @@ describe("estimateCost", () => {
     expect(result.totalCost).toBe(18);
   });
 
-  it("should calculate correct cost for GPT-5.4 Codex", () => {
-    // GPT-5.4 Codex: $2/1M input, $8/1M output
-    const result = estimateCost("gpt-5.4-codex", 1_000_000, 1_000_000);
+  it("should calculate correct cost for GPT-5.5", () => {
+    // GPT-5.5: $5/1M input, $30/1M output
+    const result = estimateCost("gpt-5.5", 1_000_000, 1_000_000);
 
-    expect(result.inputCost).toBe(2);
-    expect(result.outputCost).toBe(8);
-    expect(result.totalCost).toBe(10);
+    expect(result.inputCost).toBe(5);
+    expect(result.outputCost).toBe(30);
+    expect(result.totalCost).toBe(35);
   });
 
   it("should use default pricing for unknown model", () => {
@@ -153,8 +151,7 @@ describe("getModelPricing", () => {
 describe("hasKnownPricing", () => {
   it("should return true for known models", () => {
     expect(hasKnownPricing("claude-sonnet-4-20250514")).toBe(true);
-    expect(hasKnownPricing("gpt-5.4-codex")).toBe(true);
-    expect(hasKnownPricing("gemini-2.5-pro")).toBe(true);
+    expect(hasKnownPricing("gpt-5.5")).toBe(true);
   });
 
   it("should return false for unknown models", () => {
@@ -187,7 +184,6 @@ describe("listModelsWithPricing", () => {
     const modelNames = models.map((m) => m.model);
 
     expect(modelNames).toContain("claude-sonnet-4-20250514");
-    expect(modelNames).toContain("gpt-5.4-codex");
-    expect(modelNames).toContain("gemini-2.5-pro");
+    expect(modelNames).toContain("gpt-5.5");
   });
 });

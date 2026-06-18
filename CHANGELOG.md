@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.35.0] - 2026-06-18
+
+### Added
+- **Multiprovider model catalog and runtime capability probing**
+  - Coco now has a provider/model catalog for defaults, context windows, pricing, capabilities, model status, and documentation source URLs.
+  - `/provider probe [provider] [model] [--live]` shows endpoint strategy, tool support, reasoning support, context limits, availability, and provider-specific restrictions.
+- **First-class coding-agent workflows in the REPL**
+  - `/mode` exposes `ask`, `plan`, `build`, `debug`, `review`, and `architect` modes with read-only enforcement for planning/review/architecture flows.
+  - `/agents` exposes visible subagent routing with aliases such as `@researcher`, `@editor`, and `@provider-debugger`.
+  - `/architect`, `/plan edit`, and `/build-from-plan` add an architect/editor/verifier handoff flow.
+- **Repository intelligence and context selection**
+  - `repo_context` and `/repo-map` provide cached, ranked repository context using symbols, imports/exports, test awareness, and centrality signals.
+  - `/context why|add|remove` explains and guides context selection.
+- **Offline eval and observability commands**
+  - `/evals run` executes offline replay fixtures for agent-loop regression checks.
+  - `/stats` shows session/provider/model/mode/message statistics.
+- **LSP-style navigation tools**
+  - Added optional `lsp_status`, document/workspace symbol, definition, and references tools with static fallback behavior.
+- **Cross-agent instruction entry point**
+  - Added `AGENTS.md` as a lightweight index that redirects to `CLAUDE.md` without duplicating Claude-specific instructions.
+
+### Changed
+- **Best-of-N command no longer fakes execution**
+  - `/best-of-n` now queues an explicit directive and refuses to claim worktree attempts ran until real provider/tool execution is wired for each worktree.
+- **Skill manifest metadata**
+  - `SKILL.md` frontmatter now supports `triggers`, `risk`, and `supported-agents`, and skill matching uses explicit triggers.
+
+### Improved
+- **Reasoning compatibility across providers**
+  - OpenAI reasoning models use Responses API when required.
+  - Copilot keeps Chat Completions compatibility and avoids unsupported `reasoning_effort` plus tool-call combinations.
+  - Gemini, Anthropic, Codex, and OpenAI-compatible providers use more conservative capability checks.
+- **MCP discoverability**
+  - `/mcp search` filters configured servers by name, description, or transport.
+  - `/mcp test` aliases health checks for clearer operator workflows.
+
+### Documentation
+- **Provider and roadmap documentation refreshed**
+  - Provider docs now derive from the catalog and call out current compatibility behavior.
+  - `docs/CODEX_IMPROVEMENTS_PLAN.md` records what is implemented and what remains intentionally incomplete.
+
 ## [2.34.0] - 2026-04-24
 
 ### Added
@@ -1469,7 +1510,10 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.33.1...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.35.0...HEAD
+[2.35.0]: https://github.com/corbat-tech/coco/compare/v2.34.0...v2.35.0
+[2.34.0]: https://github.com/corbat-tech/coco/compare/v2.33.2...v2.34.0
+[2.33.2]: https://github.com/corbat-tech/coco/compare/v2.33.1...v2.33.2
 [2.33.1]: https://github.com/corbat-tech/coco/compare/v2.33.0...v2.33.1
 [2.33.0]: https://github.com/corbat-tech/coco/compare/v2.32.0...v2.33.0
 [2.32.0]: https://github.com/corbat-tech/coco/compare/v2.31.0...v2.32.0

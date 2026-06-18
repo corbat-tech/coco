@@ -84,6 +84,15 @@ export {
   type ResilientProviderConfig,
 } from "./resilient.js";
 
+export {
+  getProviderRuntimeCapability,
+  probeProviderRuntimeCapability,
+  type ModelCompatibilityStatus,
+  type ProviderEndpointStrategy,
+  type ProviderProbeResult,
+  type ProviderRuntimeCapability,
+} from "./runtime-capabilities.js";
+
 // Provider registry
 import { accessSync } from "node:fs";
 import { getCopilotCredentialsPath } from "../auth/copilot.js";

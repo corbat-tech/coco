@@ -624,6 +624,7 @@ export const codebaseMapTool: ToolDefinition<
     languages?: Array<"typescript" | "javascript" | "python" | "java" | "go" | "rust">;
     maxFiles?: number;
     depth?: "overview" | "detailed";
+    includeTests?: boolean;
   },
   CodebaseMapOutput
 > = defineTool({
@@ -656,8 +657,13 @@ Examples:
       .optional()
       .default("overview")
       .describe("Level of detail"),
+    includeTests: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe("Include test/spec files in the map"),
   }),
-  async execute({ path: rootPath, include, exclude, languages, maxFiles, depth }) {
+  async execute({ path: rootPath, include, exclude, languages, maxFiles, depth, includeTests }) {
     const startTime = performance.now();
 
     // Resolve absolute path
@@ -694,7 +700,12 @@ Examples:
     }
 
     // Find files
-    const excludePatterns = [...DEFAULT_EXCLUDES, ...(exclude ?? [])];
+    const excludePatterns = [
+      ...DEFAULT_EXCLUDES.filter((pattern) =>
+        includeTests ? !pattern.includes("*.test.") && !pattern.includes("*.spec.") : true,
+      ),
+      ...(exclude ?? []),
+    ];
     const files = await glob(pattern, {
       cwd: absPath,
       ignore: excludePatterns,

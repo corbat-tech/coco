@@ -92,6 +92,22 @@ describe("matchSkills", () => {
     expect(ids).toContain("testing-guide");
   });
 
+  it("should match by explicit triggers", () => {
+    const matches = matchSkills(
+      "please run the release checklist",
+      [
+        {
+          ...testSkills[3]!,
+          triggers: ["release checklist", "prepare release"],
+        },
+      ],
+      { minScore: 0.1 },
+    );
+
+    expect(matches[0]?.skill.id).toBe("ship");
+    expect(matches[0]?.reason).toContain("trigger match");
+  });
+
   it("should return empty for unrelated query", () => {
     const matches = matchSkills("quantum physics", testSkills, { minScore: 0.5 });
     expect(matches).toEqual([]);

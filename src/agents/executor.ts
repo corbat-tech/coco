@@ -14,7 +14,15 @@ import type {
 import type { ToolRegistry } from "../tools/registry.js";
 
 export interface AgentDefinition {
-  role: "researcher" | "coder" | "tester" | "reviewer" | "optimizer" | "planner";
+  role:
+    | "researcher"
+    | "architect"
+    | "editor"
+    | "coder"
+    | "tester"
+    | "reviewer"
+    | "optimizer"
+    | "planner";
   systemPrompt: string;
   allowedTools: string[];
   maxTurns: number;
@@ -209,6 +217,47 @@ export const AGENT_ROLES: Record<string, Omit<AgentDefinition, "maxTurns">> = {
 
 Use tools to search, read files, and analyze code structure.`,
     allowedTools: ["read_file", "grep", "find_in_file", "glob", "codebase_map"],
+  },
+
+  architect: {
+    role: "architect",
+    systemPrompt: `You are an architecture planning agent. Your role is to:
+- Understand the existing system before proposing changes
+- Design the smallest coherent implementation plan
+- Split work into editor-ready tasks with dependencies
+- Identify risks, migration concerns, and verification gates
+
+Use read-only tools for codebase mapping, symbol navigation, and planning.`,
+    allowedTools: [
+      "read_file",
+      "grep",
+      "glob",
+      "codebase_map",
+      "lsp_workspace_symbols",
+      "lsp_definition",
+      "create_agent_plan",
+    ],
+  },
+
+  editor: {
+    role: "editor",
+    systemPrompt: `You are an implementation editor agent. Your role is to:
+- Apply a provided architecture plan with minimal, focused edits
+- Preserve existing project conventions
+- Avoid broad refactors unless explicitly requested
+- Run targeted verification for the files you change
+
+Use tools to read, edit, validate, and test code.`,
+    allowedTools: [
+      "read_file",
+      "edit_file",
+      "write_file",
+      "grep",
+      "lsp_references",
+      "validateCode",
+      "run_tests",
+      "bash_exec",
+    ],
   },
 
   coder: {

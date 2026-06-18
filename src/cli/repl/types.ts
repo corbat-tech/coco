@@ -5,6 +5,7 @@
 import type { Message, ToolCall, StreamChunk } from "../../providers/types.js";
 import type { ProviderType } from "../../providers/index.js";
 import type { ThinkingMode } from "../../providers/thinking.js";
+import type { AgentModeId } from "./modes.js";
 import type { ContextManager } from "./context/manager.js";
 import type { ProgressTracker } from "./progress/tracker.js";
 import type { MemoryContext } from "./memory/types.js";
@@ -38,6 +39,8 @@ export interface ReplSession {
   planMode?: boolean;
   /** Pending plan text awaiting user approval */
   pendingPlan?: string | null;
+  /** Active workflow mode controlling prompts, tool access, and UX hints */
+  agentMode?: AgentModeId;
 }
 
 /**

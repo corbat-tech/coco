@@ -27,6 +27,10 @@ export type ThinkingMode = "off" | "auto" | "low" | "medium" | "high" | { budget
  */
 export type ThinkingKind = "effort" | "budget";
 
+export type AnthropicThinkingParam =
+  | { type: "enabled"; budget_tokens: number }
+  | { type: "adaptive" };
+
 export interface ThinkingCapability {
   /** True when the model supports configurable reasoning */
   supported: boolean;
@@ -71,6 +75,16 @@ function isAnthropicThinkingModel(model: string): boolean {
   );
 }
 
+function isAnthropicAdaptiveThinkingModel(model: string): boolean {
+  const m = model.toLowerCase();
+  return (
+    m.includes("claude-opus-4-8") ||
+    m.includes("claude-opus-4-7") ||
+    m.includes("claude-opus-4-6") ||
+    m.includes("claude-sonnet-4-6")
+  );
+}
+
 function isOpenAIReasoningModel(model: string): boolean {
   const m = model.toLowerCase();
   return (
@@ -87,9 +101,13 @@ function isGeminiThinkingModel(model: string): boolean {
   return (
     m.includes("gemini-2.5-pro") ||
     m.includes("gemini-2.5-flash") ||
-    (m.includes("gemini-3") && !m.includes("flash-lite")) ||
+    m.includes("gemini-3") ||
     m.includes("gemini-2.0-flash-thinking")
   );
+}
+
+function isGeminiLevelThinkingModel(model: string): boolean {
+  return model.toLowerCase().includes("gemini-3");
 }
 
 function isKimiThinkingModel(model: string): boolean {
@@ -114,6 +132,13 @@ const ANTHROPIC_CAPABILITY: ThinkingCapability = {
   defaultMode: "off",
 };
 
+const ANTHROPIC_ADAPTIVE_CAPABILITY: ThinkingCapability = {
+  supported: true,
+  kinds: ["effort"],
+  levels: ["off", "auto", "low", "medium", "high"],
+  defaultMode: "off",
+};
+
 const OPENAI_CAPABILITY: ThinkingCapability = {
   supported: true,
   kinds: ["effort"],
@@ -126,6 +151,13 @@ const GEMINI_CAPABILITY: ThinkingCapability = {
   kinds: ["budget"],
   levels: ["off", "auto", "low", "medium", "high"],
   budgetRange: { min: 0, max: 32000, default: GEMINI_BUDGET.medium },
+  defaultMode: "auto",
+};
+
+const GEMINI_LEVEL_CAPABILITY: ThinkingCapability = {
+  supported: true,
+  kinds: ["effort"],
+  levels: ["auto", "low", "medium", "high"],
   defaultMode: "auto",
 };
 
@@ -144,9 +176,20 @@ export function getThinkingCapability(provider: string, model: string): Thinking
   switch (provider) {
     case "anthropic":
     case "kimi-code":
+      if (isAnthropicAdaptiveThinkingModel(model)) return ANTHROPIC_ADAPTIVE_CAPABILITY;
       return isAnthropicThinkingModel(model) ? ANTHROPIC_CAPABILITY : UNSUPPORTED;
 
     case "openai":
+      return isOpenAIReasoningModel(model) ? OPENAI_CAPABILITY : UNSUPPORTED;
+
+    case "kimi":
+      return isKimiThinkingModel(model) ? KIMI_CAPABILITY : UNSUPPORTED;
+
+    case "gemini":
+    case "vertex":
+      if (isGeminiLevelThinkingModel(model)) return GEMINI_LEVEL_CAPABILITY;
+      return isGeminiThinkingModel(model) ? GEMINI_CAPABILITY : UNSUPPORTED;
+
     case "copilot":
     case "groq":
     case "openrouter":
@@ -155,15 +198,6 @@ export function getThinkingCapability(provider: string, model: string): Thinking
     case "together":
     case "huggingface":
     case "qwen":
-      return isOpenAIReasoningModel(model) ? OPENAI_CAPABILITY : UNSUPPORTED;
-
-    case "kimi":
-      return isKimiThinkingModel(model) ? KIMI_CAPABILITY : UNSUPPORTED;
-
-    case "gemini":
-    case "vertex":
-      return isGeminiThinkingModel(model) ? GEMINI_CAPABILITY : UNSUPPORTED;
-
     case "lmstudio":
     case "ollama":
     case "codex":
@@ -202,9 +236,13 @@ export function formatThinkingMode(mode: ThinkingMode): string {
 export function mapToAnthropic(
   mode: ThinkingMode | undefined,
   model: string,
-): { type: "enabled"; budget_tokens: number } | undefined {
+): AnthropicThinkingParam | undefined {
   if (!mode || mode === "off") return undefined;
   if (!isAnthropicThinkingModel(model)) return undefined;
+
+  if (isAnthropicAdaptiveThinkingModel(model)) {
+    return { type: "adaptive" };
+  }
 
   const cap = ANTHROPIC_CAPABILITY;
   const { min, max } = cap.budgetRange!;
@@ -223,6 +261,23 @@ export function mapToAnthropic(
   const budget = budgetMap[mode];
   if (budget === undefined) return undefined;
   return { type: "enabled", budget_tokens: budget };
+}
+
+export function mapToAnthropicEffort(
+  mode: ThinkingMode | undefined,
+  model: string,
+): "low" | "medium" | "high" | undefined {
+  if (!mode || mode === "off" || mode === "auto") return undefined;
+  if (!isAnthropicAdaptiveThinkingModel(model)) return undefined;
+
+  if (typeof mode === "object") {
+    if (mode.budget <= 2048) return "low";
+    if (mode.budget <= 8000) return "medium";
+    return "high";
+  }
+
+  if (mode === "low" || mode === "medium" || mode === "high") return mode;
+  return undefined;
 }
 
 /**
@@ -260,6 +315,7 @@ export function mapToGeminiBudget(
   mode: ThinkingMode | undefined,
   model: string,
 ): number | undefined {
+  if (isGeminiLevelThinkingModel(model)) return undefined;
   if (!isGeminiThinkingModel(model)) return undefined;
   if (!mode) return undefined;
 
@@ -279,6 +335,31 @@ export function mapToGeminiBudget(
   };
 
   return budgetMap[mode];
+}
+
+export function mapToGeminiThinkingConfig(
+  mode: ThinkingMode | undefined,
+  model: string,
+):
+  | { thinkingBudget: number }
+  | { thinkingLevel: "minimal" | "low" | "medium" | "high" }
+  | undefined {
+  if (isGeminiLevelThinkingModel(model)) {
+    if (!mode || mode === "auto") return undefined;
+    if (mode === "off") return { thinkingLevel: "low" };
+    if (mode === "low" || mode === "medium" || mode === "high") {
+      return { thinkingLevel: mode };
+    }
+    if (typeof mode === "object") {
+      if (mode.budget <= 2048) return { thinkingLevel: "low" };
+      if (mode.budget <= 8000) return { thinkingLevel: "medium" };
+      return { thinkingLevel: "high" };
+    }
+    return undefined;
+  }
+
+  const thinkingBudget = mapToGeminiBudget(mode, model);
+  return thinkingBudget !== undefined ? { thinkingBudget } : undefined;
 }
 
 /**

@@ -48,7 +48,7 @@ function modeDescription(mode: ThinkingMode, hasBudget: boolean): string {
 }
 
 /** Interactive arrow-key selector — returns chosen mode or null if cancelled */
-async function selectThinkingInteractively(
+export async function selectThinkingInteractively(
   modes: readonly ThinkingMode[],
   currentMode: ThinkingMode,
   hasBudget: boolean,
@@ -148,7 +148,7 @@ async function selectThinkingInteractively(
   });
 }
 
-async function applyMode(
+export async function applyMode(
   parsed: ThinkingMode,
   session: ReplSession,
   provider: string,
@@ -186,7 +186,7 @@ async function applyMode(
 
 export const thinkingCommand: SlashCommand = {
   name: "thinking",
-  aliases: ["think", "reason"],
+  aliases: ["think", "reason", "reasoning"],
   description: "View or change the reasoning/thinking mode for the current model",
   usage: "/thinking [off|auto|low|medium|high|<budget-tokens>]",
 
@@ -200,7 +200,8 @@ export const thinkingCommand: SlashCommand = {
       console.log(
         chalk.yellow(`\n⚠  Thinking not supported for ${model} on ${provider}.\n`) +
           chalk.dim(
-            "   Compatible models: claude-3-7+, claude-4+, o3, o4-mini, gpt-5*, gemini-2.5+\n",
+            "   Compatible models: claude-3-7+, claude-4+, OpenAI o3/o4/gpt-5*, Gemini 2.5+.\n" +
+              "   OpenAI-compatible providers only enable reasoning when explicitly supported.\n",
           ),
       );
       return false;
@@ -245,6 +246,21 @@ export const thinkingCommand: SlashCommand = {
       console.log(chalk.red(`\n✗ Unknown thinking mode: "${args[0]}"`));
       console.log(
         chalk.dim("  Valid options: off, auto, low, medium, high, or a token budget number\n"),
+      );
+      return false;
+    }
+
+    if (
+      typeof parsed !== "object" &&
+      !capability.levels.some((mode) => typeof mode !== "object" && mode === parsed)
+    ) {
+      console.log(
+        chalk.red(`\n✗ ${provider}/${model} does not support thinking mode "${parsed}".`),
+      );
+      console.log(
+        chalk.dim(
+          `  Valid options: ${capability.levels.map((mode) => formatThinkingMode(mode)).join(", ")}\n`,
+        ),
       );
       return false;
     }

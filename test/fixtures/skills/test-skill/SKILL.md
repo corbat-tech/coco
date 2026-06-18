@@ -7,6 +7,14 @@ disable-model-invocation: true
 allowed-tools: Bash, Read, Edit
 argument-hint: "[--verbose] <target>"
 compatibility: Requires Node.js 22+
+triggers:
+  - validate skill manifest
+  - unified skills
+risk: read-only
+supported-agents:
+  - coco
+  - claude
+  - codex
 model: claude-sonnet-4-20250514
 context: fork
 tags:

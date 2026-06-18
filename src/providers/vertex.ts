@@ -23,8 +23,9 @@ import type {
 import { ProviderError } from "../utils/errors.js";
 import { getCachedADCToken } from "../auth/gcloud.js";
 import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
-const DEFAULT_MODEL = "gemini-2.5-pro";
+const DEFAULT_MODEL = getCatalogDefaultModel("vertex");
 const DEFAULT_BASE_URL = "https://aiplatform.googleapis.com/v1";
 const DEFAULT_LOCATION = "global";
 
@@ -280,7 +281,12 @@ export class VertexProvider implements LLMProvider {
   }
 
   getContextWindow(): number {
-    return CONTEXT_WINDOWS[this.config.model ?? DEFAULT_MODEL] ?? 1048576;
+    const model = this.config.model ?? DEFAULT_MODEL;
+    const catalogWindow = getCatalogContextWindow("vertex", model, 0);
+    if (catalogWindow > 0) {
+      return catalogWindow;
+    }
+    return CONTEXT_WINDOWS[model] ?? 1048576;
   }
 
   async isAvailable(): Promise<boolean> {

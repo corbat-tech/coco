@@ -18,6 +18,7 @@ import { loadConfig, saveConfig } from "./loader.js";
 import { CONFIG_PATHS } from "./paths.js";
 import type { CocoConfig } from "./schema.js";
 import type { ThinkingMode } from "../providers/thinking.js";
+import { getCatalogDefaultModel } from "../providers/catalog.js";
 
 // Load ~/.coco/.env (env vars still take precedence)
 loadGlobalCocoEnv();
@@ -263,42 +264,42 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
 export function getDefaultModel(provider: ProviderType): string {
   switch (provider) {
     case "anthropic":
-      return process.env["ANTHROPIC_MODEL"] ?? "claude-opus-4-6";
+      return process.env["ANTHROPIC_MODEL"] ?? getCatalogDefaultModel(provider);
     case "openai":
-      return process.env["OPENAI_MODEL"] ?? "gpt-5.3-codex";
+      return process.env["OPENAI_MODEL"] ?? getCatalogDefaultModel(provider);
     case "gemini":
-      return process.env["GEMINI_MODEL"] ?? "gemini-3.1-pro-preview";
+      return process.env["GEMINI_MODEL"] ?? getCatalogDefaultModel(provider);
     case "vertex":
-      return process.env["VERTEX_MODEL"] ?? "gemini-2.5-pro";
+      return process.env["VERTEX_MODEL"] ?? getCatalogDefaultModel(provider);
     case "kimi":
-      return process.env["KIMI_MODEL"] ?? "kimi-k2.5";
+      return process.env["KIMI_MODEL"] ?? getCatalogDefaultModel(provider);
     case "kimi-code":
-      return process.env["KIMI_CODE_MODEL"] ?? "kimi-for-coding";
+      return process.env["KIMI_CODE_MODEL"] ?? getCatalogDefaultModel(provider);
     case "lmstudio":
       // LM Studio model is selected in the app, we use a placeholder
-      return process.env["LMSTUDIO_MODEL"] ?? "local-model";
+      return process.env["LMSTUDIO_MODEL"] ?? getCatalogDefaultModel(provider);
     case "ollama":
-      return process.env["OLLAMA_MODEL"] ?? "llama3.2";
+      return process.env["OLLAMA_MODEL"] ?? getCatalogDefaultModel(provider);
     case "codex":
-      return process.env["CODEX_MODEL"] ?? "codex-mini-latest";
+      return process.env["CODEX_MODEL"] ?? getCatalogDefaultModel(provider);
     case "copilot":
-      return process.env["COPILOT_MODEL"] ?? "claude-sonnet-4.6";
+      return process.env["COPILOT_MODEL"] ?? getCatalogDefaultModel(provider);
     case "groq":
-      return process.env["GROQ_MODEL"] ?? "llama-3.3-70b-versatile";
+      return process.env["GROQ_MODEL"] ?? getCatalogDefaultModel(provider);
     case "openrouter":
-      return process.env["OPENROUTER_MODEL"] ?? "anthropic/claude-3.5-sonnet";
+      return process.env["OPENROUTER_MODEL"] ?? getCatalogDefaultModel(provider);
     case "mistral":
-      return process.env["MISTRAL_MODEL"] ?? "mistral-large-latest";
+      return process.env["MISTRAL_MODEL"] ?? getCatalogDefaultModel(provider);
     case "deepseek":
-      return process.env["DEEPSEEK_MODEL"] ?? "deepseek-chat";
+      return process.env["DEEPSEEK_MODEL"] ?? getCatalogDefaultModel(provider);
     case "together":
-      return process.env["TOGETHER_MODEL"] ?? "meta-llama/Llama-3.3-70B-Instruct-Turbo";
+      return process.env["TOGETHER_MODEL"] ?? getCatalogDefaultModel(provider);
     case "huggingface":
-      return process.env["HF_MODEL"] ?? "meta-llama/Llama-3.1-70B-Instruct";
+      return process.env["HF_MODEL"] ?? getCatalogDefaultModel(provider);
     case "qwen":
-      return process.env["QWEN_MODEL"] ?? "qwen-max";
+      return process.env["QWEN_MODEL"] ?? getCatalogDefaultModel(provider);
     default:
-      return "claude-sonnet-4-6";
+      return getCatalogDefaultModel("anthropic");
   }
 }
 

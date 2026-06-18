@@ -47,6 +47,12 @@ export type SkillCategory =
   | "documentation"
   | "workflow";
 
+/** Skill execution risk level for routing and confirmation policy. */
+export type SkillRisk = "read-only" | "write" | "network" | "destructive" | "secrets-sensitive";
+
+/** Agent surfaces a skill is known to support. */
+export type SupportedAgentSurface = "coco" | "claude" | "codex" | "gemini" | "opencode";
+
 /** All valid skill categories as a runtime set */
 export const VALID_CATEGORIES = new Set<string>([
   "general",
@@ -85,6 +91,14 @@ export const SkillFrontmatterSchema = z.object({
   "allowed-tools": z.union([z.string(), z.array(z.string())]).optional(),
   "argument-hint": z.string().optional(),
   compatibility: z.string().max(500).optional(),
+  triggers: z.union([z.string(), z.array(z.string())]).optional(),
+  risk: z.enum(["read-only", "write", "network", "destructive", "secrets-sensitive"]).optional(),
+  "supported-agents": z
+    .union([
+      z.enum(["coco", "claude", "codex", "gemini", "opencode"]),
+      z.array(z.enum(["coco", "claude", "codex", "gemini", "opencode"])),
+    ])
+    .optional(),
   model: z.string().optional(),
   context: z.enum(["fork", "agent", "inline"]).optional(),
   // Top-level tags/author (skills.sh style) — also accepted inside metadata
@@ -145,6 +159,12 @@ export interface SkillMetadata {
   argumentHint?: string;
   /** Environment compatibility notes */
   compatibility?: string;
+  /** Keyword triggers for explicit or automatic routing */
+  triggers?: string[];
+  /** Risk policy for confirmation/tool routing */
+  risk?: SkillRisk;
+  /** Agent surfaces this skill is intended to work with */
+  supportedAgents?: SupportedAgentSurface[];
   /** Model override for this skill */
   model?: string;
   /** Execution context */

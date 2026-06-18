@@ -31,9 +31,10 @@ import type {
   ToolUseContent,
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
-import { mapToGeminiBudget } from "./thinking.js";
+import { mapToGeminiThinkingConfig } from "./thinking.js";
+import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
-const DEFAULT_MODEL = "gemini-3.1-pro-preview";
+const DEFAULT_MODEL = getCatalogDefaultModel("gemini");
 const SKIP_THOUGHT_SIGNATURE_VALIDATOR = "skip_thought_signature_validator";
 
 const CONTEXT_WINDOWS: Record<string, number> = {
@@ -75,7 +76,7 @@ export class GeminiProvider implements LLMProvider {
       const response = await this.client!.models.generateContent({
         model: this.getModel(options?.model),
         contents: this.convertContents(messages),
-        config: this.buildConfig(messages, options),
+        config: this.buildConfig(messages, options) as any,
       });
 
       return this.parseResponse(response, options?.model);
@@ -94,7 +95,7 @@ export class GeminiProvider implements LLMProvider {
       const response = await this.client!.models.generateContent({
         model: this.getModel(options.model),
         contents: this.convertContents(messages),
-        config: this.buildConfig(messages, options, options.tools, options.toolChoice),
+        config: this.buildConfig(messages, options, options.tools, options.toolChoice) as any,
       });
 
       return this.parseResponseWithTools(response, options.model);
@@ -110,7 +111,7 @@ export class GeminiProvider implements LLMProvider {
       const stream = await this.client!.models.generateContentStream({
         model: this.getModel(options?.model),
         contents: this.convertContents(messages),
-        config: this.buildConfig(messages, options),
+        config: this.buildConfig(messages, options) as any,
       });
 
       let streamStopReason: StreamChunk["stopReason"] = "end_turn";
@@ -143,7 +144,7 @@ export class GeminiProvider implements LLMProvider {
       const stream = await this.client!.models.generateContentStream({
         model: this.getModel(options.model),
         contents: this.convertContents(messages),
-        config: this.buildConfig(messages, options, options.tools, options.toolChoice),
+        config: this.buildConfig(messages, options, options.tools, options.toolChoice) as any,
       });
 
       let streamStopReason: StreamChunk["stopReason"] = "end_turn";
@@ -202,6 +203,10 @@ export class GeminiProvider implements LLMProvider {
 
   getContextWindow(): number {
     const model = this.config.model ?? DEFAULT_MODEL;
+    const catalogWindow = getCatalogContextWindow("gemini", model, 0);
+    if (catalogWindow > 0) {
+      return catalogWindow;
+    }
     return CONTEXT_WINDOWS[model] ?? 1000000;
   }
 
@@ -248,10 +253,12 @@ export class GeminiProvider implements LLMProvider {
         allowedFunctionNames?: string[];
       };
     };
-    thinkingConfig?: { thinkingBudget: number };
+    thinkingConfig?:
+      | { thinkingBudget: number }
+      | { thinkingLevel: "minimal" | "low" | "medium" | "high" };
   } {
     const model = this.getModel(options?.model);
-    const thinkingBudget = mapToGeminiBudget(options?.thinking, model);
+    const thinkingConfig = mapToGeminiThinkingConfig(options?.thinking, model);
 
     const config: {
       maxOutputTokens: number;
@@ -265,7 +272,9 @@ export class GeminiProvider implements LLMProvider {
           allowedFunctionNames?: string[];
         };
       };
-      thinkingConfig?: { thinkingBudget: number };
+      thinkingConfig?:
+        | { thinkingBudget: number }
+        | { thinkingLevel: "minimal" | "low" | "medium" | "high" };
     } = {
       maxOutputTokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
       temperature: options?.temperature ?? this.config.temperature ?? 0,
@@ -273,8 +282,8 @@ export class GeminiProvider implements LLMProvider {
       systemInstruction: this.extractSystem(messages, options?.system),
     };
 
-    if (thinkingBudget !== undefined) {
-      config.thinkingConfig = { thinkingBudget };
+    if (thinkingConfig !== undefined) {
+      config.thinkingConfig = thinkingConfig;
     }
 
     if (tools && tools.length > 0) {

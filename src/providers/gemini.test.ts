@@ -85,6 +85,50 @@ describe("GeminiProvider", () => {
         /not initialized/,
       );
     });
+
+    it("sends thinkingLevel for Gemini 3 models", async () => {
+      mockGenerateContent.mockResolvedValue({
+        text: "ok",
+        candidates: [{ finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 8 },
+      });
+
+      const { GeminiProvider } = await import("./gemini.js");
+      const provider = new GeminiProvider();
+      await provider.initialize({ apiKey: "test-key", model: "gemini-3.1-pro-preview" });
+
+      await provider.chat([{ role: "user", content: "Hi" }], { thinking: "medium" });
+
+      expect(mockGenerateContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({
+            thinkingConfig: { thinkingLevel: "medium" },
+          }),
+        }),
+      );
+    });
+
+    it("sends thinkingBudget for Gemini 2.5 models", async () => {
+      mockGenerateContent.mockResolvedValue({
+        text: "ok",
+        candidates: [{ finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 8 },
+      });
+
+      const { GeminiProvider } = await import("./gemini.js");
+      const provider = new GeminiProvider();
+      await provider.initialize({ apiKey: "test-key", model: "gemini-2.5-pro" });
+
+      await provider.chat([{ role: "user", content: "Hi" }], { thinking: "medium" });
+
+      expect(mockGenerateContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({
+            thinkingConfig: { thinkingBudget: 8000 },
+          }),
+        }),
+      );
+    });
   });
 
   describe("chatWithTools", () => {

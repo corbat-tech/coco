@@ -4,22 +4,25 @@ import {
   resolveDefaultThinking,
   formatThinkingMode,
   mapToAnthropic,
+  mapToAnthropicEffort,
   mapToOpenAIEffort,
   mapToGeminiBudget,
+  mapToGeminiThinkingConfig,
   mapToKimiExtraBody,
 } from "./thinking.js";
 
 describe("getThinkingCapability", () => {
   describe("Anthropic provider", () => {
-    it("returns supported for claude-opus-4-6", () => {
+    it("returns effort support for adaptive Claude models", () => {
       const cap = getThinkingCapability("anthropic", "claude-opus-4-6");
       expect(cap.supported).toBe(true);
-      expect(cap.kinds).toContain("budget");
+      expect(cap.kinds).toContain("effort");
     });
 
     it("returns supported for claude-3-7-sonnet-20250219", () => {
       const cap = getThinkingCapability("anthropic", "claude-3-7-sonnet-20250219");
       expect(cap.supported).toBe(true);
+      expect(cap.kinds).toContain("budget");
     });
 
     it("returns unsupported for claude-3-5-sonnet (legacy)", () => {
@@ -37,11 +40,9 @@ describe("getThinkingCapability", () => {
       expect(cap.defaultMode).toBe("off");
     });
 
-    it("includes budgetRange", () => {
+    it("does not expose budgetRange for adaptive Claude models", () => {
       const cap = getThinkingCapability("anthropic", "claude-opus-4-6");
-      expect(cap.budgetRange).toBeDefined();
-      expect(cap.budgetRange!.min).toBeGreaterThan(0);
-      expect(cap.budgetRange!.max).toBeGreaterThan(cap.budgetRange!.min);
+      expect(cap.budgetRange).toBeUndefined();
     });
   });
 
@@ -77,10 +78,18 @@ describe("getThinkingCapability", () => {
       expect(cap.defaultMode).toBe("medium");
     });
 
-    it("is inherited by copilot provider for reasoning models", () => {
+    it("returns unsupported for copilot because its endpoint is not OpenAI public API", () => {
       const cap = getThinkingCapability("copilot", "o4-mini");
-      expect(cap.supported).toBe(true);
+      expect(cap.supported).toBe(false);
     });
+
+    it.each(["groq", "openrouter", "mistral", "deepseek", "together", "huggingface", "qwen"])(
+      "returns unsupported for OpenAI-compatible provider %s until explicitly verified",
+      (provider) => {
+        const cap = getThinkingCapability(provider, "gpt-5.4");
+        expect(cap.supported).toBe(false);
+      },
+    );
   });
 
   describe("Gemini provider", () => {
@@ -88,6 +97,13 @@ describe("getThinkingCapability", () => {
       const cap = getThinkingCapability("gemini", "gemini-2.5-pro");
       expect(cap.supported).toBe(true);
       expect(cap.kinds).toContain("budget");
+    });
+
+    it("returns effort levels for Gemini 3 models", () => {
+      const cap = getThinkingCapability("gemini", "gemini-3.1-pro-preview");
+      expect(cap.supported).toBe(true);
+      expect(cap.kinds).toContain("effort");
+      expect(cap.levels).toEqual(["auto", "low", "medium", "high"]);
     });
 
     it("returns supported for gemini-2.5-flash", () => {
@@ -166,7 +182,7 @@ describe("formatThinkingMode", () => {
 });
 
 describe("mapToAnthropic", () => {
-  const model = "claude-opus-4-6";
+  const model = "claude-3-7-sonnet-20250219";
 
   it("returns undefined for off", () => {
     expect(mapToAnthropic("off", model)).toBeUndefined();
@@ -194,7 +210,7 @@ describe("mapToAnthropic", () => {
   it("returns default budget for auto", () => {
     const result = mapToAnthropic("auto", model);
     expect(result?.type).toBe("enabled");
-    expect(result?.budget_tokens).toBeGreaterThan(0);
+    expect(result?.type === "enabled" ? result.budget_tokens : 0).toBeGreaterThan(0);
   });
 
   it("passes through numeric budget", () => {
@@ -204,12 +220,24 @@ describe("mapToAnthropic", () => {
 
   it("clamps budget to max", () => {
     const result = mapToAnthropic({ budget: 999999 }, model);
-    expect(result!.budget_tokens).toBeLessThanOrEqual(64000);
+    expect(result?.type === "enabled" ? result.budget_tokens : Infinity).toBeLessThanOrEqual(64000);
   });
 
   it("clamps budget to min", () => {
     const result = mapToAnthropic({ budget: 10 }, model);
-    expect(result!.budget_tokens).toBeGreaterThanOrEqual(1024);
+    expect(result?.type === "enabled" ? result.budget_tokens : 0).toBeGreaterThanOrEqual(1024);
+  });
+
+  it("uses adaptive thinking for Claude 4.6+ models", () => {
+    expect(mapToAnthropic("high", "claude-opus-4-8")).toEqual({ type: "adaptive" });
+    expect(mapToAnthropic("medium", "claude-sonnet-4-6")).toEqual({ type: "adaptive" });
+  });
+
+  it("maps adaptive Claude effort to output_config effort", () => {
+    expect(mapToAnthropicEffort("low", "claude-sonnet-4-6")).toBe("low");
+    expect(mapToAnthropicEffort("medium", "claude-opus-4-8")).toBe("medium");
+    expect(mapToAnthropicEffort("auto", "claude-opus-4-8")).toBeUndefined();
+    expect(mapToAnthropicEffort("high", model)).toBeUndefined();
   });
 
   it("returns undefined for unsupported model", () => {
@@ -298,6 +326,24 @@ describe("mapToGeminiBudget", () => {
 
   it("returns undefined for undefined mode", () => {
     expect(mapToGeminiBudget(undefined, model)).toBeUndefined();
+  });
+});
+
+describe("mapToGeminiThinkingConfig", () => {
+  it("uses thinkingLevel for Gemini 3 models", () => {
+    expect(mapToGeminiThinkingConfig("medium", "gemini-3.1-pro-preview")).toEqual({
+      thinkingLevel: "medium",
+    });
+  });
+
+  it("uses thinkingBudget for Gemini 2.5 models", () => {
+    expect(mapToGeminiThinkingConfig("medium", "gemini-2.5-pro")).toEqual({
+      thinkingBudget: 8000,
+    });
+  });
+
+  it("does not emit config for Gemini 3 auto", () => {
+    expect(mapToGeminiThinkingConfig("auto", "gemini-3.1-pro-preview")).toBeUndefined();
   });
 });
 

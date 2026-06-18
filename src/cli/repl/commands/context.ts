@@ -6,14 +6,61 @@
 
 import chalk from "chalk";
 import type { SlashCommand, ReplSession } from "../types.js";
+import { getRepoContext } from "../../../tools/repo-intelligence.js";
 
 export const contextCommand: SlashCommand = {
   name: "context",
   aliases: ["ctx"],
   description: "Show context window usage metrics",
-  usage: "/context",
+  usage: "/context [why|add <file>|remove <file>]",
 
-  async execute(_args: string[], session: ReplSession): Promise<boolean> {
+  async execute(args: string[], session: ReplSession): Promise<boolean> {
+    const subcommand = args[0]?.toLowerCase();
+
+    if (subcommand === "why") {
+      const query =
+        args.slice(1).join(" ").trim() ||
+        [...session.messages]
+          .reverse()
+          .find((message) => message.role === "user" && typeof message.content === "string")
+          ?.content.toString() ||
+        "current task";
+
+      const result = await getRepoContext({
+        path: session.projectPath,
+        query,
+        budget: 8,
+        refresh: false,
+      });
+
+      console.log(chalk.cyan.bold("\n Context Selection\n"));
+      console.log(chalk.dim(`  Query: ${result.query}`));
+      console.log(chalk.dim(`  Repo index: ${result.graph.generatedAt}\n`));
+
+      for (const item of result.items) {
+        console.log(`${chalk.green(item.score.toFixed(1).padStart(5))}  ${chalk.cyan(item.path)}`);
+        console.log(chalk.dim(`       ${item.reasons.join(", ") || "ranked context"}`));
+      }
+      console.log();
+      return false;
+    }
+
+    if (subcommand === "add" || subcommand === "remove") {
+      const file = args.slice(1).join(" ").trim();
+      if (!file) {
+        console.log(chalk.red(`Usage: /context ${subcommand} <file>\n`));
+        return false;
+      }
+
+      const action = subcommand === "add" ? "include" : "exclude";
+      session.messages.push({
+        role: "user",
+        content: `[context directive] ${action} ${file} when selecting task context.`,
+      });
+      console.log(chalk.green(`Context directive recorded: ${action} ${file}\n`));
+      return false;
+    }
+
     const cm = session.contextManager;
 
     if (!cm) {

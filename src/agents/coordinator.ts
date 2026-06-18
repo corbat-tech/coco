@@ -74,6 +74,20 @@ const ROLE_PATTERNS: Record<string, Array<{ keywords: string[]; weight: number }
     { keywords: ["review", "quality", "audit", "inspect", "lint", "code review"], weight: 3 },
     { keywords: ["issue", "problem", "vulnerability", "smell", "concern", "feedback"], weight: 1 },
   ],
+  architect: [
+    {
+      keywords: ["architect", "architecture", "design", "adr", "interface", "migration"],
+      weight: 3,
+    },
+    { keywords: ["plan", "strategy", "tradeoff", "dependency", "risk"], weight: 1 },
+  ],
+  editor: [
+    {
+      keywords: ["edit", "patch", "implement from plan", "apply changes", "modify file"],
+      weight: 3,
+    },
+    { keywords: ["small change", "minimal", "targeted", "code change"], weight: 1 },
+  ],
   optimizer: [
     {
       keywords: ["optimize", "refactor", "performance", "simplify", "reduce", "improve efficiency"],
@@ -332,6 +346,8 @@ export class AgentCoordinator {
 
     const maxTurnsMap: Record<string, number> = {
       researcher: 20,
+      architect: 12,
+      editor: 20,
       tester: 15,
       reviewer: 10,
       optimizer: 15,

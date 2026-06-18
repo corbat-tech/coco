@@ -3,104 +3,31 @@
  *
  * Inspired by OpenCode/Crush - Flexible provider management
  *
- * ============================================================================
- * HOW TO UPDATE MODELS AND PROVIDERS
- * ============================================================================
+ * Model metadata is derived from src/providers/catalog.ts. Keep provider UI,
+ * auth, and transport metadata here; do not maintain an independent model list.
  *
- * This is the SINGLE SOURCE OF TRUTH for all provider and model definitions.
- * When you need to update models, edit this file AND sync the other files!
- *
- * === QUICK UPDATE COMMAND ===
- *
- * Just say: "Actualiza proveedores" and provide this context:
- *
- * 1. Search the web for latest models from each provider:
- *    - Anthropic: https://docs.anthropic.com/en/docs/about-claude/models
- *    - OpenAI: https://platform.openai.com/docs/models
- *    - Google Gemini: https://ai.google.dev/gemini-api/docs/models/gemini
- *    - Moonshot Kimi: https://platform.moonshot.ai/docs
- *    - LM Studio: Check popular models on Hugging Face
- *    - Ollama: https://ollama.com/library (check coding models)
- *
- * 2. Update these files (in order):
- *    a) THIS FILE (providers-config.ts):
- *       - ADD new models to models[] array for each provider
- *       - contextWindow and maxOutputTokens
- *       - description with release date
- *       - recommended: true for best model
- *       - Move recommended to the new best model
- *
- *    b) src/providers/{provider}.ts:
- *       - DEFAULT_MODEL constant
- *       - CONTEXT_WINDOWS record
- *
- *    c) src/config/env.ts:
- *       - getDefaultModel() switch cases
- *
- *    d) src/providers/pricing.ts:
- *       - MODEL_PRICING entries for new models
- *
- * 3. Verify:
- *    - apiKeyUrl is still valid
- *    - baseUrl hasn't changed
- *    - OAuth client IDs (if any) in src/auth/oauth.ts
- *
- * === IMPORTANT RULES ===
- *
- * - NEVER remove models that are still available in the provider's API.
- *   Users may prefer older/cheaper models. Always ADD new models and
- *   reorder so the best is first (recommended: true), but keep all
- *   available models in the list. Only remove a model if the provider
- *   has fully retired/disabled it and it no longer works.
- * - Order models from best/newest to oldest/cheapest.
- * - Include RAM requirements in descriptions for local providers
- *   (Ollama, LM Studio) so users can choose based on their hardware.
- *
- * === FILES TO SYNC ===
- *
- * PRIMARY (edit first):
- * - src/cli/repl/providers-config.ts (this file)
- *
- * SECONDARY (sync DEFAULT_MODEL and CONTEXT_WINDOWS):
- * - src/providers/index.ts (ProviderType union, createProvider() switch, listProviders())
- * - src/providers/anthropic.ts
- * - src/providers/openai.ts
- * - src/providers/gemini.ts
- * - src/providers/codex.ts
- * - src/config/env.ts (ProviderType union, getApiKey, getBaseUrl, getDefaultModel, VALID_PROVIDERS)
- * - src/providers/pricing.ts (MODEL_PRICING for new models)
- *
- * CONSUMERS (no changes needed, they read from this file):
- * - src/cli/repl/commands/model.ts
- * - src/cli/repl/commands/provider.ts
- * - src/cli/repl/onboarding-v2.ts
- * - src/cli/commands/config.ts
- *
- * === OAUTH CONFIG ===
+ * Update flow:
+ * 1. Verify models against official provider docs or runtime discovery.
+ * 2. Update src/providers/catalog.ts with defaults, status, capabilities,
+ *    context windows, pricing, sourceUrl, and lastVerified.
+ * 3. Keep transport-specific behavior in src/providers/{provider}.ts only when
+ *    request/stream/tool-call semantics actually differ by provider.
+ * 4. Run provider/catalog tests and pnpm check.
  *
  * If OAuth endpoints change, update:
  * - src/auth/oauth.ts (OAUTH_CONFIGS)
  * - src/auth/flow.ts (getProviderDisplayInfo)
- *
- * ============================================================================
- * Last updated: March 5, 2026
- *
- * CURRENT MODELS (verified from official docs):
- * - Anthropic: claude-opus-4-6 (latest), claude-sonnet-4-6, claude-haiku-4-5
- * - OpenAI: gpt-5.3-codex (latest available), gpt-5.2-codex, gpt-5.1-codex-max, gpt-4.1
- * - Gemini: gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-2.5-pro, gemini-2.5-flash
- * - Vertex AI: gemini-3-pro-preview, gemini-3-flash-preview, gemini-2.5-pro, gemini-2.5-flash
- * - Copilot: claude-sonnet-4.6, gpt-5.4-codex, gpt-5.4, gpt-5 mini, gpt-4.1, gemini-3.1-pro
- * - Kimi: kimi-k2.5, kimi-k2-thinking
- * - Qwen: qwen-coder-plus (recommended), qwen-max, qwen-plus, qwen-turbo, qwq-plus
- * - LM Studio: qwen3-coder series (best local option)
- * - Ollama: qwen2.5-coder:14b (recommended), qwen3-coder:30b
- * ============================================================================
  */
 
 import { accessSync } from "node:fs";
 import { getCopilotCredentialsPath } from "../../auth/copilot.js";
 import type { ProviderType } from "../../providers/index.js";
+import {
+  PROVIDER_CATALOG,
+  type ModelCapability,
+  type ModelStatus,
+  type ProviderSource,
+} from "../../providers/catalog.js";
 
 /**
  * Model definition
@@ -112,6 +39,10 @@ export interface ModelDefinition {
   contextWindow?: number;
   maxOutputTokens?: number;
   recommended?: boolean;
+  status?: ModelStatus;
+  capabilities?: ModelCapability[];
+  sourceUrl?: string;
+  lastVerified?: string;
 }
 
 /**
@@ -160,7 +91,7 @@ export interface ProviderDefinition {
 /**
  * Provider definitions with up-to-date models
  */
-export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
+const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
   anthropic: {
     id: "anthropic",
     name: "Anthropic Claude",
@@ -1318,6 +1249,44 @@ export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     ],
   },
 };
+
+function catalogModelToDefinition(model: {
+  id: string;
+  name: string;
+  description?: string;
+  contextWindow: number;
+  maxOutputTokens?: number;
+  recommended?: boolean;
+  status: ModelStatus;
+  capabilities: ModelCapability[];
+  source: ProviderSource;
+}): ModelDefinition {
+  return {
+    id: model.id,
+    name: model.name,
+    description: model.description,
+    contextWindow: model.contextWindow,
+    maxOutputTokens: model.maxOutputTokens,
+    recommended: model.recommended,
+    status: model.status,
+    capabilities: model.capabilities,
+    sourceUrl: model.source.url,
+    lastVerified: model.source.verifiedAt,
+  };
+}
+
+export const PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = Object.fromEntries(
+  Object.entries(LEGACY_PROVIDER_DEFINITIONS).map(([providerId, providerDefinition]) => {
+    const catalogEntry = PROVIDER_CATALOG[providerId as ProviderType];
+    return [
+      providerId,
+      {
+        ...providerDefinition,
+        models: catalogEntry.models.map(catalogModelToDefinition),
+      },
+    ];
+  }),
+) as Record<ProviderType, ProviderDefinition>;
 
 /**
  * Get provider definition

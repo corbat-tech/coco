@@ -8,8 +8,6 @@
 
 import chalk from "chalk";
 import type { SlashCommand, ReplSession } from "../types.js";
-import { runBestOfN, formatBestOfNResult } from "../best-of-n/index.js";
-import type { TaskExecutor, SolutionAttempt } from "../best-of-n/index.js";
 
 /**
  * Parse arguments for the best-of-n command.
@@ -56,59 +54,25 @@ export const bestOfNCommand: SlashCommand = {
       return false;
     }
 
+    session.messages.push({
+      role: "user",
+      content:
+        `[best-of-n directive] Prepare ${parsed.attempts} independent solution attempts for this task. ` +
+        "Use worktree isolation only when the runtime provides provider/tool execution in each worktree. " +
+        "Do not claim attempts were executed unless they actually ran. " +
+        "Score candidates by tests, typecheck/lint, diff risk, and task fit.\n\n" +
+        `Task: ${parsed.task}`,
+    });
+
     console.log();
+    console.log(chalk.magenta.bold(`  Best-of-${parsed.attempts}`));
+    console.log(chalk.yellow("  Runtime execution is not started from this command yet."));
     console.log(
-      chalk.magenta.bold(`  Best-of-${parsed.attempts}`) +
-        chalk.dim(` — Running ${parsed.attempts} parallel attempts`),
-    );
-    console.log(
-      chalk.yellow.dim("  ⚠ Experimental: agent execution in worktrees is a preview feature"),
+      chalk.dim(
+        "  A best-of-n directive was queued for the agent; false placeholder execution is disabled.",
+      ),
     );
     console.log(chalk.dim(`  Task: ${parsed.task}`));
-    console.log();
-
-    // TODO: Wire up real agent execution per worktree (executeAgentTurn in each worktree path)
-    // Current implementation creates worktrees and evaluates quality but uses a placeholder executor.
-    const executor: TaskExecutor = async (worktreePath, task, _signal) => {
-      return {
-        output: `Executed task "${task}" in ${worktreePath}`,
-        filesChanged: [],
-      };
-    };
-
-    const result = await runBestOfN(
-      session.projectPath,
-      executor,
-      {
-        task: parsed.task,
-        attempts: parsed.attempts,
-      },
-      {
-        onAttemptStart: (a: SolutionAttempt) => {
-          console.log(chalk.dim(`  ▶ Attempt #${a.index} started...`));
-        },
-        onAttemptComplete: (a: SolutionAttempt) => {
-          console.log(
-            chalk.green(`  ✓ Attempt #${a.index} completed`) +
-              chalk.dim(
-                ` (score: ${a.score?.toFixed(1) ?? "?"}, ${(a.durationMs / 1000).toFixed(1)}s)`,
-              ),
-          );
-        },
-        onAttemptFail: (a: SolutionAttempt) => {
-          console.log(chalk.red(`  ✗ Attempt #${a.index} failed: ${a.error}`));
-        },
-        onWinnerSelected: (a: SolutionAttempt) => {
-          console.log();
-          console.log(
-            chalk.magenta.bold(`  🏆 Winner: Attempt #${a.index}`) +
-              chalk.dim(` (score: ${a.score?.toFixed(1)})`),
-          );
-        },
-      },
-    );
-
-    console.log(formatBestOfNResult(result));
     console.log();
 
     return false;

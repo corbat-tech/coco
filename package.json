@@ -1,6 +1,6 @@
 {
   "name": "@corbat-tech/coco",
-  "version": "2.34.0",
+  "version": "2.35.0",
   "description": "Autonomous Coding Agent with Self-Review, Quality Convergence, and Production-Ready Output",
   "type": "module",
   "main": "dist/index.js",
@@ -73,9 +73,13 @@
   "packageManager": "pnpm@10.0.0",
   "pnpm": {
     "overrides": {
-      "brace-expansion": "^5.0.5",
+      "brace-expansion": "^5.0.6",
+      "esbuild": "^0.28.1",
+      "markdown-it": "^14.2.0",
       "picomatch": "^4.0.4",
-      "vite": "^8.0.7"
+      "protobufjs": "^7.6.3",
+      "vite": "^8.0.16",
+      "ws": "^8.21.0"
     }
   },
   "dependencies": {
@@ -90,7 +94,6 @@
     "diff": "^9.0.0",
     "execa": "^9.6.1",
     "glob": "^13.0.6",
-    "gray-matter": "^4.0.3",
     "highlight.js": "^11.11.1",
     "json5": "^2.2.3",
     "jsonrepair": "^3.13.2",
@@ -103,6 +106,7 @@
     "string-width": "^8.2.0",
     "tslog": "^4.10.2",
     "undici": "^7.16.0",
+    "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {

@@ -9,6 +9,7 @@
  *   /plan                  - Toggle plan mode on/off
  *   /plan <instruction>    - Enter plan mode with a specific task to plan
  *   /plan approve          - Approve pending plan and execute it
+ *   /plan edit [text]      - Replace the pending plan before approval
  *   /plan reject           - Reject pending plan and return to normal mode
  *   /plan status           - Show current plan mode status
  */
@@ -50,7 +51,7 @@ export const planCommand: SlashCommand = {
   name: "plan",
   aliases: ["p"],
   description: "Toggle plan mode (read-only exploration → approve → execute)",
-  usage: "/plan [instruction] | /plan approve | /plan reject | /plan status",
+  usage: "/plan [instruction] | /plan approve | /plan edit [text] | /plan reject | /plan status",
   execute: async (args: string[], session: ReplSession): Promise<boolean> => {
     const subcommand = args[0]?.toLowerCase();
 
@@ -87,6 +88,33 @@ export const planCommand: SlashCommand = {
         role: "user",
         content: `Execute the following approved plan. Implement each step carefully:\n\n${plan}`,
       });
+      return false;
+    }
+
+    // /plan edit — replace the pending plan text
+    if (subcommand === "edit") {
+      if (!session.pendingPlan) {
+        p.log.warn("No pending plan to edit. Use /plan <instruction> to create one.");
+        return false;
+      }
+
+      const inlinePlan = args.slice(1).join(" ").trim();
+      let editedPlan = inlinePlan;
+      if (!editedPlan) {
+        const result = await p.text({
+          message: "Replace pending plan with:",
+          placeholder: session.pendingPlan.slice(0, 120),
+          validate: (value) => (!value?.trim() ? "Plan cannot be empty" : undefined),
+        });
+        if (p.isCancel(result)) {
+          p.log.info("Plan edit cancelled.");
+          return false;
+        }
+        editedPlan = String(result).trim();
+      }
+
+      session.pendingPlan = editedPlan;
+      p.log.success("Pending plan updated. Use /plan approve to execute it.");
       return false;
     }
 
