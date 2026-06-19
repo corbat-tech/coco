@@ -1,6 +1,6 @@
 {
   "name": "@corbat-tech/coco",
-  "version": "2.37.0",
+  "version": "2.38.0",
   "description": "Autonomous Coding Agent with Self-Review, Quality Convergence, and Production-Ready Output",
   "type": "module",
   "main": "dist/index.js",
@@ -9,7 +9,11 @@
   },
   "exports": {
     ".": "./dist/index.js",
-    "./cli": "./dist/cli/index.js"
+    "./cli": "./dist/cli/index.js",
+    "./runtime": "./dist/runtime/index.js",
+    "./tools": "./dist/tools/index.js",
+    "./presets": "./dist/presets/index.js",
+    "./adapters": "./dist/adapters/index.js"
   },
   "publishConfig": {
     "access": "public"
@@ -24,6 +28,7 @@
     "build": "tsup",
     "build:watch": "tsup --watch",
     "typecheck": "tsc --noEmit",
+    "typecheck:apps": "pnpm build && pnpm -r --filter './apps/*' --if-present typecheck",
     "lint": "oxlint src test",
     "lint:fix": "oxlint src test --fix",
     "format": "oxfmt --check src test",
@@ -37,7 +42,8 @@
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
     "prepublishOnly": "pnpm build",
-    "check": "pnpm typecheck && pnpm lint && pnpm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "check:workspace": "pnpm check && pnpm typecheck:apps"
   },
   "keywords": [
     "ai",

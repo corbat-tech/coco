@@ -21,6 +21,9 @@ a reusable layer for other products and future client-specific agents.
   tools by itself.
 - `WorkflowEngine` executes registered workflow handlers from reusable workflow
   definitions and records structured events.
+- Multi-agent runtime contracts define canonical roles, capabilities, typed
+  tasks, artifacts, run results, gates, DAG workflow nodes, and shared workspace
+  state used by the REPL, swarm, and embeddable runtime.
 
 ## CLI Relationship
 
@@ -134,6 +137,22 @@ const run = await runtime.workflowEngine.run({
 Handlers are explicit opt-ins. Unknown workflows or workflows without handlers
 fail fast, while handler failures return structured failed results and are
 recorded in the `EventLog`.
+
+Workflow definitions now support graph metadata in addition to legacy linear
+`steps`. New workflows should prefer `nodes`, `edges`, `gates`, `parallelism`,
+and `retryPolicy` so they can model fan-out/fan-in execution and quality gates.
+Legacy `steps` are converted to a linear graph for planning and validation, so
+existing workflows keep the same behavior.
+
+Multi-agent execution results should be represented as `AgentRunResult` with
+typed `AgentArtifact` entries (`plan`, `findings`, `patchProposal`,
+`testReport`, `riskReport`, or `summary`). Existing CLI-facing result strings
+remain available for compatibility.
+
+`SharedWorkspaceState` is the controlled handoff surface between agents. Agents
+write facts, decisions, files, test results, risks, and artifacts through typed
+methods; reads are filtered by role so ordinary implementation agents do not
+receive risk-sensitive context by default.
 
 ## Extensibility
 

@@ -25,6 +25,8 @@ import type {
   AgentEvent,
   AgentEventType,
 } from "./types.js";
+import type { AgentRole } from "../../../runtime/multi-agent.js";
+import { normalizeAgentRunResult } from "../../../runtime/multi-agent.js";
 import { getAgentConfig, AGENT_NAMES, AGENT_DESCRIPTIONS } from "./prompts.js";
 
 /**
@@ -122,11 +124,15 @@ export class AgentManager extends EventEmitter {
       failedAgent.error = error;
       failedAgent.completedAt = new Date();
 
-      return {
+      return this.buildResult({
         agent: failedAgent,
         success: false,
         output: error,
-      };
+        turns: 0,
+        toolsUsed: [],
+        startedAt: failedAgent.createdAt.toISOString(),
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
     }
 
     // Create the agent
@@ -202,11 +208,15 @@ export class AgentManager extends EventEmitter {
       this.logger.error(`Agent ${agent.id} failed unexpectedly`, { error: errorMessage });
       this.emitEvent("fail", agent);
 
-      return {
+      return this.buildResult({
         agent,
         success: false,
         output: errorMessage,
-      };
+        turns: 0,
+        toolsUsed: [],
+        startedAt: agent.createdAt.toISOString(),
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
     }
   }
 
@@ -347,6 +357,8 @@ export class AgentManager extends EventEmitter {
     let finalOutput = "";
     let iteration = 0;
     const maxTurns = config.maxTurns ?? 10;
+    const startedAt = new Date().toISOString();
+    const toolsUsed = new Set<string>();
 
     // Agent execution loop
     while (iteration < maxTurns) {
@@ -360,12 +372,15 @@ export class AgentManager extends EventEmitter {
         this.moveToCompleted(agent.id);
         options.onStatusChange?.(agent);
 
-        return {
+        return this.buildResult({
           agent,
           success: false,
           output: "Agent execution was aborted",
+          turns: iteration,
+          toolsUsed: Array.from(toolsUsed),
+          startedAt,
           usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
-        };
+        });
       }
 
       // Call LLM
@@ -392,7 +407,7 @@ export class AgentManager extends EventEmitter {
       }
 
       // Execute tool calls
-      const toolResults = await this.executeToolCalls(response.toolCalls, config);
+      const toolResults = await this.executeToolCalls(response.toolCalls, config, toolsUsed);
 
       // Build assistant message with tool uses
       const toolUses: ToolUseContent[] = response.toolCalls.map((tc) => ({
@@ -429,12 +444,15 @@ export class AgentManager extends EventEmitter {
       outputLength: finalOutput.length,
     });
 
-    return {
+    return this.buildResult({
       agent,
       success: true,
       output: finalOutput,
+      turns: iteration,
+      toolsUsed: Array.from(toolsUsed),
+      startedAt,
       usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
-    };
+    });
   }
 
   /**
@@ -453,11 +471,13 @@ export class AgentManager extends EventEmitter {
   private async executeToolCalls(
     toolCalls: ToolCall[],
     config: AgentConfig,
+    toolsUsed: Set<string>,
   ): Promise<ToolResultContent[]> {
     const results: ToolResultContent[] = [];
     const allowedTools = new Set(config.tools);
 
     for (const toolCall of toolCalls) {
+      toolsUsed.add(toolCall.name);
       // Check if tool is allowed for this agent
       if (!allowedTools.has(toolCall.name)) {
         results.push({
@@ -504,6 +524,45 @@ export class AgentManager extends EventEmitter {
     }
   }
 
+  private buildResult(input: {
+    agent: SubAgent;
+    success: boolean;
+    output: string;
+    turns: number;
+    toolsUsed: string[];
+    startedAt: string;
+    usage: { inputTokens: number; outputTokens: number };
+  }): AgentResult {
+    const structuredResult = normalizeAgentRunResult({
+      id: `${input.agent.id}-run`,
+      taskId: input.agent.id,
+      role: agentTypeToRuntimeRole(input.agent.type),
+      success: input.success,
+      output: input.output,
+      turns: input.turns,
+      toolsUsed: input.toolsUsed,
+      usage: input.usage,
+      startedAt: input.startedAt,
+      durationMs: input.agent.completedAt
+        ? input.agent.completedAt.getTime() - input.agent.createdAt.getTime()
+        : 0,
+      status: input.success ? "completed" : "failed",
+      error: input.success ? undefined : input.agent.error,
+      metadata: { agentType: input.agent.type },
+    });
+
+    return {
+      agent: input.agent,
+      success: input.success,
+      output: input.output,
+      artifacts: structuredResult.artifacts,
+      structuredResult,
+      toolsUsed: input.toolsUsed,
+      turns: input.turns,
+      usage: input.usage,
+    };
+  }
+
   /**
    * Emit an agent event
    */
@@ -511,6 +570,32 @@ export class AgentManager extends EventEmitter {
     const event: AgentEvent = { type, agent, result };
     this.emit(type, event);
     this.emit("agent", event); // Also emit generic event
+  }
+}
+
+function agentTypeToRuntimeRole(type: AgentType): AgentRole {
+  switch (type) {
+    case "explore":
+      return "researcher";
+    case "plan":
+      return "planner";
+    case "test":
+    case "e2e":
+    case "tdd":
+      return "tester";
+    case "debug":
+    case "refactor":
+      return "coder";
+    case "review":
+      return "reviewer";
+    case "architect":
+      return "architect";
+    case "security":
+      return "security";
+    case "docs":
+      return "docs";
+    case "database":
+      return "database";
   }
 }
 

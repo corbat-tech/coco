@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import * as CocoExports from "./index.js";
+import packageJson from "../package.json" with { type: "json" };
 
 describe("Main module exports", () => {
   describe("version", () => {
@@ -234,6 +235,39 @@ describe("Main module exports", () => {
       expect(typeof CocoExports.createWorkflowCatalog).toBe("function");
       expect(typeof CocoExports.createWorkflowRegistry).toBe("function");
     });
+
+    it("should export reusable agent platform APIs", () => {
+      expect(typeof CocoExports.createAgentFromBlueprint).toBe("function");
+      expect(typeof CocoExports.createBaseBlueprint).toBe("function");
+      expect(typeof CocoExports.runGuardrails).toBe("function");
+      expect(typeof CocoExports.redactSecrets).toBe("function");
+      expect(typeof CocoExports.createInMemoryKnowledgeRetriever).toBe("function");
+      expect(CocoExports.publicWebsiteAssistantPreset).toBeDefined();
+      expect(CocoExports.ragKnowledgeAssistantPreset).toBeDefined();
+      expect(CocoExports.supportRagAssistantPreset).toBeDefined();
+      expect(CocoExports.salesIntakeAssistantPreset).toBeDefined();
+      expect(CocoExports.customerSupportAssistantPreset).toBeDefined();
+      expect(CocoExports.appointmentBookingAssistantPreset).toBeDefined();
+      expect(CocoExports.internalOpsAssistantPreset).toBeDefined();
+      expect(CocoExports.codingAgentPreset).toBeDefined();
+      expect(typeof CocoExports.createHttpAssistantAdapter).toBe("function");
+      expect(typeof CocoExports.createStreamingHttpAssistantAdapter).toBe("function");
+      expect(typeof CocoExports.createWebhookAssistantAdapter).toBe("function");
+      expect(typeof CocoExports.createToolCallingRuntimeTurnRunner).toBe("function");
+      expect(typeof CocoExports.createSupportRagToolRegistry).toBe("function");
+    });
+  });
+
+  describe("package subpath contracts", () => {
+    it("should expose stable v0 runtime, tools, presets, and adapters subpaths", () => {
+      expect(packageJson.exports).toMatchObject({
+        ".": "./dist/index.js",
+        "./runtime": "./dist/runtime/index.js",
+        "./tools": "./dist/tools/index.js",
+        "./presets": "./dist/presets/index.js",
+        "./adapters": "./dist/adapters/index.js",
+      });
+    });
   });
 
   describe("tools", () => {
@@ -254,6 +288,14 @@ describe("Main module exports", () => {
     it("should export createFullToolRegistry", () => {
       expect(CocoExports.createFullToolRegistry).toBeDefined();
       expect(typeof CocoExports.createFullToolRegistry).toBe("function");
+    });
+
+    it("should export safe tool profiles", () => {
+      expect(typeof CocoExports.createNoToolRegistry).toBe("function");
+      expect(typeof CocoExports.createPublicWebToolRegistry).toBe("function");
+      expect(typeof CocoExports.createRagToolRegistry).toBe("function");
+      expect(typeof CocoExports.createCustomerSupportToolRegistry).toBe("function");
+      expect(typeof CocoExports.createCodingToolRegistry).toBe("function");
     });
   });
 

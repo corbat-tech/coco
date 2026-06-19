@@ -5,15 +5,18 @@
 <br/>
 
 [![npm](https://img.shields.io/npm/v/@corbat-tech/coco?style=flat-square&label=npm)](https://www.npmjs.com/package/@corbat-tech/coco)
+[![downloads](https://img.shields.io/npm/dm/@corbat-tech/coco?style=flat-square&label=downloads)](https://www.npmjs.com/package/@corbat-tech/coco)
+[![CI](https://img.shields.io/github/actions/workflow/status/corbat-tech/coco/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/corbat-tech/coco/actions/workflows/ci.yml)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/corbat-tech/coco/codeql.yml?branch=main&style=flat-square&label=CodeQL)](https://github.com/corbat-tech/coco/actions/workflows/codeql.yml)
 [![Node](https://img.shields.io/badge/Node.js-22%2B-22c55e?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
 
-[Install](#install) · [Quick Start](#quick-start) · [What Coco Does](#what-coco-does) · [Providers](#providers) · [Documentation](#documentation)
+[Install](#install) · [Quick Start](#quick-start) · [Why Coco](#why-coco) · [Runtime](#runtime-reuse) · [Web Assistant Example](#example-web-assistant-runtime) · [Providers](#providers) · [Documentation](#documentation)
 
 </div>
 
-**Coco is an open-source CLI coding agent for real repositories.**  
-It plans work, edits files, runs tools/tests, and iterates until quality checks pass.
+**Coco is an open-source CLI coding agent and reusable agent runtime for real-world automation.**
+It plans work, edits files, runs tools/tests, and iterates until quality checks pass. Underneath the CLI, Coco exposes a runtime for building custom agents with providers, tools, permissions, sessions, events, and workflows.
 
 ---
 
@@ -27,15 +30,62 @@ Best fit:
 - Teams and solo developers working on existing repos (not only greenfield demos).
 - Workflows that require multi-step execution and verification, not just text generation.
 
+## Why Coco?
+
+Coco is built for two related jobs:
+
+- A terminal-first coding agent that can work inside real repositories.
+- A reusable agent runtime for building future assistants and business automation without depending on the interactive CLI.
+
+That runtime boundary is intentionally practical: provider selection, model turns, tool registration, permission policy, runtime sessions, event logs, workflow metadata, and replay hooks live behind reusable APIs. The CLI is the first product built on that foundation, not the only surface it can support.
+
+## See Coco In Action
+
+```bash
+coco "/plan add validation for the provider config parser"
+# Coco inspects the repo with read-only tools and returns a plan.
+
+coco "implement the plan and run the relevant tests"
+# Coco edits files, runs checks, reviews failures, and summarizes the diff.
+```
+
+Typical final output includes changed files, checks run, risks, and next steps. For runtime embedding, see the web assistant and RAG examples below.
+
+## Built For Two Use Cases
+
+### For Developers
+
+Use Coco as a coding agent that can inspect an existing repo, plan changes, edit files, run checks, review diffs, and iterate toward a passing result.
+
+### For Teams And Products
+
+Use Coco Runtime as a base for custom agents: internal assistants, support copilots, operations workflows, sales/product assistants, documentation agents, or client-specific automation. These products can use Coco's runtime without exposing shell, filesystem, git, or publishing tools unless you explicitly register them.
+
 ## What Coco Does
+
+**Coding Agent**
 
 - Multi-step execution in one run: explore -> implement -> test -> refine.
 - Quality mode with convergence scoring (configurable threshold and max iterations).
-- Native tool use: files, git, shell, search/web, review, diff, build/test, MCP servers.
-- Multi-provider support (API, subscription, and local models).
+- Native tool use for files, git, shell, search/web, review, diff, build/test, and MCP servers.
 - Session-oriented REPL with slash commands, context compaction, and resumable workflows.
-- Reusable runtime foundation for building future Coco-powered agents beyond the CLI.
-- Reliability features for long sessions: provider retry/circuit-breaker, robust tool-call parsing, and safer stream error handling.
+
+**Multi-provider Runtime**
+
+- Provider support across API, subscription-backed, OpenAI-compatible, and local models.
+- Runtime APIs for sessions, model turns, tool registration, permission policy, events, and workflow metadata.
+- Reusable foundation for Coco-powered agents beyond the CLI.
+
+**Reliability And Safety**
+
+- Provider retry/circuit-breaker support for long sessions.
+- Robust tool-call parsing and safer stream error handling.
+- Strict read-only planning mode by default.
+
+**Extensibility**
+
+- MCP support for external tools and services.
+- Skills for project-specific workflows and agent interoperability.
 - Replay harness support to reproduce agent-loop behaviors from fixtures for regression testing.
 
 Coco is designed to be useful on medium and large repos, not only toy examples.
@@ -90,6 +140,87 @@ On first run, Coco guides provider/model setup.
 5. Coco returns summary + diffs/results.
 
 Quality mode is configurable and can be turned on/off per session.
+
+## Runtime Reuse
+
+Coco's CLI runs on a reusable agent runtime that wires providers, tools, permissions, sessions, event logs, and workflow metadata behind a stable internal boundary. This keeps the programming CLI as the main product while making the same foundation reusable for future client-specific agents.
+
+```ts
+import { createAgentRuntime, ToolRegistry } from "@corbat-tech/coco";
+```
+
+Runtime consumers can create their own backend, register only the tools they trust, and use Coco for model/provider orchestration, session state, permissions, event logging, and workflow execution.
+
+- [Runtime Architecture](docs/architecture/RUNTIME.md)
+- [Platform Layers](docs/architecture/PLATFORM_LAYERS.md)
+- [Public API v0](docs/PUBLIC_API_V0.md)
+- [Product Family](docs/PRODUCT_FAMILY.md)
+- [Build Custom Agents](docs/guides/BUILD_CUSTOM_AGENTS.md)
+- [Support/RAG Assistant](docs/guides/SUPPORT_RAG_ASSISTANT.md)
+- [Web Assistant Runtime Example](examples/web-assistant-runtime/README.md)
+
+Subpath imports are available for embedders:
+
+```ts
+import { createAgentRuntime } from "@corbat-tech/coco/runtime";
+import { createSupportRagToolRegistry } from "@corbat-tech/coco/tools";
+import { supportRagAssistantPreset } from "@corbat-tech/coco/presets";
+```
+
+## What Coco Adds To Business Agents
+
+Coco does not replace your business systems. It gives you a reusable agent layer
+that connects models, tools, permissions, sessions, guardrails, and logs in the
+same way across channels.
+
+For example, in a RAG assistant:
+
+```txt
+Google Drive / Notion / PDFs / website docs
+  -> your retriever or vector database
+  -> Coco Runtime
+  -> selected model
+  -> answer with sources, policy, session, and event logs
+```
+
+The retriever still owns document indexing and search. Coco standardizes how the
+agent uses that search safely: answer from approved knowledge, cite sources, say
+"I don't know" when retrieval is weak, avoid dangerous tools, and record what
+happened. The same runtime pattern can then be reused for a website widget,
+WhatsApp assistant, customer-support draft flow, appointment assistant, or
+internal operations agent.
+
+## Runtime Maturity
+
+| Surface | Status | Notes |
+|---------|--------|-------|
+| Coco CLI | Beta | Main product surface, used for coding-agent workflows. |
+| Runtime APIs | Beta | Exported from `@corbat-tech/coco`; package split is planned later. |
+| Agent presets | Experimental | Safe defaults for public web, RAG, sales, support, appointments, internal ops, and coding. |
+| Adapters | Experimental | HTTP, streaming HTTP, and webhook-style adapter shapes. |
+
+## Example: Web Assistant Runtime
+
+For a website such as `corbat.tech`, the web app should own authentication, users, tenants, UI, and HTTP streaming. Coco Runtime should sit behind that app and own provider selection, model turns, session state, permission checks, tool registration, and event logs.
+
+The recommended pattern is:
+
+1. Build a small authenticated backend endpoint for the website chat.
+2. Create a Coco runtime instance in that backend.
+3. Register only narrow, domain-specific tools such as public-doc search, service listing, project-scope estimation, or lead-draft creation.
+4. Stream runtime responses back to the frontend.
+
+Do not reuse Coco's full coding-agent tool registry in a public web assistant. Shell access, arbitrary filesystem operations, git writes, deployment, package publishing, secrets, and private customer data should stay unavailable unless a product-specific backend explicitly gates them.
+
+See [examples/web-assistant-runtime](examples/web-assistant-runtime/README.md) for a concrete embedding sketch.
+
+## Why Coco vs Other Coding Agents?
+
+- **Reusable runtime underneath the CLI:** Coco can power coding workflows and future custom assistants.
+- **Multi-provider by design:** API, subscription-backed, OpenAI-compatible, and local models can share runtime policy.
+- **Permission-first tooling:** public presets default to no tools; coding tools stay in trusted developer contexts.
+- **Interop-friendly:** skills and MCP configuration can reuse existing agent ecosystem conventions.
+- **Replay and release gates:** quality and provider behavior can be tested through replay fixtures and release checks.
 
 ## Reliability and Quality
 
@@ -155,12 +286,6 @@ Notes:
 For setup details and model matrix:
 
 - [Provider Guide](docs/guides/PROVIDERS.md)
-
-## Runtime Reuse
-
-Coco's CLI runs on a reusable agent runtime that wires providers, tools, permissions, sessions, event logs, and workflow metadata behind a stable internal boundary. This keeps the programming CLI as the main product while making the same foundation reusable for future client-specific agents.
-
-- [Runtime Architecture](docs/architecture/RUNTIME.md)
 
 ## Skills
 
@@ -283,6 +408,13 @@ See:
 - [Quality Guide](docs/guides/QUALITY.md)
 - [Providers](docs/guides/PROVIDERS.md)
 - [Architecture](docs/architecture/ARCHITECTURE.md)
+- [Platform Layers](docs/architecture/PLATFORM_LAYERS.md)
+- [Build Custom Agents](docs/guides/BUILD_CUSTOM_AGENTS.md)
+- [Public Assistant Runtime](docs/guides/PUBLIC_ASSISTANT_RUNTIME.md)
+- [RAG Assistant](docs/guides/RAG_ASSISTANT.md)
+- [WhatsApp Assistant](docs/guides/WHATSAPP_ASSISTANT.md)
+- [Security For Public Agents](docs/guides/SECURITY_FOR_PUBLIC_AGENTS.md)
+- [Client Agent Integration](docs/guides/CLIENT_AGENT_INTEGRATION.md)
 - [Troubleshooting](docs/guides/TROUBLESHOOTING.md)
 - [Release Workflow](docs/RELEASE_WORKFLOW.md)
 
@@ -324,6 +456,10 @@ Coco sends prompts and selected context to the configured provider.
 - Coco itself does not claim ownership of your code.
 - Provider-side data handling depends on each provider policy.
 - Local providers (`ollama`, `lmstudio`) keep inference on your machine.
+
+## Built By Corbat
+
+Coco is developed by [Corbat](https://corbat.tech) as an open-source foundation for coding automation and custom AI agents.
 
 ## Contributing
 

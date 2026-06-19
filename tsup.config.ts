@@ -5,6 +5,10 @@ export default defineConfig([
   {
     entry: {
       index: "src/index.ts",
+      "runtime/index": "src/runtime/index.ts",
+      "tools/index": "src/tools/index.ts",
+      "presets/index": "src/presets/index.ts",
+      "adapters/index": "src/adapters/index.ts",
     },
     format: ["esm"],
     target: "node22",

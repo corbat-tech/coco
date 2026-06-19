@@ -58,10 +58,19 @@ export type RuntimeEventType =
   | "tool.allowed"
   | "tool.blocked"
   | "tool.skipped"
+  | "agent.started"
+  | "agent.tool.called"
+  | "agent.artifact.created"
+  | "agent.completed"
+  | "agent.failed"
+  | "guardrail.input"
+  | "guardrail.output"
+  | "guardrail.tool"
   | "workflow.planned"
   | "workflow.started"
   | "workflow.completed"
   | "workflow.failed"
+  | "workflow.gate.failed"
   | "session.created"
   | "session.updated"
   | "checkpoint.created"
@@ -135,6 +144,11 @@ export interface RuntimeTurnInput {
   mode?: RuntimeMode;
   options?: ChatOptions;
   metadata?: Record<string, unknown>;
+  /**
+   * Tool names that the embedding product has explicitly confirmed for this
+   * turn. Destructive tools are still blocked unless listed here.
+   */
+  confirmedTools?: string[];
 }
 
 export interface RuntimeTurnResult {

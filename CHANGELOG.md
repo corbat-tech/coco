@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.38.0] - 2026-06-19
+
+### Added
+- **Professional multi-agent runtime contracts**
+  - Add canonical agent roles, capabilities, budgets, typed tasks, structured artifacts, run results, gates, DAG nodes, graph validation, and shared workspace state.
+  - Extend workflow definitions with `nodes`, `edges`, `gates`, `retryPolicy`, and `parallelism` while preserving legacy `steps`.
+  - Add runtime event names for agent lifecycle, agent artifacts, agent tool calls, and failed workflow gates.
+- **Structured agent outputs**
+  - Agent executor and REPL subagent manager now keep legacy string outputs and also return typed artifacts plus `AgentRunResult`.
+- **Runtime product surfaces**
+  - Add public runtime presets, safe tool profiles, app examples, adapter exports, and documentation for embedded assistants.
+
+### Improved
+- **Release readiness**
+  - Add workspace-aware typecheck/build coverage for embedded app examples.
+  - Document multi-agent architecture decisions in ADR 009 and the runtime architecture guide.
+
 ## [2.37.0] - 2026-06-18
 
 ### Added

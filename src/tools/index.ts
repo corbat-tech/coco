@@ -13,6 +13,33 @@ export {
   type ToolResult,
 } from "./registry.js";
 
+// Product-safe tool profiles
+export {
+  createCodingToolRegistry,
+  createCustomerSupportToolRegistry,
+  createNoToolRegistry,
+  createPublicWebToolRegistry,
+  createRagToolRegistry,
+  createInternalOpsToolRegistry,
+  createSalesIntakeToolRegistry,
+  createSupportRagToolRegistry,
+  type HumanEscalationHandler,
+  type HumanEscalationInput,
+  type HumanEscalationOutput,
+  type InternalOpsDraftHandler,
+  type InternalOpsDraftInput,
+  type InternalOpsDraftOutput,
+  type InternalOpsToolRegistryOptions,
+  type SalesIntakeToolRegistryOptions,
+  type SalesLeadSummaryHandler,
+  type SalesLeadSummaryInput,
+  type SalesLeadSummaryOutput,
+  type SupportDraftHandler,
+  type SupportDraftInput,
+  type SupportDraftOutput,
+  type SupportRagToolRegistryOptions,
+} from "./profiles.js";
+
 // File tools
 export {
   readFileTool,
