@@ -102,6 +102,16 @@ describe("AgentManager", () => {
       expect(result.agent.type).toBe("explore");
       expect(result.agent.status).toBe("completed");
       expect(result.output).toContain("files");
+      expect(result.structuredResult).toMatchObject({
+        role: "researcher",
+        status: "completed",
+        success: true,
+        output: "I found the following files in the project.",
+      });
+      expect(result.artifacts?.[0]).toMatchObject({
+        kind: "summary",
+        content: "I found the following files in the project.",
+      });
     });
 
     it("should spawn a plan agent", async () => {
@@ -268,6 +278,11 @@ describe("AgentManager", () => {
       expect(result4.success).toBe(false);
       expect(result4.agent.status).toBe("failed");
       expect(result4.output).toContain("maximum concurrent agents");
+      expect(result4.structuredResult).toMatchObject({
+        role: "coder",
+        status: "failed",
+        success: false,
+      });
 
       // Clean up: complete all agents
       for (const resolver of resolvers) {

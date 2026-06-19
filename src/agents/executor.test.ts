@@ -93,6 +93,17 @@ describe("AgentExecutor", () => {
       expect(result.toolsUsed).toEqual([]);
       expect(result.tokensUsed).toBe(150);
       expect(result.duration).toBeGreaterThanOrEqual(0);
+      expect(result.structuredResult).toMatchObject({
+        taskId: "task-1",
+        role: "coder",
+        status: "completed",
+        success: true,
+        output: "Task completed without tools.",
+      });
+      expect(result.artifacts?.[0]).toMatchObject({
+        kind: "summary",
+        content: "Task completed without tools.",
+      });
       expect(mockProvider.chatWithTools).toHaveBeenCalledTimes(1);
     });
 
@@ -217,6 +228,12 @@ describe("AgentExecutor", () => {
       expect(result.output).toContain("Agent error on turn 1");
       expect(result.output).toContain("API rate limit exceeded");
       expect(result.toolsUsed).toEqual([]);
+      expect(result.structuredResult).toMatchObject({
+        taskId: "task-1",
+        role: "coder",
+        status: "failed",
+        success: false,
+      });
     });
 
     it("should handle provider error with non-Error thrown value", async () => {

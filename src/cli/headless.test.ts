@@ -132,4 +132,43 @@ describe("runHeadless", () => {
       expect.objectContaining({ skipConfirmation: true }),
     );
   });
+
+  it("can run direct tasks through the experimental runtime runner", async () => {
+    const { createProvider } = await import("../providers/index.js");
+    const { executeAgentTurn } = await import("./repl/agent-loop.js");
+    vi.mocked(createProvider).mockResolvedValueOnce({
+      id: "mock",
+      name: "Mock",
+      initialize: vi.fn().mockResolvedValue(undefined),
+      chat: vi.fn(),
+      chatWithTools: vi.fn().mockResolvedValue({
+        id: "runtime-1",
+        content: "Runtime runner response",
+        stopReason: "end_turn",
+        usage: { inputTokens: 11, outputTokens: 7 },
+        model: "mock-model",
+        toolCalls: [],
+      }),
+      stream: vi.fn(),
+      streamWithTools: vi.fn(),
+      countTokens: vi.fn(() => 10),
+      getContextWindow: vi.fn(() => 100000),
+      isAvailable: vi.fn().mockResolvedValue(true),
+    });
+
+    const result = await runHeadless({
+      task: "analyze this code",
+      projectPath: "/test",
+      outputFormat: "text",
+      useRuntimeRunner: true,
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      output: "Runtime runner response",
+      toolsExecuted: 0,
+      usage: { inputTokens: 11, outputTokens: 7 },
+    });
+    expect(executeAgentTurn).not.toHaveBeenCalled();
+  });
 });

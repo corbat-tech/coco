@@ -39,6 +39,7 @@ const DESTRUCTIVE_TOOL_NAMES = new Set([
   "restore_checkpoint",
   "git_commit",
   "git_push",
+  "request_human_escalation",
 ]);
 
 function riskForTool(tool: ToolDefinition): PermissionDecision["risk"] {

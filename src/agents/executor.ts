@@ -11,6 +11,8 @@ import type {
   ToolUseContent,
   ToolResultContent,
 } from "../providers/types.js";
+import type { AgentArtifact, AgentRole, AgentRunResult } from "../runtime/multi-agent.js";
+import { normalizeAgentRunResult } from "../runtime/multi-agent.js";
 import type { ToolRegistry } from "../tools/registry.js";
 
 export interface AgentDefinition {
@@ -42,6 +44,8 @@ export interface AgentResult {
   toolsUsed: string[];
   tokensUsed?: number;
   duration: number;
+  artifacts?: AgentArtifact[];
+  structuredResult?: AgentRunResult;
 }
 
 /**
@@ -62,6 +66,7 @@ export class AgentExecutor {
    */
   async execute(agent: AgentDefinition, task: AgentTask): Promise<AgentResult> {
     const startTime = Date.now();
+    const startedAt = new Date().toISOString();
     const toolsUsed = new Set<string>();
 
     // Build initial messages
@@ -77,6 +82,8 @@ export class AgentExecutor {
 
     let turn = 0;
     let totalTokens = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     while (turn < agent.maxTurns) {
       turn++;
@@ -89,18 +96,25 @@ export class AgentExecutor {
         });
 
         const usage = response.usage;
+        totalInputTokens += usage?.inputTokens || 0;
+        totalOutputTokens += usage?.outputTokens || 0;
         totalTokens += (usage?.inputTokens || 0) + (usage?.outputTokens || 0);
 
         // If no tool calls, the agent is done
         if (response.stopReason !== "tool_use" || response.toolCalls.length === 0) {
-          return {
+          return this.toAgentResult({
+            agent,
+            task,
             output: response.content,
             success: true,
             turns: turn,
             toolsUsed: Array.from(toolsUsed),
             tokensUsed: totalTokens,
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
             duration: Date.now() - startTime,
-          };
+            startedAt,
+          });
         }
 
         // Build assistant message with tool_use content blocks
@@ -156,26 +170,40 @@ export class AgentExecutor {
           content: toolResults as unknown as MessageContent,
         });
       } catch (error) {
-        return {
-          output: `Agent error on turn ${turn}: ${error instanceof Error ? error.message : String(error)}`,
+        const output = `Agent error on turn ${turn}: ${error instanceof Error ? error.message : String(error)}`;
+        return this.toAgentResult({
+          agent,
+          task,
+          output,
           success: false,
           turns: turn,
           toolsUsed: Array.from(toolsUsed),
           tokensUsed: totalTokens,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
           duration: Date.now() - startTime,
-        };
+          startedAt,
+          error: output,
+        });
       }
     }
 
     // Max turns reached
-    return {
-      output: "Agent reached maximum turns without completing task",
+    const output = "Agent reached maximum turns without completing task";
+    return this.toAgentResult({
+      agent,
+      task,
+      output,
       success: false,
       turns: turn,
       toolsUsed: Array.from(toolsUsed),
       tokensUsed: totalTokens,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
       duration: Date.now() - startTime,
-    };
+      startedAt,
+      error: output,
+    });
   }
 
   /**
@@ -201,6 +229,60 @@ export class AgentExecutor {
     if (allowedToolNames.length === 0) return allDefs;
     return allDefs.filter((def) => allowedToolNames.includes(def.name));
   }
+
+  private toAgentResult(input: {
+    agent: AgentDefinition;
+    task: AgentTask;
+    output: string;
+    success: boolean;
+    turns: number;
+    toolsUsed: string[];
+    tokensUsed: number;
+    inputTokens: number;
+    outputTokens: number;
+    duration: number;
+    startedAt: string;
+    error?: string;
+  }): AgentResult {
+    const structuredResult = normalizeAgentRunResult({
+      id: `${input.task.id}-${Date.now().toString(36)}`,
+      taskId: input.task.id,
+      role: normalizeRole(input.agent.role),
+      success: input.success,
+      output: input.output,
+      turns: input.turns,
+      toolsUsed: input.toolsUsed,
+      durationMs: input.duration,
+      startedAt: input.startedAt,
+      usage: { inputTokens: input.inputTokens, outputTokens: input.outputTokens },
+      error: input.error,
+      metadata: { legacyRole: input.agent.role },
+    });
+
+    return {
+      output: input.output,
+      success: input.success,
+      turns: input.turns,
+      toolsUsed: input.toolsUsed,
+      tokensUsed: input.tokensUsed,
+      duration: input.duration,
+      artifacts: structuredResult.artifacts,
+      structuredResult,
+    };
+  }
+}
+
+function normalizeRole(role: AgentDefinition["role"]): AgentRole {
+  return role === "researcher" ||
+    role === "architect" ||
+    role === "editor" ||
+    role === "coder" ||
+    role === "tester" ||
+    role === "reviewer" ||
+    role === "optimizer" ||
+    role === "planner"
+    ? role
+    : "coder";
 }
 
 /**

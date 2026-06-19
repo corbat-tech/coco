@@ -72,6 +72,10 @@ program
   .option("--weak-model <model>", "Cheap model for background tasks (compaction, summaries)")
   .option("-p, --path <path>", "Project path", process.cwd())
   .option("-P, --print [task]", "Headless mode: run task and print output (no interactive UI)")
+  .option(
+    "--runtime-runner",
+    "Experimental: run headless tasks through the reusable runtime tool-calling runner",
+  )
   .option("--output <format>", "Output format for headless mode (text or json)", "text")
   .option("--setup", "Run setup wizard before starting")
   .action(
@@ -81,6 +85,7 @@ program
       path: string;
       print?: string | boolean;
       output?: string;
+      runtimeRunner?: boolean;
       setup?: boolean;
       editorModel?: string;
       weakModel?: string;
@@ -105,6 +110,7 @@ program
           task,
           projectPath: options.path,
           outputFormat: options.output === "json" ? "json" : "text",
+          useRuntimeRunner: options.runtimeRunner === true,
           config: {
             provider: {
               type: providerType as "anthropic" | "openai",

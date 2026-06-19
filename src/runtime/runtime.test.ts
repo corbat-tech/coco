@@ -11,8 +11,16 @@ import { createEventLog, createFileEventLog } from "./event-log.js";
 import { createMcpToolPolicy } from "./extension-manifests.js";
 import { createRuntimeHttpServer } from "./http-server.js";
 import { createPermissionPolicy } from "./permission-policy.js";
+import {
+  createPostgresEventLog,
+  createPostgresRuntimeSessionQueries,
+  createPostgresRuntimeSessionStore,
+  listPostgresRuntimeEvents,
+  type PostgresQueryClient,
+} from "./postgres.js";
 import { createProviderRegistry } from "./provider-registry.js";
 import { createFileRuntimeSessionStore } from "./runtime-session-store.js";
+import { createToolCallingRuntimeTurnRunner } from "./tool-calling-turn-runner.js";
 import { createWorkflowEngine } from "./workflow-engine.js";
 import { createWorkflowCatalog } from "./workflow-registry.js";
 
@@ -246,6 +254,109 @@ describe("reusable agent runtime", () => {
     expect(direct.mode).toBe("ask");
     expect(turn.mode).toBe("ask");
     expect(runtime.getSession(turn.sessionId)?.mode).toBe("ask");
+  });
+
+  it("runs tool-calling turns through runtime permissions and tool execution", async () => {
+    const provider = createMockProvider();
+    provider.chatWithTools = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "chat-tools-1",
+        content: "I will read the file.",
+        stopReason: "tool_use",
+        usage: { inputTokens: 10, outputTokens: 5 },
+        model: "mock-model",
+        toolCalls: [
+          {
+            id: "tool-1",
+            name: "read_file",
+            input: { path: "README.md" },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        id: "chat-tools-2",
+        content: "The file says read:README.md",
+        stopReason: "end_turn",
+        usage: { inputTokens: 12, outputTokens: 7 },
+        model: "mock-model",
+        toolCalls: [],
+      });
+    const eventLog = createEventLog();
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider,
+      toolRegistry: createRegistry(),
+      eventLog,
+      turnRunner: createToolCallingRuntimeTurnRunner(),
+    });
+    const session = runtime.createSession({ mode: "ask" });
+
+    const result = await runtime.runTurn({
+      sessionId: session.id,
+      content: "Read README.md",
+    });
+
+    expect(result).toMatchObject({
+      content: "The file says read:README.md",
+      usage: { inputTokens: 22, outputTokens: 12 },
+    });
+    expect(provider.chatWithTools).toHaveBeenCalledTimes(2);
+    expect(eventLog.list().map((event) => event.type)).toEqual([
+      "provider.attached",
+      "runtime.initialized",
+      "session.created",
+      "turn.started",
+      "tool.started",
+      "tool.completed",
+      "session.updated",
+      "turn.completed",
+    ]);
+  });
+
+  it("does not auto-confirm destructive tools in tool-calling runtime turns", async () => {
+    const provider = createMockProvider();
+    provider.chatWithTools = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "chat-tools-1",
+        content: "I will write the file.",
+        stopReason: "tool_use",
+        usage: { inputTokens: 10, outputTokens: 5 },
+        model: "mock-model",
+        toolCalls: [
+          {
+            id: "tool-1",
+            name: "write_file",
+            input: { path: "README.md", content: "x" },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        id: "chat-tools-2",
+        content: "The write was blocked because it requires confirmation.",
+        stopReason: "end_turn",
+        usage: { inputTokens: 12, outputTokens: 7 },
+        model: "mock-model",
+        toolCalls: [],
+      });
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider,
+      toolRegistry: createRegistry(),
+      turnRunner: createToolCallingRuntimeTurnRunner(),
+    });
+    const session = runtime.createSession({ mode: "build" });
+
+    const result = await runtime.runTurn({
+      sessionId: session.id,
+      content: "Write README.md",
+    });
+
+    expect(result.content).toContain("blocked");
+    expect(runtime.eventLog.list().map((event) => event.type)).toContain("tool.blocked");
   });
 
   it("defaults file-backed runtime sessions to ask mode", async () => {
@@ -533,6 +644,71 @@ describe("reusable agent runtime", () => {
     } finally {
       await chmod(eventLogPath, 0o644);
     }
+  });
+
+  it("provides Postgres-backed write-through session and event adapters", async () => {
+    const queries: Array<{ sql: string; params?: unknown[] }> = [];
+    const client: PostgresQueryClient = {
+      async query(sql, params) {
+        queries.push({ sql, params });
+        if (sql.includes("from coco_runtime_sessions")) {
+          return {
+            rows: [
+              {
+                id: "rt_pg",
+                created_at: "2026-06-19T00:00:00.000Z",
+                updated_at: "2026-06-19T00:00:00.000Z",
+                mode: "ask",
+                messages: JSON.stringify([{ role: "user", content: "hello" }]),
+                instructions: null,
+                metadata: JSON.stringify({ tenantId: "tenant-a" }),
+              },
+            ],
+          };
+        }
+        if (sql.includes("from coco_runtime_events")) {
+          return {
+            rows: [
+              {
+                id: "evt_pg",
+                type: "turn.completed",
+                timestamp: "2026-06-19T00:00:00.000Z",
+                data: JSON.stringify({ sessionId: "rt_pg" }),
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      },
+    };
+
+    const store = createPostgresRuntimeSessionStore(client, { tenantId: "tenant-a" });
+    const created = store.create({ id: "rt_pg", mode: "ask" });
+    const updated = store.update({
+      ...created,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    const log = createPostgresEventLog(client, { tenantId: "tenant-a" });
+    log.record("turn.completed", { sessionId: "rt_pg" });
+
+    expect(store.get("rt_pg")?.messages).toEqual([{ role: "user", content: "hello" }]);
+    expect(updated.messages).toHaveLength(1);
+    expect(log.count()).toBe(1);
+    expect(queries.some((query) => query.sql.includes("insert into coco_runtime_sessions"))).toBe(
+      true,
+    );
+    expect(queries.some((query) => query.sql.includes("insert into coco_runtime_events"))).toBe(
+      true,
+    );
+
+    const sessionQueries = createPostgresRuntimeSessionQueries(client, { tenantId: "tenant-a" });
+    await expect(sessionQueries.get("rt_pg")).resolves.toMatchObject({
+      id: "rt_pg",
+      metadata: { tenantId: "tenant-a" },
+    });
+    await expect(listPostgresRuntimeEvents(client, { sessionId: "rt_pg" })).resolves.toMatchObject([
+      { id: "evt_pg", type: "turn.completed", data: { sessionId: "rt_pg" } },
+    ]);
   });
 
   it("exposes reusable workflow definitions and records planned plans", () => {

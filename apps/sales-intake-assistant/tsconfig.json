@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@corbat-tech/coco/presets": ["../../dist/presets/index.d.ts"],
+      "@corbat-tech/coco/tools": ["../../dist/tools/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

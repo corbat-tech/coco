@@ -15,7 +15,7 @@
 import { createSession, initializeSessionTrust, initializeContextManager } from "./repl/session.js";
 import { executeAgentTurn } from "./repl/agent-loop.js";
 import { createProvider } from "../providers/index.js";
-import { createAgentRuntime } from "../runtime/index.js";
+import { createAgentRuntime, createToolCallingRuntimeTurnRunner } from "../runtime/index.js";
 import { loadAllowedPaths } from "../tools/allowed-paths.js";
 import { registerGlobalCleanup } from "../utils/subprocess-registry.js";
 import type { ReplConfig } from "./repl/types.js";
@@ -34,6 +34,11 @@ export interface HeadlessOptions {
   outputFormat: "text" | "json";
   /** Provider configuration */
   config?: Partial<ReplConfig>;
+  /**
+   * Experimental: run the direct task through the reusable runtime tool-calling
+   * runner instead of the legacy REPL loop.
+   */
+  useRuntimeRunner?: boolean;
 }
 
 /**
@@ -138,6 +143,7 @@ export async function runHeadless(options: HeadlessOptions): Promise<HeadlessRes
       model: session.config.provider.model || undefined,
       provider,
       eventLogPath: path.join(options.projectPath, ".coco", "events", `${session.id}.jsonl`),
+      turnRunner: options.useRuntimeRunner ? createToolCallingRuntimeTurnRunner() : undefined,
       publishToGlobalBridge: true,
     });
     session.runtime = runtime;
@@ -148,6 +154,39 @@ export async function runHeadless(options: HeadlessOptions): Promise<HeadlessRes
 
     // Initialize context manager
     await initializeContextManager(session, provider);
+
+    if (options.useRuntimeRunner) {
+      const runtimeSession = runtime.createSession({
+        id: session.id,
+        mode: "build",
+        instructions: session.config.agent.systemPrompt || undefined,
+        metadata: {
+          surface: "cli",
+          product: "coco-code",
+          execution: "headless-runtime-runner",
+        },
+      });
+      const result = await runtime.runTurn({
+        sessionId: runtimeSession.id,
+        content: task,
+        metadata: { surface: "cli", product: "coco-code" },
+      });
+      const events = runtime.eventLog.list();
+      const headlessResult: HeadlessResult = {
+        success: true,
+        output: result.content,
+        toolsExecuted: events.filter((event) => event.type === "tool.completed").length,
+        usage: result.usage,
+      };
+
+      if (options.outputFormat === "json") {
+        process.stdout.write(JSON.stringify(headlessResult, null, 2) + "\n");
+      } else {
+        process.stdout.write(result.content + "\n");
+      }
+
+      return headlessResult;
+    }
 
     // Execute agent turn
     const result = await executeAgentTurn(session, task, provider, toolRegistry, {

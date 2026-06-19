@@ -9,6 +9,12 @@ This directory contains example projects demonstrating how to use Corbat-Coco fo
 | [01-rest-api-typescript](./01-rest-api-typescript/) | REST API with authentication | TypeScript | ~25-45 min |
 | [02-cli-tool](./02-cli-tool/) | CLI tool for image processing | TypeScript | ~20-35 min |
 | [03-java-spring-boot](./03-java-spring-boot/) | Spring Boot microservice | Java | ~30-45 min |
+| [nextjs-public-assistant](./nextjs-public-assistant/) | Public website assistant using Coco Runtime | TypeScript | ~20-30 min |
+| [rag-knowledge-assistant](./rag-knowledge-assistant/) | Knowledge assistant with retriever interface | TypeScript | ~20-30 min |
+| [whatsapp-assistant](./whatsapp-assistant/) | Webhook-style WhatsApp assistant integration | TypeScript | ~20-30 min |
+| [appointment-booking](./appointment-booking/) | Confirmation-gated appointment assistant | TypeScript | ~20-30 min |
+| [customer-support](./customer-support/) | Support triage and response draft assistant | TypeScript | ~20-30 min |
+| [web-assistant-runtime](./web-assistant-runtime/) | Low-level runtime embedding example | TypeScript | ~15-25 min |
 
 ## How to Use Examples
 

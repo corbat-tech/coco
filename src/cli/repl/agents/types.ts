@@ -3,6 +3,12 @@
  * Defines the types for specialized agents that can be spawned for different tasks
  */
 
+import type {
+  AgentArtifact,
+  AgentRole,
+  AgentRunResult as RuntimeAgentRunResult,
+} from "../../../runtime/multi-agent.js";
+
 /**
  * Available agent types for specialized tasks
  */
@@ -53,6 +59,8 @@ export interface SubAgent {
 export interface AgentConfig {
   /** Type of agent to spawn */
   type: AgentType;
+  /** Canonical runtime role for this agent type */
+  role?: AgentRole;
   /** System prompt for this agent type */
   systemPrompt: string;
   /** Tool names this agent can use */
@@ -102,6 +110,14 @@ export interface AgentResult {
   success: boolean;
   /** Final output or error message */
   output: string;
+  /** Structured artifacts produced by the agent */
+  artifacts?: AgentArtifact[];
+  /** Canonical runtime result for multi-agent orchestration */
+  structuredResult?: RuntimeAgentRunResult;
+  /** Tool names used during execution */
+  toolsUsed?: string[];
+  /** Number of model turns used */
+  turns?: number;
   /** Token usage statistics */
   usage?: {
     inputTokens: number;

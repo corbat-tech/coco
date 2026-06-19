@@ -1,4 +1,6 @@
 import type { EventLog } from "./types.js";
+import type { AgentGraphDefinition, AgentGraphNode, AgentGateDefinition } from "./multi-agent.js";
+import { validateAgentGraph } from "./multi-agent.js";
 
 export type WorkflowRisk = "read-only" | "write" | "network" | "destructive" | "secrets-sensitive";
 
@@ -9,12 +11,23 @@ export interface WorkflowStepDefinition {
   risk: WorkflowRisk;
 }
 
+export interface WorkflowRetryPolicy {
+  maxAttempts: number;
+  backoffMs?: number;
+}
+
 export interface WorkflowDefinition {
   id: string;
   name: string;
   description: string;
   inputSchema: string;
+  /** Legacy linear workflow steps. Prefer nodes for new multi-agent workflows. */
   steps: WorkflowStepDefinition[];
+  nodes?: AgentGraphNode[];
+  edges?: AgentGraphDefinition["edges"];
+  gates?: AgentGateDefinition[];
+  retryPolicy?: WorkflowRetryPolicy;
+  parallelism?: number;
   checks: string[];
   outputKind: "markdown" | "json" | "patch" | "pull-request" | "release";
   replayable: boolean;
@@ -36,6 +49,35 @@ function cloneWorkflow(workflow: WorkflowDefinition): WorkflowDefinition {
       ...step,
       requiredTools: [...step.requiredTools],
     })),
+    nodes: workflow.nodes?.map((node) => ({
+      ...node,
+      dependsOn: node.dependsOn ? [...node.dependsOn] : undefined,
+      requiredTools: node.requiredTools ? [...node.requiredTools] : undefined,
+      gates: node.gates ? [...node.gates] : undefined,
+      retryPolicy: node.retryPolicy ? { ...node.retryPolicy } : undefined,
+    })),
+    edges: workflow.edges?.map((edge) => ({ ...edge })),
+    gates: workflow.gates?.map((gate) => ({ ...gate })),
+    retryPolicy: workflow.retryPolicy ? { ...workflow.retryPolicy } : undefined,
+  };
+}
+
+export function workflowToAgentGraph(workflow: WorkflowDefinition): AgentGraphDefinition {
+  const nodes =
+    workflow.nodes ??
+    workflow.steps.map((step, index) => ({
+      id: step.id,
+      description: step.description,
+      requiredTools: [...step.requiredTools],
+      risk: step.risk,
+      dependsOn: index > 0 ? [workflow.steps[index - 1]!.id] : [],
+    }));
+
+  return {
+    nodes,
+    edges: workflow.edges,
+    gates: workflow.gates,
+    parallelism: workflow.parallelism,
   };
 }
 
@@ -50,6 +92,14 @@ export class WorkflowCatalog {
   }
 
   register(workflow: WorkflowDefinition): void {
+    const validation = validateAgentGraph(workflowToAgentGraph(workflow));
+    if (!validation.valid) {
+      throw new Error(
+        `Invalid workflow graph for '${workflow.id}': ${validation.issues
+          .map((issue) => issue.message)
+          .join("; ")}`,
+      );
+    }
     this.workflows.set(workflow.id, cloneWorkflow(workflow));
   }
 
@@ -85,6 +135,7 @@ export class WorkflowCatalog {
       planId: plan.id,
       replayable: workflow.replayable,
       checks: workflow.checks,
+      graphLevels: validateAgentGraph(workflowToAgentGraph(workflow)).levels,
     });
 
     return plan;
