@@ -24,6 +24,7 @@ import { createFileRuntimeSessionStore } from "./runtime-session-store.js";
 import { createToolCallingRuntimeTurnRunner } from "./tool-calling-turn-runner.js";
 import { createWorkflowEngine } from "./workflow-engine.js";
 import { createWorkflowCatalog } from "./workflow-registry.js";
+import type { RuntimeSession, RuntimeSessionCreateOptions, RuntimeSessionStore } from "./types.js";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -124,6 +125,40 @@ function createRegistry(): ToolRegistry {
     }),
   );
   return registry;
+}
+
+function createMutableRuntimeSessionStore(sessions: RuntimeSession[] = []): RuntimeSessionStore {
+  const byId = new Map(sessions.map((session) => [session.id, structuredClone(session)]));
+  return {
+    create(options: RuntimeSessionCreateOptions = {}) {
+      const now = new Date().toISOString();
+      const session: RuntimeSession = {
+        id: options.id ?? `rt_${byId.size + 1}`,
+        createdAt: now,
+        updatedAt: now,
+        mode: options.mode ?? "ask",
+        messages: options.messages ?? [],
+        instructions: options.instructions,
+        metadata: { ...options.metadata },
+      };
+      byId.set(session.id, structuredClone(session));
+      return structuredClone(session);
+    },
+    get(id) {
+      const session = byId.get(id);
+      return session ? structuredClone(session) : undefined;
+    },
+    update(session) {
+      byId.set(session.id, structuredClone(session));
+      return structuredClone(session);
+    },
+    list() {
+      return [...byId.values()].map((session) => structuredClone(session));
+    },
+    delete(id) {
+      return byId.delete(id);
+    },
+  };
 }
 
 describe("reusable agent runtime", () => {
@@ -410,6 +445,59 @@ describe("reusable agent runtime", () => {
       model: "mock-model",
     });
     await expect(firstRun).resolves.toMatchObject({ content: "done" });
+  });
+
+  it("plans and applies runtime retention cleanup by tenant-aware policy", async () => {
+    const eventLog = createEventLog();
+    const store = createMutableRuntimeSessionStore([
+      {
+        id: "rt_old",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        mode: "ask",
+        messages: [],
+        metadata: {},
+      },
+      {
+        id: "rt_new",
+        createdAt: "2026-06-20T00:00:00.000Z",
+        updatedAt: "2026-06-20T00:00:00.000Z",
+        mode: "ask",
+        messages: [],
+        metadata: {},
+      },
+    ]);
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimeSessionStore: store,
+      eventLog,
+      runtimePolicy: { retention: { conversationDays: 30 } },
+    });
+
+    const dryRun = runtime.cleanupRetention({
+      dryRun: true,
+      now: new Date("2026-06-20T12:00:00.000Z"),
+    });
+    const applied = runtime.cleanupRetention({
+      dryRun: false,
+      now: new Date("2026-06-20T12:00:00.000Z"),
+    });
+
+    expect(dryRun).toMatchObject({
+      dryRun: true,
+      expiredSessionIds: ["rt_old"],
+      deletedSessionIds: [],
+      cutoffs: { conversationBefore: "2026-05-21T12:00:00.000Z" },
+    });
+    expect(applied).toMatchObject({
+      dryRun: false,
+      expiredSessionIds: ["rt_old"],
+      deletedSessionIds: ["rt_old"],
+    });
+    expect(runtime.listSessions().map((session) => session.id)).toEqual(["rt_new"]);
+    expect(eventLog.list().filter((event) => event.type === "retention.cleanup")).toHaveLength(2);
   });
 
   it("runs tool-calling turns through runtime permissions and tool execution", async () => {

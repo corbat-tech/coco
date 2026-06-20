@@ -1,4 +1,9 @@
-export { AgentRuntime, createAgentRuntime } from "./agent-runtime.js";
+export {
+  AgentRuntime,
+  createAgentRuntime,
+  type RuntimeRetentionCleanupOptions,
+  type RuntimeRetentionCleanupResult,
+} from "./agent-runtime.js";
 export {
   AgentRunner,
   createAgentRunner,

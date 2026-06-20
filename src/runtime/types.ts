@@ -60,6 +60,7 @@ export type RuntimeEventType =
   | "provider.attached"
   | "provider.created"
   | "provider.updated"
+  | "retention.cleanup"
   | "turn.started"
   | "turn.completed"
   | "turn.cancelled"

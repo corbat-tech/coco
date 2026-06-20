@@ -172,6 +172,8 @@ export {
   WorkflowCatalog,
   WorkflowEngine,
   WorkflowRegistry,
+  type RuntimeRetentionCleanupOptions,
+  type RuntimeRetentionCleanupResult,
   type ToolCallingRuntimeTurnRunnerOptions,
 } from "./runtime/index.js";
 export type {

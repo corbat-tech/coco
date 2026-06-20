@@ -8,6 +8,7 @@ import {
   assertRuntimeTenantBoundary,
   assertRuntimeTurnWithinPolicy,
   assertRuntimeUsageWithinPolicy,
+  createRetentionCutoffs,
   createRuntimeRequestContext,
   evaluateRuntimeToolPolicy,
   mergeRuntimePolicy,
@@ -39,6 +40,18 @@ import type {
   RuntimeTurnRunner,
   RuntimeMode,
 } from "./types.js";
+
+export interface RuntimeRetentionCleanupOptions {
+  dryRun?: boolean;
+  now?: Date;
+}
+
+export interface RuntimeRetentionCleanupResult {
+  dryRun: boolean;
+  cutoffs: ReturnType<typeof createRetentionCutoffs>;
+  expiredSessionIds: string[];
+  deletedSessionIds: string[];
+}
 
 /**
  * Reusable runtime facade for wiring providers, tools, permissions, sessions,
@@ -188,6 +201,37 @@ export class AgentRuntime {
 
   listSessions(): RuntimeSession[] {
     return this.runtimeSessionStore.list();
+  }
+
+  cleanupRetention(options: RuntimeRetentionCleanupOptions = {}): RuntimeRetentionCleanupResult {
+    assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "retention.cleanup");
+    const dryRun = options.dryRun ?? true;
+    const cutoffs = createRetentionCutoffs(this.runtimePolicy, options.now);
+    const expiredSessionIds = cutoffs.conversationBefore
+      ? this.runtimeSessionStore
+          .list()
+          .filter((session) => session.updatedAt < cutoffs.conversationBefore!)
+          .map((session) => session.id)
+      : [];
+    const deletedSessionIds = dryRun
+      ? []
+      : expiredSessionIds.filter((id) => this.runtimeSessionStore.delete(id));
+
+    this.eventLog.record("retention.cleanup", {
+      dryRun,
+      cutoffs,
+      expiredSessionIds,
+      deletedSessionIds,
+      tenantId: this.runtimeContext?.tenant?.id,
+      runtimeApi: true,
+    });
+
+    return {
+      dryRun,
+      cutoffs,
+      expiredSessionIds,
+      deletedSessionIds,
+    };
   }
 
   async runTurn(input: RuntimeTurnInput): Promise<RuntimeTurnResult> {
