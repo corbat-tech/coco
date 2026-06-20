@@ -72,6 +72,12 @@ data boundary, retention, cost budget, rate limits, and approval requirements.
 Runtime sessions copy this metadata so events and audit logs can be traced back
 to the client and channel that initiated the work.
 
+RAG is exposed as injectable runtime primitives instead of a fixed vendor stack:
+`DocumentLoader`, `Chunker`, `EmbeddingProvider`, `VectorStore`, `KnowledgeRetriever`,
+`Reranker`, and `RagPipeline`. Product adapters can use Qdrant, pgvector,
+Pinecone, OpenAI embeddings, Gemini embeddings, or a custom enterprise search
+backend behind the same runtime contracts.
+
 For streaming UI surfaces, use `streamTurn()`:
 
 ```ts

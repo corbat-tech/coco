@@ -80,12 +80,27 @@ export {
 } from "./guardrails.js";
 export {
   createInMemoryKnowledgeRetriever,
+  createInMemoryVectorStore,
+  createRagPipeline,
+  createSimpleTextChunker,
   formatRetrievedSourcesForPrompt,
   InMemoryKnowledgeRetriever,
+  InMemoryVectorStore,
+  SimpleTextChunker,
+  type Chunker,
+  type Citation,
+  type DocumentLoader,
+  type EmbeddingProvider,
   type InMemoryKnowledgeDocument,
   type KnowledgeRetriever,
+  type RagChunk,
+  type RagDocument,
+  type RagPipeline,
+  type RagPipelineOptions,
+  type Reranker,
   type RetrievedSource,
   type RetrievalOptions,
+  type VectorStore,
 } from "./rag.js";
 export {
   createWorkflowCatalog,
