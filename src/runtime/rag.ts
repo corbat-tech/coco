@@ -14,6 +14,13 @@ export interface RagDocument {
   title: string;
   content: string;
   url?: string;
+  tenantId?: string;
+  sourceId?: string;
+  acl?: DocumentAcl;
+  classification?: "public" | "internal" | "confidential" | "restricted";
+  version?: string;
+  updatedAt?: string;
+  deletedAt?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -23,7 +30,21 @@ export interface RagChunk {
   title: string;
   content: string;
   url?: string;
+  tenantId?: string;
+  sourceId?: string;
+  acl?: DocumentAcl;
+  classification?: "public" | "internal" | "confidential" | "restricted";
+  version?: string;
+  updatedAt?: string;
+  deletedAt?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface DocumentAcl {
+  public?: boolean;
+  userIds?: string[];
+  roles?: string[];
+  groups?: string[];
 }
 
 export interface Citation {
@@ -37,8 +58,19 @@ export interface RetrievalOptions {
   limit?: number;
   minScore?: number;
   tenantId?: string;
+  userId?: string;
+  roles?: string[];
+  groups?: string[];
   runtimeContext?: RuntimeRequestContext;
   dataBoundary?: DataBoundary;
+  documentAccessPolicy?: DocumentAccessPolicy;
+}
+
+export interface DocumentAccessPolicy {
+  canAccess(input: {
+    document: RagDocument | RagChunk | InMemoryKnowledgeDocument;
+    options: RetrievalOptions;
+  }): boolean;
 }
 
 export interface DocumentLoader {
@@ -86,7 +118,33 @@ export interface InMemoryKnowledgeDocument {
   title: string;
   content: string;
   url?: string;
+  tenantId?: string;
+  acl?: DocumentAcl;
+  deletedAt?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface RagIngestionJob {
+  id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  startedAt?: string;
+  completedAt?: string;
+  result?: { documents: number; chunks: number };
+  error?: string;
+  run(): Promise<RagIngestionJob>;
+}
+
+export interface CitationVerificationResult {
+  valid: boolean;
+  unsupportedCitations: Citation[];
+  missingSourceIds: string[];
+}
+
+export interface GroundednessEvaluation {
+  grounded: boolean;
+  score: number;
+  blocked: boolean;
+  reasons: string[];
 }
 
 export class InMemoryKnowledgeRetriever implements KnowledgeRetriever {
@@ -99,7 +157,7 @@ export class InMemoryKnowledgeRetriever implements KnowledgeRetriever {
     const tenantId = tenantIdFromRetrievalOptions(options);
 
     return this.documents
-      .filter((document) => sourceMatchesTenant(document.metadata, tenantId, options.dataBoundary))
+      .filter((document) => sourceAccessible(document, { ...options, tenantId }))
       .map((document) => ({
         ...document,
         score: scoreDocument(document, terms),
@@ -128,7 +186,24 @@ export class SimpleTextChunker implements Chunker {
         title: document.title,
         content,
         url: document.url,
-        metadata: { ...document.metadata, chunkIndex: index },
+        tenantId: document.tenantId,
+        sourceId: document.sourceId,
+        acl: document.acl,
+        classification: document.classification,
+        version: document.version,
+        updatedAt: document.updatedAt,
+        deletedAt: document.deletedAt,
+        metadata: {
+          ...document.metadata,
+          tenantId: document.tenantId ?? document.metadata?.["tenantId"],
+          sourceId: document.sourceId ?? document.metadata?.["sourceId"],
+          acl: document.acl ?? document.metadata?.["acl"],
+          classification: document.classification ?? document.metadata?.["classification"],
+          version: document.version ?? document.metadata?.["version"],
+          updatedAt: document.updatedAt ?? document.metadata?.["updatedAt"],
+          deletedAt: document.deletedAt ?? document.metadata?.["deletedAt"],
+          chunkIndex: index,
+        },
       });
       index++;
       offset += maxChars - overlapChars;
@@ -152,19 +227,123 @@ export class InMemoryVectorStore implements VectorStore {
     const minScore = options.minScore ?? 0;
     const tenantId = tenantIdFromRetrievalOptions(options);
     return this.chunks
-      .filter((chunk) => sourceMatchesTenant(chunk.metadata, tenantId, options.dataBoundary))
+      .filter((chunk) => sourceAccessible(chunk, { ...options, tenantId }))
       .map((chunk) => ({
         id: chunk.id,
         title: chunk.title,
         content: chunk.content,
         url: chunk.url,
         score: cosineSimilarity(embedding, chunk.embedding),
-        metadata: { ...chunk.metadata, documentId: chunk.documentId },
+        metadata: {
+          ...chunk.metadata,
+          tenantId: chunk.tenantId ?? chunk.metadata?.["tenantId"],
+          sourceId: chunk.sourceId ?? chunk.metadata?.["sourceId"],
+          acl: chunk.acl ?? chunk.metadata?.["acl"],
+          classification: chunk.classification ?? chunk.metadata?.["classification"],
+          version: chunk.version ?? chunk.metadata?.["version"],
+          updatedAt: chunk.updatedAt ?? chunk.metadata?.["updatedAt"],
+          deletedAt: chunk.deletedAt ?? chunk.metadata?.["deletedAt"],
+          documentId: chunk.documentId,
+        },
       }))
       .filter((source) => source.score >= minScore)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
   }
+}
+
+export function createDocumentAccessPolicy(input: {
+  tenantId?: string;
+  userId?: string;
+  roles?: string[];
+  groups?: string[];
+  requireAcl?: boolean;
+}): DocumentAccessPolicy {
+  return {
+    canAccess({ document, options }) {
+      const tenantId = options.tenantId ?? input.tenantId;
+      const userId = options.userId ?? input.userId;
+      const roles = options.roles ?? input.roles ?? [];
+      const groups = options.groups ?? input.groups ?? [];
+      const metadata = document.metadata ?? {};
+      if (document.deletedAt ?? metadata["deletedAt"]) return false;
+      const documentTenantId = document.tenantId ?? stringMetadata(metadata, "tenantId");
+      const visibility = stringMetadata(metadata, "visibility");
+      if (tenantId && documentTenantId !== tenantId && visibility !== "global") return false;
+      const acl = document.acl ?? (metadata["acl"] as DocumentAcl | undefined);
+      if (!acl) return input.requireAcl !== true;
+      if (acl.public === true) return true;
+      if (userId && acl.userIds?.includes(userId)) return true;
+      if (acl.roles?.some((role) => roles.includes(role))) return true;
+      if (acl.groups?.some((group) => groups.includes(group))) return true;
+      return false;
+    },
+  };
+}
+
+export function createRagIngestionJob(id: string, pipeline: RagPipeline): RagIngestionJob {
+  const job: RagIngestionJob = {
+    id,
+    status: "pending",
+    async run() {
+      job.status = "running";
+      job.startedAt = new Date().toISOString();
+      try {
+        job.result = await pipeline.ingest();
+        job.status = "completed";
+      } catch (error) {
+        job.status = "failed";
+        job.error = error instanceof Error ? error.message : String(error);
+      } finally {
+        job.completedAt = new Date().toISOString();
+      }
+      return { ...job };
+    },
+  };
+  return job;
+}
+
+export function verifyCitations(
+  citations: Citation[],
+  sources: RetrievedSource[],
+): CitationVerificationResult {
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const unsupportedCitations: Citation[] = [];
+  const missingSourceIds: string[] = [];
+  for (const citation of citations) {
+    const source = byId.get(citation.sourceId);
+    if (!source) {
+      missingSourceIds.push(citation.sourceId);
+      unsupportedCitations.push(citation);
+    }
+  }
+  return {
+    valid: unsupportedCitations.length === 0,
+    unsupportedCitations,
+    missingSourceIds,
+  };
+}
+
+export function evaluateGroundedness(
+  answer: string,
+  sources: RetrievedSource[],
+): GroundednessEvaluation {
+  const answerTerms = new Set(tokenize(answer));
+  const sourceTerms = new Set(sources.flatMap((source) => tokenize(source.content)));
+  const overlap = [...answerTerms].filter((term) => sourceTerms.has(term)).length;
+  const score = answerTerms.size === 0 ? 0 : overlap / answerTerms.size;
+  const injection = /ignore|override|bypass|reveal|exfiltrate/i.test(
+    sources.map((source) => source.content).join("\n"),
+  );
+  const reasons: string[] = [];
+  if (score < 0.2) reasons.push("Answer has low lexical support in retrieved sources.");
+  if (injection) reasons.push("Retrieved sources contain prompt-injection indicators.");
+  return {
+    grounded: score >= 0.2 && !injection,
+    score,
+    blocked: injection,
+    reasons,
+  };
 }
 
 export function createInMemoryKnowledgeRetriever(
@@ -266,14 +445,18 @@ function tenantIdFromRetrievalOptions(options: RetrievalOptions): string | undef
   return options.tenantId ?? options.runtimeContext?.tenant?.id;
 }
 
-function sourceMatchesTenant(
-  metadata: Record<string, unknown> | undefined,
-  tenantId: string | undefined,
-  dataBoundary: DataBoundary | undefined,
+function sourceAccessible(
+  document: RagDocument | RagChunk | InMemoryKnowledgeDocument,
+  options: RetrievalOptions,
 ): boolean {
-  if (!tenantId || dataBoundary?.allowCrossTenantMemory === true) return true;
-  const sourceTenantId = metadata?.["tenantId"];
-  return sourceTenantId === tenantId || metadata?.["visibility"] === "global";
+  if (options.documentAccessPolicy) {
+    return options.documentAccessPolicy.canAccess({ document, options });
+  }
+  const metadata = document.metadata ?? {};
+  if (document.deletedAt ?? metadata["deletedAt"]) return false;
+  if (!options.tenantId || options.dataBoundary?.allowCrossTenantMemory === true) return true;
+  const sourceTenantId = document.tenantId ?? metadata["tenantId"];
+  return sourceTenantId === options.tenantId || metadata["visibility"] === "global";
 }
 
 async function retrieveFromVectorPipeline(
@@ -285,6 +468,11 @@ async function retrieveFromVectorPipeline(
   const [embedding] = await options.embeddingProvider.embed([query]);
   if (!embedding) return [];
   return options.vectorStore.search(embedding, retrievalOptions);
+}
+
+function stringMetadata(metadata: Record<string, unknown>, key: string): string | undefined {
+  const value = metadata[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {

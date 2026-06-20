@@ -1,14 +1,20 @@
 import { getDefaultModel } from "../config/env.js";
 import type { ProviderType } from "../providers/index.js";
+import { estimateCost } from "../providers/pricing.js";
 import type { LLMProvider } from "../providers/types.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { listAgentModes } from "./agent-modes.js";
 import {
+  assertRuntimeTenantBoundary,
+  assertRuntimeTurnWithinPolicy,
   assertRuntimeUsageWithinPolicy,
+  createRetentionCutoffs,
   createRuntimeRequestContext,
   evaluateRuntimeToolPolicy,
   mergeRuntimePolicy,
+  RuntimePolicyViolation,
   runtimeContextToMetadata,
+  type RuntimeHostMode,
   type RuntimePolicy,
   type RuntimeRequestContext,
 } from "./context.js";
@@ -35,6 +41,18 @@ import type {
   RuntimeMode,
 } from "./types.js";
 
+export interface RuntimeRetentionCleanupOptions {
+  dryRun?: boolean;
+  now?: Date;
+}
+
+export interface RuntimeRetentionCleanupResult {
+  dryRun: boolean;
+  cutoffs: ReturnType<typeof createRetentionCutoffs>;
+  expiredSessionIds: string[];
+  deletedSessionIds: string[];
+}
+
 /**
  * Reusable runtime facade for wiring providers, tools, permissions, sessions,
  * and observability. It does not own the CLI loop; CLI/headless are adapters on
@@ -54,6 +72,9 @@ export class AgentRuntime {
   private provider?: LLMProvider;
   private readonly runtimeContext?: RuntimeRequestContext;
   private readonly runtimePolicy?: RuntimePolicy;
+  private readonly runtimeHostMode: RuntimeHostMode;
+  private readonly requestTimestampsBySubject = new Map<string, number[]>();
+  private activeRuns = 0;
 
   constructor(private readonly options: AgentRuntimeOptions) {
     this.providerRegistry = createProviderRegistry();
@@ -72,9 +93,16 @@ export class AgentRuntime {
       ? createRuntimeRequestContext(options.runtimeContext)
       : undefined;
     this.runtimePolicy = mergeRuntimePolicy(this.runtimeContext?.policy, options.runtimePolicy);
+    this.runtimeHostMode = options.runtimeHostMode ?? "local";
+    assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "runtime.initialize");
     this.workflowEngine =
       options.workflowEngine ??
-      createWorkflowEngine(undefined, this.eventLog, { runtimePolicy: this.runtimePolicy });
+      createWorkflowEngine(undefined, this.eventLog, {
+        runtimePolicy: this.runtimePolicy,
+        runtimeContext: this.runtimeContext,
+        runtimeHostMode: this.runtimeHostMode,
+        agentDefinitionRegistry: options.agentDefinitionRegistry,
+      });
   }
 
   async initialize(): Promise<void> {
@@ -142,10 +170,12 @@ export class AgentRuntime {
       modes: listAgentModes(),
       context: this.runtimeContext,
       policy: this.runtimePolicy,
+      hostMode: this.runtimeHostMode,
     };
   }
 
   createSession(options: RuntimeSessionCreateOptions = {}): RuntimeSession {
+    assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "session.create");
     const session = this.runtimeSessionStore.create({
       ...options,
       metadata: {
@@ -174,6 +204,37 @@ export class AgentRuntime {
     return this.runtimeSessionStore.list();
   }
 
+  cleanupRetention(options: RuntimeRetentionCleanupOptions = {}): RuntimeRetentionCleanupResult {
+    assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "retention.cleanup");
+    const dryRun = options.dryRun ?? true;
+    const cutoffs = createRetentionCutoffs(this.runtimePolicy, options.now);
+    const expiredSessionIds = cutoffs.conversationBefore
+      ? this.runtimeSessionStore
+          .list()
+          .filter((session) => session.updatedAt < cutoffs.conversationBefore!)
+          .map((session) => session.id)
+      : [];
+    const deletedSessionIds = dryRun
+      ? []
+      : expiredSessionIds.filter((id) => this.runtimeSessionStore.delete(id));
+
+    this.eventLog.record("retention.cleanup", {
+      dryRun,
+      cutoffs,
+      expiredSessionIds,
+      deletedSessionIds,
+      tenantId: this.runtimeContext?.tenant?.id,
+      runtimeApi: true,
+    });
+
+    return {
+      dryRun,
+      cutoffs,
+      expiredSessionIds,
+      deletedSessionIds,
+    };
+  }
+
   async runTurn(input: RuntimeTurnInput): Promise<RuntimeTurnResult> {
     const provider = this.provider;
     if (!provider) {
@@ -188,6 +249,12 @@ export class AgentRuntime {
     }
     const effectiveSession =
       input.mode && input.mode !== session.mode ? { ...session, mode: input.mode } : session;
+    assertRuntimeTurnWithinPolicy(this.runtimePolicy, {
+      subject: "turn.run",
+      currentTurns: countUserTurns(effectiveSession),
+      tenantId: this.runtimeContext?.tenant?.id,
+    });
+    const releaseRuntimeRequest = this.beginRuntimeRequest("turn.run");
 
     this.eventLog.record("turn.started", {
       sessionId: effectiveSession.id,
@@ -206,7 +273,13 @@ export class AgentRuntime {
         permissionPolicy: this.permissionPolicy,
         eventLog: this.eventLog,
       });
-      assertRuntimeUsageWithinPolicy(this.runtimePolicy, result.usage);
+      const estimatedCostUsd = this.estimateTurnCost(result);
+      assertRuntimeUsageWithinPolicy(this.runtimePolicy, {
+        ...result.usage,
+        estimatedCostUsd,
+        tenantId: this.runtimeContext?.tenant?.id,
+        subject: "turn.run",
+      });
 
       const updatedSession = this.runtimeSessionStore.update({
         ...effectiveSession,
@@ -225,6 +298,7 @@ export class AgentRuntime {
         sessionId: updatedSession.id,
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
+        estimatedCostUsd,
         model: result.model,
         runtimeApi: true,
       });
@@ -237,6 +311,8 @@ export class AgentRuntime {
         runtimeApi: true,
       });
       throw error;
+    } finally {
+      releaseRuntimeRequest();
     }
   }
 
@@ -254,6 +330,12 @@ export class AgentRuntime {
     }
     const effectiveSession =
       input.mode && input.mode !== session.mode ? { ...session, mode: input.mode } : session;
+    assertRuntimeTurnWithinPolicy(this.runtimePolicy, {
+      subject: "turn.stream",
+      currentTurns: countUserTurns(effectiveSession),
+      tenantId: this.runtimeContext?.tenant?.id,
+    });
+    const releaseRuntimeRequest = this.beginRuntimeRequest("turn.stream");
     const messages = [
       ...effectiveSession.messages,
       {
@@ -306,7 +388,13 @@ export class AgentRuntime {
         model: input.options?.model ?? this.getModel(),
         mode: effectiveSession.mode,
       };
-      assertRuntimeUsageWithinPolicy(this.runtimePolicy, result.usage);
+      const estimatedCostUsd = this.estimateTurnCost(result);
+      assertRuntimeUsageWithinPolicy(this.runtimePolicy, {
+        ...result.usage,
+        estimatedCostUsd,
+        tenantId: this.runtimeContext?.tenant?.id,
+        subject: "turn.stream",
+      });
 
       const updatedSession = this.runtimeSessionStore.update({
         ...effectiveSession,
@@ -327,6 +415,7 @@ export class AgentRuntime {
         sessionId: updatedSession.id,
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
+        estimatedCostUsd,
         model: result.model,
         streaming: true,
         runtimeApi: true,
@@ -356,10 +445,12 @@ export class AgentRuntime {
           runtimeApi: true,
         });
       }
+      releaseRuntimeRequest();
     }
   }
 
   async executeTool(input: RuntimeToolExecutionInput): Promise<RuntimeToolExecutionResult> {
+    assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "tool.execute");
     const startedAt = performance.now();
     const session = input.sessionId ? this.getSession(input.sessionId) : undefined;
 
@@ -493,6 +584,7 @@ export class AgentRuntime {
   }
 
   assertToolAllowed(mode: RuntimeMode, toolName: string, input?: Record<string, unknown>): boolean {
+    assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "tool.assertAllowed");
     const tool = this.toolRegistry.get(toolName);
     if (!tool) {
       this.eventLog.record("tool.blocked", {
@@ -530,6 +622,69 @@ export class AgentRuntime {
     });
     return allowed;
   }
+
+  private beginRuntimeRequest(subject: string): () => void {
+    assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, subject);
+    this.assertWithinRateLimit(subject);
+    this.assertWithinConcurrencyLimit(subject);
+    this.activeRuns += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.activeRuns = Math.max(0, this.activeRuns - 1);
+    };
+  }
+
+  private assertWithinRateLimit(subject: string): void {
+    const maxRequestsPerMinute = this.runtimePolicy?.rateLimit?.maxRequestsPerMinute;
+    if (maxRequestsPerMinute === undefined) return;
+    const now = Date.now();
+    const windowStart = now - 60_000;
+    const key = `${this.runtimeContext?.tenant?.id ?? "global"}:${subject}`;
+    const recent = (this.requestTimestampsBySubject.get(key) ?? []).filter(
+      (timestamp) => timestamp > windowStart,
+    );
+    if (recent.length >= maxRequestsPerMinute) {
+      this.requestTimestampsBySubject.set(key, recent);
+      throw new RuntimePolicyViolation({
+        code: "rate_limit_exceeded",
+        subject,
+        tenantId: this.runtimeContext?.tenant?.id,
+        policyPath: "runtimePolicy.rateLimit.maxRequestsPerMinute",
+        message: `Runtime policy rate limit exceeded: ${recent.length}/${maxRequestsPerMinute} requests per minute.`,
+      });
+    }
+    recent.push(now);
+    this.requestTimestampsBySubject.set(key, recent);
+  }
+
+  private assertWithinConcurrencyLimit(subject: string): void {
+    const maxConcurrentRuns = this.runtimePolicy?.rateLimit?.maxConcurrentRuns;
+    if (maxConcurrentRuns === undefined) return;
+    if (this.activeRuns >= maxConcurrentRuns) {
+      throw new RuntimePolicyViolation({
+        code: "concurrency_limit_exceeded",
+        subject,
+        tenantId: this.runtimeContext?.tenant?.id,
+        policyPath: "runtimePolicy.rateLimit.maxConcurrentRuns",
+        message: `Runtime policy concurrency limit exceeded: ${this.activeRuns}/${maxConcurrentRuns} active runs.`,
+      });
+    }
+  }
+
+  private estimateTurnCost(result: RuntimeTurnResult): number {
+    return estimateCost(
+      result.model,
+      result.usage.inputTokens,
+      result.usage.outputTokens,
+      this.providerType,
+    ).totalCost;
+  }
+}
+
+function countUserTurns(session: RuntimeSession): number {
+  return session.messages.filter((message) => message.role === "user").length;
 }
 
 export async function createAgentRuntime(options: AgentRuntimeOptions): Promise<AgentRuntime> {

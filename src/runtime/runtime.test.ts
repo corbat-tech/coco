@@ -7,10 +7,12 @@ import { z } from "zod";
 import type { LLMProvider } from "../providers/types.js";
 import { defineTool, ToolRegistry } from "../tools/registry.js";
 import { createAgentRuntime } from "./agent-runtime.js";
+import { AgentRunner } from "./agent-runner.js";
 import { createEventLog, createFileEventLog } from "./event-log.js";
 import { createMcpToolPolicy } from "./extension-manifests.js";
 import { createRuntimeHttpServer } from "./http-server.js";
 import { createPermissionPolicy } from "./permission-policy.js";
+import { RuntimePolicyViolation } from "./context.js";
 import {
   createPostgresEventLog,
   createPostgresRuntimeSessionQueries,
@@ -23,6 +25,8 @@ import { createFileRuntimeSessionStore } from "./runtime-session-store.js";
 import { createToolCallingRuntimeTurnRunner } from "./tool-calling-turn-runner.js";
 import { createWorkflowEngine } from "./workflow-engine.js";
 import { createWorkflowCatalog } from "./workflow-registry.js";
+import type { RuntimeSession, RuntimeSessionCreateOptions, RuntimeSessionStore } from "./types.js";
+import { createAgentDefinitionRegistry } from "./runtime-agent-node-executor.js";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -125,6 +129,40 @@ function createRegistry(): ToolRegistry {
   return registry;
 }
 
+function createMutableRuntimeSessionStore(sessions: RuntimeSession[] = []): RuntimeSessionStore {
+  const byId = new Map(sessions.map((session) => [session.id, structuredClone(session)]));
+  return {
+    create(options: RuntimeSessionCreateOptions = {}) {
+      const now = new Date().toISOString();
+      const session: RuntimeSession = {
+        id: options.id ?? `rt_${byId.size + 1}`,
+        createdAt: now,
+        updatedAt: now,
+        mode: options.mode ?? "ask",
+        messages: options.messages ?? [],
+        instructions: options.instructions,
+        metadata: { ...options.metadata },
+      };
+      byId.set(session.id, structuredClone(session));
+      return structuredClone(session);
+    },
+    get(id) {
+      const session = byId.get(id);
+      return session ? structuredClone(session) : undefined;
+    },
+    update(session) {
+      byId.set(session.id, structuredClone(session));
+      return structuredClone(session);
+    },
+    list() {
+      return [...byId.values()].map((session) => structuredClone(session));
+    },
+    delete(id) {
+      return byId.delete(id);
+    },
+  };
+}
+
 describe("reusable agent runtime", () => {
   it("exposes provider catalog capabilities through the provider registry", () => {
     const registry = createProviderRegistry();
@@ -192,6 +230,7 @@ describe("reusable agent runtime", () => {
     const session = runtime.createSession({ metadata: { conversationId: "wa-1" } });
 
     expect(runtime.snapshot()).toMatchObject({
+      hostMode: "local",
       context: { surface: "whatsapp", tenant: { id: "acme" } },
       policy: {
         dataBoundary: { classification: "confidential" },
@@ -212,6 +251,37 @@ describe("reusable agent runtime", () => {
       surface: "whatsapp",
       correlationId: "corr-1",
     });
+  });
+
+  it("requires tenant context for hosted product surfaces while allowing local CLI", async () => {
+    await expect(
+      createAgentRuntime({
+        providerType: "openai",
+        model: "gpt-5.4",
+        provider: createMockProvider(),
+        runtimeHostMode: "hosted",
+        runtimeContext: { surface: "web" },
+      }),
+    ).rejects.toThrow(RuntimePolicyViolation);
+
+    const hosted = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimeHostMode: "hosted",
+      runtimeContext: { surface: "api", tenant: { id: "tenant-a" } },
+    });
+    const localCli = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimeHostMode: "hosted",
+      runtimeContext: { surface: "cli" },
+    });
+
+    expect(hosted.createSession().metadata).toMatchObject({ tenantId: "tenant-a" });
+    expect(localCli.createSession().mode).toBe("ask");
+    expect(hosted.snapshot().hostMode).toBe("hosted");
   });
 
   it("does not publish to the global bridge by default", async () => {
@@ -307,6 +377,129 @@ describe("reusable agent runtime", () => {
     expect(direct.mode).toBe("ask");
     expect(turn.mode).toBe("ask");
     expect(runtime.getSession(turn.sessionId)?.mode).toBe("ask");
+  });
+
+  it("enforces runtime turn, cost, rate, and concurrency budgets", async () => {
+    const maxTurnsRuntime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimePolicy: { costBudget: { maxTurns: 1 } },
+    });
+    const maxTurnsSession = maxTurnsRuntime.createSession();
+    await maxTurnsRuntime.runTurn({ sessionId: maxTurnsSession.id, content: "one" });
+    await expect(
+      maxTurnsRuntime.runTurn({ sessionId: maxTurnsSession.id, content: "two" }),
+    ).rejects.toMatchObject({ code: "max_turns_exceeded" });
+
+    const maxCostRuntime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimePolicy: { costBudget: { maxEstimatedCostUsd: 0 } },
+    });
+    const maxCostSession = maxCostRuntime.createSession();
+    await expect(
+      maxCostRuntime.runTurn({ sessionId: maxCostSession.id, content: "hello" }),
+    ).rejects.toMatchObject({ code: "estimated_cost_exceeded" });
+    expect(maxCostRuntime.getSession(maxCostSession.id)?.messages).toEqual([]);
+
+    const rateLimitedRuntime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimePolicy: { rateLimit: { maxRequestsPerMinute: 1 } },
+    });
+    const rateSession = rateLimitedRuntime.createSession();
+    await rateLimitedRuntime.runTurn({ sessionId: rateSession.id, content: "one" });
+    await expect(
+      rateLimitedRuntime.runTurn({ sessionId: rateSession.id, content: "two" }),
+    ).rejects.toMatchObject({ code: "rate_limit_exceeded" });
+
+    let resolveChat: ((value: Awaited<ReturnType<LLMProvider["chat"]>>) => void) | undefined;
+    const slowProvider = createMockProvider();
+    slowProvider.chat = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveChat = resolve;
+        }),
+    ) as LLMProvider["chat"];
+    const concurrencyRuntime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: slowProvider,
+      runtimePolicy: { rateLimit: { maxConcurrentRuns: 1 } },
+    });
+    const concurrencySession = concurrencyRuntime.createSession();
+    const firstRun = concurrencyRuntime.runTurn({
+      sessionId: concurrencySession.id,
+      content: "one",
+    });
+    await vi.waitFor(() => expect(slowProvider.chat).toHaveBeenCalledTimes(1));
+    await expect(
+      concurrencyRuntime.runTurn({ sessionId: concurrencySession.id, content: "two" }),
+    ).rejects.toMatchObject({ code: "concurrency_limit_exceeded" });
+    resolveChat?.({
+      id: "chat-slow",
+      content: "done",
+      stopReason: "end_turn",
+      usage: { inputTokens: 1, outputTokens: 1 },
+      model: "mock-model",
+    });
+    await expect(firstRun).resolves.toMatchObject({ content: "done" });
+  });
+
+  it("plans and applies runtime retention cleanup by tenant-aware policy", async () => {
+    const eventLog = createEventLog();
+    const store = createMutableRuntimeSessionStore([
+      {
+        id: "rt_old",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        mode: "ask",
+        messages: [],
+        metadata: {},
+      },
+      {
+        id: "rt_new",
+        createdAt: "2026-06-20T00:00:00.000Z",
+        updatedAt: "2026-06-20T00:00:00.000Z",
+        mode: "ask",
+        messages: [],
+        metadata: {},
+      },
+    ]);
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimeSessionStore: store,
+      eventLog,
+      runtimePolicy: { retention: { conversationDays: 30 } },
+    });
+
+    const dryRun = runtime.cleanupRetention({
+      dryRun: true,
+      now: new Date("2026-06-20T12:00:00.000Z"),
+    });
+    const applied = runtime.cleanupRetention({
+      dryRun: false,
+      now: new Date("2026-06-20T12:00:00.000Z"),
+    });
+
+    expect(dryRun).toMatchObject({
+      dryRun: true,
+      expiredSessionIds: ["rt_old"],
+      deletedSessionIds: [],
+      cutoffs: { conversationBefore: "2026-05-21T12:00:00.000Z" },
+    });
+    expect(applied).toMatchObject({
+      dryRun: false,
+      expiredSessionIds: ["rt_old"],
+      deletedSessionIds: ["rt_old"],
+    });
+    expect(runtime.listSessions().map((session) => session.id)).toEqual(["rt_new"]);
+    expect(eventLog.list().filter((event) => event.type === "retention.cleanup")).toHaveLength(2);
   });
 
   it("runs tool-calling turns through runtime permissions and tool execution", async () => {
@@ -934,6 +1127,128 @@ describe("reusable agent runtime", () => {
       "workflow.started",
       "workflow.completed",
     ]);
+  });
+
+  it("executes legacy workflows as DAGs with the official runtime agent node executor", async () => {
+    const eventLog = createEventLog();
+    const registry = createAgentDefinitionRegistry([
+      {
+        id: "architect-default",
+        role: "architect",
+        name: "Architect",
+        instructions: "Plan safely.",
+        capability: {
+          role: "architect",
+          allowedTools: ["repo_context", "read_file", "git_diff"],
+          risk: "read-only",
+        },
+      },
+      {
+        id: "editor-default",
+        role: "editor",
+        name: "Editor",
+        instructions: "Apply approved changes.",
+        capability: {
+          role: "editor",
+          allowedTools: ["read_file", "edit_file", "write_file"],
+          risk: "write",
+        },
+      },
+      {
+        id: "tester-default",
+        role: "tester",
+        name: "Verifier",
+        instructions: "Verify changes.",
+        capability: {
+          role: "tester",
+          allowedTools: ["bash_exec", "git_diff", "review_code"],
+          risk: "destructive",
+        },
+      },
+    ]);
+    const runner = new AgentRunner({
+      executor: async (context) => ({
+        output: `${context.capability.role}:${context.task.objective}`,
+        turns: 1,
+        toolsUsed: context.task.constraints?.map((constraint) =>
+          constraint.replace("Requires tool: ", ""),
+        ),
+        inputTokens: 10,
+        outputTokens: 5,
+      }),
+      eventLog,
+    });
+    const engine = createWorkflowEngine(undefined, eventLog, {
+      agentDefinitionRegistry: registry,
+      agentNodeExecutorOptions: { runner },
+    });
+
+    const result = await engine.run({
+      workflowId: "architect-editor-verifier",
+      input: { task: "Add enterprise hosted runtime support" },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.graphResult?.nodeResults["architect"]?.role).toBe("architect");
+    expect(result.graphResult?.nodeResults["editor"]?.role).toBe("editor");
+    expect(result.graphResult?.nodeResults["verifier"]?.role).toBe("tester");
+    expect(result.graphResult?.artifacts).toHaveLength(3);
+    expect(eventLog.list().map((event) => event.type)).toContain("checkpoint.created");
+  });
+
+  it("fails DAG nodes when registered agent capabilities do not allow required tools", async () => {
+    const registry = createAgentDefinitionRegistry([
+      {
+        id: "architect-default",
+        role: "architect",
+        name: "Architect",
+        instructions: "Plan safely.",
+        capability: {
+          role: "architect",
+          allowedTools: ["repo_context", "read_file", "git_diff"],
+          risk: "read-only",
+        },
+      },
+      {
+        id: "editor-default",
+        role: "editor",
+        name: "Editor",
+        instructions: "Apply approved changes.",
+        capability: {
+          role: "editor",
+          allowedTools: ["read_file"],
+          risk: "write",
+        },
+      },
+      {
+        id: "tester-default",
+        role: "tester",
+        name: "Verifier",
+        instructions: "Verify changes.",
+        capability: {
+          role: "tester",
+          allowedTools: ["bash_exec", "git_diff", "review_code"],
+          risk: "destructive",
+        },
+      },
+    ]);
+    const engine = createWorkflowEngine(undefined, createEventLog(), {
+      agentDefinitionRegistry: registry,
+      agentNodeExecutorOptions: {
+        runner: new AgentRunner({ executor: async () => ({ output: "ok" }) }),
+      },
+    });
+
+    const result = await engine.run({
+      workflowId: "architect-editor-verifier",
+      input: { task: "Edit file" },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error:
+        "Node 'editor' failed after 1 attempt(s): Tool 'edit_file' is not allowed for agent role 'editor'.",
+    });
   });
 
   it("returns failed workflow results instead of throwing handler errors", async () => {

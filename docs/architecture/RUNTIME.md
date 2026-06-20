@@ -21,6 +21,8 @@ a reusable layer for other products and future client-specific agents.
   tools by itself.
 - `WorkflowEngine` executes registered workflow handlers from reusable workflow
   definitions and records structured events.
+- `RuntimeHostMode` distinguishes local, embedded, and hosted use. Hosted
+  runtime operations require tenant context for non-CLI surfaces.
 - Multi-agent runtime contracts define canonical roles, capabilities, typed
   tasks, artifacts, run results, gates, DAG workflow nodes, and shared workspace
   state used by the REPL, swarm, and embeddable runtime.
@@ -72,16 +74,40 @@ data boundary, retention, cost budget, rate limits, and approval requirements.
 Runtime sessions copy this metadata so events and audit logs can be traced back
 to the client and channel that initiated the work.
 
+For hosted products, set `runtimeHostMode: "hosted"` and provide
+`runtimeContext.tenant`. Hosted `api`, `web`, `whatsapp`, `slack`, `teams`,
+`internal`, and `worker` surfaces fail without a tenant. Runtime policy now
+enforces max turns, estimated cost, request rate, concurrent runs, tool risk,
+approval requirements, token budgets, and retention cleanup planning/execution.
+Policy failures are represented as `RuntimePolicyViolation` with a code,
+subject, tenant ID, policy path, and severity.
+
+Hosted persistence should use the async tenant-scoped contracts:
+`AsyncRuntimeSessionStore`, `AsyncEventLog`, `createAsyncPostgresRuntimeSessionStore`,
+`createAsyncPostgresEventLog`, and `createPostgresRuntimeAuditStore`. The older
+sync Postgres adapters remain local/cache-compatible only and reject
+`hostMode: "hosted"` because their write path is best-effort.
+
 RAG is exposed as injectable runtime primitives instead of a fixed vendor stack:
 `DocumentLoader`, `Chunker`, `EmbeddingProvider`, `VectorStore`, `KnowledgeRetriever`,
 `Reranker`, and `RagPipeline`. Product adapters can use Qdrant, pgvector,
 Pinecone, OpenAI embeddings, Gemini embeddings, or a custom enterprise search
 backend behind the same runtime contracts.
 
+Enterprise RAG contracts add tenant IDs, source IDs, ACL, classification,
+version, update/delete lifecycle metadata, `DocumentAccessPolicy`,
+`RagIngestionJob`, `verifyCitations`, and `evaluateGroundedness`. The in-memory
+retriever/vector store enforce tenant/lifecycle filtering and can be configured
+with ACL policy for tests and lightweight deployments; production deployments
+should enforce the same policy in their backing search/vector store.
+
 The default workflow catalog includes graph-first product references:
-`enterprise-rag-answer` and `whatsapp-support-assistant`. They are intentionally
-runtime-level examples: embedders provide the node executor, tenant policy,
-retriever/tools, and channel adapter.
+`enterprise-rag-answer` and `whatsapp-support-assistant`. Embedders can now
+provide an `AgentDefinitionRegistry` and `AgentRunner` to `WorkflowEngine` or
+`AgentRuntime`; the runtime builds the official `RuntimeAgentNodeExecutor` and
+executes DAG nodes with agent definitions, capabilities, runtime policy, shared
+state, traces, and structured artifacts. Custom node executors are still
+supported for specialized hosts.
 
 For streaming UI surfaces, use `streamTurn()`:
 
@@ -125,8 +151,8 @@ instead of relying only on prompt instructions.
 `createRuntimeSessionStore()` returns an in-memory store for tests and short
 processes. `createFileRuntimeSessionStore(path)` persists sessions to one JSON
 file for local products, prototypes, and replay fixtures. Hosted or multi-tenant
-products should provide their own `RuntimeSessionStore` backed by their database
-and tenant isolation model.
+products should use tenant-scoped async stores or provide equivalent async
+stores backed by their database and isolation model.
 
 If `toolRegistry` is omitted, embeddable runtimes start with no tools. CLI and
 headless coding-agent surfaces inject the full coding registry explicitly.
@@ -144,6 +170,19 @@ For simple prototypes, `createRuntimeHttpServer(runtime)` exposes:
 This adapter is deliberately minimal. Production web products must wrap it with
 authentication, tenant isolation, quotas, rate limiting, streaming policy, and
 audit storage.
+
+For WhatsApp products, `createWhatsAppAssistantAdapter` remains a simple demo
+wrapper. `createWhatsAppCloudAdapter` is the production-oriented adapter: it
+validates Meta webhook signatures, deduplicates message IDs, maps sender to
+runtime session, normalizes media, supports opt-in/opt-out, and applies
+per-tenant/per-sender rate limiting. Hosts still own outbound delivery,
+template approval, and webhook HTTP routing.
+
+Observability is derived from runtime events through `eventToSpan`,
+`exportRuntimeEventsAsSpans`, `InMemoryTraceExporter`, `FileTraceExporter`,
+`OpenTelemetryTraceExporter`, and `collectRuntimeMetrics`. Spans normalize
+workflow, agent, LLM, tool, RAG, gate, handoff, state, and runtime event kinds;
+attributes are structurally redacted before export.
 
 ## Workflow Execution
 
@@ -163,10 +202,12 @@ const run = await runtime.workflowEngine.run({
 
 Handlers are explicit opt-ins for legacy or bespoke execution. Unknown workflows
 still fail fast, and workflows without handlers execute through the runtime
-`AgentGraphEngine` only when a real node executor is registered. The graph
-engine does not simulate successful work by default; demos and tests must opt in
-with `allowSimulated: true` and the dry-run executor. Handler failures and graph
-failures return structured failed results and are recorded in the `EventLog`.
+`AgentGraphEngine` only when a real node executor is registered or an
+`AgentDefinitionRegistry` is provided so the runtime can build the official
+executor. The graph engine does not simulate successful work by default; demos
+and tests must opt in with `allowSimulated: true` and the dry-run executor.
+Handler failures and graph failures return structured failed results and are
+recorded in the `EventLog`.
 
 Workflow definitions now support executable graph metadata in addition to legacy
 linear `steps`. New workflows should prefer `nodes`, `edges`, `gates`,

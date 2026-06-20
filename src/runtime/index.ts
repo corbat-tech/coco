@@ -1,4 +1,9 @@
-export { AgentRuntime, createAgentRuntime } from "./agent-runtime.js";
+export {
+  AgentRuntime,
+  createAgentRuntime,
+  type RuntimeRetentionCleanupOptions,
+  type RuntimeRetentionCleanupResult,
+} from "./agent-runtime.js";
 export {
   AgentRunner,
   createAgentRunner,
@@ -8,17 +13,32 @@ export {
   type AgentRunnerOptions,
   type AgentRunnerRawResult,
 } from "./agent-runner.js";
+export {
+  AgentDefinitionRegistry,
+  RuntimeAgentNodeExecutor,
+  createAgentDefinitionRegistry,
+  createRuntimeAgentNodeExecutor,
+  type RuntimeAgentNodeExecutorOptions,
+} from "./runtime-agent-node-executor.js";
 export { AGENT_MODES, getAgentMode, isAgentMode, listAgentModes } from "./agent-modes.js";
 export {
+  assertRuntimeTenantBoundary,
+  assertRuntimeTurnWithinPolicy,
+  createRetentionCutoffs,
   createRuntimeRequestContext,
+  createRuntimeTenantBoundary,
   mergeRuntimePolicy,
   runtimeContextToMetadata,
+  RuntimePolicyViolation,
   type CostBudget,
   type DataBoundary,
   type RetentionPolicy,
+  type RuntimeHostMode,
   type RuntimePolicy,
+  type RuntimePolicyViolationCode,
   type RuntimeRequestContext,
   type RuntimeSurface,
+  type RuntimeTenantBoundary,
   type TenantContext,
   type UserContext,
 } from "./context.js";
@@ -32,15 +52,30 @@ export { createEventLog, createFileEventLog, FileEventLog, InMemoryEventLog } fr
 export { createRuntimeHttpServer, type RuntimeHttpServerOptions } from "./http-server.js";
 export { createPermissionPolicy, DefaultPermissionPolicy } from "./permission-policy.js";
 export {
+  createAsyncPostgresEventLog,
+  createAsyncPostgresRuntimeSessionStore,
   createPostgresEventLog,
+  createPostgresRuntimeAuditStore,
   createPostgresRuntimeSessionQueries,
   createPostgresRuntimeSessionStore,
   listPostgresRuntimeEvents,
+  AsyncPostgresEventLog,
+  AsyncPostgresRuntimeSessionStore,
   PostgresEventLog,
+  PostgresRuntimeAuditStore,
   PostgresRuntimeSessionStore,
+  type RuntimeAuditRecord,
+  type RuntimeAuditStore,
   type PostgresQueryClient,
   type PostgresRuntimeStoreOptions,
 } from "./postgres.js";
+export {
+  createTenantScopedEventLog,
+  createTenantScopedRuntimeSessionStore,
+  TenantScopedEventLog,
+  TenantScopedRuntimeSessionStore,
+  type TenantScopeOptions,
+} from "./tenant-scope.js";
 export { createProviderRegistry, ProviderRegistry } from "./provider-registry.js";
 export {
   createFileRuntimeSessionStore,
@@ -69,32 +104,46 @@ export {
   defaultPublicGuardrails,
   redactSecrets,
   runGuardrails,
+  runGuardrailPipeline,
   validateStructuredOutput,
+  type GuardrailAction,
   type GuardrailConfig,
   type GuardrailFinding,
+  type GuardrailPipelineResult,
+  type GuardrailPipelineStep,
   type GuardrailResult,
   type GuardrailSeverity,
   type GuardrailStage,
+  type PolicyAsCodeProvider,
   type SecretRedactionConfig,
   type TopicBoundaryConfig,
 } from "./guardrails.js";
 export {
   createInMemoryKnowledgeRetriever,
   createInMemoryVectorStore,
+  createDocumentAccessPolicy,
   createRagPipeline,
+  createRagIngestionJob,
   createSimpleTextChunker,
+  evaluateGroundedness,
   formatRetrievedSourcesForPrompt,
   InMemoryKnowledgeRetriever,
   InMemoryVectorStore,
   SimpleTextChunker,
+  verifyCitations,
   type Chunker,
   type Citation,
+  type CitationVerificationResult,
+  type DocumentAccessPolicy,
+  type DocumentAcl,
   type DocumentLoader,
   type EmbeddingProvider,
+  type GroundednessEvaluation,
   type InMemoryKnowledgeDocument,
   type KnowledgeRetriever,
   type RagChunk,
   type RagDocument,
+  type RagIngestionJob,
   type RagPipeline,
   type RagPipelineOptions,
   type Reranker,
@@ -186,6 +235,19 @@ export {
   type RuntimeToolExecutorInput,
   type RuntimeToolExecutorOptions,
 } from "./runtime-tool-executor.js";
+export {
+  collectRuntimeMetrics,
+  eventToSpan,
+  exportRuntimeEventsAsSpans,
+  FileTraceExporter,
+  InMemoryTraceExporter,
+  OpenTelemetryTraceExporter,
+  redactTraceAttributes,
+  type RuntimeMetricsSnapshot,
+  type RuntimeSpan,
+  type RuntimeSpanKind,
+  type RuntimeTraceExporter,
+} from "./tracing.js";
 export type { AgentModeDefinition, AgentModeId } from "./agent-modes.js";
 export type {
   AgentSurface,
@@ -198,6 +260,8 @@ export type {
 export type {
   AgentRuntimeOptions,
   AgentRuntimeSnapshot,
+  AsyncEventLog,
+  AsyncRuntimeSessionStore,
   EventLog,
   PermissionDecision,
   PermissionPolicy,

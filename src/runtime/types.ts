@@ -4,7 +4,8 @@ import type { ProviderRuntimeCapability } from "../providers/runtime-capabilitie
 import type { ToolDefinition, ToolRegistry } from "../tools/registry.js";
 import type { ThinkingMode } from "../providers/thinking.js";
 import type { AgentModeDefinition, AgentModeId } from "./agent-modes.js";
-import type { RuntimePolicy, RuntimeRequestContext } from "./context.js";
+import type { RuntimeHostMode, RuntimePolicy, RuntimeRequestContext } from "./context.js";
+import type { AgentDefinitionRegistry } from "./runtime-agent-node-executor.js";
 import type { WorkflowEngine } from "./workflow-engine.js";
 
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "max";
@@ -36,6 +37,8 @@ export interface AgentRuntimeOptions {
   };
   runtimeContext?: RuntimeRequestContext;
   runtimePolicy?: RuntimePolicy;
+  runtimeHostMode?: RuntimeHostMode;
+  agentDefinitionRegistry?: AgentDefinitionRegistry;
 }
 
 export interface AgentRuntimeSnapshot {
@@ -51,6 +54,7 @@ export interface AgentRuntimeSnapshot {
   modes: AgentModeDefinition[];
   context?: RuntimeRequestContext;
   policy?: RuntimePolicy;
+  hostMode: RuntimeHostMode;
 }
 
 export type RuntimeEventType =
@@ -58,6 +62,7 @@ export type RuntimeEventType =
   | "provider.attached"
   | "provider.created"
   | "provider.updated"
+  | "retention.cleanup"
   | "turn.started"
   | "turn.completed"
   | "turn.cancelled"
@@ -103,6 +108,13 @@ export interface EventLog {
   list(): RuntimeEvent[];
   count(): number;
   clear(): void;
+}
+
+export interface AsyncEventLog {
+  record(type: RuntimeEventType, data?: Record<string, unknown>): Promise<RuntimeEvent>;
+  list(): Promise<RuntimeEvent[]>;
+  count(): Promise<number>;
+  clear(): Promise<void>;
 }
 
 export interface PermissionDecision {
@@ -151,6 +163,14 @@ export interface RuntimeSessionStore {
   update(session: RuntimeSession): RuntimeSession;
   list(): RuntimeSession[];
   delete(id: string): boolean;
+}
+
+export interface AsyncRuntimeSessionStore {
+  create(options?: RuntimeSessionCreateOptions): Promise<RuntimeSession>;
+  get(id: string): Promise<RuntimeSession | undefined>;
+  update(session: RuntimeSession): Promise<RuntimeSession>;
+  list(): Promise<RuntimeSession[]>;
+  delete(id: string): Promise<boolean>;
 }
 
 export interface RuntimeTurnInput {

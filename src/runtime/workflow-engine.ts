@@ -1,9 +1,12 @@
 import { createEventLog } from "./event-log.js";
 import type { EventLog } from "./types.js";
 import {
+  assertRuntimeTenantBoundary,
   evaluateRuntimeRiskPolicy,
   evaluateRuntimeToolPolicy,
+  type RuntimeHostMode,
   type RuntimePolicy,
+  type RuntimeRequestContext,
 } from "./context.js";
 import {
   AgentGraphEngine,
@@ -14,6 +17,11 @@ import {
   type AgentTraceContext,
   type SharedWorkspaceStore,
 } from "./multi-agent.js";
+import {
+  createRuntimeAgentNodeExecutor,
+  type AgentDefinitionRegistry,
+  type RuntimeAgentNodeExecutorOptions,
+} from "./runtime-agent-node-executor.js";
 import {
   createWorkflowCatalog,
   type WorkflowCatalog,
@@ -59,13 +67,19 @@ export interface WorkflowEngineOptions {
   eventLog?: EventLog;
   sharedState?: SharedWorkspaceStore;
   nodeExecutor?: AgentGraphNodeExecutor;
+  agentDefinitionRegistry?: AgentDefinitionRegistry;
+  agentNodeExecutorOptions?: Omit<RuntimeAgentNodeExecutorOptions, "registry" | "runtimePolicy">;
   runtimePolicy?: RuntimePolicy;
+  runtimeContext?: RuntimeRequestContext;
+  runtimeHostMode?: RuntimeHostMode;
 }
 
 export class WorkflowEngine {
   private handlers = new Map<string, WorkflowHandler>();
   private readonly sharedState: SharedWorkspaceStore;
   private readonly runtimePolicy?: RuntimePolicy;
+  private readonly runtimeContext?: RuntimeRequestContext;
+  private readonly runtimeHostMode: RuntimeHostMode;
   private nodeExecutor?: AgentGraphNodeExecutor;
 
   constructor(
@@ -74,8 +88,18 @@ export class WorkflowEngine {
     options: Omit<WorkflowEngineOptions, "catalog" | "eventLog"> = {},
   ) {
     this.sharedState = options.sharedState ?? new InMemorySharedWorkspaceStore();
-    this.nodeExecutor = options.nodeExecutor;
     this.runtimePolicy = options.runtimePolicy;
+    this.runtimeContext = options.runtimeContext;
+    this.runtimeHostMode = options.runtimeHostMode ?? "local";
+    this.nodeExecutor =
+      options.nodeExecutor ??
+      (options.agentDefinitionRegistry
+        ? createRuntimeAgentNodeExecutor({
+            ...options.agentNodeExecutorOptions,
+            registry: options.agentDefinitionRegistry,
+            runtimePolicy: options.runtimePolicy,
+          })
+        : undefined);
   }
 
   registerHandler(workflowId: string, handler: WorkflowHandler): void {
@@ -94,6 +118,7 @@ export class WorkflowEngine {
   }
 
   async run(request: WorkflowRunInput): Promise<WorkflowRunResult> {
+    assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "workflow.run");
     const workflow = this.catalog.get(request.workflowId);
     if (!workflow) {
       throw new Error(`Unknown workflow: ${request.workflowId}`);

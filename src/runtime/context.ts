@@ -59,6 +59,8 @@ export interface RuntimePolicy {
   };
 }
 
+export type RuntimeHostMode = "local" | "embedded" | "hosted";
+
 export interface RuntimeRequestContext {
   tenant?: TenantContext;
   user?: UserContext;
@@ -69,11 +71,57 @@ export interface RuntimeRequestContext {
   metadata?: Record<string, unknown>;
 }
 
+export type RuntimePolicyViolationCode =
+  | "tenant_required"
+  | "tool_not_allowed"
+  | "risk_exceeded"
+  | "approval_required"
+  | "input_tokens_exceeded"
+  | "output_tokens_exceeded"
+  | "estimated_cost_exceeded"
+  | "max_turns_exceeded"
+  | "rate_limit_exceeded"
+  | "concurrency_limit_exceeded";
+
+export interface RuntimePolicyViolationInput {
+  code: RuntimePolicyViolationCode;
+  subject: string;
+  tenantId?: string;
+  policyPath: string;
+  severity?: "warning" | "blocked";
+  message: string;
+}
+
+export class RuntimePolicyViolation extends Error {
+  readonly code: RuntimePolicyViolationCode;
+  readonly subject: string;
+  readonly tenantId?: string;
+  readonly policyPath: string;
+  readonly severity: "warning" | "blocked";
+
+  constructor(input: RuntimePolicyViolationInput) {
+    super(input.message);
+    this.name = "RuntimePolicyViolation";
+    this.code = input.code;
+    this.subject = input.subject;
+    this.tenantId = input.tenantId;
+    this.policyPath = input.policyPath;
+    this.severity = input.severity ?? "blocked";
+  }
+}
+
 export interface RuntimePolicyDecision {
   allowed: boolean;
   reason?: string;
   requiresConfirmation?: boolean;
   risk: WorkflowRisk;
+}
+
+export interface RuntimeTenantBoundary {
+  hostMode: RuntimeHostMode;
+  surface: RuntimeSurface;
+  tenantId?: string;
+  required: boolean;
 }
 
 export function createRuntimeRequestContext(
@@ -136,6 +184,36 @@ export function runtimeContextToMetadata(
     userRoles: context.user?.roles,
     dataClassification: context.policy?.dataBoundary?.classification,
   };
+}
+
+export function createRuntimeTenantBoundary(
+  context: RuntimeRequestContext | undefined,
+  hostMode: RuntimeHostMode = "local",
+): RuntimeTenantBoundary {
+  return {
+    hostMode,
+    surface: context?.surface ?? "api",
+    tenantId: context?.tenant?.id,
+    required: hostMode === "hosted" && context?.surface !== "cli",
+  };
+}
+
+export function assertRuntimeTenantBoundary(
+  context: RuntimeRequestContext | undefined,
+  hostMode: RuntimeHostMode = "local",
+  subject = "runtime operation",
+): RuntimeTenantBoundary {
+  const boundary = createRuntimeTenantBoundary(context, hostMode);
+  if (boundary.required && !boundary.tenantId) {
+    throw new RuntimePolicyViolation({
+      code: "tenant_required",
+      subject,
+      tenantId: boundary.tenantId,
+      policyPath: "runtimeContext.tenant.id",
+      message: `Runtime tenant is required for hosted ${boundary.surface} operations.`,
+    });
+  }
+  return boundary;
 }
 
 export function evaluateRuntimeToolPolicy(
@@ -202,26 +280,90 @@ export function evaluateRuntimeRiskPolicy(
   return { allowed: true, risk: input.risk };
 }
 
+export function assertRuntimeTurnWithinPolicy(
+  policy: RuntimePolicy | undefined,
+  input: {
+    subject: string;
+    currentTurns: number;
+    tenantId?: string;
+  },
+): void {
+  const maxTurns = policy?.costBudget?.maxTurns;
+  if (maxTurns !== undefined && input.currentTurns >= maxTurns) {
+    throw new RuntimePolicyViolation({
+      code: "max_turns_exceeded",
+      subject: input.subject,
+      tenantId: input.tenantId,
+      policyPath: "runtimePolicy.costBudget.maxTurns",
+      message: `Runtime policy turn budget exceeded: ${input.currentTurns}/${maxTurns}`,
+    });
+  }
+}
+
 export function assertRuntimeUsageWithinPolicy(
   policy: RuntimePolicy | undefined,
-  usage: { inputTokens?: number; outputTokens?: number },
+  usage: {
+    inputTokens?: number;
+    outputTokens?: number;
+    estimatedCostUsd?: number;
+    tenantId?: string;
+    subject?: string;
+  },
 ): void {
   const budget = policy?.costBudget;
+  const subject = usage.subject ?? "runtime usage";
   if (!budget) return;
   if (budget.maxInputTokens !== undefined && (usage.inputTokens ?? 0) > budget.maxInputTokens) {
-    throw new Error(
-      `Runtime policy input token budget exceeded: ${usage.inputTokens ?? 0}/${budget.maxInputTokens}`,
-    );
+    throw new RuntimePolicyViolation({
+      code: "input_tokens_exceeded",
+      subject,
+      tenantId: usage.tenantId,
+      policyPath: "runtimePolicy.costBudget.maxInputTokens",
+      message: `Runtime policy input token budget exceeded: ${usage.inputTokens ?? 0}/${budget.maxInputTokens}`,
+    });
   }
   if (budget.maxOutputTokens !== undefined && (usage.outputTokens ?? 0) > budget.maxOutputTokens) {
-    throw new Error(
-      `Runtime policy output token budget exceeded: ${usage.outputTokens ?? 0}/${budget.maxOutputTokens}`,
-    );
+    throw new RuntimePolicyViolation({
+      code: "output_tokens_exceeded",
+      subject,
+      tenantId: usage.tenantId,
+      policyPath: "runtimePolicy.costBudget.maxOutputTokens",
+      message: `Runtime policy output token budget exceeded: ${usage.outputTokens ?? 0}/${budget.maxOutputTokens}`,
+    });
   }
+  if (
+    budget.maxEstimatedCostUsd !== undefined &&
+    (usage.estimatedCostUsd ?? 0) > budget.maxEstimatedCostUsd
+  ) {
+    throw new RuntimePolicyViolation({
+      code: "estimated_cost_exceeded",
+      subject,
+      tenantId: usage.tenantId,
+      policyPath: "runtimePolicy.costBudget.maxEstimatedCostUsd",
+      message: `Runtime policy estimated cost budget exceeded: ${usage.estimatedCostUsd ?? 0}/${budget.maxEstimatedCostUsd}`,
+    });
+  }
+}
+
+export function createRetentionCutoffs(
+  policy: RuntimePolicy | undefined,
+  now: Date = new Date(),
+): { conversationBefore?: string; eventBefore?: string; artifactBefore?: string } {
+  const retention = policy?.retention;
+  return {
+    conversationBefore: cutoffIso(now, retention?.conversationDays),
+    eventBefore: cutoffIso(now, retention?.eventDays),
+    artifactBefore: cutoffIso(now, retention?.artifactDays),
+  };
 }
 
 function cloneRuntimePolicy(policy: RuntimePolicy): RuntimePolicy {
   return mergeRuntimePolicy(undefined, policy) ?? {};
+}
+
+function cutoffIso(now: Date, days: number | undefined): string | undefined {
+  if (days === undefined) return undefined;
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function riskRank(risk: WorkflowRisk): number {
