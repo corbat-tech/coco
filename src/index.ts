@@ -376,15 +376,23 @@ export {
 } from "./presets/index.js";
 export {
   createHttpAssistantAdapter,
+  createInMemoryChannelSessionMapper,
   createStreamingHttpAssistantAdapter,
   createWhatsAppAssistantAdapter,
+  createWhatsAppCloudAdapter,
   createWebhookAssistantAdapter,
   type ChannelAdapter,
   type ChannelInput,
   type ChannelOutput,
+  type ChannelSessionMapper,
   type HttpAssistantAdapter,
   type StreamingHttpAssistantAdapter,
   type WhatsAppAssistantAdapter,
+  type WhatsAppCloudMedia,
+  type WhatsAppCloudMessage,
+  type WhatsAppCloudAdapterOptions,
+  type WhatsAppCloudWebhookInput,
+  type WhatsAppCloudWebhookResult,
   type WhatsAppInboundMessage,
 } from "./adapters/index.js";
 
