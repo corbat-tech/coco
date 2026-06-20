@@ -221,6 +221,19 @@ export {
   type RuntimeToolExecutorInput,
   type RuntimeToolExecutorOptions,
 } from "./runtime-tool-executor.js";
+export {
+  collectRuntimeMetrics,
+  eventToSpan,
+  exportRuntimeEventsAsSpans,
+  FileTraceExporter,
+  InMemoryTraceExporter,
+  OpenTelemetryTraceExporter,
+  redactTraceAttributes,
+  type RuntimeMetricsSnapshot,
+  type RuntimeSpan,
+  type RuntimeSpanKind,
+  type RuntimeTraceExporter,
+} from "./tracing.js";
 export type { AgentModeDefinition, AgentModeId } from "./agent-modes.js";
 export type {
   AgentSurface,
