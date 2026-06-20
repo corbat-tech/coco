@@ -1,7 +1,15 @@
 import { z } from "zod";
 
 export type GuardrailSeverity = "info" | "warning" | "blocked";
-export type GuardrailStage = "input" | "output" | "tool";
+export type GuardrailStage =
+  | "input"
+  | "retrieved-document"
+  | "tool-input"
+  | "tool-output"
+  | "final-output"
+  | "output"
+  | "tool";
+export type GuardrailAction = "allow" | "warn" | "block";
 
 export interface GuardrailFinding {
   id: string;
@@ -32,7 +40,29 @@ export interface GuardrailConfig {
   maxOutputChars?: number;
   secretRedaction?: SecretRedactionConfig;
   promptInjectionDetection?: boolean;
+  promptInjectionAction?: GuardrailAction;
   topicBoundary?: TopicBoundaryConfig;
+  policyProvider?: PolicyAsCodeProvider;
+}
+
+export interface PolicyAsCodeProvider {
+  evaluate(input: {
+    stage: GuardrailStage;
+    content: string;
+    findings: GuardrailFinding[];
+  }): Promise<GuardrailFinding[]> | GuardrailFinding[];
+}
+
+export interface GuardrailPipelineStep {
+  stage: GuardrailStage;
+  content: string;
+  config?: GuardrailConfig;
+}
+
+export interface GuardrailPipelineResult {
+  allowed: boolean;
+  outputs: Array<{ stage: GuardrailStage; content: string }>;
+  findings: GuardrailFinding[];
 }
 
 const DEFAULT_REDACTION = "[REDACTED]";
@@ -138,7 +168,7 @@ export function runGuardrails(
         findings.push({
           id,
           stage,
-          severity: "warning",
+          severity: actionToSeverity(config.promptInjectionAction ?? "warn"),
           message: `Potential prompt-injection pattern detected: ${id}`,
         });
       }
@@ -164,6 +194,33 @@ export function runGuardrails(
   };
 }
 
+export async function runGuardrailPipeline(
+  steps: GuardrailPipelineStep[],
+  config: GuardrailConfig = {},
+): Promise<GuardrailPipelineResult> {
+  const outputs: Array<{ stage: GuardrailStage; content: string }> = [];
+  const findings: GuardrailFinding[] = [];
+
+  for (const step of steps) {
+    const effectiveConfig = { ...config, ...step.config };
+    const result = runGuardrails(step.stage, step.content, effectiveConfig);
+    const policyFindings =
+      (await effectiveConfig.policyProvider?.evaluate({
+        stage: step.stage,
+        content: result.content,
+        findings: result.findings,
+      })) ?? [];
+    outputs.push({ stage: step.stage, content: result.content });
+    findings.push(...result.findings, ...policyFindings);
+  }
+
+  return {
+    allowed: !findings.some((finding) => finding.severity === "blocked"),
+    outputs,
+    findings,
+  };
+}
+
 export function validateStructuredOutput(
   output: unknown,
   schema: z.ZodTypeAny | undefined,
@@ -179,4 +236,15 @@ export function validateStructuredOutput(
       message: result.error.issues.map((issue) => issue.message).join("; "),
     },
   ];
+}
+
+function actionToSeverity(action: GuardrailAction): GuardrailSeverity {
+  switch (action) {
+    case "allow":
+      return "info";
+    case "warn":
+      return "warning";
+    case "block":
+      return "blocked";
+  }
 }
