@@ -29,6 +29,19 @@ export interface StreamingHttpAssistantAdapter extends HttpAssistantAdapter {
   streamMessage(input: ChannelInput): AsyncIterable<RuntimeTurnStreamEvent>;
 }
 
+export interface WhatsAppInboundMessage {
+  from: string;
+  text: string;
+  messageId?: string;
+  profileName?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface WhatsAppAssistantAdapter {
+  surface: "whatsapp";
+  handleInbound(input: WhatsAppInboundMessage): Promise<ChannelOutput>;
+}
+
 export function createHttpAssistantAdapter(runtime: AgentRuntime): HttpAssistantAdapter {
   return {
     createSession(metadata = {}) {
@@ -76,6 +89,27 @@ export function createWebhookAssistantAdapter(
     async handle(input) {
       const adapter = createHttpAssistantAdapter(runtime);
       return adapter.handleMessage(input);
+    },
+  };
+}
+
+export function createWhatsAppAssistantAdapter(runtime: AgentRuntime): WhatsAppAssistantAdapter {
+  return {
+    surface: "whatsapp",
+    async handleInbound(input) {
+      const adapter = createHttpAssistantAdapter(runtime);
+      return adapter.handleMessage({
+        content: input.text,
+        userId: input.from,
+        metadata: {
+          surface: "whatsapp",
+          channel: "whatsapp",
+          phoneNumber: input.from,
+          profileName: input.profileName,
+          messageId: input.messageId,
+          ...input.metadata,
+        },
+      });
     },
   };
 }

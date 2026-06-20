@@ -162,6 +162,58 @@ describe("reusable agent runtime", () => {
     ]);
   });
 
+  it("starts embeddable runtimes with no tools unless a registry is injected", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+    });
+
+    expect(runtime.snapshot().tools).toEqual({ count: 0, names: [] });
+  });
+
+  it("propagates runtime tenant context into snapshots, sessions, and events", async () => {
+    const eventLog = createEventLog();
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      eventLog,
+      runtimeContext: {
+        surface: "whatsapp",
+        tenant: { id: "acme", name: "Acme" },
+        user: { id: "user-1", roles: ["support"] },
+        correlationId: "corr-1",
+        policy: { dataBoundary: { classification: "confidential" } },
+      },
+      runtimePolicy: { costBudget: { maxTurns: 4 } },
+    });
+
+    const session = runtime.createSession({ metadata: { conversationId: "wa-1" } });
+
+    expect(runtime.snapshot()).toMatchObject({
+      context: { surface: "whatsapp", tenant: { id: "acme" } },
+      policy: {
+        dataBoundary: { classification: "confidential" },
+        costBudget: { maxTurns: 4 },
+      },
+    });
+    expect(session.metadata).toMatchObject({
+      surface: "whatsapp",
+      tenantId: "acme",
+      tenantName: "Acme",
+      userId: "user-1",
+      userRoles: ["support"],
+      correlationId: "corr-1",
+      conversationId: "wa-1",
+    });
+    expect(eventLog.list().find((event) => event.type === "session.created")?.data).toMatchObject({
+      tenantId: "acme",
+      surface: "whatsapp",
+      correlationId: "corr-1",
+    });
+  });
+
   it("does not publish to the global bridge by default", async () => {
     const runtime = await createAgentRuntime({
       providerType: "openai",
@@ -236,6 +288,7 @@ describe("reusable agent runtime", () => {
     expect(eventLog.list().find((event) => event.type === "session.created")?.data).toEqual({
       sessionId: session.id,
       mode: "ask",
+      surface: "web",
       metadataKeys: ["surface"],
     });
   });
@@ -451,6 +504,32 @@ describe("reusable agent runtime", () => {
     ]);
   });
 
+  it("does not persist streaming output when runtime token policy is exceeded", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+      runtimePolicy: { costBudget: { maxOutputTokens: 1 } },
+    });
+    const session = runtime.createSession({ mode: "ask" });
+
+    const events = [];
+    for await (const event of runtime.streamTurn({
+      sessionId: session.id,
+      content: "hello",
+    })) {
+      events.push(event);
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      sessionId: session.id,
+      error: "Runtime policy output token budget exceeded: 12/1",
+    });
+    expect(runtime.getSession(session.id)?.messages).toEqual([]);
+  });
+
   it("executes runtime tools with permission events and confirmation gates", async () => {
     const eventLog = createEventLog();
     const runtime = await createAgentRuntime({
@@ -537,6 +616,97 @@ describe("reusable agent runtime", () => {
       "tool.blocked",
       "tool.blocked",
     ]);
+  });
+
+  it("enforces runtime policy allowlists during tool execution", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+      runtimePolicy: { allowedTools: ["read_file"] },
+    });
+
+    const read = await runtime.executeTool({
+      toolName: "read_file",
+      input: { path: "README.md" },
+    });
+    const write = await runtime.executeTool({
+      mode: "build",
+      toolName: "write_file",
+      input: { path: "README.md", content: "x" },
+      confirmed: true,
+    });
+
+    expect(read.success).toBe(true);
+    expect(write).toMatchObject({
+      success: false,
+      error: "Runtime policy does not allow tool: write_file",
+      decision: { allowed: false, risk: "destructive" },
+    });
+    expect(runtime.assertToolAllowed("build", "write_file", { path: "README.md" })).toBe(false);
+  });
+
+  it("enforces runtime max tool risk and human approval policy", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+      runtimePolicy: {
+        maxToolRisk: "write",
+        requireHumanApprovalFor: ["write"],
+      },
+    });
+
+    const unconfirmedWrite = await runtime.executeTool({
+      mode: "build",
+      toolName: "run_linter",
+      input: { fix: true },
+    });
+    const confirmedWrite = await runtime.executeTool({
+      mode: "build",
+      toolName: "run_linter",
+      input: { fix: true },
+      confirmed: true,
+    });
+    const destructive = await runtime.executeTool({
+      mode: "build",
+      toolName: "write_file",
+      input: { path: "README.md", content: "x" },
+      confirmed: true,
+    });
+
+    expect(unconfirmedWrite).toMatchObject({
+      success: false,
+      error: "Runtime policy requires human approval for write tools.",
+    });
+    expect(confirmedWrite.success).toBe(true);
+    expect(destructive).toMatchObject({
+      success: false,
+      error: "Runtime policy allows tools up to write risk; write_file is destructive.",
+    });
+  });
+
+  it("blocks graph workflows that require tools outside the runtime policy", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimePolicy: { allowedTools: ["read_file"] },
+    });
+
+    const result = await runtime.workflowEngine.run({
+      workflowId: "enterprise-rag-answer",
+      input: { question: "How do refunds work?" },
+    });
+
+    expect(result).toMatchObject({
+      workflowId: "enterprise-rag-answer",
+      status: "failed",
+      error:
+        "Workflow node retrieve is blocked by runtime policy: Runtime policy does not allow tool: knowledge_search",
+    });
   });
 
   it("marks destructive tools as confirmation-worthy", () => {

@@ -1,6 +1,11 @@
 import { createEventLog } from "./event-log.js";
 import type { EventLog } from "./types.js";
 import {
+  evaluateRuntimeRiskPolicy,
+  evaluateRuntimeToolPolicy,
+  type RuntimePolicy,
+} from "./context.js";
+import {
   AgentGraphEngine,
   InMemorySharedWorkspaceStore,
   createAgentTraceContext,
@@ -14,6 +19,7 @@ import {
   type WorkflowCatalog,
   type WorkflowDefinition,
   type WorkflowPlan,
+  type WorkflowRisk,
   workflowToAgentGraph,
 } from "./workflow-registry.js";
 
@@ -53,11 +59,13 @@ export interface WorkflowEngineOptions {
   eventLog?: EventLog;
   sharedState?: SharedWorkspaceStore;
   nodeExecutor?: AgentGraphNodeExecutor;
+  runtimePolicy?: RuntimePolicy;
 }
 
 export class WorkflowEngine {
   private handlers = new Map<string, WorkflowHandler>();
   private readonly sharedState: SharedWorkspaceStore;
+  private readonly runtimePolicy?: RuntimePolicy;
   private nodeExecutor?: AgentGraphNodeExecutor;
 
   constructor(
@@ -67,6 +75,7 @@ export class WorkflowEngine {
   ) {
     this.sharedState = options.sharedState ?? new InMemorySharedWorkspaceStore();
     this.nodeExecutor = options.nodeExecutor;
+    this.runtimePolicy = options.runtimePolicy;
   }
 
   registerHandler(workflowId: string, handler: WorkflowHandler): void {
@@ -103,6 +112,8 @@ export class WorkflowEngine {
     });
 
     try {
+      const graph = workflowToAgentGraph(workflow);
+      assertWorkflowAllowedByRuntimePolicy(graph, this.runtimePolicy);
       const graphResult = handler
         ? undefined
         : await new AgentGraphEngine({
@@ -112,7 +123,7 @@ export class WorkflowEngine {
             trace,
           }).run({
             workflowRunId: runId,
-            graph: workflowToAgentGraph(workflow),
+            graph,
             input: request.input,
           });
       const output =
@@ -163,6 +174,33 @@ export class WorkflowEngine {
         error: message,
         trace,
       };
+    }
+  }
+}
+
+function assertWorkflowAllowedByRuntimePolicy(
+  graph: ReturnType<typeof workflowToAgentGraph>,
+  policy: RuntimePolicy | undefined,
+): void {
+  if (!policy) return;
+  for (const node of graph.nodes) {
+    const risk = (node.risk ?? "read-only") as WorkflowRisk;
+    const riskDecision = evaluateRuntimeRiskPolicy(policy, {
+      subject: `workflow node ${node.id}`,
+      risk,
+    });
+    if (!riskDecision.allowed) {
+      throw new Error(
+        `Workflow node ${node.id} is blocked by runtime policy: ${riskDecision.reason}`,
+      );
+    }
+    for (const toolName of node.requiredTools ?? []) {
+      const decision = evaluateRuntimeToolPolicy(policy, { toolName, risk });
+      if (!decision.allowed) {
+        throw new Error(
+          `Workflow node ${node.id} is blocked by runtime policy: ${decision.reason}`,
+        );
+      }
     }
   }
 }

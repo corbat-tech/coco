@@ -9,6 +9,19 @@ export {
   type AgentRunnerRawResult,
 } from "./agent-runner.js";
 export { AGENT_MODES, getAgentMode, isAgentMode, listAgentModes } from "./agent-modes.js";
+export {
+  createRuntimeRequestContext,
+  mergeRuntimePolicy,
+  runtimeContextToMetadata,
+  type CostBudget,
+  type DataBoundary,
+  type RetentionPolicy,
+  type RuntimePolicy,
+  type RuntimeRequestContext,
+  type RuntimeSurface,
+  type TenantContext,
+  type UserContext,
+} from "./context.js";
 export { createDefaultRuntimeTurnRunner, DefaultRuntimeTurnRunner } from "./default-turn-runner.js";
 export {
   createToolCallingRuntimeTurnRunner,
@@ -67,12 +80,27 @@ export {
 } from "./guardrails.js";
 export {
   createInMemoryKnowledgeRetriever,
+  createInMemoryVectorStore,
+  createRagPipeline,
+  createSimpleTextChunker,
   formatRetrievedSourcesForPrompt,
   InMemoryKnowledgeRetriever,
+  InMemoryVectorStore,
+  SimpleTextChunker,
+  type Chunker,
+  type Citation,
+  type DocumentLoader,
+  type EmbeddingProvider,
   type InMemoryKnowledgeDocument,
   type KnowledgeRetriever,
+  type RagChunk,
+  type RagDocument,
+  type RagPipeline,
+  type RagPipelineOptions,
+  type Reranker,
   type RetrievedSource,
   type RetrievalOptions,
+  type VectorStore,
 } from "./rag.js";
 export {
   createWorkflowCatalog,
@@ -92,6 +120,7 @@ export {
   createAgentGraphEngine,
   createAgentTraceContext,
   createSummaryArtifact,
+  dryRunAgentGraphNodeExecutor,
   evaluateAgentToolPolicy,
   FileSharedWorkspaceStore,
   InMemorySharedWorkspaceStore,
@@ -151,6 +180,12 @@ export {
   type WorkflowRunResult,
   type WorkflowRunStatus,
 } from "./workflow-engine.js";
+export {
+  createRuntimeToolExecutor,
+  RuntimeToolExecutor,
+  type RuntimeToolExecutorInput,
+  type RuntimeToolExecutorOptions,
+} from "./runtime-tool-executor.js";
 export type { AgentModeDefinition, AgentModeId } from "./agent-modes.js";
 export type {
   AgentSurface,

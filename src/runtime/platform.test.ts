@@ -165,6 +165,13 @@ describe("agent platform layer", () => {
         id: "doc-1",
         title: "Corbat Services",
         content: "Corbat builds custom AI agents and software platforms.",
+        metadata: { tenantId: "acme" },
+      },
+      {
+        id: "doc-evil",
+        title: "Other Tenant Services",
+        content: "Corbat builds custom AI agents and software platforms.",
+        metadata: { tenantId: "other" },
       },
       { id: "doc-2", title: "Other", content: "Unrelated content." },
     ]);
@@ -172,8 +179,17 @@ describe("agent platform layer", () => {
     const results = await retriever.search("custom AI agents");
     expect(results[0]?.id).toBe("doc-1");
 
-    const ragRegistry = createRagToolRegistry(retriever);
+    const ragRegistry = createRagToolRegistry(retriever, {
+      runtimeContext: { surface: "api", tenant: { id: "acme" } },
+    });
     expect(ragRegistry.has("knowledge_search")).toBe(true);
+    const tenantResults = await ragRegistry.execute("knowledge_search", {
+      query: "custom AI agents",
+      limit: 1,
+      tenantId: "other",
+    });
+    expect(tenantResults.success).toBe(true);
+    expect(tenantResults.data).toEqual([expect.objectContaining({ id: "doc-1" })]);
 
     const ragBlueprint = ragKnowledgeAssistantPreset.createBlueprint({
       brand: "Corbat",
@@ -234,6 +250,32 @@ describe("agent platform layer", () => {
       "request_human_escalation",
     ]);
     expect(blueprint.approval.requireHumanForExternalActions).toBe(true);
+  });
+
+  it("propagates runtime context and policy through product presets", async () => {
+    const runtime = await supportRagAssistantPreset.createRuntime({
+      brand: "Corbat",
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimeContext: {
+        surface: "whatsapp",
+        tenant: { id: "acme" },
+        user: { id: "support-user" },
+      },
+      runtimePolicy: {
+        allowedTools: ["knowledge_search"],
+        maxToolRisk: "read-only",
+      },
+    });
+
+    expect(runtime.snapshot()).toMatchObject({
+      context: { surface: "whatsapp", tenant: { id: "acme" } },
+      policy: {
+        allowedTools: ["knowledge_search"],
+        maxToolRisk: "read-only",
+      },
+    });
   });
 
   it("supports Sales Intake and Internal Ops as constrained product profiles", async () => {

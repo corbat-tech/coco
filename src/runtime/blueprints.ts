@@ -9,6 +9,7 @@ import type {
   RuntimeTurnResult,
   RuntimeTurnRunner,
 } from "./types.js";
+import type { RuntimePolicy, RuntimeRequestContext } from "./context.js";
 import type { GuardrailConfig, GuardrailFinding } from "./guardrails.js";
 import { defaultPublicGuardrails, runGuardrails } from "./guardrails.js";
 
@@ -56,6 +57,8 @@ export interface AgentRuntimeFactoryOptions {
   toolRegistry?: ToolRegistry;
   eventLog?: EventLog;
   turnRunner?: RuntimeTurnRunner;
+  runtimeContext?: RuntimeRequestContext;
+  runtimePolicy?: RuntimePolicy;
 }
 
 export interface AgentPreset<TConfig = unknown> {
@@ -104,6 +107,8 @@ export async function createAgentFromBlueprint(
     provider: options.provider,
     eventLog: options.eventLog,
     turnRunner: options.turnRunner,
+    runtimeContext: options.runtimeContext,
+    runtimePolicy: options.runtimePolicy,
     toolRegistry:
       options.toolRegistry ??
       createSafeToolRegistry(blueprint.allowedTools.length > 0 ? blueprint.allowedTools : []),

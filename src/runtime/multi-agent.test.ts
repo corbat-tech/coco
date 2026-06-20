@@ -1,8 +1,13 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   createAgentGraphEngine,
   createAgentArtifact,
+  dryRunAgentGraphNodeExecutor,
   evaluateAgentToolPolicy,
+  FileSharedWorkspaceStore,
   InMemorySharedWorkspaceStore,
   listLegacyAgentRoleMappings,
   mapLegacyAgentRole,
@@ -306,9 +311,181 @@ describe("multi-agent runtime contracts", () => {
         "agent.failed",
         "agent.completed",
         "agent.artifact.created",
+        "shared_state.updated",
+        "checkpoint.created",
         "workflow.gate.passed",
         "agent.graph.completed",
       ]),
     );
+  });
+
+  it("fails graph execution without a real node executor unless dry-run is explicitly enabled", async () => {
+    const engine = createAgentGraphEngine();
+
+    const result = await engine.run({
+      workflowRunId: "wf-missing-executor",
+      input: {},
+      graph: {
+        nodes: [{ id: "plan", agentRole: "architect", description: "plan", risk: "read-only" }],
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+    });
+    expect(result.error).toContain("requires a nodeExecutor");
+  });
+
+  it("supports explicit dry-run graph execution for demos and tests", async () => {
+    const engine = createAgentGraphEngine({
+      allowSimulated: true,
+      nodeExecutor: dryRunAgentGraphNodeExecutor,
+    });
+
+    const result = await engine.run({
+      workflowRunId: "wf-dry-run",
+      input: {},
+      graph: {
+        nodes: [{ id: "plan", agentRole: "architect", description: "plan", risk: "read-only" }],
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.nodeResults["plan"]?.metadata).toMatchObject({ simulated: true });
+  });
+
+  it("fails required critical gates unless an explicit evaluator is configured", async () => {
+    const engine = createAgentGraphEngine({
+      nodeExecutor: async ({ node, task, workflowRunId }) =>
+        normalizeAgentRunResult({
+          id: `${workflowRunId}-${node.id}`,
+          taskId: task.id,
+          role: task.role,
+          success: true,
+          output: "ok",
+          durationMs: 1,
+        }),
+    });
+
+    const result = await engine.run({
+      workflowRunId: "wf-critical-gate",
+      input: {},
+      graph: {
+        gates: [
+          {
+            id: "security",
+            kind: "security",
+            description: "Security gate",
+            required: true,
+          },
+        ],
+        nodes: [
+          {
+            id: "verify",
+            agentRole: "security",
+            description: "verify security",
+            risk: "read-only",
+            gates: ["security"],
+          },
+        ],
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("requires an explicit evaluator");
+  });
+
+  it("skips nodes when declarative conditions evaluate to false", async () => {
+    const executed: string[] = [];
+    const engine = createAgentGraphEngine({
+      nodeExecutor: async ({ node, task, workflowRunId }) => {
+        executed.push(node.id);
+        return normalizeAgentRunResult({
+          id: `${workflowRunId}-${node.id}`,
+          taskId: task.id,
+          role: task.role,
+          success: true,
+          output: `${node.id} ok`,
+          durationMs: 1,
+        });
+      },
+    });
+
+    const result = await engine.run({
+      workflowRunId: "wf-condition",
+      input: { shouldRun: false },
+      graph: {
+        nodes: [
+          {
+            id: "optional",
+            agentRole: "coder",
+            description: "optional work",
+            risk: "read-only",
+            condition: "input.shouldRun",
+          },
+        ],
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(executed).toEqual([]);
+    expect(result.nodeResults["optional"]?.status).toBe("cancelled");
+    expect(result.nodeResults["optional"]?.metadata).toMatchObject({ skipped: true });
+  });
+
+  it("fails nodes that exceed their timeout", async () => {
+    const engine = createAgentGraphEngine({
+      nodeExecutor: async ({ node, task, workflowRunId }) => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return normalizeAgentRunResult({
+          id: `${workflowRunId}-${node.id}`,
+          taskId: task.id,
+          role: task.role,
+          success: true,
+          output: "late",
+          durationMs: 20,
+        });
+      },
+    });
+
+    const result = await engine.run({
+      workflowRunId: "wf-timeout",
+      input: {},
+      graph: {
+        nodes: [
+          {
+            id: "slow",
+            agentRole: "coder",
+            description: "slow work",
+            risk: "read-only",
+            timeoutMs: 1,
+          },
+        ],
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("timed out");
+  });
+
+  it("preserves shared workspace record ids when replaying from file store", () => {
+    const dir = mkdtempSync(join(tmpdir(), "coco-state-"));
+    const file = join(dir, "state.json");
+
+    try {
+      const writer = new FileSharedWorkspaceStore(file);
+      const written = writer.write({
+        kind: "fact",
+        key: "repo",
+        value: "coco",
+        provenance: { workflowRunId: "wf-file" },
+      });
+
+      const reader = new FileSharedWorkspaceStore(file);
+
+      expect(reader.list()[0]?.id).toBe(written.id);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

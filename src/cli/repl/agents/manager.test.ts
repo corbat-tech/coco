@@ -47,20 +47,29 @@ function createMockProvider(): LLMProvider {
  * Create a mock tool registry
  */
 function createMockToolRegistry(): ToolRegistry {
+  const tools = new Map(
+    [
+      { name: "glob", description: "Search files", category: "search" },
+      { name: "read_file", description: "Read a file", category: "file" },
+      { name: "write_file", description: "Write a file", category: "file" },
+      { name: "edit_file", description: "Edit a file", category: "file" },
+      { name: "list_dir", description: "List directory", category: "file" },
+      { name: "bash_exec", description: "Execute bash command", category: "bash" },
+      { name: "run_tests", description: "Run tests", category: "test" },
+    ].map((tool) => [tool.name, tool]),
+  );
   return {
-    getToolDefinitionsForLLM: vi.fn(() => [
-      { name: "glob", description: "Search files", input_schema: { type: "object" } },
-      { name: "read_file", description: "Read a file", input_schema: { type: "object" } },
-      { name: "write_file", description: "Write a file", input_schema: { type: "object" } },
-      { name: "edit_file", description: "Edit a file", input_schema: { type: "object" } },
-      { name: "list_dir", description: "List directory", input_schema: { type: "object" } },
-      { name: "bash_exec", description: "Execute bash command", input_schema: { type: "object" } },
-      { name: "run_tests", description: "Run tests", input_schema: { type: "object" } },
-    ]),
+    getToolDefinitionsForLLM: vi.fn(() =>
+      [...tools.values()].map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        input_schema: { type: "object" },
+      })),
+    ),
     execute: vi.fn(),
     register: vi.fn(),
     unregister: vi.fn(),
-    get: vi.fn(),
+    get: vi.fn((name: string) => tools.get(name)),
     has: vi.fn(),
     getAll: vi.fn(),
     getByCategory: vi.fn(),

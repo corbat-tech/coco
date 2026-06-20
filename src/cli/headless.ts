@@ -15,7 +15,9 @@
 import { createSession, initializeSessionTrust, initializeContextManager } from "./repl/session.js";
 import { executeAgentTurn } from "./repl/agent-loop.js";
 import { createProvider } from "../providers/index.js";
+import { setAgentProvider, setAgentToolRegistry } from "../agents/provider-bridge.js";
 import { createAgentRuntime, createToolCallingRuntimeTurnRunner } from "../runtime/index.js";
+import { createFullToolRegistry } from "../tools/index.js";
 import { loadAllowedPaths } from "../tools/allowed-paths.js";
 import { registerGlobalCleanup } from "../utils/subprocess-registry.js";
 import type { ReplConfig } from "./repl/types.js";
@@ -142,9 +144,11 @@ export async function runHeadless(options: HeadlessOptions): Promise<HeadlessRes
       providerType,
       model: session.config.provider.model || undefined,
       provider,
+      toolRegistry: createFullToolRegistry(),
       eventLogPath: path.join(options.projectPath, ".coco", "events", `${session.id}.jsonl`),
       turnRunner: options.useRuntimeRunner ? createToolCallingRuntimeTurnRunner() : undefined,
       publishToGlobalBridge: true,
+      legacyAgentBridge: { setAgentProvider, setAgentToolRegistry },
     });
     session.runtime = runtime;
     const toolRegistry = runtime.toolRegistry;

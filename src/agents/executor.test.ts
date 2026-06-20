@@ -23,6 +23,21 @@ const mockProvider = {
 
 const mockToolRegistry = {
   execute: vi.fn(),
+  get: vi.fn((name: string) => {
+    const tools = {
+      read_file: {
+        name: "read_file",
+        description: "Read a file",
+        category: "file",
+      },
+      write_file: {
+        name: "write_file",
+        description: "Write a file",
+        category: "file",
+      },
+    };
+    return tools[name as keyof typeof tools];
+  }),
   getToolDefinitionsForLLM: vi.fn().mockReturnValue([
     {
       name: "read_file",
@@ -181,9 +196,6 @@ describe("AgentExecutor", () => {
         }),
       );
 
-      // Tool execution throws an error
-      vi.mocked(mockToolRegistry.execute).mockRejectedValueOnce(new Error("Permission denied"));
-
       // Turn 2: LLM recovers and finishes
       vi.mocked(mockProvider.chatWithTools).mockResolvedValueOnce(
         makeChatResponse({
@@ -213,7 +225,8 @@ describe("AgentExecutor", () => {
       expect(toolResults[0].type).toBe("tool_result");
       expect(toolResults[0].tool_use_id).toBe("call-err");
       expect(toolResults[0].is_error).toBe(true);
-      expect(toolResults[0].content).toContain("Permission denied");
+      expect(toolResults[0].content).toContain("should be confirmed");
+      expect(mockToolRegistry.execute).not.toHaveBeenCalled();
     });
 
     it("should return failure with error message when provider throws", async () => {
@@ -361,9 +374,11 @@ describe("AgentExecutor", () => {
         }),
       );
 
-      vi.mocked(mockToolRegistry.execute)
-        .mockResolvedValueOnce({ success: true, data: { result: "content-a" }, duration: 5 })
-        .mockResolvedValueOnce({ success: true, data: { result: "content-b" }, duration: 5 });
+      vi.mocked(mockToolRegistry.execute).mockResolvedValueOnce({
+        success: true,
+        data: { result: "content-a" },
+        duration: 5,
+      });
 
       // Turn 2: LLM finishes
       vi.mocked(mockProvider.chatWithTools).mockResolvedValueOnce(
@@ -381,7 +396,7 @@ describe("AgentExecutor", () => {
       expect(result.toolsUsed).toContain("read_file");
       expect(result.toolsUsed).toContain("write_file");
       expect(result.toolsUsed).toHaveLength(2);
-      expect(mockToolRegistry.execute).toHaveBeenCalledTimes(2);
+      expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
     });
 
     it("should handle tool returning a failure result (not throwing)", async () => {

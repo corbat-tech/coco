@@ -61,8 +61,27 @@ const result = await runtime.runTurn({
 
 `runTurn()` appends user and assistant messages to the runtime session and emits
 `turn.started`, `session.updated`, `turn.completed`, or `turn.failed` events.
+Embeddable runtimes start with an empty tool registry unless the caller injects
+one. CLI and coding-agent surfaces pass the full coding registry explicitly.
 Embedders that need tool execution can provide a custom `RuntimeTurnRunner`
 while reusing provider selection, permissions, sessions, and event logging.
+
+Products should pass `runtimeContext` and `runtimePolicy` when embedding Coco for
+customers. These contracts carry tenant, user, surface/channel, correlation ID,
+data boundary, retention, cost budget, rate limits, and approval requirements.
+Runtime sessions copy this metadata so events and audit logs can be traced back
+to the client and channel that initiated the work.
+
+RAG is exposed as injectable runtime primitives instead of a fixed vendor stack:
+`DocumentLoader`, `Chunker`, `EmbeddingProvider`, `VectorStore`, `KnowledgeRetriever`,
+`Reranker`, and `RagPipeline`. Product adapters can use Qdrant, pgvector,
+Pinecone, OpenAI embeddings, Gemini embeddings, or a custom enterprise search
+backend behind the same runtime contracts.
+
+The default workflow catalog includes graph-first product references:
+`enterprise-rag-answer` and `whatsapp-support-assistant`. They are intentionally
+runtime-level examples: embedders provide the node executor, tenant policy,
+retriever/tools, and channel adapter.
 
 For streaming UI surfaces, use `streamTurn()`:
 
@@ -96,15 +115,23 @@ does not treat the CLI UI as implicit approval: embedders must pass
 `confirmed: true` for those calls. Read-only modes still block write-capable
 inputs such as `run_linter` with `fix: true`.
 
+Runtime policy is enforced at the runtime boundary. `allowedTools`,
+`maxToolRisk`, human approval requirements, and basic token budgets are checked
+by `AgentRuntime`; graph workflows are rejected before execution when declared
+`requiredTools`/risk exceed the configured policy. RAG retrieval options carry
+tenant and data-boundary context so reusable stores can apply tenant filtering
+instead of relying only on prompt instructions.
+
 `createRuntimeSessionStore()` returns an in-memory store for tests and short
 processes. `createFileRuntimeSessionStore(path)` persists sessions to one JSON
 file for local products, prototypes, and replay fixtures. Hosted or multi-tenant
 products should provide their own `RuntimeSessionStore` backed by their database
 and tenant isolation model.
 
-If `toolRegistry` is omitted, Coco uses the full coding-agent registry for CLI
-compatibility. Embedded assistants should pass an explicit narrow registry with
-only domain-safe tools.
+If `toolRegistry` is omitted, embeddable runtimes start with no tools. CLI and
+headless coding-agent surfaces inject the full coding registry explicitly.
+Embedded assistants should pass an explicit narrow registry with only
+domain-safe tools.
 
 For simple prototypes, `createRuntimeHttpServer(runtime)` exposes:
 
@@ -135,16 +162,19 @@ const run = await runtime.workflowEngine.run({
 ```
 
 Handlers are explicit opt-ins for legacy or bespoke execution. Unknown workflows
-still fail fast, but workflows without handlers now execute through the runtime
-`AgentGraphEngine`. Handler failures and graph failures return structured failed
-results and are recorded in the `EventLog`.
+still fail fast, and workflows without handlers execute through the runtime
+`AgentGraphEngine` only when a real node executor is registered. The graph
+engine does not simulate successful work by default; demos and tests must opt in
+with `allowSimulated: true` and the dry-run executor. Handler failures and graph
+failures return structured failed results and are recorded in the `EventLog`.
 
 Workflow definitions now support executable graph metadata in addition to legacy
 linear `steps`. New workflows should prefer `nodes`, `edges`, `gates`,
-`parallelism`, and `retryPolicy` so they can model fan-out/fan-in execution,
-node retries, checkpoints, and quality gates. Legacy `steps` are converted to a
-linear graph for planning, validation, and graph execution, so existing
-workflows keep the same visible behavior.
+`parallelism`, conditions, timeouts, and `retryPolicy` so they can model
+fan-out/fan-in execution, node retries, checkpoints, and quality gates. Legacy
+`steps` are converted to a linear graph for planning, validation, and graph
+execution, so existing workflows keep the same visible behavior once a runtime
+executor is registered.
 
 Multi-agent execution results should be represented as `AgentRunResult` with
 typed `AgentArtifact` entries (`plan`, `findings`, `patchProposal`,
@@ -153,19 +183,25 @@ remain available for compatibility.
 
 `SharedWorkspaceStore` is the controlled handoff surface between agents. Every
 write requires provenance (`workflowRunId` and optional agent/node/task data),
-and role-filtered reads prevent ordinary implementation agents from receiving
-risk-sensitive context by default. `SharedWorkspaceState` remains as a
+role-filtered reads prevent ordinary implementation agents from receiving
+risk-sensitive context by default, and graph artifact writes emit
+`shared_state.updated` events. `FileSharedWorkspaceStore` preserves record IDs
+when replaying local debug state. `SharedWorkspaceState` remains as a
 compatibility facade over the in-memory store.
 
 The multi-agent runtime has these architecture invariants:
 
 - `src/runtime` must not import CLI, REPL, or swarm implementations.
+- Legacy bridges are injected by adapters such as CLI/headless, not imported by
+  runtime.
 - Swarm is a runtime consumer, not a parallel orchestration stack.
 - Agent roles and legacy role mappings are resolved through runtime contracts.
 - Tool access is evaluated against agent capability, tool risk, and runtime
   permission policy.
-- Graph execution emits correlated workflow, graph, agent, artifact, and gate
-  events.
+- Required critical gates (`tests`, `coverage`, `security`, `quality-score`,
+  `human-approval`) fail unless a concrete evaluator is configured.
+- Graph execution emits correlated workflow, graph, agent, artifact, state,
+  checkpoint, and gate events.
 
 ## Extensibility
 

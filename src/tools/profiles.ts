@@ -1,5 +1,6 @@
 import { ToolRegistry, defineTool } from "./registry.js";
 import { createFullToolRegistry } from "./index.js";
+import type { RuntimeRequestContext } from "../runtime/context.js";
 import type { KnowledgeRetriever, RetrievedSource } from "../runtime/rag.js";
 import { z } from "zod";
 
@@ -80,6 +81,7 @@ export type InternalOpsDraftHandler = (
 
 export interface SupportRagToolRegistryOptions {
   retriever?: KnowledgeRetriever;
+  runtimeContext?: RuntimeRequestContext;
   supportDraft?: SupportDraftHandler;
   humanEscalation?: HumanEscalationHandler;
 }
@@ -111,7 +113,9 @@ export function createCustomerSupportToolRegistry(source?: ToolRegistry): ToolRe
 export function createSupportRagToolRegistry(
   options: SupportRagToolRegistryOptions = {},
 ): ToolRegistry {
-  const registry = createRagToolRegistry(options.retriever);
+  const registry = createRagToolRegistry(options.retriever, {
+    runtimeContext: options.runtimeContext,
+  });
 
   if (options.supportDraft) {
     registry.register(
@@ -219,7 +223,10 @@ export function createInternalOpsToolRegistry(
   return registry;
 }
 
-export function createRagToolRegistry(retriever?: KnowledgeRetriever): ToolRegistry {
+export function createRagToolRegistry(
+  retriever?: KnowledgeRetriever,
+  options: { runtimeContext?: RuntimeRequestContext } = {},
+): ToolRegistry {
   const registry = new ToolRegistry();
   if (!retriever) return registry;
 
@@ -235,7 +242,12 @@ export function createRagToolRegistry(retriever?: KnowledgeRetriever): ToolRegis
         query: z.string(),
         limit: z.number().optional(),
       }),
-      execute: async ({ query, limit }) => retriever.search(query, { limit }),
+      execute: async ({ query, limit }) =>
+        retriever.search(query, {
+          limit,
+          tenantId: options.runtimeContext?.tenant?.id,
+          runtimeContext: options.runtimeContext,
+        }),
     }),
   );
 

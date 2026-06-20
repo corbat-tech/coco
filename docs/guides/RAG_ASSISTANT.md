@@ -24,6 +24,10 @@ interface KnowledgeRetriever {
 }
 ```
 
+`RetrievalOptions` can carry `tenantId`, `runtimeContext`, and `dataBoundary`.
+Reusable retrievers and vector stores should filter by tenant unless
+cross-tenant memory is explicitly allowed by policy.
+
 ## Local Example
 
 ```ts

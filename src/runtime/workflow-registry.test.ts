@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createEventLog } from "./event-log.js";
 import { createWorkflowCatalog, workflowToAgentGraph } from "./workflow-registry.js";
 import { createWorkflowEngine } from "./workflow-engine.js";
+import { normalizeAgentRunResult } from "./multi-agent.js";
 
 describe("workflow registry DAG support", () => {
   it("converts legacy linear steps into a DAG graph", () => {
@@ -103,6 +104,44 @@ describe("workflow registry DAG support", () => {
     });
   });
 
+  it("blocks graph node risk even when the node declares no tools", async () => {
+    const catalog = createWorkflowCatalog([
+      {
+        id: "risky-node",
+        name: "Risky Node",
+        description: "A risky workflow node",
+        inputSchema: "task: string",
+        outputKind: "markdown",
+        replayable: true,
+        checks: [],
+        steps: [],
+        nodes: [
+          {
+            id: "external-action",
+            agentRole: "integrator",
+            description: "Perform an external action",
+            risk: "destructive",
+            requiredTools: [],
+          },
+        ],
+      },
+    ]);
+    const engine = createWorkflowEngine(catalog, createEventLog(), {
+      runtimePolicy: { maxToolRisk: "read-only" },
+    });
+
+    const result = await engine.run({
+      workflowId: "risky-node",
+      input: { task: "run" },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error:
+        "Workflow node external-action is blocked by runtime policy: Runtime policy allows work up to read-only risk; workflow node external-action is destructive.",
+    });
+  });
+
   it("rejects invalid workflow graphs when registering", () => {
     expect(() =>
       createWorkflowCatalog([
@@ -141,9 +180,58 @@ describe("workflow registry DAG support", () => {
     });
   });
 
-  it("executes workflows as DAGs when no legacy handler is registered", async () => {
+  it("includes graph-first product workflows for RAG and WhatsApp assistants", () => {
+    const catalog = createWorkflowCatalog();
+    const rag = catalog.get("enterprise-rag-answer");
+    const whatsapp = catalog.get("whatsapp-support-assistant");
+
+    expect(rag?.steps).toEqual([]);
+    expect(workflowToAgentGraph(rag!).nodes.map((node) => node.id)).toEqual([
+      "retrieve",
+      "draft-answer",
+      "policy-review",
+    ]);
+    expect(workflowToAgentGraph(whatsapp!).nodes.map((node) => node.id)).toEqual([
+      "classify-message",
+      "retrieve-context",
+      "draft-response",
+      "escalate-if-needed",
+    ]);
+    expect(whatsapp?.nodes?.find((node) => node.id === "escalate-if-needed")).toMatchObject({
+      condition: "input.requiresEscalation",
+      requiredTools: ["request_human_escalation"],
+    });
+  });
+
+  it("fails DAG workflows without a real node executor", async () => {
     const eventLog = createEventLog();
     const engine = createWorkflowEngine(createWorkflowCatalog(), eventLog);
+
+    const result = await engine.run({
+      workflowId: "architect-editor-verifier",
+      input: { task: "improve runtime" },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("requires a nodeExecutor");
+    expect(eventLog.list().map((event) => event.type)).toEqual(
+      expect.arrayContaining(["workflow.started", "agent.graph.started", "workflow.failed"]),
+    );
+  });
+
+  it("executes workflows as DAGs when a runtime node executor is registered", async () => {
+    const eventLog = createEventLog();
+    const engine = createWorkflowEngine(createWorkflowCatalog(), eventLog, {
+      nodeExecutor: async ({ node, task, workflowRunId }) =>
+        normalizeAgentRunResult({
+          id: `${workflowRunId}-${node.id}`,
+          taskId: task.id,
+          role: task.role,
+          success: true,
+          output: `${node.id} done`,
+          durationMs: 1,
+        }),
+    });
 
     const result = await engine.run({
       workflowId: "architect-editor-verifier",

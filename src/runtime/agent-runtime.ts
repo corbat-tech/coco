@@ -1,10 +1,17 @@
-import { setAgentProvider, setAgentToolRegistry } from "../agents/provider-bridge.js";
 import { getDefaultModel } from "../config/env.js";
 import type { ProviderType } from "../providers/index.js";
 import type { LLMProvider } from "../providers/types.js";
-import { createFullToolRegistry } from "../tools/index.js";
-import type { ToolRegistry } from "../tools/registry.js";
+import { ToolRegistry } from "../tools/registry.js";
 import { listAgentModes } from "./agent-modes.js";
+import {
+  assertRuntimeUsageWithinPolicy,
+  createRuntimeRequestContext,
+  evaluateRuntimeToolPolicy,
+  mergeRuntimePolicy,
+  runtimeContextToMetadata,
+  type RuntimePolicy,
+  type RuntimeRequestContext,
+} from "./context.js";
 import { createDefaultRuntimeTurnRunner } from "./default-turn-runner.js";
 import { createEventLog, createFileEventLog } from "./event-log.js";
 import { createPermissionPolicy } from "./permission-policy.js";
@@ -45,21 +52,29 @@ export class AgentRuntime {
   private providerType: ProviderType;
   private model: string;
   private provider?: LLMProvider;
+  private readonly runtimeContext?: RuntimeRequestContext;
+  private readonly runtimePolicy?: RuntimePolicy;
 
   constructor(private readonly options: AgentRuntimeOptions) {
     this.providerRegistry = createProviderRegistry();
-    this.toolRegistry = options.toolRegistry ?? createFullToolRegistry();
+    this.toolRegistry = options.toolRegistry ?? new ToolRegistry();
     this.sessionStore = options.sessionStore;
     this.runtimeSessionStore = options.runtimeSessionStore ?? createRuntimeSessionStore();
     this.eventLog =
       options.eventLog ??
       (options.eventLogPath ? createFileEventLog(options.eventLogPath) : createEventLog());
-    this.workflowEngine = options.workflowEngine ?? createWorkflowEngine(undefined, this.eventLog);
     this.permissionPolicy = options.permissionPolicy ?? createPermissionPolicy();
     this.turnRunner = options.turnRunner ?? createDefaultRuntimeTurnRunner();
     this.providerType = options.providerType;
     this.model =
       options.model ?? options.providerConfig?.model ?? getDefaultModel(options.providerType);
+    this.runtimeContext = options.runtimeContext
+      ? createRuntimeRequestContext(options.runtimeContext)
+      : undefined;
+    this.runtimePolicy = mergeRuntimePolicy(this.runtimeContext?.policy, options.runtimePolicy);
+    this.workflowEngine =
+      options.workflowEngine ??
+      createWorkflowEngine(undefined, this.eventLog, { runtimePolicy: this.runtimePolicy });
   }
 
   async initialize(): Promise<void> {
@@ -103,8 +118,8 @@ export class AgentRuntime {
 
   private publishToGlobalBridge(provider: LLMProvider): void {
     if (this.options.publishToGlobalBridge !== true) return;
-    setAgentProvider(provider);
-    setAgentToolRegistry(this.toolRegistry);
+    this.options.legacyAgentBridge?.setAgentProvider(provider);
+    this.options.legacyAgentBridge?.setAgentToolRegistry(this.toolRegistry);
   }
 
   snapshot(): AgentRuntimeSnapshot {
@@ -125,14 +140,27 @@ export class AgentRuntime {
         names: toolNames,
       },
       modes: listAgentModes(),
+      context: this.runtimeContext,
+      policy: this.runtimePolicy,
     };
   }
 
   createSession(options: RuntimeSessionCreateOptions = {}): RuntimeSession {
-    const session = this.runtimeSessionStore.create(options);
+    const session = this.runtimeSessionStore.create({
+      ...options,
+      metadata: {
+        ...runtimeContextToMetadata(this.runtimeContext),
+        ...options.metadata,
+      },
+    });
     this.eventLog.record("session.created", {
       sessionId: session.id,
       mode: session.mode,
+      ...(session.metadata["tenantId"] ? { tenantId: session.metadata["tenantId"] } : {}),
+      ...(session.metadata["surface"] ? { surface: session.metadata["surface"] } : {}),
+      ...(session.metadata["correlationId"]
+        ? { correlationId: session.metadata["correlationId"] }
+        : {}),
       metadataKeys: Object.keys(session.metadata).sort(),
     });
     return session;
@@ -178,6 +206,7 @@ export class AgentRuntime {
         permissionPolicy: this.permissionPolicy,
         eventLog: this.eventLog,
       });
+      assertRuntimeUsageWithinPolicy(this.runtimePolicy, result.usage);
 
       const updatedSession = this.runtimeSessionStore.update({
         ...effectiveSession,
@@ -266,6 +295,19 @@ export class AgentRuntime {
         }
       }
 
+      const result: RuntimeTurnResult = {
+        sessionId: effectiveSession.id,
+        content,
+        usage: {
+          inputTokens: provider.countTokens(input.content),
+          outputTokens: provider.countTokens(content),
+          estimated: true,
+        },
+        model: input.options?.model ?? this.getModel(),
+        mode: effectiveSession.mode,
+      };
+      assertRuntimeUsageWithinPolicy(this.runtimePolicy, result.usage);
+
       const updatedSession = this.runtimeSessionStore.update({
         ...effectiveSession,
         messages: [
@@ -274,17 +316,8 @@ export class AgentRuntime {
           { role: "assistant", content },
         ],
       });
-      const result: RuntimeTurnResult = {
-        sessionId: updatedSession.id,
-        content,
-        usage: {
-          inputTokens: provider.countTokens(input.content),
-          outputTokens: provider.countTokens(content),
-          estimated: true,
-        },
-        model: input.options?.model ?? this.getModel(),
-        mode: updatedSession.mode,
-      };
+      result.sessionId = updatedSession.id;
+      result.mode = updatedSession.mode;
 
       this.eventLog.record("session.updated", {
         sessionId: updatedSession.id,
@@ -380,8 +413,22 @@ export class AgentRuntime {
     const decision = this.permissionPolicy.canExecuteToolInput
       ? this.permissionPolicy.canExecuteToolInput(mode, tool, input.input)
       : this.permissionPolicy.canExecuteTool(mode, tool);
-    if (!decision.allowed || (decision.requiresConfirmation && input.confirmed !== true)) {
+    const runtimeDecision = decision.allowed
+      ? evaluateRuntimeToolPolicy(this.runtimePolicy, {
+          toolName: input.toolName,
+          risk: decision.risk,
+          confirmed: input.confirmed,
+        })
+      : undefined;
+    const effectiveDecision = runtimeDecision ?? decision;
+
+    if (
+      !decision.allowed ||
+      !effectiveDecision.allowed ||
+      (decision.requiresConfirmation && input.confirmed !== true)
+    ) {
       const reason =
+        effectiveDecision.reason ??
         decision.reason ??
         (decision.requiresConfirmation
           ? "Tool requires explicit runtime confirmation."
@@ -391,8 +438,10 @@ export class AgentRuntime {
         mode,
         tool: input.toolName,
         reason,
-        risk: decision.risk,
-        requiresConfirmation: decision.requiresConfirmation,
+        risk: effectiveDecision.risk,
+        requiresConfirmation:
+          effectiveDecision.requiresConfirmation ?? decision.requiresConfirmation,
+        runtimePolicyBlocked: runtimeDecision ? !runtimeDecision.allowed : false,
         runtimeApi: true,
       });
       return {
@@ -400,7 +449,14 @@ export class AgentRuntime {
         success: false,
         error: reason,
         duration: performance.now() - startedAt,
-        decision,
+        decision: {
+          ...decision,
+          allowed: false,
+          reason,
+          requiresConfirmation:
+            effectiveDecision.requiresConfirmation ?? decision.requiresConfirmation,
+          risk: effectiveDecision.risk,
+        },
       };
     }
 
@@ -408,7 +464,7 @@ export class AgentRuntime {
       sessionId: input.sessionId,
       mode,
       tool: input.toolName,
-      risk: decision.risk,
+      risk: effectiveDecision.risk,
       runtimeApi: true,
       metadataKeys: Object.keys(input.metadata ?? {}).sort(),
     });
@@ -428,7 +484,11 @@ export class AgentRuntime {
       output: result.data,
       error: result.error,
       duration: result.duration,
-      decision,
+      decision: {
+        ...decision,
+        risk: effectiveDecision.risk,
+        requiresConfirmation: decision.requiresConfirmation,
+      },
     };
   }
 
@@ -447,12 +507,28 @@ export class AgentRuntime {
       input && this.permissionPolicy.canExecuteToolInput
         ? this.permissionPolicy.canExecuteToolInput(mode, tool, input)
         : this.permissionPolicy.canExecuteTool(mode, tool);
-    this.eventLog.record(decision.allowed ? "tool.allowed" : "tool.blocked", {
+    const runtimeDecision = decision.allowed
+      ? evaluateRuntimeToolPolicy(this.runtimePolicy, {
+          toolName,
+          risk: decision.risk,
+          confirmed: false,
+        })
+      : undefined;
+    const allowed = decision.allowed && runtimeDecision?.allowed !== false;
+    this.eventLog.record(allowed ? "tool.allowed" : "tool.blocked", {
       mode,
       tool: toolName,
       ...decision,
+      ...(runtimeDecision && !runtimeDecision.allowed
+        ? {
+            allowed: false,
+            reason: runtimeDecision.reason,
+            requiresConfirmation: runtimeDecision.requiresConfirmation,
+            runtimePolicyBlocked: true,
+          }
+        : {}),
     });
-    return decision.allowed;
+    return allowed;
   }
 }
 
