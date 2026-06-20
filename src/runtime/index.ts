@@ -40,15 +40,30 @@ export { createEventLog, createFileEventLog, FileEventLog, InMemoryEventLog } fr
 export { createRuntimeHttpServer, type RuntimeHttpServerOptions } from "./http-server.js";
 export { createPermissionPolicy, DefaultPermissionPolicy } from "./permission-policy.js";
 export {
+  createAsyncPostgresEventLog,
+  createAsyncPostgresRuntimeSessionStore,
   createPostgresEventLog,
+  createPostgresRuntimeAuditStore,
   createPostgresRuntimeSessionQueries,
   createPostgresRuntimeSessionStore,
   listPostgresRuntimeEvents,
+  AsyncPostgresEventLog,
+  AsyncPostgresRuntimeSessionStore,
   PostgresEventLog,
+  PostgresRuntimeAuditStore,
   PostgresRuntimeSessionStore,
+  type RuntimeAuditRecord,
+  type RuntimeAuditStore,
   type PostgresQueryClient,
   type PostgresRuntimeStoreOptions,
 } from "./postgres.js";
+export {
+  createTenantScopedEventLog,
+  createTenantScopedRuntimeSessionStore,
+  TenantScopedEventLog,
+  TenantScopedRuntimeSessionStore,
+  type TenantScopeOptions,
+} from "./tenant-scope.js";
 export { createProviderRegistry, ProviderRegistry } from "./provider-registry.js";
 export {
   createFileRuntimeSessionStore,
@@ -206,6 +221,8 @@ export type {
 export type {
   AgentRuntimeOptions,
   AgentRuntimeSnapshot,
+  AsyncEventLog,
+  AsyncRuntimeSessionStore,
   EventLog,
   PermissionDecision,
   PermissionPolicy,

@@ -107,6 +107,13 @@ export interface EventLog {
   clear(): void;
 }
 
+export interface AsyncEventLog {
+  record(type: RuntimeEventType, data?: Record<string, unknown>): Promise<RuntimeEvent>;
+  list(): Promise<RuntimeEvent[]>;
+  count(): Promise<number>;
+  clear(): Promise<void>;
+}
+
 export interface PermissionDecision {
   allowed: boolean;
   reason?: string;
@@ -153,6 +160,14 @@ export interface RuntimeSessionStore {
   update(session: RuntimeSession): RuntimeSession;
   list(): RuntimeSession[];
   delete(id: string): boolean;
+}
+
+export interface AsyncRuntimeSessionStore {
+  create(options?: RuntimeSessionCreateOptions): Promise<RuntimeSession>;
+  get(id: string): Promise<RuntimeSession | undefined>;
+  update(session: RuntimeSession): Promise<RuntimeSession>;
+  list(): Promise<RuntimeSession[]>;
+  delete(id: string): Promise<boolean>;
 }
 
 export interface RuntimeTurnInput {
