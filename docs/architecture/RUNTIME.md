@@ -61,6 +61,8 @@ const result = await runtime.runTurn({
 
 `runTurn()` appends user and assistant messages to the runtime session and emits
 `turn.started`, `session.updated`, `turn.completed`, or `turn.failed` events.
+Embeddable runtimes start with an empty tool registry unless the caller injects
+one. CLI and coding-agent surfaces pass the full coding registry explicitly.
 Embedders that need tool execution can provide a custom `RuntimeTurnRunner`
 while reusing provider selection, permissions, sessions, and event logging.
 

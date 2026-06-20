@@ -162,6 +162,16 @@ describe("reusable agent runtime", () => {
     ]);
   });
 
+  it("starts embeddable runtimes with no tools unless a registry is injected", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+    });
+
+    expect(runtime.snapshot().tools).toEqual({ count: 0, names: [] });
+  });
+
   it("does not publish to the global bridge by default", async () => {
     const runtime = await createAgentRuntime({
       providerType: "openai",

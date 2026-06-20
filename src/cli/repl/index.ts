@@ -36,6 +36,7 @@ import {
 import { createProvider, type ProviderType } from "../../providers/index.js";
 import { setAgentProvider, setAgentToolRegistry } from "../../agents/provider-bridge.js";
 import { createAgentRuntime } from "../../runtime/index.js";
+import { createFullToolRegistry } from "../../tools/index.js";
 import {
   isSlashCommand,
   parseSlashCommand,
@@ -204,6 +205,7 @@ export async function startRepl(
     providerType: internalProviderId,
     model: session.config.provider.model || undefined,
     provider,
+    toolRegistry: createFullToolRegistry(),
     eventLogPath: path.join(projectPath, ".coco", "events", `${session.id}.jsonl`),
     publishToGlobalBridge: true,
     legacyAgentBridge: { setAgentProvider, setAgentToolRegistry },
