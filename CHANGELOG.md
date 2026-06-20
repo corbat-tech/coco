@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.39.0] - 2026-06-20
+
 ### Added
 - **Executable reference-grade multi-agent runtime**
   - Add `AgentGraphEngine` for real DAG execution with fan-out/fan-in, retries,
@@ -1600,7 +1602,9 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.37.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.39.0...HEAD
+[2.39.0]: https://github.com/corbat-tech/coco/compare/v2.38.0...v2.39.0
+[2.38.0]: https://github.com/corbat-tech/coco/compare/v2.37.0...v2.38.0
 [2.37.0]: https://github.com/corbat-tech/coco/compare/v2.36.0...v2.37.0
 [2.36.0]: https://github.com/corbat-tech/coco/compare/v2.35.0...v2.36.0
 [2.35.0]: https://github.com/corbat-tech/coco/compare/v2.34.0...v2.35.0
