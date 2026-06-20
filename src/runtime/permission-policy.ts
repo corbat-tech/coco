@@ -27,7 +27,6 @@ const READ_ONLY_TOOL_NAMES = new Set([
   "recall_memory",
   "list_memories",
   "list_checkpoints",
-  "spawnSimpleAgent",
   "checkAgentCapability",
 ]);
 const WRITE_CAPABLE_TOOL_NAMES = new Set(["run_linter"]);
@@ -85,6 +84,23 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
     tool: ToolDefinition,
     input: Record<string, unknown>,
   ): PermissionDecision {
+    if (tool.name === "spawnSimpleAgent") {
+      const risk = riskForSpawnedAgent(input);
+      const definition = getAgentMode(mode as AgentModeId);
+      if (definition.readOnly && risk !== "read-only" && risk !== "network") {
+        return {
+          allowed: false,
+          reason: `${definition.label} mode is read-only; spawnSimpleAgent with this role can perform ${risk} work.`,
+          risk,
+        };
+      }
+      return {
+        allowed: true,
+        requiresConfirmation: risk === "destructive" || risk === "secrets-sensitive",
+        risk,
+      };
+    }
+
     if (tool.name !== "run_linter") {
       return this.canExecuteTool(mode, tool);
     }
@@ -109,4 +125,37 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
 
 export function createPermissionPolicy(): PermissionPolicy {
   return new DefaultPermissionPolicy();
+}
+
+function riskForSpawnedAgent(input: Record<string, unknown>): PermissionDecision["risk"] {
+  const type = typeof input["type"] === "string" ? input["type"] : undefined;
+  const role = typeof input["role"] === "string" ? input["role"] : undefined;
+  const resolved = type ?? role;
+
+  switch (resolved) {
+    case "explore":
+    case "plan":
+    case "review":
+    case "architect":
+    case "security":
+    case "docs":
+    case "researcher":
+    case "reviewer":
+    case "planner":
+      return "read-only";
+    case "database":
+      return "secrets-sensitive";
+    case "test":
+    case "tdd":
+    case "e2e":
+    case "tester":
+      return "destructive";
+    case "debug":
+    case "refactor":
+    case "coder":
+    case "optimizer":
+      return "write";
+    default:
+      return "read-only";
+  }
 }

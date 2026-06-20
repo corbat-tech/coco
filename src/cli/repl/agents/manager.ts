@@ -26,7 +26,7 @@ import type {
   AgentEventType,
 } from "./types.js";
 import type { AgentRole } from "../../../runtime/multi-agent.js";
-import { normalizeAgentRunResult } from "../../../runtime/multi-agent.js";
+import { mapLegacyAgentRole, normalizeAgentRunResult } from "../../../runtime/multi-agent.js";
 import { getAgentConfig, AGENT_NAMES, AGENT_DESCRIPTIONS } from "./prompts.js";
 
 /**
@@ -574,29 +574,7 @@ export class AgentManager extends EventEmitter {
 }
 
 function agentTypeToRuntimeRole(type: AgentType): AgentRole {
-  switch (type) {
-    case "explore":
-      return "researcher";
-    case "plan":
-      return "planner";
-    case "test":
-    case "e2e":
-    case "tdd":
-      return "tester";
-    case "debug":
-    case "refactor":
-      return "coder";
-    case "review":
-      return "reviewer";
-    case "architect":
-      return "architect";
-    case "security":
-      return "security";
-    case "docs":
-      return "docs";
-    case "database":
-      return "database";
-  }
+  return mapLegacyAgentRole(type);
 }
 
 /**

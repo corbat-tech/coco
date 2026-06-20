@@ -1,4 +1,13 @@
 export { AgentRuntime, createAgentRuntime } from "./agent-runtime.js";
+export {
+  AgentRunner,
+  createAgentRunner,
+  type AgentRunnerExecutionContext,
+  type AgentRunnerExecutionInput,
+  type AgentRunnerExecutor,
+  type AgentRunnerOptions,
+  type AgentRunnerRawResult,
+} from "./agent-runner.js";
 export { AGENT_MODES, getAgentMode, isAgentMode, listAgentModes } from "./agent-modes.js";
 export { createDefaultRuntimeTurnRunner, DefaultRuntimeTurnRunner } from "./default-turn-runner.js";
 export {
@@ -80,11 +89,32 @@ export {
 } from "./workflow-registry.js";
 export {
   createAgentArtifact,
+  createAgentGraphEngine,
+  createAgentTraceContext,
   createSummaryArtifact,
+  evaluateAgentToolPolicy,
+  FileSharedWorkspaceStore,
+  InMemorySharedWorkspaceStore,
+  listLegacyAgentRoleMappings,
+  mapLegacyAgentRole,
   normalizeAgentRunResult,
+  AgentGraphEngine,
   SharedWorkspaceState,
   validateAgentCapabilities,
   validateAgentGraph,
+  type AgentCard,
+  type AgentDefinition,
+  type AgentGraphEngineOptions,
+  type AgentGraphNodeExecution,
+  type AgentGraphNodeExecutor,
+  type AgentGraphRunInput,
+  type AgentGraphRunResult,
+  type AgentGraphRunStatus,
+  type AgentGuardrailPolicy,
+  type AgentHandoff,
+  type AgentMessage,
+  type AgentMessageRole,
+  type AgentToolPolicyDecision,
   type AgentArtifact,
   type AgentArtifactKind,
   type AgentBudget,
@@ -100,7 +130,17 @@ export {
   type AgentRunResult,
   type AgentRunStatus,
   type AgentTask,
+  type AgentTraceContext,
+  type LegacyAgentRoleMapping,
+  type SharedWorkspaceProvenance,
+  type SharedWorkspaceRecord,
+  type SharedWorkspaceRecordKind,
+  type SharedWorkspaceStore,
   type SharedWorkspaceStateSnapshot,
+  type SharedWorkspaceWriteInput,
+  type ToolRiskLevel,
+  type ToolRiskManifest,
+  type ToolRiskManifestEntry,
 } from "./multi-agent.js";
 export {
   createWorkflowEngine,

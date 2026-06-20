@@ -234,6 +234,14 @@ describe("Main module exports", () => {
       expect(typeof CocoExports.createMcpToolPolicy).toBe("function");
       expect(typeof CocoExports.createWorkflowCatalog).toBe("function");
       expect(typeof CocoExports.createWorkflowRegistry).toBe("function");
+      expect(typeof CocoExports.createAgentGraphEngine).toBe("function");
+      expect(typeof CocoExports.createAgentRunner).toBe("function");
+      expect(typeof CocoExports.createAgentTraceContext).toBe("function");
+      expect(typeof CocoExports.evaluateAgentToolPolicy).toBe("function");
+      expect(typeof CocoExports.mapLegacyAgentRole).toBe("function");
+      expect(CocoExports.AgentGraphEngine).toBeDefined();
+      expect(CocoExports.AgentRunner).toBeDefined();
+      expect(CocoExports.InMemorySharedWorkspaceStore).toBeDefined();
     });
 
     it("should export reusable agent platform APIs", () => {

@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  createAgentGraphEngine,
   createAgentArtifact,
+  evaluateAgentToolPolicy,
+  InMemorySharedWorkspaceStore,
+  listLegacyAgentRoleMappings,
+  mapLegacyAgentRole,
   normalizeAgentRunResult,
   SharedWorkspaceState,
   validateAgentCapabilities,
   validateAgentGraph,
 } from "./multi-agent.js";
+import { createEventLog } from "./event-log.js";
 
 describe("multi-agent runtime contracts", () => {
   it("validates DAG execution levels for fan-out and fan-in workflows", () => {
@@ -150,5 +156,159 @@ describe("multi-agent runtime contracts", () => {
         message: "Tool 'write_file' is not allowed for agent role 'reviewer'.",
       },
     ]);
+  });
+
+  it("maps legacy agent surfaces to canonical runtime roles", () => {
+    expect(mapLegacyAgentRole("explore")).toBe("researcher");
+    expect(mapLegacyAgentRole("debug")).toBe("coder");
+    expect(mapLegacyAgentRole("e2e")).toBe("tester");
+    expect(mapLegacyAgentRole("database")).toBe("database");
+    expect(listLegacyAgentRoleMappings().some((mapping) => mapping.legacy === "refactor")).toBe(
+      true,
+    );
+  });
+
+  it("enforces capability and risk policies for agent tools", () => {
+    const decision = evaluateAgentToolPolicy({
+      capability: {
+        role: "reviewer",
+        allowedTools: ["read_file", "write_file"],
+        risk: "read-only",
+      },
+      toolName: "write_file",
+      manifest: {
+        write_file: {
+          toolName: "write_file",
+          risk: "write",
+          level: "high",
+          filesystem: true,
+        },
+      },
+    });
+
+    expect(decision).toMatchObject({
+      allowed: false,
+      risk: "write",
+    });
+  });
+
+  it("requires provenance for shared workspace store writes and filters sensitive reads", () => {
+    const store = new InMemorySharedWorkspaceStore();
+
+    expect(() =>
+      store.write({
+        kind: "fact",
+        key: "repo",
+        value: "coco",
+        provenance: { workflowRunId: "" },
+      }),
+    ).toThrow("workflowRunId");
+
+    store.write({
+      kind: "risk",
+      key: "secret",
+      value: { token: "redacted" },
+      provenance: { workflowRunId: "wf-1", risk: "secrets-sensitive" },
+    });
+    store.write({
+      kind: "artifact",
+      key: "a1",
+      value: createAgentArtifact({ id: "a1", kind: "summary", content: "safe" }),
+      provenance: { workflowRunId: "wf-1", agentRunId: "agent-1" },
+    });
+
+    expect(store.readForRole("coder").risks).toEqual({});
+    expect(store.readForRole("security").risks).toEqual({ secret: { token: "redacted" } });
+    expect(store.snapshot().artifacts[0]?.id).toBe("a1");
+  });
+
+  it("executes an agent graph with fan-out/fan-in, gates, state, and trace events", async () => {
+    const eventLog = createEventLog();
+    const store = new InMemorySharedWorkspaceStore();
+    const attempts = new Map<string, number>();
+    const engine = createAgentGraphEngine({
+      eventLog,
+      sharedState: store,
+      nodeExecutor: async ({ node, task, attempt, workflowRunId }) => {
+        attempts.set(node.id, attempt);
+        return normalizeAgentRunResult({
+          id: `${node.id}-${attempt}`,
+          taskId: task.id,
+          role: task.role,
+          success: node.id !== "test" || attempt > 1,
+          output: `${node.id} output`,
+          error: node.id === "test" && attempt === 1 ? "flaky" : undefined,
+          turns: 1,
+          toolsUsed: node.requiredTools ?? [],
+          durationMs: 1,
+          metadata: { workflowRunId },
+        });
+      },
+    });
+
+    const result = await engine.run({
+      workflowRunId: "wf-graph",
+      input: { task: "ship" },
+      graph: {
+        parallelism: 2,
+        gates: [
+          {
+            id: "review",
+            kind: "review",
+            description: "review passed",
+            required: true,
+          },
+        ],
+        nodes: [
+          { id: "plan", agentRole: "architect", description: "plan", risk: "read-only" },
+          {
+            id: "edit",
+            agentRole: "editor",
+            description: "edit",
+            dependsOn: ["plan"],
+            risk: "write",
+          },
+          {
+            id: "test",
+            agentRole: "tester",
+            description: "test",
+            dependsOn: ["plan"],
+            retryPolicy: { maxAttempts: 2 },
+            risk: "destructive",
+          },
+          {
+            id: "verify",
+            agentRole: "reviewer",
+            description: "verify",
+            dependsOn: ["edit", "test"],
+            gates: ["review"],
+            risk: "read-only",
+          },
+        ],
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(Object.keys(result.nodeResults)).toEqual(["plan", "edit", "test", "verify"]);
+    expect(attempts.get("test")).toBe(2);
+    expect(result.trace.workflowRunId).toBe("wf-graph");
+    expect(result.stateSnapshot.artifacts.map((artifact) => artifact.taskId)).toEqual([
+      "plan",
+      "edit",
+      "test",
+      "test",
+      "verify",
+    ]);
+    expect(eventLog.list().map((event) => event.type)).toEqual(
+      expect.arrayContaining([
+        "agent.graph.started",
+        "agent.started",
+        "agent.failed",
+        "agent.completed",
+        "agent.artifact.created",
+        "workflow.gate.passed",
+        "agent.graph.completed",
+      ]),
+    );
   });
 });
