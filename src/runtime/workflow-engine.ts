@@ -1,6 +1,10 @@
 import { createEventLog } from "./event-log.js";
 import type { EventLog } from "./types.js";
-import { evaluateRuntimeToolPolicy, type RuntimePolicy } from "./context.js";
+import {
+  evaluateRuntimeRiskPolicy,
+  evaluateRuntimeToolPolicy,
+  type RuntimePolicy,
+} from "./context.js";
 import {
   AgentGraphEngine,
   InMemorySharedWorkspaceStore,
@@ -181,6 +185,15 @@ function assertWorkflowAllowedByRuntimePolicy(
   if (!policy) return;
   for (const node of graph.nodes) {
     const risk = (node.risk ?? "read-only") as WorkflowRisk;
+    const riskDecision = evaluateRuntimeRiskPolicy(policy, {
+      subject: `workflow node ${node.id}`,
+      risk,
+    });
+    if (!riskDecision.allowed) {
+      throw new Error(
+        `Workflow node ${node.id} is blocked by runtime policy: ${riskDecision.reason}`,
+      );
+    }
     for (const toolName of node.requiredTools ?? []) {
       const decision = evaluateRuntimeToolPolicy(policy, { toolName, risk });
       if (!decision.allowed) {

@@ -232,7 +232,7 @@ export function createRagToolRegistry(
 
   registry.register(
     defineTool<
-      { query: string; limit?: number; tenantId?: string },
+      { query: string; limit?: number },
       Awaited<ReturnType<KnowledgeRetriever["search"]>>
     >({
       name: "knowledge_search",
@@ -241,12 +241,11 @@ export function createRagToolRegistry(
       parameters: z.object({
         query: z.string(),
         limit: z.number().optional(),
-        tenantId: z.string().optional(),
       }),
-      execute: async ({ query, limit, tenantId }) =>
+      execute: async ({ query, limit }) =>
         retriever.search(query, {
           limit,
-          tenantId: tenantId ?? options.runtimeContext?.tenant?.id,
+          tenantId: options.runtimeContext?.tenant?.id,
           runtimeContext: options.runtimeContext,
         }),
     }),

@@ -174,6 +174,34 @@ export function evaluateRuntimeToolPolicy(
   return { allowed: true, risk: input.risk };
 }
 
+export function evaluateRuntimeRiskPolicy(
+  policy: RuntimePolicy | undefined,
+  input: {
+    subject: string;
+    risk: WorkflowRisk;
+    confirmed?: boolean;
+  },
+): RuntimePolicyDecision {
+  if (policy?.maxToolRisk && riskRank(input.risk) > riskRank(policy.maxToolRisk)) {
+    return {
+      allowed: false,
+      reason: `Runtime policy allows work up to ${policy.maxToolRisk} risk; ${input.subject} is ${input.risk}.`,
+      risk: input.risk,
+    };
+  }
+
+  if (policy?.requireHumanApprovalFor?.includes(input.risk) && input.confirmed !== true) {
+    return {
+      allowed: false,
+      requiresConfirmation: true,
+      reason: `Runtime policy requires human approval for ${input.risk} work.`,
+      risk: input.risk,
+    };
+  }
+
+  return { allowed: true, risk: input.risk };
+}
+
 export function assertRuntimeUsageWithinPolicy(
   policy: RuntimePolicy | undefined,
   usage: { inputTokens?: number; outputTokens?: number },

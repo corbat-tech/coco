@@ -39,6 +39,7 @@ export async function loadMarkdownKnowledge(
         metadata: {
           source: "markdown",
           path: relativePath,
+          visibility: "global",
         },
       };
     }),
@@ -54,18 +55,21 @@ export function createFallbackKnowledge(): InMemoryKnowledgeDocument[] {
       title: "Support Hours",
       content:
         "Standard support hours are Monday to Friday, 09:00-18:00 CET. Urgent production incidents should be escalated to the on-call support queue.",
+      metadata: { visibility: "global" },
     },
     {
       id: "billing",
       title: "Billing Escalation",
       content:
         "Billing disputes require account ID, invoice number, contact email, and a concise summary. Urgent billing-impacting outages should be escalated with high priority.",
+      metadata: { visibility: "global" },
     },
     {
       id: "security",
       title: "Security Cases",
       content:
         "Security-sensitive cases must not be resolved by the assistant. Prepare a concise escalation summary and route to a human reviewer.",
+      metadata: { visibility: "global" },
     },
   ];
 }

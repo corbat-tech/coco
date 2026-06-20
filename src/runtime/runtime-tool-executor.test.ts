@@ -59,4 +59,43 @@ describe("RuntimeToolExecutor", () => {
     expect(execute).not.toHaveBeenCalled();
     expect(eventLog.list().map((event) => event.type)).toEqual(["tool.blocked"]);
   });
+
+  it("enforces runtime policy allowlists and approvals", async () => {
+    const registry = new ToolRegistry();
+    const execute = vi.fn(async () => ({ fixed: true }));
+    registry.register({
+      name: "run_linter",
+      description: "Run lint",
+      category: "quality",
+      parameters: z.object({ fix: z.boolean().optional() }),
+      execute,
+    });
+    const executor = createRuntimeToolExecutor({
+      toolRegistry: registry,
+      mode: "build",
+      runtimePolicy: {
+        allowedTools: ["run_linter"],
+        requireHumanApprovalFor: ["write"],
+      },
+    });
+
+    const blockedApproval = await executor.execute({
+      toolName: "run_linter",
+      input: { fix: true },
+    });
+    const confirmed = await executor.execute({
+      toolName: "run_linter",
+      input: { fix: true },
+      confirmed: true,
+    });
+
+    expect(blockedApproval).toMatchObject({
+      success: false,
+      error: "Runtime policy requires human approval for write tools.",
+    });
+    expect(confirmed).toMatchObject({
+      success: true,
+      output: { fixed: true },
+    });
+  });
 });

@@ -504,6 +504,32 @@ describe("reusable agent runtime", () => {
     ]);
   });
 
+  it("does not persist streaming output when runtime token policy is exceeded", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+      runtimePolicy: { costBudget: { maxOutputTokens: 1 } },
+    });
+    const session = runtime.createSession({ mode: "ask" });
+
+    const events = [];
+    for await (const event of runtime.streamTurn({
+      sessionId: session.id,
+      content: "hello",
+    })) {
+      events.push(event);
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      sessionId: session.id,
+      error: "Runtime policy output token budget exceeded: 12/1",
+    });
+    expect(runtime.getSession(session.id)?.messages).toEqual([]);
+  });
+
   it("executes runtime tools with permission events and confirmation gates", async () => {
     const eventLog = createEventLog();
     const runtime = await createAgentRuntime({

@@ -295,6 +295,19 @@ export class AgentRuntime {
         }
       }
 
+      const result: RuntimeTurnResult = {
+        sessionId: effectiveSession.id,
+        content,
+        usage: {
+          inputTokens: provider.countTokens(input.content),
+          outputTokens: provider.countTokens(content),
+          estimated: true,
+        },
+        model: input.options?.model ?? this.getModel(),
+        mode: effectiveSession.mode,
+      };
+      assertRuntimeUsageWithinPolicy(this.runtimePolicy, result.usage);
+
       const updatedSession = this.runtimeSessionStore.update({
         ...effectiveSession,
         messages: [
@@ -303,18 +316,8 @@ export class AgentRuntime {
           { role: "assistant", content },
         ],
       });
-      const result: RuntimeTurnResult = {
-        sessionId: updatedSession.id,
-        content,
-        usage: {
-          inputTokens: provider.countTokens(input.content),
-          outputTokens: provider.countTokens(content),
-          estimated: true,
-        },
-        model: input.options?.model ?? this.getModel(),
-        mode: updatedSession.mode,
-      };
-      assertRuntimeUsageWithinPolicy(this.runtimePolicy, result.usage);
+      result.sessionId = updatedSession.id;
+      result.mode = updatedSession.mode;
 
       this.eventLog.record("session.updated", {
         sessionId: updatedSession.id,

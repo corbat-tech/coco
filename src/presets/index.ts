@@ -105,7 +105,13 @@ export const ragKnowledgeAssistantPreset: AgentPreset<RagPresetConfig> = {
   },
   async createRuntime(config) {
     const blueprint = ragKnowledgeAssistantPreset.createBlueprint(config);
-    return createPresetRuntime(config, blueprint, createRagToolRegistry(config.retriever));
+    return createPresetRuntime(
+      config,
+      blueprint,
+      createRagToolRegistry(config.retriever, {
+        runtimeContext: config.runtimeContext,
+      }),
+    );
   },
 };
 
@@ -147,6 +153,7 @@ export const supportRagAssistantPreset: AgentPreset<SupportRagPresetConfig> = {
       blueprint,
       createSupportRagToolRegistry({
         retriever: config.retriever,
+        runtimeContext: config.runtimeContext,
         supportDraft: config.supportDraft,
         humanEscalation: config.humanEscalation,
       }),
@@ -324,6 +331,8 @@ async function createPresetRuntime(
     provider: config.provider,
     eventLog: config.eventLog,
     turnRunner: config.turnRunner ?? fallbackTurnRunner,
+    runtimeContext: config.runtimeContext,
+    runtimePolicy: config.runtimePolicy,
     toolRegistry:
       blueprint.id === "coding-agent"
         ? (config.toolRegistry ?? fallbackToolRegistry)

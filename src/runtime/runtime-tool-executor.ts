@@ -1,4 +1,5 @@
 import type { ToolRegistry } from "../tools/registry.js";
+import { evaluateRuntimeToolPolicy, type RuntimePolicy } from "./context.js";
 import { createEventLog } from "./event-log.js";
 import { createPermissionPolicy } from "./permission-policy.js";
 import type {
@@ -14,6 +15,7 @@ export interface RuntimeToolExecutorOptions {
   eventLog?: EventLog;
   permissionPolicy?: PermissionPolicy;
   mode?: RuntimeMode;
+  runtimePolicy?: RuntimePolicy;
 }
 
 export interface RuntimeToolExecutorInput {
@@ -30,12 +32,14 @@ export class RuntimeToolExecutor {
   private readonly eventLog: EventLog;
   private readonly permissionPolicy: PermissionPolicy;
   private readonly defaultMode: RuntimeMode;
+  private readonly runtimePolicy?: RuntimePolicy;
 
   constructor(options: RuntimeToolExecutorOptions) {
     this.toolRegistry = options.toolRegistry;
     this.eventLog = options.eventLog ?? createEventLog();
     this.permissionPolicy = options.permissionPolicy ?? createPermissionPolicy();
     this.defaultMode = options.mode ?? "ask";
+    this.runtimePolicy = options.runtimePolicy;
   }
 
   async execute(input: RuntimeToolExecutorInput): Promise<RuntimeToolExecutionResult> {
@@ -65,14 +69,39 @@ export class RuntimeToolExecutor {
     const decision = this.permissionPolicy.canExecuteToolInput
       ? this.permissionPolicy.canExecuteToolInput(mode, tool, input.input)
       : this.permissionPolicy.canExecuteTool(mode, tool);
+    const runtimeDecision = decision.allowed
+      ? evaluateRuntimeToolPolicy(this.runtimePolicy, {
+          toolName: input.toolName,
+          risk: decision.risk,
+          confirmed: input.confirmed,
+        })
+      : undefined;
 
-    if (!decision.allowed || (decision.requiresConfirmation && input.confirmed !== true)) {
+    if (
+      !decision.allowed ||
+      runtimeDecision?.allowed === false ||
+      (decision.requiresConfirmation && input.confirmed !== true)
+    ) {
       const reason =
+        runtimeDecision?.reason ??
         decision.reason ??
         (decision.requiresConfirmation
           ? "Tool requires explicit runtime confirmation."
           : "Tool is not allowed.");
-      return this.block(input, mode, { ...decision, reason }, startedAt);
+      return this.block(
+        input,
+        mode,
+        {
+          ...decision,
+          allowed: false,
+          reason,
+          requiresConfirmation:
+            runtimeDecision?.requiresConfirmation ?? decision.requiresConfirmation,
+          risk: runtimeDecision?.risk ?? decision.risk,
+        },
+        startedAt,
+        { runtimePolicyBlocked: runtimeDecision ? !runtimeDecision.allowed : false },
+      );
     }
 
     this.eventLog.record("agent.tool.called", {
@@ -112,6 +141,7 @@ export class RuntimeToolExecutor {
     mode: RuntimeMode,
     decision: PermissionDecision,
     startedAt: number,
+    extraData: Record<string, unknown> = {},
   ): RuntimeToolExecutionResult {
     this.eventLog.record("tool.blocked", {
       mode,
@@ -121,6 +151,7 @@ export class RuntimeToolExecutor {
       requiresConfirmation: decision.requiresConfirmation,
       runtimeApi: true,
       metadata: input.metadata,
+      ...extraData,
     });
     return {
       toolName: input.toolName,

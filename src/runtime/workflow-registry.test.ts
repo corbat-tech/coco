@@ -104,6 +104,44 @@ describe("workflow registry DAG support", () => {
     });
   });
 
+  it("blocks graph node risk even when the node declares no tools", async () => {
+    const catalog = createWorkflowCatalog([
+      {
+        id: "risky-node",
+        name: "Risky Node",
+        description: "A risky workflow node",
+        inputSchema: "task: string",
+        outputKind: "markdown",
+        replayable: true,
+        checks: [],
+        steps: [],
+        nodes: [
+          {
+            id: "external-action",
+            agentRole: "integrator",
+            description: "Perform an external action",
+            risk: "destructive",
+            requiredTools: [],
+          },
+        ],
+      },
+    ]);
+    const engine = createWorkflowEngine(catalog, createEventLog(), {
+      runtimePolicy: { maxToolRisk: "read-only" },
+    });
+
+    const result = await engine.run({
+      workflowId: "risky-node",
+      input: { task: "run" },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error:
+        "Workflow node external-action is blocked by runtime policy: Runtime policy allows work up to read-only risk; workflow node external-action is destructive.",
+    });
+  });
+
   it("rejects invalid workflow graphs when registering", () => {
     expect(() =>
       createWorkflowCatalog([

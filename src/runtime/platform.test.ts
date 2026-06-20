@@ -167,6 +167,12 @@ describe("agent platform layer", () => {
         content: "Corbat builds custom AI agents and software platforms.",
         metadata: { tenantId: "acme" },
       },
+      {
+        id: "doc-evil",
+        title: "Other Tenant Services",
+        content: "Corbat builds custom AI agents and software platforms.",
+        metadata: { tenantId: "other" },
+      },
       { id: "doc-2", title: "Other", content: "Unrelated content." },
     ]);
 
@@ -180,6 +186,7 @@ describe("agent platform layer", () => {
     const tenantResults = await ragRegistry.execute("knowledge_search", {
       query: "custom AI agents",
       limit: 1,
+      tenantId: "other",
     });
     expect(tenantResults.success).toBe(true);
     expect(tenantResults.data).toEqual([expect.objectContaining({ id: "doc-1" })]);
@@ -243,6 +250,32 @@ describe("agent platform layer", () => {
       "request_human_escalation",
     ]);
     expect(blueprint.approval.requireHumanForExternalActions).toBe(true);
+  });
+
+  it("propagates runtime context and policy through product presets", async () => {
+    const runtime = await supportRagAssistantPreset.createRuntime({
+      brand: "Corbat",
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimeContext: {
+        surface: "whatsapp",
+        tenant: { id: "acme" },
+        user: { id: "support-user" },
+      },
+      runtimePolicy: {
+        allowedTools: ["knowledge_search"],
+        maxToolRisk: "read-only",
+      },
+    });
+
+    expect(runtime.snapshot()).toMatchObject({
+      context: { surface: "whatsapp", tenant: { id: "acme" } },
+      policy: {
+        allowedTools: ["knowledge_search"],
+        maxToolRisk: "read-only",
+      },
+    });
   });
 
   it("supports Sales Intake and Internal Ops as constrained product profiles", async () => {
