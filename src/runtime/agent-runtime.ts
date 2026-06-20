@@ -101,6 +101,7 @@ export class AgentRuntime {
         runtimePolicy: this.runtimePolicy,
         runtimeContext: this.runtimeContext,
         runtimeHostMode: this.runtimeHostMode,
+        agentDefinitionRegistry: options.agentDefinitionRegistry,
       });
   }
 

@@ -13,6 +13,13 @@ export {
   type AgentRunnerOptions,
   type AgentRunnerRawResult,
 } from "./agent-runner.js";
+export {
+  AgentDefinitionRegistry,
+  RuntimeAgentNodeExecutor,
+  createAgentDefinitionRegistry,
+  createRuntimeAgentNodeExecutor,
+  type RuntimeAgentNodeExecutorOptions,
+} from "./runtime-agent-node-executor.js";
 export { AGENT_MODES, getAgentMode, isAgentMode, listAgentModes } from "./agent-modes.js";
 export {
   assertRuntimeTenantBoundary,

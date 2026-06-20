@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { LLMProvider } from "../providers/types.js";
 import { defineTool, ToolRegistry } from "../tools/registry.js";
 import { createAgentRuntime } from "./agent-runtime.js";
+import { AgentRunner } from "./agent-runner.js";
 import { createEventLog, createFileEventLog } from "./event-log.js";
 import { createMcpToolPolicy } from "./extension-manifests.js";
 import { createRuntimeHttpServer } from "./http-server.js";
@@ -25,6 +26,7 @@ import { createToolCallingRuntimeTurnRunner } from "./tool-calling-turn-runner.j
 import { createWorkflowEngine } from "./workflow-engine.js";
 import { createWorkflowCatalog } from "./workflow-registry.js";
 import type { RuntimeSession, RuntimeSessionCreateOptions, RuntimeSessionStore } from "./types.js";
+import { createAgentDefinitionRegistry } from "./runtime-agent-node-executor.js";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -1125,6 +1127,128 @@ describe("reusable agent runtime", () => {
       "workflow.started",
       "workflow.completed",
     ]);
+  });
+
+  it("executes legacy workflows as DAGs with the official runtime agent node executor", async () => {
+    const eventLog = createEventLog();
+    const registry = createAgentDefinitionRegistry([
+      {
+        id: "architect-default",
+        role: "architect",
+        name: "Architect",
+        instructions: "Plan safely.",
+        capability: {
+          role: "architect",
+          allowedTools: ["repo_context", "read_file", "git_diff"],
+          risk: "read-only",
+        },
+      },
+      {
+        id: "editor-default",
+        role: "editor",
+        name: "Editor",
+        instructions: "Apply approved changes.",
+        capability: {
+          role: "editor",
+          allowedTools: ["read_file", "edit_file", "write_file"],
+          risk: "write",
+        },
+      },
+      {
+        id: "tester-default",
+        role: "tester",
+        name: "Verifier",
+        instructions: "Verify changes.",
+        capability: {
+          role: "tester",
+          allowedTools: ["bash_exec", "git_diff", "review_code"],
+          risk: "destructive",
+        },
+      },
+    ]);
+    const runner = new AgentRunner({
+      executor: async (context) => ({
+        output: `${context.capability.role}:${context.task.objective}`,
+        turns: 1,
+        toolsUsed: context.task.constraints?.map((constraint) =>
+          constraint.replace("Requires tool: ", ""),
+        ),
+        inputTokens: 10,
+        outputTokens: 5,
+      }),
+      eventLog,
+    });
+    const engine = createWorkflowEngine(undefined, eventLog, {
+      agentDefinitionRegistry: registry,
+      agentNodeExecutorOptions: { runner },
+    });
+
+    const result = await engine.run({
+      workflowId: "architect-editor-verifier",
+      input: { task: "Add enterprise hosted runtime support" },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.graphResult?.nodeResults["architect"]?.role).toBe("architect");
+    expect(result.graphResult?.nodeResults["editor"]?.role).toBe("editor");
+    expect(result.graphResult?.nodeResults["verifier"]?.role).toBe("tester");
+    expect(result.graphResult?.artifacts).toHaveLength(3);
+    expect(eventLog.list().map((event) => event.type)).toContain("checkpoint.created");
+  });
+
+  it("fails DAG nodes when registered agent capabilities do not allow required tools", async () => {
+    const registry = createAgentDefinitionRegistry([
+      {
+        id: "architect-default",
+        role: "architect",
+        name: "Architect",
+        instructions: "Plan safely.",
+        capability: {
+          role: "architect",
+          allowedTools: ["repo_context", "read_file", "git_diff"],
+          risk: "read-only",
+        },
+      },
+      {
+        id: "editor-default",
+        role: "editor",
+        name: "Editor",
+        instructions: "Apply approved changes.",
+        capability: {
+          role: "editor",
+          allowedTools: ["read_file"],
+          risk: "write",
+        },
+      },
+      {
+        id: "tester-default",
+        role: "tester",
+        name: "Verifier",
+        instructions: "Verify changes.",
+        capability: {
+          role: "tester",
+          allowedTools: ["bash_exec", "git_diff", "review_code"],
+          risk: "destructive",
+        },
+      },
+    ]);
+    const engine = createWorkflowEngine(undefined, createEventLog(), {
+      agentDefinitionRegistry: registry,
+      agentNodeExecutorOptions: {
+        runner: new AgentRunner({ executor: async () => ({ output: "ok" }) }),
+      },
+    });
+
+    const result = await engine.run({
+      workflowId: "architect-editor-verifier",
+      input: { task: "Edit file" },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error:
+        "Node 'editor' failed after 1 attempt(s): Tool 'edit_file' is not allowed for agent role 'editor'.",
+    });
   });
 
   it("returns failed workflow results instead of throwing handler errors", async () => {

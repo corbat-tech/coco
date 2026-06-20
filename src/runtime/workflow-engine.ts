@@ -18,6 +18,11 @@ import {
   type SharedWorkspaceStore,
 } from "./multi-agent.js";
 import {
+  createRuntimeAgentNodeExecutor,
+  type AgentDefinitionRegistry,
+  type RuntimeAgentNodeExecutorOptions,
+} from "./runtime-agent-node-executor.js";
+import {
   createWorkflowCatalog,
   type WorkflowCatalog,
   type WorkflowDefinition,
@@ -62,6 +67,8 @@ export interface WorkflowEngineOptions {
   eventLog?: EventLog;
   sharedState?: SharedWorkspaceStore;
   nodeExecutor?: AgentGraphNodeExecutor;
+  agentDefinitionRegistry?: AgentDefinitionRegistry;
+  agentNodeExecutorOptions?: Omit<RuntimeAgentNodeExecutorOptions, "registry" | "runtimePolicy">;
   runtimePolicy?: RuntimePolicy;
   runtimeContext?: RuntimeRequestContext;
   runtimeHostMode?: RuntimeHostMode;
@@ -81,10 +88,18 @@ export class WorkflowEngine {
     options: Omit<WorkflowEngineOptions, "catalog" | "eventLog"> = {},
   ) {
     this.sharedState = options.sharedState ?? new InMemorySharedWorkspaceStore();
-    this.nodeExecutor = options.nodeExecutor;
     this.runtimePolicy = options.runtimePolicy;
     this.runtimeContext = options.runtimeContext;
     this.runtimeHostMode = options.runtimeHostMode ?? "local";
+    this.nodeExecutor =
+      options.nodeExecutor ??
+      (options.agentDefinitionRegistry
+        ? createRuntimeAgentNodeExecutor({
+            ...options.agentNodeExecutorOptions,
+            registry: options.agentDefinitionRegistry,
+            runtimePolicy: options.runtimePolicy,
+          })
+        : undefined);
   }
 
   registerHandler(workflowId: string, handler: WorkflowHandler): void {

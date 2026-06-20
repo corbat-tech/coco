@@ -74,6 +74,7 @@ const LEGACY_ROLE_MAPPINGS: LegacyAgentRoleMapping[] = [
   { legacy: "coder", role: "coder", reason: "legacy executor role" },
   { legacy: "test", role: "tester", reason: "test authoring/execution" },
   { legacy: "tester", role: "tester", reason: "legacy executor role" },
+  { legacy: "verifier", role: "tester", reason: "verification maps to tester capability" },
   { legacy: "tdd", role: "tester", reason: "test-first implementation" },
   { legacy: "e2e", role: "tester", reason: "end-to-end testing" },
   { legacy: "review", role: "reviewer", reason: "code review" },
@@ -1243,7 +1244,7 @@ const NULL_EVENT_LOG: EventLog = {
 function graphNodeToTask(node: AgentGraphNode, workflowInput: Record<string, unknown>): AgentTask {
   return {
     id: node.id,
-    role: node.agentRole ?? "coder",
+    role: node.agentRole ?? mapLegacyAgentRole(node.id, "coder"),
     objective: node.description,
     context: {
       workflowInput,
