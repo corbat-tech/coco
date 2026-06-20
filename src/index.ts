@@ -328,12 +328,15 @@ export {
 export {
   createHttpAssistantAdapter,
   createStreamingHttpAssistantAdapter,
+  createWhatsAppAssistantAdapter,
   createWebhookAssistantAdapter,
   type ChannelAdapter,
   type ChannelInput,
   type ChannelOutput,
   type HttpAssistantAdapter,
   type StreamingHttpAssistantAdapter,
+  type WhatsAppAssistantAdapter,
+  type WhatsAppInboundMessage,
 } from "./adapters/index.js";
 
 // Utilities

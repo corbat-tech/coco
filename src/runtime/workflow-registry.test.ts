@@ -142,6 +142,29 @@ describe("workflow registry DAG support", () => {
     });
   });
 
+  it("includes graph-first product workflows for RAG and WhatsApp assistants", () => {
+    const catalog = createWorkflowCatalog();
+    const rag = catalog.get("enterprise-rag-answer");
+    const whatsapp = catalog.get("whatsapp-support-assistant");
+
+    expect(rag?.steps).toEqual([]);
+    expect(workflowToAgentGraph(rag!).nodes.map((node) => node.id)).toEqual([
+      "retrieve",
+      "draft-answer",
+      "policy-review",
+    ]);
+    expect(workflowToAgentGraph(whatsapp!).nodes.map((node) => node.id)).toEqual([
+      "classify-message",
+      "retrieve-context",
+      "draft-response",
+      "escalate-if-needed",
+    ]);
+    expect(whatsapp?.nodes?.find((node) => node.id === "escalate-if-needed")).toMatchObject({
+      condition: "input.requiresEscalation",
+      requiredTools: ["request_human_escalation"],
+    });
+  });
+
   it("fails DAG workflows without a real node executor", async () => {
     const eventLog = createEventLog();
     const engine = createWorkflowEngine(createWorkflowCatalog(), eventLog);

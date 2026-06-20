@@ -78,6 +78,11 @@ RAG is exposed as injectable runtime primitives instead of a fixed vendor stack:
 Pinecone, OpenAI embeddings, Gemini embeddings, or a custom enterprise search
 backend behind the same runtime contracts.
 
+The default workflow catalog includes graph-first product references:
+`enterprise-rag-answer` and `whatsapp-support-assistant`. They are intentionally
+runtime-level examples: embedders provide the node executor, tenant policy,
+retriever/tools, and channel adapter.
+
 For streaming UI surfaces, use `streamTurn()`:
 
 ```ts
