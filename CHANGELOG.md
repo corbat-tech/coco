@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.40.0] - 2026-06-20
+
+### Added
+- **Embeddable product runtime for client assistants**
+  - Add tenant/user/channel runtime context and policy contracts for reusable
+    client deployments.
+  - Add injectable RAG pipeline primitives for custom loaders, chunkers,
+    embeddings, vector stores, retrievers, rerankers, and citations.
+  - Add graph-first product workflow references for enterprise RAG answers and
+    WhatsApp-style support assistants.
+  - Add a WhatsApp assistant adapter boundary for mapping inbound channel
+    messages into runtime turns.
+
+### Improved
+- **Runtime safety for multi-tenant products**
+  - Embeddable runtimes now start with no tools unless a registry is explicitly
+    injected; CLI/headless coding surfaces still inject the full coding registry.
+  - Enforce `RuntimePolicy` allowlists, max tool risk, approval requirements,
+    and token budgets through `AgentRuntime`, `RuntimeToolExecutor`, and
+    workflow graph execution.
+  - Propagate runtime context and policy through product presets and RAG tool
+    registries.
+  - Filter in-memory RAG retrieval by tenant by default and require explicit
+    global visibility for shared knowledge.
+
+### Fixed
+- **Product isolation and policy audit gaps**
+  - Prevent `knowledge_search` calls from overriding tenant scope via model/tool
+    input.
+  - Reject workflow nodes whose declared risk exceeds runtime policy even when
+    they do not declare required tools.
+  - Avoid persisting streaming assistant output when runtime token budget checks
+    fail.
+
 ## [2.39.0] - 2026-06-20
 
 ### Added
@@ -1602,7 +1636,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.39.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.40.0...HEAD
+[2.40.0]: https://github.com/corbat-tech/coco/compare/v2.39.0...v2.40.0
 [2.39.0]: https://github.com/corbat-tech/coco/compare/v2.38.0...v2.39.0
 [2.38.0]: https://github.com/corbat-tech/coco/compare/v2.37.0...v2.38.0
 [2.37.0]: https://github.com/corbat-tech/coco/compare/v2.36.0...v2.37.0
