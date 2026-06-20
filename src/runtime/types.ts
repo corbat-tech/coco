@@ -4,6 +4,7 @@ import type { ProviderRuntimeCapability } from "../providers/runtime-capabilitie
 import type { ToolDefinition, ToolRegistry } from "../tools/registry.js";
 import type { ThinkingMode } from "../providers/thinking.js";
 import type { AgentModeDefinition, AgentModeId } from "./agent-modes.js";
+import type { RuntimePolicy, RuntimeRequestContext } from "./context.js";
 import type { WorkflowEngine } from "./workflow-engine.js";
 
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "max";
@@ -33,6 +34,8 @@ export interface AgentRuntimeOptions {
     setAgentProvider(provider: LLMProvider): void;
     setAgentToolRegistry(registry: ToolRegistry): void;
   };
+  runtimeContext?: RuntimeRequestContext;
+  runtimePolicy?: RuntimePolicy;
 }
 
 export interface AgentRuntimeSnapshot {
@@ -46,6 +49,8 @@ export interface AgentRuntimeSnapshot {
     names: string[];
   };
   modes: AgentModeDefinition[];
+  context?: RuntimeRequestContext;
+  policy?: RuntimePolicy;
 }
 
 export type RuntimeEventType =

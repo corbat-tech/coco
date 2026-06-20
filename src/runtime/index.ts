@@ -9,6 +9,19 @@ export {
   type AgentRunnerRawResult,
 } from "./agent-runner.js";
 export { AGENT_MODES, getAgentMode, isAgentMode, listAgentModes } from "./agent-modes.js";
+export {
+  createRuntimeRequestContext,
+  mergeRuntimePolicy,
+  runtimeContextToMetadata,
+  type CostBudget,
+  type DataBoundary,
+  type RetentionPolicy,
+  type RuntimePolicy,
+  type RuntimeRequestContext,
+  type RuntimeSurface,
+  type TenantContext,
+  type UserContext,
+} from "./context.js";
 export { createDefaultRuntimeTurnRunner, DefaultRuntimeTurnRunner } from "./default-turn-runner.js";
 export {
   createToolCallingRuntimeTurnRunner,

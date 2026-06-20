@@ -3,6 +3,13 @@ import type { ProviderType } from "../providers/index.js";
 import type { LLMProvider } from "../providers/types.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { listAgentModes } from "./agent-modes.js";
+import {
+  createRuntimeRequestContext,
+  mergeRuntimePolicy,
+  runtimeContextToMetadata,
+  type RuntimePolicy,
+  type RuntimeRequestContext,
+} from "./context.js";
 import { createDefaultRuntimeTurnRunner } from "./default-turn-runner.js";
 import { createEventLog, createFileEventLog } from "./event-log.js";
 import { createPermissionPolicy } from "./permission-policy.js";
@@ -43,6 +50,8 @@ export class AgentRuntime {
   private providerType: ProviderType;
   private model: string;
   private provider?: LLMProvider;
+  private readonly runtimeContext?: RuntimeRequestContext;
+  private readonly runtimePolicy?: RuntimePolicy;
 
   constructor(private readonly options: AgentRuntimeOptions) {
     this.providerRegistry = createProviderRegistry();
@@ -58,6 +67,10 @@ export class AgentRuntime {
     this.providerType = options.providerType;
     this.model =
       options.model ?? options.providerConfig?.model ?? getDefaultModel(options.providerType);
+    this.runtimeContext = options.runtimeContext
+      ? createRuntimeRequestContext(options.runtimeContext)
+      : undefined;
+    this.runtimePolicy = mergeRuntimePolicy(this.runtimeContext?.policy, options.runtimePolicy);
   }
 
   async initialize(): Promise<void> {
@@ -123,14 +136,27 @@ export class AgentRuntime {
         names: toolNames,
       },
       modes: listAgentModes(),
+      context: this.runtimeContext,
+      policy: this.runtimePolicy,
     };
   }
 
   createSession(options: RuntimeSessionCreateOptions = {}): RuntimeSession {
-    const session = this.runtimeSessionStore.create(options);
+    const session = this.runtimeSessionStore.create({
+      ...options,
+      metadata: {
+        ...runtimeContextToMetadata(this.runtimeContext),
+        ...options.metadata,
+      },
+    });
     this.eventLog.record("session.created", {
       sessionId: session.id,
       mode: session.mode,
+      ...(session.metadata["tenantId"] ? { tenantId: session.metadata["tenantId"] } : {}),
+      ...(session.metadata["surface"] ? { surface: session.metadata["surface"] } : {}),
+      ...(session.metadata["correlationId"]
+        ? { correlationId: session.metadata["correlationId"] }
+        : {}),
       metadataKeys: Object.keys(session.metadata).sort(),
     });
     return session;

@@ -66,6 +66,12 @@ one. CLI and coding-agent surfaces pass the full coding registry explicitly.
 Embedders that need tool execution can provide a custom `RuntimeTurnRunner`
 while reusing provider selection, permissions, sessions, and event logging.
 
+Products should pass `runtimeContext` and `runtimePolicy` when embedding Coco for
+customers. These contracts carry tenant, user, surface/channel, correlation ID,
+data boundary, retention, cost budget, rate limits, and approval requirements.
+Runtime sessions copy this metadata so events and audit logs can be traced back
+to the client and channel that initiated the work.
+
 For streaming UI surfaces, use `streamTurn()`:
 
 ```ts

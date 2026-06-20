@@ -172,6 +172,48 @@ describe("reusable agent runtime", () => {
     expect(runtime.snapshot().tools).toEqual({ count: 0, names: [] });
   });
 
+  it("propagates runtime tenant context into snapshots, sessions, and events", async () => {
+    const eventLog = createEventLog();
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      eventLog,
+      runtimeContext: {
+        surface: "whatsapp",
+        tenant: { id: "acme", name: "Acme" },
+        user: { id: "user-1", roles: ["support"] },
+        correlationId: "corr-1",
+        policy: { dataBoundary: { classification: "confidential" } },
+      },
+      runtimePolicy: { costBudget: { maxTurns: 4 } },
+    });
+
+    const session = runtime.createSession({ metadata: { conversationId: "wa-1" } });
+
+    expect(runtime.snapshot()).toMatchObject({
+      context: { surface: "whatsapp", tenant: { id: "acme" } },
+      policy: {
+        dataBoundary: { classification: "confidential" },
+        costBudget: { maxTurns: 4 },
+      },
+    });
+    expect(session.metadata).toMatchObject({
+      surface: "whatsapp",
+      tenantId: "acme",
+      tenantName: "Acme",
+      userId: "user-1",
+      userRoles: ["support"],
+      correlationId: "corr-1",
+      conversationId: "wa-1",
+    });
+    expect(eventLog.list().find((event) => event.type === "session.created")?.data).toMatchObject({
+      tenantId: "acme",
+      surface: "whatsapp",
+      correlationId: "corr-1",
+    });
+  });
+
   it("does not publish to the global bridge by default", async () => {
     const runtime = await createAgentRuntime({
       providerType: "openai",
@@ -246,6 +288,7 @@ describe("reusable agent runtime", () => {
     expect(eventLog.list().find((event) => event.type === "session.created")?.data).toEqual({
       sessionId: session.id,
       mode: "ask",
+      surface: "web",
       metadataKeys: ["surface"],
     });
   });
