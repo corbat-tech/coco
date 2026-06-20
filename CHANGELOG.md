@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.41.0] - 2026-06-20
+
+### Added
+- **Hosted runtime foundations for client products**
+  - Add mandatory tenant boundaries for hosted runtime surfaces plus structured
+    `RuntimePolicyViolation` errors.
+  - Add async tenant-scoped Postgres session/event/audit stores for hosted
+    deployments and tenant-scoped sync wrappers for local embedding.
+  - Add runtime retention cleanup planning/execution and hosted policy
+    enforcement for turns, estimated cost, rate limits, and concurrency.
+
+### Improved
+- **Executable multi-agent product runtime**
+  - Add canonical `AgentDefinitionRegistry` and official
+    `RuntimeAgentNodeExecutor` so workflow DAGs can execute real agents without
+    a custom node executor.
+  - Add trace exporters, OTLP-compatible span export, redacted trace attributes,
+    and aggregated runtime metrics.
+  - Extend RAG primitives with tenant-aware ACL, lifecycle metadata, ingestion
+    jobs, citation verification, and groundedness evaluation.
+  - Add a production-oriented `WhatsAppCloudAdapter` with webhook signature
+    validation, deduplication, sender-session mapping, opt-in/out, media
+    normalization, and sender rate limiting.
+  - Evolve guardrails into a staged pipeline with configurable prompt-injection
+    severity and policy-as-code hooks.
+
+### Fixed
+- **Hosted isolation and architecture gaps**
+  - Prevent hosted sync Postgres adapters from being used as best-effort stores.
+  - Prevent cross-tenant session ID takeover in hosted Postgres session writes.
+  - Align runtime documentation and public exports with the actual hosted,
+    tracing, enterprise RAG, and agent-executor capabilities.
+
 ## [2.40.0] - 2026-06-20
 
 ### Added
