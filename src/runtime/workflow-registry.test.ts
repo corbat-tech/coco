@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createEventLog } from "./event-log.js";
 import { createWorkflowCatalog, workflowToAgentGraph } from "./workflow-registry.js";
 import { createWorkflowEngine } from "./workflow-engine.js";
+import { normalizeAgentRunResult } from "./multi-agent.js";
 
 describe("workflow registry DAG support", () => {
   it("converts legacy linear steps into a DAG graph", () => {
@@ -141,9 +142,35 @@ describe("workflow registry DAG support", () => {
     });
   });
 
-  it("executes workflows as DAGs when no legacy handler is registered", async () => {
+  it("fails DAG workflows without a real node executor", async () => {
     const eventLog = createEventLog();
     const engine = createWorkflowEngine(createWorkflowCatalog(), eventLog);
+
+    const result = await engine.run({
+      workflowId: "architect-editor-verifier",
+      input: { task: "improve runtime" },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("requires a nodeExecutor");
+    expect(eventLog.list().map((event) => event.type)).toEqual(
+      expect.arrayContaining(["workflow.started", "agent.graph.started", "workflow.failed"]),
+    );
+  });
+
+  it("executes workflows as DAGs when a runtime node executor is registered", async () => {
+    const eventLog = createEventLog();
+    const engine = createWorkflowEngine(createWorkflowCatalog(), eventLog, {
+      nodeExecutor: async ({ node, task, workflowRunId }) =>
+        normalizeAgentRunResult({
+          id: `${workflowRunId}-${node.id}`,
+          taskId: task.id,
+          role: task.role,
+          success: true,
+          output: `${node.id} done`,
+          durationMs: 1,
+        }),
+    });
 
     const result = await engine.run({
       workflowId: "architect-editor-verifier",

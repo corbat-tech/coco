@@ -1,4 +1,3 @@
-import { setAgentProvider, setAgentToolRegistry } from "../agents/provider-bridge.js";
 import { getDefaultModel } from "../config/env.js";
 import type { ProviderType } from "../providers/index.js";
 import type { LLMProvider } from "../providers/types.js";
@@ -103,8 +102,8 @@ export class AgentRuntime {
 
   private publishToGlobalBridge(provider: LLMProvider): void {
     if (this.options.publishToGlobalBridge !== true) return;
-    setAgentProvider(provider);
-    setAgentToolRegistry(this.toolRegistry);
+    this.options.legacyAgentBridge?.setAgentProvider(provider);
+    this.options.legacyAgentBridge?.setAgentToolRegistry(this.toolRegistry);
   }
 
   snapshot(): AgentRuntimeSnapshot {

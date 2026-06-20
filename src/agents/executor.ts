@@ -13,6 +13,11 @@ import type {
 } from "../providers/types.js";
 import type { AgentArtifact, AgentRole, AgentRunResult } from "../runtime/multi-agent.js";
 import { mapLegacyAgentRole, normalizeAgentRunResult } from "../runtime/multi-agent.js";
+import {
+  createRuntimeToolExecutor,
+  type RuntimeToolExecutor,
+} from "../runtime/runtime-tool-executor.js";
+import type { RuntimeMode } from "../runtime/types.js";
 import type { ToolRegistry } from "../tools/registry.js";
 
 export interface AgentDefinition {
@@ -56,10 +61,16 @@ export interface AgentResult {
  * and loops until the LLM is done or max turns is reached.
  */
 export class AgentExecutor {
+  private readonly runtimeToolExecutor: RuntimeToolExecutor;
+
   constructor(
     private provider: LLMProvider,
     private toolRegistry: ToolRegistry,
-  ) {}
+    runtimeToolExecutor?: RuntimeToolExecutor,
+  ) {
+    this.runtimeToolExecutor =
+      runtimeToolExecutor ?? createRuntimeToolExecutor({ toolRegistry, mode: "ask" });
+  }
 
   /**
    * Execute an agent on a task with multi-turn tool use
@@ -146,12 +157,22 @@ export class AgentExecutor {
           toolsUsed.add(toolCall.name);
 
           try {
-            const result = await this.toolRegistry.execute(toolCall.name, toolCall.input);
+            const result = await this.runtimeToolExecutor.execute({
+              toolName: toolCall.name,
+              input: toolCall.input,
+              allowedTools: agent.allowedTools.length > 0 ? agent.allowedTools : undefined,
+              mode: runtimeModeForAgent(agent.role),
+              metadata: {
+                agentRole: agent.role,
+                taskId: task.id,
+                toolCallId: toolCall.id,
+              },
+            });
 
             toolResults.push({
               type: "tool_result",
               tool_use_id: toolCall.id,
-              content: result.success ? JSON.stringify(result.data) : `Error: ${result.error}`,
+              content: result.success ? JSON.stringify(result.output) : `Error: ${result.error}`,
               is_error: !result.success,
             });
           } catch (error) {
@@ -402,4 +423,21 @@ export function createAgentExecutor(
   toolRegistry: ToolRegistry,
 ): AgentExecutor {
   return new AgentExecutor(provider, toolRegistry);
+}
+
+function runtimeModeForAgent(role: AgentDefinition["role"]): RuntimeMode {
+  switch (role) {
+    case "researcher":
+    case "planner":
+      return "plan";
+    case "architect":
+      return "architect";
+    case "reviewer":
+      return "review";
+    case "tester":
+    case "editor":
+    case "coder":
+    case "optimizer":
+      return "build";
+  }
 }

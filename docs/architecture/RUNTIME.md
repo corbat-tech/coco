@@ -135,16 +135,19 @@ const run = await runtime.workflowEngine.run({
 ```
 
 Handlers are explicit opt-ins for legacy or bespoke execution. Unknown workflows
-still fail fast, but workflows without handlers now execute through the runtime
-`AgentGraphEngine`. Handler failures and graph failures return structured failed
-results and are recorded in the `EventLog`.
+still fail fast, and workflows without handlers execute through the runtime
+`AgentGraphEngine` only when a real node executor is registered. The graph
+engine does not simulate successful work by default; demos and tests must opt in
+with `allowSimulated: true` and the dry-run executor. Handler failures and graph
+failures return structured failed results and are recorded in the `EventLog`.
 
 Workflow definitions now support executable graph metadata in addition to legacy
 linear `steps`. New workflows should prefer `nodes`, `edges`, `gates`,
-`parallelism`, and `retryPolicy` so they can model fan-out/fan-in execution,
-node retries, checkpoints, and quality gates. Legacy `steps` are converted to a
-linear graph for planning, validation, and graph execution, so existing
-workflows keep the same visible behavior.
+`parallelism`, conditions, timeouts, and `retryPolicy` so they can model
+fan-out/fan-in execution, node retries, checkpoints, and quality gates. Legacy
+`steps` are converted to a linear graph for planning, validation, and graph
+execution, so existing workflows keep the same visible behavior once a runtime
+executor is registered.
 
 Multi-agent execution results should be represented as `AgentRunResult` with
 typed `AgentArtifact` entries (`plan`, `findings`, `patchProposal`,
@@ -153,19 +156,25 @@ remain available for compatibility.
 
 `SharedWorkspaceStore` is the controlled handoff surface between agents. Every
 write requires provenance (`workflowRunId` and optional agent/node/task data),
-and role-filtered reads prevent ordinary implementation agents from receiving
-risk-sensitive context by default. `SharedWorkspaceState` remains as a
+role-filtered reads prevent ordinary implementation agents from receiving
+risk-sensitive context by default, and graph artifact writes emit
+`shared_state.updated` events. `FileSharedWorkspaceStore` preserves record IDs
+when replaying local debug state. `SharedWorkspaceState` remains as a
 compatibility facade over the in-memory store.
 
 The multi-agent runtime has these architecture invariants:
 
 - `src/runtime` must not import CLI, REPL, or swarm implementations.
+- Legacy bridges are injected by adapters such as CLI/headless, not imported by
+  runtime.
 - Swarm is a runtime consumer, not a parallel orchestration stack.
 - Agent roles and legacy role mappings are resolved through runtime contracts.
 - Tool access is evaluated against agent capability, tool risk, and runtime
   permission policy.
-- Graph execution emits correlated workflow, graph, agent, artifact, and gate
-  events.
+- Required critical gates (`tests`, `coverage`, `security`, `quality-score`,
+  `human-approval`) fail unless a concrete evaluator is configured.
+- Graph execution emits correlated workflow, graph, agent, artifact, state,
+  checkpoint, and gate events.
 
 ## Extensibility
 

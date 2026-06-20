@@ -34,6 +34,7 @@ import {
   getUserFacingProviderError,
 } from "./error-resilience.js";
 import { createProvider, type ProviderType } from "../../providers/index.js";
+import { setAgentProvider, setAgentToolRegistry } from "../../agents/provider-bridge.js";
 import { createAgentRuntime } from "../../runtime/index.js";
 import {
   isSlashCommand,
@@ -205,6 +206,7 @@ export async function startRepl(
     provider,
     eventLogPath: path.join(projectPath, ".coco", "events", `${session.id}.jsonl`),
     publishToGlobalBridge: true,
+    legacyAgentBridge: { setAgentProvider, setAgentToolRegistry },
   });
   session.runtime = runtime;
   const toolRegistry = runtime.toolRegistry;

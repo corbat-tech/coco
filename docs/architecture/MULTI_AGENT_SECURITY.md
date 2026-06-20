@@ -30,12 +30,17 @@ capability, tool risk, and provenance.
 - Runtime permission policy evaluates `spawnSimpleAgent` by the requested
   subagent capability, so write/destructive subagents are not silently treated as
   read-only.
+- Legacy subagent tool calls are routed through `RuntimeToolExecutor` instead of
+  calling `ToolRegistry` directly, so allowlists, permission policy,
+  confirmation requirements, and events are enforced consistently.
 - `SharedWorkspaceStore` requires provenance for writes and filters sensitive
   risk context from ordinary implementation roles.
+- Required critical gates fail closed unless the workflow configures a concrete
+  evaluator for the gate.
 - Guardrails flag prompt-injection, tool-exfiltration, privilege-escalation, and
   credential-exfiltration patterns.
-- Graph execution records correlated workflow, graph, agent, artifact, and gate
-  events for replay and audit.
+- Graph execution records correlated workflow, graph, agent, artifact, shared
+  state, checkpoint, and gate events for replay and audit.
 
 ## Required Review Gates
 

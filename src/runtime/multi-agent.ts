@@ -212,6 +212,7 @@ export interface AgentGraphNode {
     maxAttempts: number;
     backoffMs?: number;
   };
+  timeoutMs?: number;
   condition?: string;
 }
 
@@ -285,6 +286,7 @@ export interface SharedWorkspaceRecord {
 }
 
 export interface SharedWorkspaceWriteInput {
+  id?: string;
   kind: SharedWorkspaceRecordKind;
   key: string;
   value: unknown;
@@ -369,7 +371,7 @@ export class InMemorySharedWorkspaceStore implements SharedWorkspaceStore {
   write(input: SharedWorkspaceWriteInput): SharedWorkspaceRecord {
     assertProvenance(input.provenance);
     const record: SharedWorkspaceRecord = {
-      id: `state-${randomUUID()}`,
+      id: input.id ?? `state-${randomUUID()}`,
       kind: input.kind,
       key: input.key,
       value: cloneUnknown(input.value),
@@ -452,6 +454,7 @@ export class FileSharedWorkspaceStore implements SharedWorkspaceStore {
       const parsed = JSON.parse(readFileSync(this.filePath, "utf-8")) as SharedWorkspaceRecord[];
       return Array.isArray(parsed)
         ? parsed.map((record) => ({
+            id: record.id,
             kind: record.kind,
             key: record.key,
             value: record.value,
@@ -690,6 +693,7 @@ export interface AgentGraphEngineOptions {
   nodeExecutor?: AgentGraphNodeExecutor;
   gateEvaluator?: AgentGateEvaluator;
   trace?: AgentTraceContext;
+  allowSimulated?: boolean;
 }
 
 export interface AgentGraphRunInput {
@@ -722,7 +726,9 @@ export class AgentGraphEngine {
   constructor(options: AgentGraphEngineOptions = {}) {
     this.eventLog = options.eventLog;
     this.sharedState = options.sharedState ?? new InMemorySharedWorkspaceStore();
-    this.nodeExecutor = options.nodeExecutor ?? defaultAgentGraphNodeExecutor;
+    this.nodeExecutor =
+      options.nodeExecutor ??
+      (options.allowSimulated ? dryRunAgentGraphNodeExecutor : missingAgentGraphNodeExecutor);
     this.gateEvaluator = options.gateEvaluator ?? defaultAgentGateEvaluator;
     this.trace = options.trace ?? createAgentTraceContext();
   }
@@ -819,6 +825,40 @@ export class AgentGraphEngine {
     graphTrace: AgentTraceContext;
     nodeResults: Map<string, AgentRunResult>;
   }): Promise<AgentRunResult> {
+    const skipReason = shouldSkipNode(input.node, input.graph, input.input, input.nodeResults);
+    if (skipReason) {
+      const completedAt = new Date().toISOString();
+      const task = graphNodeToTask(input.node, input.input);
+      const skipped = normalizeAgentRunResult({
+        id: `${input.workflowRunId}-${input.node.id}-skipped`,
+        taskId: task.id,
+        role: task.role,
+        success: true,
+        status: "cancelled",
+        output: `Skipped node '${input.node.id}': ${skipReason}`,
+        startedAt: completedAt,
+        completedAt,
+        durationMs: 0,
+        metadata: {
+          workflowRunId: input.workflowRunId,
+          nodeId: input.node.id,
+          skipped: true,
+          skipReason,
+        },
+      });
+      this.eventLog?.record("agent.completed", {
+        workflowRunId: input.workflowRunId,
+        nodeId: input.node.id,
+        agentRunId: skipped.id,
+        taskId: task.id,
+        role: skipped.role,
+        skipped: true,
+        reason: skipReason,
+        trace: input.graphTrace,
+      });
+      return skipped;
+    }
+
     const attempts = input.node.retryPolicy?.maxAttempts ?? 1;
     let lastResult: AgentRunResult | undefined;
 
@@ -839,20 +879,42 @@ export class AgentGraphEngine {
         trace,
       });
 
-      const result = await this.nodeExecutor({
-        node: input.node,
-        task,
-        attempt,
-        workflowRunId: input.workflowRunId,
-        trace,
-        dependencyResults: input.nodeResults,
-        sharedState: this.sharedState,
-        eventLog: this.eventLog ?? NULL_EVENT_LOG,
-      });
+      const result = await runWithOptionalTimeout(
+        this.nodeExecutor({
+          node: input.node,
+          task,
+          attempt,
+          workflowRunId: input.workflowRunId,
+          trace,
+          dependencyResults: input.nodeResults,
+          sharedState: this.sharedState,
+          eventLog: this.eventLog ?? NULL_EVENT_LOG,
+        }),
+        input.node.timeoutMs,
+        () =>
+          normalizeAgentRunResult({
+            id: `${input.workflowRunId}-${input.node.id}-attempt-${attempt}-timeout`,
+            taskId: task.id,
+            role: task.role,
+            success: false,
+            status: "timeout",
+            output: "",
+            startedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            durationMs: input.node.timeoutMs ?? 0,
+            error: `Node '${input.node.id}' timed out after ${input.node.timeoutMs}ms.`,
+            metadata: {
+              workflowRunId: input.workflowRunId,
+              nodeId: input.node.id,
+              trace,
+              timeoutMs: input.node.timeoutMs,
+            },
+          }),
+      );
       lastResult = result;
 
       for (const artifact of result.artifacts) {
-        this.sharedState.write({
+        const record = this.sharedState.write({
           kind: "artifact",
           key: artifact.id,
           value: artifact,
@@ -863,6 +925,15 @@ export class AgentGraphEngine {
             taskId: task.id,
             risk: input.node.risk,
           },
+        });
+        this.eventLog?.record("shared_state.updated", {
+          workflowRunId: input.workflowRunId,
+          nodeId: input.node.id,
+          agentRunId: result.id,
+          recordId: record.id,
+          kind: record.kind,
+          key: record.key,
+          trace,
         });
         this.eventLog?.record("agent.artifact.created", {
           workflowRunId: input.workflowRunId,
@@ -882,6 +953,14 @@ export class AgentGraphEngine {
           agentRunId: result.id,
           taskId: task.id,
           role: result.role,
+          attempt,
+          trace,
+        });
+        this.eventLog?.record("checkpoint.created", {
+          workflowRunId: input.workflowRunId,
+          nodeId: input.node.id,
+          agentRunId: result.id,
+          taskId: task.id,
           attempt,
           trace,
         });
@@ -1175,7 +1254,7 @@ function graphNodeToTask(node: AgentGraphNode, workflowInput: Record<string, unk
   };
 }
 
-async function defaultAgentGraphNodeExecutor(
+export async function dryRunAgentGraphNodeExecutor(
   execution: AgentGraphNodeExecution,
 ): Promise<AgentRunResult> {
   const startedAt = new Date().toISOString();
@@ -1213,12 +1292,48 @@ async function defaultAgentGraphNodeExecutor(
   });
 }
 
+async function missingAgentGraphNodeExecutor(
+  execution: AgentGraphNodeExecution,
+): Promise<AgentRunResult> {
+  const completedAt = new Date().toISOString();
+  return normalizeAgentRunResult({
+    id: `${execution.workflowRunId}-${execution.node.id}-missing-executor`,
+    taskId: execution.task.id,
+    role: execution.task.role,
+    success: false,
+    output: "",
+    startedAt: completedAt,
+    completedAt,
+    durationMs: 0,
+    error:
+      "AgentGraphEngine requires a nodeExecutor. Pass a real executor or set allowSimulated: true for dry-run/demo workflows.",
+    metadata: {
+      workflowRunId: execution.workflowRunId,
+      nodeId: execution.node.id,
+      trace: execution.trace,
+      missingExecutor: true,
+    },
+  });
+}
+
 async function defaultAgentGateEvaluator(input: {
   gate: AgentGateDefinition;
   result: AgentRunResult;
 }): Promise<{ passed: boolean; reason?: string }> {
   if (!input.result.success) {
     return { passed: false, reason: "Agent result was not successful." };
+  }
+  if (
+    input.gate.kind === "tests" ||
+    input.gate.kind === "coverage" ||
+    input.gate.kind === "security" ||
+    input.gate.kind === "quality-score" ||
+    input.gate.kind === "human-approval"
+  ) {
+    return {
+      passed: false,
+      reason: `Gate '${input.gate.kind}' requires an explicit evaluator.`,
+    };
   }
   return { passed: true };
 }
@@ -1230,6 +1345,95 @@ function chunk<T>(items: T[], size: number): T[][] {
     result.push(items.slice(index, index + safeSize));
   }
   return result;
+}
+
+async function runWithOptionalTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number | undefined,
+  onTimeout: () => T,
+): Promise<T> {
+  if (!timeoutMs || timeoutMs <= 0) return promise;
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => {
+      setTimeout(() => resolve(onTimeout()), timeoutMs);
+    }),
+  ]);
+}
+
+function shouldSkipNode(
+  node: AgentGraphNode,
+  graph: AgentGraphDefinition,
+  workflowInput: Record<string, unknown>,
+  dependencyResults: Map<string, AgentRunResult>,
+): string | undefined {
+  const nodeCondition = evaluateGraphCondition(node.condition, workflowInput, dependencyResults);
+  if (!nodeCondition.passed) return nodeCondition.reason;
+
+  for (const edge of graph.edges ?? []) {
+    if (edge.to !== node.id || !edge.condition) continue;
+    const edgeCondition = evaluateGraphCondition(edge.condition, workflowInput, dependencyResults);
+    if (!edgeCondition.passed) {
+      return `edge '${edge.from}' -> '${edge.to}' condition '${edge.condition}' was false`;
+    }
+  }
+
+  return undefined;
+}
+
+function evaluateGraphCondition(
+  condition: string | undefined,
+  workflowInput: Record<string, unknown>,
+  dependencyResults: Map<string, AgentRunResult>,
+): { passed: boolean; reason?: string } {
+  if (!condition || condition === "always") return { passed: true };
+  if (condition === "never") return { passed: false, reason: "condition 'never' was false" };
+
+  if (condition.startsWith("!input.")) {
+    const path = condition.slice("!input.".length);
+    return {
+      passed: !readPath(workflowInput, path),
+      reason: `condition '${condition}' was false`,
+    };
+  }
+
+  if (condition.startsWith("input.")) {
+    const path = condition.slice("input.".length);
+    return {
+      passed: Boolean(readPath(workflowInput, path)),
+      reason: `condition '${condition}' was false`,
+    };
+  }
+
+  if (condition.startsWith("dependency.") && condition.endsWith(".success")) {
+    const id = condition.slice("dependency.".length, -".success".length);
+    return {
+      passed: dependencyResults.get(id)?.success === true,
+      reason: `condition '${condition}' was false`,
+    };
+  }
+
+  if (condition.startsWith("dependency.") && condition.endsWith(".failed")) {
+    const id = condition.slice("dependency.".length, -".failed".length);
+    return {
+      passed: dependencyResults.get(id)?.success === false,
+      reason: `condition '${condition}' was false`,
+    };
+  }
+
+  return {
+    passed: false,
+    reason: `Unsupported graph condition '${condition}'.`,
+  };
+}
+
+function readPath(input: Record<string, unknown>, path: string): unknown {
+  return path.split(".").reduce<unknown>((current, segment) => {
+    if (current && typeof current === "object" && segment in current) {
+      return (current as Record<string, unknown>)[segment];
+    }
+    return undefined;
+  }, input);
 }
 
 function riskRank(risk: WorkflowRisk): number {

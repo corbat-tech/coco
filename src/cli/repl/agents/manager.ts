@@ -27,6 +27,11 @@ import type {
 } from "./types.js";
 import type { AgentRole } from "../../../runtime/multi-agent.js";
 import { mapLegacyAgentRole, normalizeAgentRunResult } from "../../../runtime/multi-agent.js";
+import {
+  createRuntimeToolExecutor,
+  type RuntimeToolExecutor,
+} from "../../../runtime/runtime-tool-executor.js";
+import type { RuntimeMode } from "../../../runtime/types.js";
 import { getAgentConfig, AGENT_NAMES, AGENT_DESCRIPTIONS } from "./prompts.js";
 
 /**
@@ -75,6 +80,7 @@ export class AgentManager extends EventEmitter {
   private abortControllers: Map<string, AbortController> = new Map();
   private provider: LLMProvider;
   private toolRegistry: ToolRegistry;
+  private runtimeToolExecutor: RuntimeToolExecutor;
   private logger = getLogger();
 
   /**
@@ -82,10 +88,16 @@ export class AgentManager extends EventEmitter {
    * @param provider - LLM provider for agent execution
    * @param toolRegistry - Tool registry for agent tool access
    */
-  constructor(provider: LLMProvider, toolRegistry: ToolRegistry) {
+  constructor(
+    provider: LLMProvider,
+    toolRegistry: ToolRegistry,
+    runtimeToolExecutor?: RuntimeToolExecutor,
+  ) {
     super();
     this.provider = provider;
     this.toolRegistry = toolRegistry;
+    this.runtimeToolExecutor =
+      runtimeToolExecutor ?? createRuntimeToolExecutor({ toolRegistry, mode: "ask" });
   }
 
   /**
@@ -491,11 +503,20 @@ export class AgentManager extends EventEmitter {
 
       // Execute the tool
       try {
-        const result = await this.toolRegistry.execute(toolCall.name, toolCall.input);
+        const result = await this.runtimeToolExecutor.execute({
+          toolName: toolCall.name,
+          input: toolCall.input,
+          allowedTools: config.tools,
+          mode: runtimeModeForAgentType(config.type),
+          metadata: {
+            agentType: config.type,
+            toolCallId: toolCall.id,
+          },
+        });
         results.push({
           type: "tool_result",
           tool_use_id: toolCall.id,
-          content: result.success ? String(result.data ?? "Success") : `Error: ${result.error}`,
+          content: result.success ? String(result.output ?? "Success") : `Error: ${result.error}`,
           is_error: !result.success,
         });
       } catch (error) {
@@ -575,6 +596,28 @@ export class AgentManager extends EventEmitter {
 
 function agentTypeToRuntimeRole(type: AgentType): AgentRole {
   return mapLegacyAgentRole(type);
+}
+
+function runtimeModeForAgentType(type: AgentType): RuntimeMode {
+  switch (type) {
+    case "explore":
+    case "plan":
+    case "docs":
+      return "plan";
+    case "review":
+    case "security":
+      return "review";
+    case "architect":
+      return "architect";
+    case "debug":
+      return "debug";
+    case "test":
+    case "tdd":
+    case "e2e":
+    case "refactor":
+    case "database":
+      return "build";
+  }
 }
 
 /**

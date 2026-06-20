@@ -92,6 +92,7 @@ export {
   createAgentGraphEngine,
   createAgentTraceContext,
   createSummaryArtifact,
+  dryRunAgentGraphNodeExecutor,
   evaluateAgentToolPolicy,
   FileSharedWorkspaceStore,
   InMemorySharedWorkspaceStore,
@@ -151,6 +152,12 @@ export {
   type WorkflowRunResult,
   type WorkflowRunStatus,
 } from "./workflow-engine.js";
+export {
+  createRuntimeToolExecutor,
+  RuntimeToolExecutor,
+  type RuntimeToolExecutorInput,
+  type RuntimeToolExecutorOptions,
+} from "./runtime-tool-executor.js";
 export type { AgentModeDefinition, AgentModeId } from "./agent-modes.js";
 export type {
   AgentSurface,

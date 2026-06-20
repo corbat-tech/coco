@@ -29,6 +29,10 @@ export interface AgentRuntimeOptions {
    * CLI/headless use this for compatibility; embedders should leave it false.
    */
   publishToGlobalBridge?: boolean;
+  legacyAgentBridge?: {
+    setAgentProvider(provider: LLMProvider): void;
+    setAgentToolRegistry(registry: ToolRegistry): void;
+  };
 }
 
 export interface AgentRuntimeSnapshot {
