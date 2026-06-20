@@ -11,6 +11,7 @@ import { createEventLog, createFileEventLog } from "./event-log.js";
 import { createMcpToolPolicy } from "./extension-manifests.js";
 import { createRuntimeHttpServer } from "./http-server.js";
 import { createPermissionPolicy } from "./permission-policy.js";
+import { RuntimePolicyViolation } from "./context.js";
 import {
   createPostgresEventLog,
   createPostgresRuntimeSessionQueries,
@@ -192,6 +193,7 @@ describe("reusable agent runtime", () => {
     const session = runtime.createSession({ metadata: { conversationId: "wa-1" } });
 
     expect(runtime.snapshot()).toMatchObject({
+      hostMode: "local",
       context: { surface: "whatsapp", tenant: { id: "acme" } },
       policy: {
         dataBoundary: { classification: "confidential" },
@@ -212,6 +214,37 @@ describe("reusable agent runtime", () => {
       surface: "whatsapp",
       correlationId: "corr-1",
     });
+  });
+
+  it("requires tenant context for hosted product surfaces while allowing local CLI", async () => {
+    await expect(
+      createAgentRuntime({
+        providerType: "openai",
+        model: "gpt-5.4",
+        provider: createMockProvider(),
+        runtimeHostMode: "hosted",
+        runtimeContext: { surface: "web" },
+      }),
+    ).rejects.toThrow(RuntimePolicyViolation);
+
+    const hosted = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimeHostMode: "hosted",
+      runtimeContext: { surface: "api", tenant: { id: "tenant-a" } },
+    });
+    const localCli = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimeHostMode: "hosted",
+      runtimeContext: { surface: "cli" },
+    });
+
+    expect(hosted.createSession().metadata).toMatchObject({ tenantId: "tenant-a" });
+    expect(localCli.createSession().mode).toBe("ask");
+    expect(hosted.snapshot().hostMode).toBe("hosted");
   });
 
   it("does not publish to the global bridge by default", async () => {
@@ -307,6 +340,76 @@ describe("reusable agent runtime", () => {
     expect(direct.mode).toBe("ask");
     expect(turn.mode).toBe("ask");
     expect(runtime.getSession(turn.sessionId)?.mode).toBe("ask");
+  });
+
+  it("enforces runtime turn, cost, rate, and concurrency budgets", async () => {
+    const maxTurnsRuntime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimePolicy: { costBudget: { maxTurns: 1 } },
+    });
+    const maxTurnsSession = maxTurnsRuntime.createSession();
+    await maxTurnsRuntime.runTurn({ sessionId: maxTurnsSession.id, content: "one" });
+    await expect(
+      maxTurnsRuntime.runTurn({ sessionId: maxTurnsSession.id, content: "two" }),
+    ).rejects.toMatchObject({ code: "max_turns_exceeded" });
+
+    const maxCostRuntime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimePolicy: { costBudget: { maxEstimatedCostUsd: 0 } },
+    });
+    const maxCostSession = maxCostRuntime.createSession();
+    await expect(
+      maxCostRuntime.runTurn({ sessionId: maxCostSession.id, content: "hello" }),
+    ).rejects.toMatchObject({ code: "estimated_cost_exceeded" });
+    expect(maxCostRuntime.getSession(maxCostSession.id)?.messages).toEqual([]);
+
+    const rateLimitedRuntime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimePolicy: { rateLimit: { maxRequestsPerMinute: 1 } },
+    });
+    const rateSession = rateLimitedRuntime.createSession();
+    await rateLimitedRuntime.runTurn({ sessionId: rateSession.id, content: "one" });
+    await expect(
+      rateLimitedRuntime.runTurn({ sessionId: rateSession.id, content: "two" }),
+    ).rejects.toMatchObject({ code: "rate_limit_exceeded" });
+
+    let resolveChat: ((value: Awaited<ReturnType<LLMProvider["chat"]>>) => void) | undefined;
+    const slowProvider = createMockProvider();
+    slowProvider.chat = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveChat = resolve;
+        }),
+    ) as LLMProvider["chat"];
+    const concurrencyRuntime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: slowProvider,
+      runtimePolicy: { rateLimit: { maxConcurrentRuns: 1 } },
+    });
+    const concurrencySession = concurrencyRuntime.createSession();
+    const firstRun = concurrencyRuntime.runTurn({
+      sessionId: concurrencySession.id,
+      content: "one",
+    });
+    await vi.waitFor(() => expect(slowProvider.chat).toHaveBeenCalledTimes(1));
+    await expect(
+      concurrencyRuntime.runTurn({ sessionId: concurrencySession.id, content: "two" }),
+    ).rejects.toMatchObject({ code: "concurrency_limit_exceeded" });
+    resolveChat?.({
+      id: "chat-slow",
+      content: "done",
+      stopReason: "end_turn",
+      usage: { inputTokens: 1, outputTokens: 1 },
+      model: "mock-model",
+    });
+    await expect(firstRun).resolves.toMatchObject({ content: "done" });
   });
 
   it("runs tool-calling turns through runtime permissions and tool execution", async () => {

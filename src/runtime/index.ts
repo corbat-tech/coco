@@ -10,15 +10,23 @@ export {
 } from "./agent-runner.js";
 export { AGENT_MODES, getAgentMode, isAgentMode, listAgentModes } from "./agent-modes.js";
 export {
+  assertRuntimeTenantBoundary,
+  assertRuntimeTurnWithinPolicy,
+  createRetentionCutoffs,
   createRuntimeRequestContext,
+  createRuntimeTenantBoundary,
   mergeRuntimePolicy,
   runtimeContextToMetadata,
+  RuntimePolicyViolation,
   type CostBudget,
   type DataBoundary,
   type RetentionPolicy,
+  type RuntimeHostMode,
   type RuntimePolicy,
+  type RuntimePolicyViolationCode,
   type RuntimeRequestContext,
   type RuntimeSurface,
+  type RuntimeTenantBoundary,
   type TenantContext,
   type UserContext,
 } from "./context.js";
