@@ -12,7 +12,7 @@ import type {
   ToolResultContent,
 } from "../providers/types.js";
 import type { AgentArtifact, AgentRole, AgentRunResult } from "../runtime/multi-agent.js";
-import { normalizeAgentRunResult } from "../runtime/multi-agent.js";
+import { mapLegacyAgentRole, normalizeAgentRunResult } from "../runtime/multi-agent.js";
 import type { ToolRegistry } from "../tools/registry.js";
 
 export interface AgentDefinition {
@@ -273,16 +273,7 @@ export class AgentExecutor {
 }
 
 function normalizeRole(role: AgentDefinition["role"]): AgentRole {
-  return role === "researcher" ||
-    role === "architect" ||
-    role === "editor" ||
-    role === "coder" ||
-    role === "tester" ||
-    role === "reviewer" ||
-    role === "optimizer" ||
-    role === "planner"
-    ? role
-    : "coder";
+  return mapLegacyAgentRole(role);
 }
 
 /**

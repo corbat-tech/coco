@@ -51,7 +51,8 @@ const SECRET_PATTERNS: Array<{ id: string; pattern: RegExp }> = [
 const PROMPT_INJECTION_PATTERNS: Array<{ id: string; pattern: RegExp }> = [
   {
     id: "ignore-instructions",
-    pattern: /\b(ignore|forget|override)\b.{0,40}\b(instructions|system|developer)\b/i,
+    pattern:
+      /\b(ignore|forget|override|bypass)\b.{0,60}\b(instructions|system|developer|policy|guardrail)\b/i,
   },
   {
     id: "reveal-prompt",
@@ -62,6 +63,16 @@ const PROMPT_INJECTION_PATTERNS: Array<{ id: string; pattern: RegExp }> = [
     id: "tool-exfiltration",
     pattern:
       /\b(use|call|run)\b.{0,40}\b(tool|shell|filesystem|git)\b.{0,40}\b(secret|token|key)\b/i,
+  },
+  {
+    id: "agent-privilege-escalation",
+    pattern:
+      /\b(spawn|delegate|handoff)\b.{0,50}\b(agent|sub.?agent)\b.{0,50}\b(admin|root|full access|unrestricted|destructive)\b/i,
+  },
+  {
+    id: "credential-exfiltration",
+    pattern:
+      /\b(exfiltrate|copy|send|upload)\b.{0,50}\b(secret|token|api key|credential|private key)\b/i,
   },
 ];
 

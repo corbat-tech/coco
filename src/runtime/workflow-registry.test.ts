@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEventLog } from "./event-log.js";
 import { createWorkflowCatalog, workflowToAgentGraph } from "./workflow-registry.js";
+import { createWorkflowEngine } from "./workflow-engine.js";
 
 describe("workflow registry DAG support", () => {
   it("converts legacy linear steps into a DAG graph", () => {
@@ -138,5 +139,32 @@ describe("workflow registry DAG support", () => {
       planId: plan.id,
       graphLevels: [["architect"], ["editor"], ["verifier"]],
     });
+  });
+
+  it("executes workflows as DAGs when no legacy handler is registered", async () => {
+    const eventLog = createEventLog();
+    const engine = createWorkflowEngine(createWorkflowCatalog(), eventLog);
+
+    const result = await engine.run({
+      workflowId: "architect-editor-verifier",
+      input: { task: "improve runtime" },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.graphResult?.status).toBe("completed");
+    expect(Object.keys(result.graphResult?.nodeResults ?? {})).toEqual([
+      "architect",
+      "editor",
+      "verifier",
+    ]);
+    expect(eventLog.list().map((event) => event.type)).toEqual(
+      expect.arrayContaining([
+        "workflow.started",
+        "agent.graph.started",
+        "agent.completed",
+        "agent.graph.completed",
+        "workflow.completed",
+      ]),
+    );
   });
 });

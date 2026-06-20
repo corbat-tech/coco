@@ -8,6 +8,11 @@
 import { parseSwarmSpec } from "./spec-parser.js";
 import { loadAgentConfig } from "./agents/config.js";
 import { runSwarmLifecycle } from "./lifecycle.js";
+export {
+  createSwarmAgentGraph,
+  swarmGateToAgentGate,
+  swarmRoleToAgentRole,
+} from "./runtime-graph.js";
 import { createProvider } from "../providers/index.js";
 import type { ProviderType } from "../providers/index.js";
 

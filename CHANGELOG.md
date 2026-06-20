@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Executable reference-grade multi-agent runtime**
+  - Add `AgentGraphEngine` for real DAG execution with fan-out/fan-in, retries,
+    gates, shared state artifacts, and correlated trace events.
+  - Add canonical `AgentRunner`, agent definitions, handoff/message/card
+    contracts, durable shared workspace stores, tool-risk policy evaluation,
+    and legacy role mappings.
+  - Add swarm-to-runtime graph adapter so swarm workflows can be represented as
+    runtime `AgentGraphDefinition` DAGs.
+
+### Improved
+- **Runtime safety and architecture boundaries**
+  - Enforce subagent permission risk based on requested agent capability instead
+    of treating `spawnSimpleAgent` as always read-only.
+  - Strengthen multi-agent guardrails for privilege escalation and credential
+    exfiltration prompts.
+  - Add architecture fitness, public API, graph execution, provenance,
+    permission, guardrail, and swarm DAG tests.
+  - Document the reference multi-agent architecture, security model, and ADR 010.
+
 ## [2.38.0] - 2026-06-19
 
 ### Added
