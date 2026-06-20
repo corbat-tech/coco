@@ -4,7 +4,9 @@ import type { LLMProvider } from "../providers/types.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { listAgentModes } from "./agent-modes.js";
 import {
+  assertRuntimeUsageWithinPolicy,
   createRuntimeRequestContext,
+  evaluateRuntimeToolPolicy,
   mergeRuntimePolicy,
   runtimeContextToMetadata,
   type RuntimePolicy,
@@ -61,7 +63,6 @@ export class AgentRuntime {
     this.eventLog =
       options.eventLog ??
       (options.eventLogPath ? createFileEventLog(options.eventLogPath) : createEventLog());
-    this.workflowEngine = options.workflowEngine ?? createWorkflowEngine(undefined, this.eventLog);
     this.permissionPolicy = options.permissionPolicy ?? createPermissionPolicy();
     this.turnRunner = options.turnRunner ?? createDefaultRuntimeTurnRunner();
     this.providerType = options.providerType;
@@ -71,6 +72,9 @@ export class AgentRuntime {
       ? createRuntimeRequestContext(options.runtimeContext)
       : undefined;
     this.runtimePolicy = mergeRuntimePolicy(this.runtimeContext?.policy, options.runtimePolicy);
+    this.workflowEngine =
+      options.workflowEngine ??
+      createWorkflowEngine(undefined, this.eventLog, { runtimePolicy: this.runtimePolicy });
   }
 
   async initialize(): Promise<void> {
@@ -202,6 +206,7 @@ export class AgentRuntime {
         permissionPolicy: this.permissionPolicy,
         eventLog: this.eventLog,
       });
+      assertRuntimeUsageWithinPolicy(this.runtimePolicy, result.usage);
 
       const updatedSession = this.runtimeSessionStore.update({
         ...effectiveSession,
@@ -309,6 +314,7 @@ export class AgentRuntime {
         model: input.options?.model ?? this.getModel(),
         mode: updatedSession.mode,
       };
+      assertRuntimeUsageWithinPolicy(this.runtimePolicy, result.usage);
 
       this.eventLog.record("session.updated", {
         sessionId: updatedSession.id,
@@ -404,8 +410,22 @@ export class AgentRuntime {
     const decision = this.permissionPolicy.canExecuteToolInput
       ? this.permissionPolicy.canExecuteToolInput(mode, tool, input.input)
       : this.permissionPolicy.canExecuteTool(mode, tool);
-    if (!decision.allowed || (decision.requiresConfirmation && input.confirmed !== true)) {
+    const runtimeDecision = decision.allowed
+      ? evaluateRuntimeToolPolicy(this.runtimePolicy, {
+          toolName: input.toolName,
+          risk: decision.risk,
+          confirmed: input.confirmed,
+        })
+      : undefined;
+    const effectiveDecision = runtimeDecision ?? decision;
+
+    if (
+      !decision.allowed ||
+      !effectiveDecision.allowed ||
+      (decision.requiresConfirmation && input.confirmed !== true)
+    ) {
       const reason =
+        effectiveDecision.reason ??
         decision.reason ??
         (decision.requiresConfirmation
           ? "Tool requires explicit runtime confirmation."
@@ -415,8 +435,10 @@ export class AgentRuntime {
         mode,
         tool: input.toolName,
         reason,
-        risk: decision.risk,
-        requiresConfirmation: decision.requiresConfirmation,
+        risk: effectiveDecision.risk,
+        requiresConfirmation:
+          effectiveDecision.requiresConfirmation ?? decision.requiresConfirmation,
+        runtimePolicyBlocked: runtimeDecision ? !runtimeDecision.allowed : false,
         runtimeApi: true,
       });
       return {
@@ -424,7 +446,14 @@ export class AgentRuntime {
         success: false,
         error: reason,
         duration: performance.now() - startedAt,
-        decision,
+        decision: {
+          ...decision,
+          allowed: false,
+          reason,
+          requiresConfirmation:
+            effectiveDecision.requiresConfirmation ?? decision.requiresConfirmation,
+          risk: effectiveDecision.risk,
+        },
       };
     }
 
@@ -432,7 +461,7 @@ export class AgentRuntime {
       sessionId: input.sessionId,
       mode,
       tool: input.toolName,
-      risk: decision.risk,
+      risk: effectiveDecision.risk,
       runtimeApi: true,
       metadataKeys: Object.keys(input.metadata ?? {}).sort(),
     });
@@ -452,7 +481,11 @@ export class AgentRuntime {
       output: result.data,
       error: result.error,
       duration: result.duration,
-      decision,
+      decision: {
+        ...decision,
+        risk: effectiveDecision.risk,
+        requiresConfirmation: decision.requiresConfirmation,
+      },
     };
   }
 
@@ -471,12 +504,28 @@ export class AgentRuntime {
       input && this.permissionPolicy.canExecuteToolInput
         ? this.permissionPolicy.canExecuteToolInput(mode, tool, input)
         : this.permissionPolicy.canExecuteTool(mode, tool);
-    this.eventLog.record(decision.allowed ? "tool.allowed" : "tool.blocked", {
+    const runtimeDecision = decision.allowed
+      ? evaluateRuntimeToolPolicy(this.runtimePolicy, {
+          toolName,
+          risk: decision.risk,
+          confirmed: false,
+        })
+      : undefined;
+    const allowed = decision.allowed && runtimeDecision?.allowed !== false;
+    this.eventLog.record(allowed ? "tool.allowed" : "tool.blocked", {
       mode,
       tool: toolName,
       ...decision,
+      ...(runtimeDecision && !runtimeDecision.allowed
+        ? {
+            allowed: false,
+            reason: runtimeDecision.reason,
+            requiresConfirmation: runtimeDecision.requiresConfirmation,
+            runtimePolicyBlocked: true,
+          }
+        : {}),
     });
-    return decision.allowed;
+    return allowed;
   }
 }
 

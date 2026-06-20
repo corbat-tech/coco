@@ -34,6 +34,40 @@ describe("RAG runtime primitives", () => {
     expect(formatRetrievedSourcesForPrompt(results)).toContain("Refunds take five days.");
   });
 
+  it("filters keyword retrieval by tenant context while keeping global documents visible", async () => {
+    const retriever = createInMemoryKnowledgeRetriever([
+      {
+        id: "doc-acme",
+        title: "Acme Refunds",
+        content: "Acme refunds take five days.",
+        metadata: { tenantId: "acme" },
+      },
+      {
+        id: "doc-globex",
+        title: "Globex Refunds",
+        content: "Globex refunds take two days.",
+        metadata: { tenantId: "globex" },
+      },
+      {
+        id: "doc-untagged",
+        title: "Untagged Refunds",
+        content: "Refunds with missing tenant metadata should not leak.",
+      },
+      {
+        id: "doc-global",
+        title: "General Refunds",
+        content: "Refunds require an invoice.",
+        metadata: { visibility: "global" },
+      },
+    ]);
+
+    const results = await retriever.search("refunds", {
+      runtimeContext: { surface: "api", tenant: { id: "acme" } },
+    });
+
+    expect(results.map((result) => result.id)).toEqual(["doc-acme", "doc-global"]);
+  });
+
   it("ingests documents and retrieves from an injected vector pipeline", async () => {
     const vectorStore = createInMemoryVectorStore();
     const pipeline = createRagPipeline({
@@ -59,6 +93,40 @@ describe("RAG runtime primitives", () => {
       title: "Refunds",
       metadata: { documentId: "doc-1", chunkIndex: 0 },
     });
+  });
+
+  it("filters vector retrieval by pipeline runtime tenant context", async () => {
+    const vectorStore = createInMemoryVectorStore();
+    const pipeline = createRagPipeline({
+      runtimeContext: { surface: "api", tenant: { id: "acme" } },
+      loader: {
+        async load() {
+          return [
+            {
+              id: "doc-acme",
+              title: "Acme Refunds",
+              content: "Refund requests need an invoice.",
+              metadata: { tenantId: "acme" },
+            },
+            {
+              id: "doc-globex",
+              title: "Globex Refunds",
+              content: "Refund requests need an order id.",
+              metadata: { tenantId: "globex" },
+            },
+          ];
+        },
+      },
+      chunker: createSimpleTextChunker({ maxChars: 80, overlapChars: 0 }),
+      embeddingProvider: keywordEmbeddingProvider,
+      vectorStore,
+    });
+
+    await pipeline.ingest();
+
+    const results = await pipeline.retrieve("refund", { limit: 5 });
+
+    expect(results.map((result) => result.metadata?.["documentId"])).toEqual(["doc-acme"]);
   });
 
   it("allows reranking without coupling to a vector store implementation", async () => {

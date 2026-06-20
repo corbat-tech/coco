@@ -165,6 +165,7 @@ describe("agent platform layer", () => {
         id: "doc-1",
         title: "Corbat Services",
         content: "Corbat builds custom AI agents and software platforms.",
+        metadata: { tenantId: "acme" },
       },
       { id: "doc-2", title: "Other", content: "Unrelated content." },
     ]);
@@ -172,8 +173,16 @@ describe("agent platform layer", () => {
     const results = await retriever.search("custom AI agents");
     expect(results[0]?.id).toBe("doc-1");
 
-    const ragRegistry = createRagToolRegistry(retriever);
+    const ragRegistry = createRagToolRegistry(retriever, {
+      runtimeContext: { surface: "api", tenant: { id: "acme" } },
+    });
     expect(ragRegistry.has("knowledge_search")).toBe(true);
+    const tenantResults = await ragRegistry.execute("knowledge_search", {
+      query: "custom AI agents",
+      limit: 1,
+    });
+    expect(tenantResults.success).toBe(true);
+    expect(tenantResults.data).toEqual([expect.objectContaining({ id: "doc-1" })]);
 
     const ragBlueprint = ragKnowledgeAssistantPreset.createBlueprint({
       brand: "Corbat",

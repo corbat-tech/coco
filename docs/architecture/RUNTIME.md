@@ -115,15 +115,23 @@ does not treat the CLI UI as implicit approval: embedders must pass
 `confirmed: true` for those calls. Read-only modes still block write-capable
 inputs such as `run_linter` with `fix: true`.
 
+Runtime policy is enforced at the runtime boundary. `allowedTools`,
+`maxToolRisk`, human approval requirements, and basic token budgets are checked
+by `AgentRuntime`; graph workflows are rejected before execution when declared
+`requiredTools`/risk exceed the configured policy. RAG retrieval options carry
+tenant and data-boundary context so reusable stores can apply tenant filtering
+instead of relying only on prompt instructions.
+
 `createRuntimeSessionStore()` returns an in-memory store for tests and short
 processes. `createFileRuntimeSessionStore(path)` persists sessions to one JSON
 file for local products, prototypes, and replay fixtures. Hosted or multi-tenant
 products should provide their own `RuntimeSessionStore` backed by their database
 and tenant isolation model.
 
-If `toolRegistry` is omitted, Coco uses the full coding-agent registry for CLI
-compatibility. Embedded assistants should pass an explicit narrow registry with
-only domain-safe tools.
+If `toolRegistry` is omitted, embeddable runtimes start with no tools. CLI and
+headless coding-agent surfaces inject the full coding registry explicitly.
+Embedded assistants should pass an explicit narrow registry with only
+domain-safe tools.
 
 For simple prototypes, `createRuntimeHttpServer(runtime)` exposes:
 

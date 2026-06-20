@@ -69,6 +69,13 @@ export interface RuntimeRequestContext {
   metadata?: Record<string, unknown>;
 }
 
+export interface RuntimePolicyDecision {
+  allowed: boolean;
+  reason?: string;
+  requiresConfirmation?: boolean;
+  risk: WorkflowRisk;
+}
+
 export function createRuntimeRequestContext(
   input: Partial<RuntimeRequestContext> = {},
 ): RuntimeRequestContext {
@@ -131,6 +138,75 @@ export function runtimeContextToMetadata(
   };
 }
 
+export function evaluateRuntimeToolPolicy(
+  policy: RuntimePolicy | undefined,
+  input: {
+    toolName: string;
+    risk: WorkflowRisk;
+    confirmed?: boolean;
+  },
+): RuntimePolicyDecision {
+  if (policy?.allowedTools && !policy.allowedTools.includes(input.toolName)) {
+    return {
+      allowed: false,
+      reason: `Runtime policy does not allow tool: ${input.toolName}`,
+      risk: input.risk,
+    };
+  }
+
+  if (policy?.maxToolRisk && riskRank(input.risk) > riskRank(policy.maxToolRisk)) {
+    return {
+      allowed: false,
+      reason: `Runtime policy allows tools up to ${policy.maxToolRisk} risk; ${input.toolName} is ${input.risk}.`,
+      risk: input.risk,
+    };
+  }
+
+  if (policy?.requireHumanApprovalFor?.includes(input.risk) && input.confirmed !== true) {
+    return {
+      allowed: false,
+      requiresConfirmation: true,
+      reason: `Runtime policy requires human approval for ${input.risk} tools.`,
+      risk: input.risk,
+    };
+  }
+
+  return { allowed: true, risk: input.risk };
+}
+
+export function assertRuntimeUsageWithinPolicy(
+  policy: RuntimePolicy | undefined,
+  usage: { inputTokens?: number; outputTokens?: number },
+): void {
+  const budget = policy?.costBudget;
+  if (!budget) return;
+  if (budget.maxInputTokens !== undefined && (usage.inputTokens ?? 0) > budget.maxInputTokens) {
+    throw new Error(
+      `Runtime policy input token budget exceeded: ${usage.inputTokens ?? 0}/${budget.maxInputTokens}`,
+    );
+  }
+  if (budget.maxOutputTokens !== undefined && (usage.outputTokens ?? 0) > budget.maxOutputTokens) {
+    throw new Error(
+      `Runtime policy output token budget exceeded: ${usage.outputTokens ?? 0}/${budget.maxOutputTokens}`,
+    );
+  }
+}
+
 function cloneRuntimePolicy(policy: RuntimePolicy): RuntimePolicy {
   return mergeRuntimePolicy(undefined, policy) ?? {};
+}
+
+function riskRank(risk: WorkflowRisk): number {
+  switch (risk) {
+    case "read-only":
+      return 0;
+    case "network":
+      return 1;
+    case "write":
+      return 2;
+    case "destructive":
+      return 3;
+    case "secrets-sensitive":
+      return 4;
+  }
 }

@@ -1,3 +1,5 @@
+import type { DataBoundary, RuntimeRequestContext } from "./context.js";
+
 export interface RetrievedSource {
   id: string;
   title: string;
@@ -34,6 +36,9 @@ export interface Citation {
 export interface RetrievalOptions {
   limit?: number;
   minScore?: number;
+  tenantId?: string;
+  runtimeContext?: RuntimeRequestContext;
+  dataBoundary?: DataBoundary;
 }
 
 export interface DocumentLoader {
@@ -68,6 +73,7 @@ export interface RagPipelineOptions {
   vectorStore?: VectorStore;
   retriever?: KnowledgeRetriever;
   reranker?: Reranker;
+  runtimeContext?: RuntimeRequestContext;
 }
 
 export interface RagPipeline {
@@ -90,8 +96,10 @@ export class InMemoryKnowledgeRetriever implements KnowledgeRetriever {
     const terms = tokenize(query);
     const limit = options.limit ?? 5;
     const minScore = options.minScore ?? 0;
+    const tenantId = tenantIdFromRetrievalOptions(options);
 
     return this.documents
+      .filter((document) => sourceMatchesTenant(document.metadata, tenantId, options.dataBoundary))
       .map((document) => ({
         ...document,
         score: scoreDocument(document, terms),
@@ -142,7 +150,9 @@ export class InMemoryVectorStore implements VectorStore {
   async search(embedding: number[], options: RetrievalOptions = {}): Promise<RetrievedSource[]> {
     const limit = options.limit ?? 5;
     const minScore = options.minScore ?? 0;
+    const tenantId = tenantIdFromRetrievalOptions(options);
     return this.chunks
+      .filter((chunk) => sourceMatchesTenant(chunk.metadata, tenantId, options.dataBoundary))
       .map((chunk) => ({
         id: chunk.id,
         title: chunk.title,
@@ -198,9 +208,13 @@ export function createRagPipeline(options: RagPipelineOptions): RagPipeline {
       return { documents: documents.length, chunks: chunks.length };
     },
     async retrieve(query, retrievalOptions) {
+      const effectiveRetrievalOptions = mergeRetrievalOptionsWithRuntimeContext(
+        retrievalOptions,
+        options.runtimeContext,
+      );
       const sources = options.retriever
-        ? await options.retriever.search(query, retrievalOptions)
-        : await retrieveFromVectorPipeline(query, options, retrievalOptions);
+        ? await options.retriever.search(query, effectiveRetrievalOptions)
+        : await retrieveFromVectorPipeline(query, options, effectiveRetrievalOptions);
       return options.reranker ? options.reranker.rerank(query, sources) : sources;
     },
   };
@@ -229,6 +243,37 @@ function scoreDocument(document: InMemoryKnowledgeDocument, terms: string[]): nu
   if (terms.length === 0) return 0;
   const matches = terms.filter((term) => haystack.includes(term)).length;
   return matches / terms.length;
+}
+
+function mergeRetrievalOptionsWithRuntimeContext(
+  options: RetrievalOptions | undefined,
+  runtimeContext: RuntimeRequestContext | undefined,
+): RetrievalOptions | undefined {
+  if (!options && !runtimeContext) return undefined;
+  return {
+    ...options,
+    runtimeContext: options?.runtimeContext ?? runtimeContext,
+    tenantId:
+      options?.tenantId ?? options?.runtimeContext?.tenant?.id ?? runtimeContext?.tenant?.id,
+    dataBoundary:
+      options?.dataBoundary ??
+      options?.runtimeContext?.policy?.dataBoundary ??
+      runtimeContext?.policy?.dataBoundary,
+  };
+}
+
+function tenantIdFromRetrievalOptions(options: RetrievalOptions): string | undefined {
+  return options.tenantId ?? options.runtimeContext?.tenant?.id;
+}
+
+function sourceMatchesTenant(
+  metadata: Record<string, unknown> | undefined,
+  tenantId: string | undefined,
+  dataBoundary: DataBoundary | undefined,
+): boolean {
+  if (!tenantId || dataBoundary?.allowCrossTenantMemory === true) return true;
+  const sourceTenantId = metadata?.["tenantId"];
+  return sourceTenantId === tenantId || metadata?.["visibility"] === "global";
 }
 
 async function retrieveFromVectorPipeline(

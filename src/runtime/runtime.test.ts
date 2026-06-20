@@ -592,6 +592,97 @@ describe("reusable agent runtime", () => {
     ]);
   });
 
+  it("enforces runtime policy allowlists during tool execution", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+      runtimePolicy: { allowedTools: ["read_file"] },
+    });
+
+    const read = await runtime.executeTool({
+      toolName: "read_file",
+      input: { path: "README.md" },
+    });
+    const write = await runtime.executeTool({
+      mode: "build",
+      toolName: "write_file",
+      input: { path: "README.md", content: "x" },
+      confirmed: true,
+    });
+
+    expect(read.success).toBe(true);
+    expect(write).toMatchObject({
+      success: false,
+      error: "Runtime policy does not allow tool: write_file",
+      decision: { allowed: false, risk: "destructive" },
+    });
+    expect(runtime.assertToolAllowed("build", "write_file", { path: "README.md" })).toBe(false);
+  });
+
+  it("enforces runtime max tool risk and human approval policy", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      toolRegistry: createRegistry(),
+      runtimePolicy: {
+        maxToolRisk: "write",
+        requireHumanApprovalFor: ["write"],
+      },
+    });
+
+    const unconfirmedWrite = await runtime.executeTool({
+      mode: "build",
+      toolName: "run_linter",
+      input: { fix: true },
+    });
+    const confirmedWrite = await runtime.executeTool({
+      mode: "build",
+      toolName: "run_linter",
+      input: { fix: true },
+      confirmed: true,
+    });
+    const destructive = await runtime.executeTool({
+      mode: "build",
+      toolName: "write_file",
+      input: { path: "README.md", content: "x" },
+      confirmed: true,
+    });
+
+    expect(unconfirmedWrite).toMatchObject({
+      success: false,
+      error: "Runtime policy requires human approval for write tools.",
+    });
+    expect(confirmedWrite.success).toBe(true);
+    expect(destructive).toMatchObject({
+      success: false,
+      error: "Runtime policy allows tools up to write risk; write_file is destructive.",
+    });
+  });
+
+  it("blocks graph workflows that require tools outside the runtime policy", async () => {
+    const runtime = await createAgentRuntime({
+      providerType: "openai",
+      model: "gpt-5.4",
+      provider: createMockProvider(),
+      runtimePolicy: { allowedTools: ["read_file"] },
+    });
+
+    const result = await runtime.workflowEngine.run({
+      workflowId: "enterprise-rag-answer",
+      input: { question: "How do refunds work?" },
+    });
+
+    expect(result).toMatchObject({
+      workflowId: "enterprise-rag-answer",
+      status: "failed",
+      error:
+        "Workflow node retrieve is blocked by runtime policy: Runtime policy does not allow tool: knowledge_search",
+    });
+  });
+
   it("marks destructive tools as confirmation-worthy", () => {
     const registry = createRegistry();
     const tool = registry.get("write_file");
