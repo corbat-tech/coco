@@ -47,6 +47,15 @@ function notFound(response: ServerResponse): void {
   sendJson(response, 404, { error: "Not found" });
 }
 
+function sendError(response: ServerResponse, error: unknown): void {
+  if (error instanceof HttpRequestError) {
+    sendJson(response, error.status, { error: error.message });
+    return;
+  }
+
+  sendJson(response, 500, { error: "Internal server error" });
+}
+
 function assertValidMode(mode: unknown): RuntimeMode | undefined {
   if (mode === undefined) return undefined;
   if (typeof mode === "string" && isAgentMode(mode)) return mode;
@@ -133,10 +142,7 @@ export function createRuntimeHttpServer(
 
       notFound(response);
     } catch (error) {
-      const status = error instanceof HttpRequestError ? error.status : 500;
-      sendJson(response, status, {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      sendError(response, error);
     }
   });
 }

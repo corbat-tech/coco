@@ -39,12 +39,12 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 
 async function withRuntimeHttpServer<T>(
   callback: (baseUrl: string) => Promise<T>,
-  options: { maxBodyBytes?: number } = {},
+  options: { maxBodyBytes?: number; provider?: LLMProvider } = {},
 ): Promise<T> {
   const runtime = await createAgentRuntime({
     providerType: "openai",
     model: "gpt-5.4",
-    provider: createMockProvider(),
+    provider: options.provider ?? createMockProvider(),
     toolRegistry: createRegistry(),
   });
   const server = createRuntimeHttpServer(runtime, options);
@@ -1327,6 +1327,31 @@ describe("reusable agent runtime", () => {
         expect(missingSession.status).toBe(404);
       },
       { maxBodyBytes: 32 },
+    );
+  });
+
+  it("does not expose internal HTTP adapter error details", async () => {
+    const provider = createMockProvider();
+    provider.chat = vi.fn(async () => {
+      throw new Error("database password leaked at /var/app/runtime/http-server.ts:42");
+    });
+
+    await withRuntimeHttpServer(
+      async (baseUrl) => {
+        const session = await postJson<{ id: string }>(`${baseUrl}/sessions`, {});
+        const response = await fetch(`${baseUrl}/sessions/${session.id}/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: "hello" }),
+        });
+        const body = (await response.json()) as { error: string };
+
+        expect(response.status).toBe(500);
+        expect(body).toEqual({ error: "Internal server error" });
+        expect(body.error).not.toContain("database password");
+        expect(body.error).not.toContain("http-server.ts");
+      },
+      { provider },
     );
   });
 });
