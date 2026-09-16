@@ -17,6 +17,9 @@
  * - Gemini (Google account login, same as Gemini CLI)
  */
 
+import { randomUUID } from "node:crypto";
+import { createRequestScope } from "../utils/request-scope.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
@@ -260,12 +263,15 @@ export async function pollForToken(
 }
 
 /**
- * Refresh access token using refresh token
+ * Refresh access token using refresh token. The caller owns cancellation and persistence.
+ * A fully decoded rotation is returned even after abort so it can be saved safely.
  */
 export async function refreshAccessToken(
   provider: string,
   refreshToken: string,
+  signal?: AbortSignal,
 ): Promise<OAuthTokens> {
+  signal?.throwIfAborted();
   const config = OAUTH_CONFIGS[provider];
   if (!config) {
     throw new Error(`OAuth not supported for provider: ${provider}`);
@@ -283,25 +289,41 @@ export async function refreshAccessToken(
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: body.toString(),
+    signal,
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Token refresh failed: ${error}`);
+    await response.body?.cancel();
+    signal?.throwIfAborted();
+    throw new Error(
+      `Token refresh failed (HTTP ${response.status}); stored credentials were preserved.`,
+    );
   }
 
-  const data = (await response.json()) as {
-    access_token: string;
-    refresh_token?: string;
-    expires_in?: number;
-    token_type: string;
-  };
+  const data = (await response.json()) as Record<string, unknown> | null;
+  if (
+    !data ||
+    typeof data.access_token !== "string" ||
+    !data.access_token.trim() ||
+    (data.refresh_token !== undefined &&
+      (typeof data.refresh_token !== "string" || !data.refresh_token.trim())) ||
+    (data.expires_in !== undefined &&
+      (typeof data.expires_in !== "number" ||
+        !Number.isFinite(data.expires_in) ||
+        !Number.isFinite(Date.now() + data.expires_in * 1000) ||
+        data.expires_in <= 0))
+  ) {
+    throw new Error("Invalid token refresh response; stored credentials were preserved.");
+  }
+  // A complete valid rotation must reach the caller for persistence, even if
+  // cancellation arrived while the already-received body was being decoded.
 
   return {
     accessToken: data.access_token,
-    refreshToken: data.refresh_token || refreshToken,
-    expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
-    tokenType: data.token_type,
+    refreshToken: (data.refresh_token as string | undefined) || refreshToken,
+    expiresAt:
+      typeof data.expires_in === "number" ? Date.now() + data.expires_in * 1000 : undefined,
+    tokenType: typeof data.token_type === "string" ? data.token_type : "Bearer",
   };
 }
 
@@ -321,7 +343,22 @@ export async function saveTokens(provider: string, tokens: OAuthTokens): Promise
   const dir = path.dirname(filePath);
 
   await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  await fs.writeFile(filePath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+  const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+  let mayOwnTemporaryFile = true;
+  try {
+    try {
+      await fs.writeFile(temporaryPath, JSON.stringify(tokens, null, 2), {
+        mode: 0o600,
+        flag: "wx",
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") mayOwnTemporaryFile = false;
+      throw error;
+    }
+    await fs.rename(temporaryPath, filePath);
+  } finally {
+    if (mayOwnTemporaryFile) await fs.unlink(temporaryPath).catch(() => {});
+  }
 }
 
 /**
@@ -359,38 +396,45 @@ export function isTokenExpired(tokens: OAuthTokens): boolean {
   return Date.now() >= tokens.expiresAt - 5 * 60 * 1000;
 }
 
-/**
- * Get valid access token (refreshing if needed)
- */
+/** A completed rotation could not be committed to local storage. */
+class OAuthPersistenceError extends Error {
+  constructor(cause: unknown) {
+    super("Failed to save refreshed credentials; previous file was preserved.", { cause });
+    this.name = "OAuthPersistenceError";
+  }
+}
+
+/** Get a valid token with a bounded refresh; preserve completed rotations before abort. */
 export async function getValidAccessToken(
   provider: string,
+  signal?: AbortSignal,
 ): Promise<{ accessToken: string; isNew: boolean } | null> {
-  const config = OAUTH_CONFIGS[provider];
-  if (!config) return null;
-
-  const tokens = await loadTokens(provider);
-  if (!tokens) return null;
-
-  // Check if expired
-  if (isTokenExpired(tokens)) {
-    // Try to refresh
-    if (tokens.refreshToken) {
-      try {
-        const newTokens = await refreshAccessToken(provider, tokens.refreshToken);
-        await saveTokens(provider, newTokens);
-        return { accessToken: newTokens.accessToken, isNew: true };
-      } catch {
-        // Refresh failed, need to re-authenticate
-        await deleteTokens(provider);
-        return null;
-      }
+  const scope = createRequestScope(signal, 30000);
+  try {
+    if (!OAUTH_CONFIGS[provider]) return null;
+    const tokens = await loadTokens(provider);
+    scope.signal.throwIfAborted();
+    if (!tokens) return null;
+    if (!isTokenExpired(tokens)) return { accessToken: tokens.accessToken, isNew: false };
+    if (!tokens.refreshToken) return null;
+    // Never automatically retry refresh: a lost response may have rotated credentials.
+    const newTokens = await refreshAccessToken(provider, tokens.refreshToken, scope.signal);
+    // Once a rotation is known, finish the local atomic save before honoring abort.
+    // A failed save is reported rather than hidden by a concurrent cancellation.
+    try {
+      await saveTokens(provider, newTokens);
+    } catch (error) {
+      throw new OAuthPersistenceError(error);
     }
-    // No refresh token and expired
-    await deleteTokens(provider);
-    return null;
+    scope.signal.throwIfAborted();
+    return { accessToken: newTokens.accessToken, isNew: true };
+  } catch (error) {
+    if (error instanceof OAuthPersistenceError) throw error;
+    rethrowCancellation(error, scope.signal);
+    throw error;
+  } finally {
+    scope.dispose();
   }
-
-  return { accessToken: tokens.accessToken, isNew: false };
 }
 
 /**

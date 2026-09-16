@@ -97,3 +97,15 @@ Endpoint ChatGPT backend separado de OpenAI API estándar; conserva autenticaci�
 48 casos independientes +51 anteriores correctos. Seis integraciones con fetch real redirigido únicamente desde endpoint esperado a HTTP loopback y OAuth fixture: cuatro rutas antes de headers y dos streams con body pendiente; desconexión, motivo preservado y una petición. Gate providers/integración29 archivos/912 tests correctos; typecheck/lint/format correctos. Logs e07j-providers/types/lint/format/http. Coordinador implementación y HTTP; /root/core_audit contratos. Sin conexión a cuentas ni inferencia externa; rollback por revert.
 
 /root/baseline_review APPROVED E07.j; inicialización y renovación OAuth quedan para E07.k.
+
+## E07.k1 · DONE · 2026-09-16
+
+Renovación OAuth administrada por getValidAccessToken: scope30s, señal a fetch/body, preabort antes de leer credenciales y sin retry automático de POST. Fallos de red, cancelación, timeout, respuesta inválida y errores de persistencia ya no borran credenciales. Error de refresh ahora se propaga al caller (flow/Codex initialize), no null seguido de reautenticación/fallback automático; ausencia/expiración sin refresh devuelve null conservando archivo. Errores HTTP no vuelcan el body sensible. refreshAccessToken es primitiva con señal del caller; getValidAccessToken posee el deadline.
+
+Rotación completamente recibida y validada se guarda antes de propagar cancelación sobrevenida, para no perder refresh token nuevo. Save usa temporal sibling UUID, creación exclusiva600, rename y limpieza; evita truncar archivo anterior. Fallo de persistencia conserva causa y prevalece frente a aborto concurrente. No promete revertir una rotación remota ni durabilidad ante caída del sistema; fallo de disco puede exigir recuperar autenticación. Operaciones locales de persistencia se esperan, no se abandonan por Promise.race. Helper de scope pasa de providers a utils para compartir con auth, sin duplicar implementación.
+
+Fundamento: [RFC6749 sección6](https://www.rfc-editor.org/rfc/rfc6749#section-6), consultada2026-09-16, contempla reemplazo de refresh token; [documentación oficial de autenticación Codex](https://developers.openai.com/codex/auth/) consultada la misma fecha. Sin cambio de clientID/endpoints/modelos, ni afirmación de compatibilidad de toda la autenticación interactiva. Concurrencia de refresh y Copilot siguen pendientes de E07.k2 y siguientes.
+
+28 casos OAuth con red/FS simulados y cuatro de filesystem temporal real: permisos POSIX600/700, reemplazo, escritura parcial fallida y rename fallido preservan anterior/limpian temporales. No se cambian HOME ni credenciales reales; FSredirigido estrictamente a fixture. Gate amplio:337 archivos/7482 tests correctos,15 omitidos; REPL separado27 correctos; typecheck/lint/format/build correctos. Logs e07k1-main/repl/types/lint/format/build. Coordinador implementa y añade caso overflow; /root/core_audit pruebas de contrato; /root/file_fixture_update integración FS. Sin publicación; rollback por revert.
+
+/root/baseline_review APPROVED E07.k1; no valida concurrencia de renovación ni Copilot.

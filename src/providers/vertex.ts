@@ -20,7 +20,7 @@ import type {
   ToolResultContent,
   ToolUseContent,
 } from "./types.js";
-import { createRequestScope } from "./request-scope.js";
+import { createRequestScope } from "../utils/request-scope.js";
 import { rethrowCancellation } from "../utils/cancellation.js";
 import { ProviderError } from "../utils/errors.js";
 import { getCachedADCToken } from "../auth/gcloud.js";
