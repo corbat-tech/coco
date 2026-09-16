@@ -54,6 +54,9 @@ export class HTTPTransport implements MCPTransport {
   private connected = false;
   private abortController: AbortController | null = null;
   private pendingRequests = new Set<AbortController>();
+  private sends = new Set<Promise<void>>();
+  private connecting: Promise<void> | undefined;
+  private closing: Promise<void> | undefined;
   private oauthToken: string | undefined;
   private sessionId: string | undefined;
   private protocolVersion = "2024-11-05";
@@ -150,8 +153,10 @@ export class HTTPTransport implements MCPTransport {
 
     signal.throwIfAborted();
     const reader = response.body.getReader();
+    let cancellation: Promise<void> | undefined;
+    const cancelReader = () => (cancellation ??= reader.cancel(signal.reason).catch(() => {}));
     const onAbort = () => {
-      void reader.cancel(signal.reason).catch(() => {});
+      void cancelReader();
     };
     signal.addEventListener("abort", onAbort, { once: true });
     const decoder = new TextDecoder();
@@ -210,7 +215,7 @@ export class HTTPTransport implements MCPTransport {
     } finally {
       signal.removeEventListener("abort", onAbort);
       try {
-        await reader.cancel();
+        await cancelReader();
       } catch {
         // The transport may already have errored or cancelled this body.
       } finally {
@@ -223,26 +228,42 @@ export class HTTPTransport implements MCPTransport {
    * Connect to the HTTP transport
    */
   async connect(): Promise<void> {
-    if (this.connected) {
-      throw new MCPConnectionError("Transport already connected");
+    if (this.closing) {
+      await this.closing;
+      return this.connect();
     }
-
-    // Validate URL
+    if (this.abortController)
+      throw new MCPConnectionError("Transport already connected or connecting");
     try {
-      // eslint-disable-next-line no-new
       new URL(this.config.url);
     } catch {
       throw new MCPConnectionError(`Invalid URL: ${this.config.url}`);
     }
-
+    const controller = new AbortController();
+    this.abortController = controller;
+    this.sessionId = undefined;
+    this.oauthToken = undefined;
+    this.protocolVersion = "2024-11-05";
+    const opening = this.openConnection(controller.signal);
+    this.connecting = opening;
     try {
-      this.abortController = new AbortController();
+      await opening;
+    } catch (error) {
+      if (!this.closing && this.abortController === controller) this.abortController = null;
+      throw error;
+    } finally {
+      if (this.connecting === opening) this.connecting = undefined;
+    }
+  }
 
-      if (this.shouldAttemptOAuth()) {
+  private async openConnection(signal: AbortSignal): Promise<void> {
+    try {
+      if (this.shouldAttemptOAuth())
         this.oauthToken = await getStoredMcpOAuthToken(this.config.url);
-      }
+      signal.throwIfAborted();
       this.connected = true;
     } catch (error) {
+      signal.throwIfAborted();
       if (error instanceof MCPError) {
         this.reportError(error);
         throw error;
@@ -259,6 +280,19 @@ export class HTTPTransport implements MCPTransport {
    * Send a message through the transport
    */
   async send(message: MCPOutboundMessage, options: MCPTransportSendOptions = {}): Promise<void> {
+    const operation = this.sendMessage(message, options);
+    this.sends.add(operation);
+    const remove = () => {
+      this.sends.delete(operation);
+    };
+    void operation.then(remove, remove);
+    return operation;
+  }
+
+  private async sendMessage(
+    message: MCPOutboundMessage,
+    options: MCPTransportSendOptions,
+  ): Promise<void> {
     options.signal?.throwIfAborted();
     if (!this.connected) {
       throw new MCPTransportError("Transport not connected");
@@ -359,15 +393,23 @@ export class HTTPTransport implements MCPTransport {
    * Disconnect from the transport
    */
   async disconnect(): Promise<void> {
-    // Abort all pending requests
-    for (const controller of this.pendingRequests) {
-      controller.abort();
-    }
-    this.pendingRequests.clear();
-
-    this.abortController?.abort();
+    if (this.closing) return this.closing;
+    if (!this.abortController) return;
     this.connected = false;
-    this.closeCallback?.();
+    this.abortController.abort();
+    for (const controller of this.pendingRequests) controller.abort();
+    const closing = Promise.resolve().then(async () => {
+      await this.connecting?.catch(() => {});
+      await Promise.allSettled(this.sends);
+      this.abortController = null;
+      this.closeCallback?.();
+    });
+    this.closing = closing;
+    try {
+      await closing;
+    } finally {
+      if (this.closing === closing) this.closing = undefined;
+    }
   }
 
   /**

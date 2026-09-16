@@ -213,7 +213,7 @@ export interface MCPClient {
   initialize(params: MCPInitializeParams): Promise<MCPInitializeResult>;
 
   /** List available tools */
-  listTools(): Promise<{ tools: MCPTool[] }>;
+  listTools(options?: MCPRequestOptions): Promise<{ tools: MCPTool[] }>;
 
   /** Call a tool on the MCP server */
   callTool(params: MCPCallToolParams, options?: MCPRequestOptions): Promise<MCPCallToolResult>;

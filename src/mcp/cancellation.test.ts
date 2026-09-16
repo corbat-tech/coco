@@ -397,3 +397,21 @@ describe("MCP initialize deadline waits for transport persistence", () => {
     },
   );
 });
+
+describe("MCP tools/list native deadline", () => {
+  it("cancels the request and removes its pending entry on the health deadline", async () => {
+    const f = await fixture(60000);
+    const outcome = f.client.listTools({ timeout: 5000 }).catch((error: unknown) => error);
+    const request = f.send.mock.calls[0]![0];
+    const signal = f.send.mock.calls[0]![1]!.signal!;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await outcome).toBeInstanceOf(Error);
+    expect(signal.aborted).toBe(true);
+    expect(
+      f.send.mock.calls.some(([message]) => message.method === "notifications/cancelled"),
+    ).toBe(true);
+    if ("id" in request) f.message({ jsonrpc: "2.0", id: request.id!, result: { tools: [] } });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(getEventListeners(signal, "abort")).toHaveLength(0);
+  });
+});

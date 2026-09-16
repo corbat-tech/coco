@@ -191,3 +191,11 @@ Gate final:7 archivos/95 tests correctos; typecheck/lint/format correctos. Logs 
 Stdio conserva propiedad del proceso desde spawn hasta close, incluyendo fallo de arranque. Disconnect concurrente comparte efectos: stdin.end único, SIGTERM a5s y SIGKILL tres segundos después, sin confundir killed/exit con cierre. Timers/listeners se limpian al close, callback único; connect rechaza mientras exista un child pendiente. No afirma terminar descendientes.
 
 Seis contratos independientes y una integración con proceso Node real que ignora SIGTERM: espera escalada y verifica PID directo inexistente al resolver. Gate4 archivos/19 tests correctos; typecheck/lint correctos; formato final correcto (primera pasada detectó exclusivamente fixture aún sin formatear del siguiente incremento). Logs e07l5a-contracts/types/lint/final-format. /root/file_fixture_update fuente; /root/core_audit contratos; coordinador integración; /root/baseline_review APPROVED. Sin publicación; rollback por revert.
+
+## E07.l5b · DONE · 2026-09-16
+
+Manager conserva conexiones desde antes del arranque hasta desconexión confirmada; comparte arranques/cierres concurrentes. Fallo de inicio espera cleanup; fallo de cleanup conserva referencia y errores. Stop ya no abandona disconnect con Promise.race a5s; stopAll drena todos y agrega fallos. Stop durante startup espera el arranque antes de desconectar: este incremento no promete interrupción inmediata del arranque.
+
+Health usa timeout5000 nativo de listTools, con cancelación MCP y limpieza del request. Revisión detectó publicación saludable tras cierre durante tools/list: guards de conexión viva en inicio, reutilización y health corrigen los tres casos. HTTP conserva sends y arranque hasta settlement, desconexión compartida, reader cancel único y estado de sesión reiniciado por conexión.
+
+Trece contratos lifecycle independientes, cuatro HTTP y un cliente tools/list deadline. Gate final23 archivos/343 tests correctos; gate anterior incluye además proceso real, con typecheck/lint/format correctos. Logs e07l5b-final y e07l5b-reviewed/types/lint/format. /root/core_audit contratos; coordinador implementación; /root/baseline_review APPROVED. Sin publicación; rollback por revert.

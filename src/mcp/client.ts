@@ -228,9 +228,9 @@ export class MCPClientImpl implements MCPClient {
   /**
    * List available tools
    */
-  async listTools(): Promise<{ tools: MCPTool[] }> {
+  async listTools(options?: MCPRequestOptions): Promise<{ tools: MCPTool[] }> {
     this.ensureInitialized();
-    return this.sendRequest<{ tools: MCPTool[] }>("tools/list");
+    return this.sendRequest<{ tools: MCPTool[] }>("tools/list", undefined, options);
   }
 
   /**
