@@ -80,10 +80,7 @@ import {
 import { getGitContext, type GitContext } from "./git-context.js";
 import { renderStartupPanel } from "./startup-panel.js";
 import { renderStatusBar } from "./status-bar.js";
-import {
-  registerGlobalCleanup,
-  killOrphanedTestProcesses,
-} from "../../utils/subprocess-registry.js";
+import { registerGlobalCleanup } from "../../utils/subprocess-registry.js";
 import { looksLikeTechnicalJargon, humanizeWithLLM } from "../../utils/error-humanizer.js";
 import type { HookRegistryInterface, HookExecutor } from "./hooks/index.js";
 import type { MCPServerConfig } from "../../mcp/types.js";
@@ -101,9 +98,6 @@ export async function startRepl(
 
   // Register global subprocess cleanup handlers (idempotent — safe to call multiple times)
   registerGlobalCleanup();
-
-  // Best-effort: kill any vitest/jest workers left over from a previous crash
-  killOrphanedTestProcesses().catch(() => {});
 
   // Create session
   const session = await createSession(projectPath, options.config);
