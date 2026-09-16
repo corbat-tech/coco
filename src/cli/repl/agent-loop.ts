@@ -892,7 +892,7 @@ export async function executeAgentTurn(
       }
 
       // Check if confirmation is needed (skip if tool is trusted for session)
-      // Uses pattern-aware trust: "bash:git:commit" instead of just "bash_exec"
+      // Shell trust is bound to the complete invocation, never its first command.
       const trustPattern = getTrustPattern(toolCall.name, toolCall.input);
       const definition = toolRegistry.get(toolCall.name);
       const decision = definition
@@ -951,7 +951,7 @@ export async function executeAgentTurn(
             continue;
 
           case "trust_project": {
-            // Trust this tool pattern for this project (e.g., "bash:git:commit")
+            // Trust this tool pattern for this project
             const projectPattern = getTrustPattern(toolCall.name, toolCall.input);
             session.trustedTools.add(projectPattern);
             saveTrustedTool(projectPattern, session.projectPath, false).catch(() => {});
@@ -959,7 +959,7 @@ export async function executeAgentTurn(
           }
 
           case "trust_global": {
-            // Trust this tool pattern globally (e.g., "bash:git:commit")
+            // Trust this tool pattern globally
             const globalPattern = getTrustPattern(toolCall.name, toolCall.input);
             session.trustedTools.add(globalPattern);
             saveTrustedTool(globalPattern, null, true).catch(() => {});

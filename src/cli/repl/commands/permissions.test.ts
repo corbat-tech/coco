@@ -54,8 +54,8 @@ vi.mock("../recommended-permissions.js", () => ({
     prompted: false,
     updatedAt: new Date(0).toISOString(),
   }),
-  RECOMMENDED_GLOBAL: ["read_file", "glob", "bash:cat"],
-  RECOMMENDED_PROJECT: ["write_file", "edit_file", "bash:git:add"],
+  RECOMMENDED_GLOBAL: ["read_file", "glob"],
+  RECOMMENDED_PROJECT: ["write_file", "edit_file"],
   RECOMMENDED_DENY: ["bash:sudo", "bash:git:push"],
 }));
 
@@ -350,10 +350,10 @@ describe("permissionsCommand", () => {
       expect(session.trustedTools.has("git_commit")).toBe(true);
     });
 
-    it("adds bash:git:commit to session.trustedTools", async () => {
+    it("does not add a legacy shell commit grant", async () => {
       const session = makeSession();
       await permissionsCommand.execute(["allow-commits"], session);
-      expect(session.trustedTools.has("bash:git:commit")).toBe(true);
+      expect(session.trustedTools.has("bash:git:commit")).toBe(false);
     });
 
     it("calls saveTrustedTool for git_commit with project-level flag (false)", async () => {
@@ -362,16 +362,16 @@ describe("permissionsCommand", () => {
       expect(saveTrustedTool).toHaveBeenCalledWith("git_commit", "/test/project", false);
     });
 
-    it("calls saveTrustedTool for bash:git:commit with project-level flag (false)", async () => {
+    it("does not persist a legacy shell commit grant", async () => {
       const session = makeSession();
       await permissionsCommand.execute(["allow-commits"], session);
-      expect(saveTrustedTool).toHaveBeenCalledWith("bash:git:commit", "/test/project", false);
+      expect(saveTrustedTool).not.toHaveBeenCalledWith("bash:git:commit", "/test/project", false);
     });
 
-    it("calls saveTrustedTool exactly twice (once per commit tool)", async () => {
+    it("calls saveTrustedTool once for the native commit tool", async () => {
       const session = makeSession();
       await permissionsCommand.execute(["allow-commits"], session);
-      expect(saveTrustedTool).toHaveBeenCalledTimes(2);
+      expect(saveTrustedTool).toHaveBeenCalledTimes(1);
     });
 
     it("does NOT pass global=true to saveTrustedTool", async () => {
@@ -392,11 +392,11 @@ describe("permissionsCommand", () => {
 
     it("is idempotent — adding again when tools already trusted does not throw", async () => {
       const session = makeSession({
-        trustedTools: new Set(["git_commit", "bash:git:commit"]),
+        trustedTools: new Set(["git_commit"]),
       });
       await expect(permissionsCommand.execute(["allow-commits"], session)).resolves.toBe(false);
       expect(session.trustedTools.has("git_commit")).toBe(true);
-      expect(session.trustedTools.has("bash:git:commit")).toBe(true);
+      expect(session.trustedTools.has("bash:git:commit")).toBe(false);
     });
   });
 
@@ -494,7 +494,7 @@ describe("permissionsCommand", () => {
       await permissionsCommand.execute(["apply"], session);
       expect(session.trustedTools.has("read_file")).toBe(true);
       expect(session.trustedTools.has("glob")).toBe(true);
-      expect(session.trustedTools.has("bash:cat")).toBe(true);
+      expect(session.trustedTools.has("bash:cat")).toBe(false);
     });
 
     it("adds all RECOMMENDED_PROJECT tools to session.trustedTools", async () => {
@@ -502,7 +502,7 @@ describe("permissionsCommand", () => {
       await permissionsCommand.execute(["apply"], session);
       expect(session.trustedTools.has("write_file")).toBe(true);
       expect(session.trustedTools.has("edit_file")).toBe(true);
-      expect(session.trustedTools.has("bash:git:add")).toBe(true);
+      expect(session.trustedTools.has("bash:git:add")).toBe(false);
     });
 
     it("does NOT add git_commit to session.trustedTools", async () => {

@@ -53,3 +53,13 @@ COMPLETE valida schema de acciones/path/content y todos los destinos canónicos 
 14 pruebas reales del writer por `/root/core_audit`, más cuatro integraciones del callback real del executor por coordinador (tres fallan contra executor anterior y pasan después; positivo conservado). Suite COMPLETE: 11 archivos / 269 tests correctos; typecheck/lint correctos. Logs `complete-scope-{before,after}.log`. Revisión `/root/baseline_review`: APPROVED sin hallazgos materiales. E04.e commit `aac443b`.
 
 Estado/checkpoints y recuperación siguen E10; shell/undo próximos. Sin publicación; rollback por revert.
+
+## E04.g · DONE · 2026-09-16
+
+Confianza shell vinculada a huella de toolName e input completo (comando/cwd/env/opciones), sin herencia por prefijo, subcomando o sufijo help. Las concesiones bash antiguas quedan inactivas y el catálogo recomendado deja de generarlas. Confirmación visible muestra comando y opciones; alta reutilizable solo allí. manage_permissions conserva revocación shell pero rechaza altas, incluso mediante hashes exactos opacos. /permissions allow-commits concede solo la herramienta nativa git_commit.
+
+28 regresiones puras aportadas por `/root/core_audit` (25 fallan antes, 3 conservan comportamiento), más cuatro casos del REPL por coordinador verifican aprobación exacta frente a antigua/compuesta con frontera runtime real y efectos simulados. `/root/file_fixture_update` migra tests existentes. Con consumidores y matriz: 8 archivos / 451 tests pasan; typecheck/lint correctos. Logs `bash-trust-{before,after,consumers}.log`. E04.f commit `04d88e7`.
+
+Revisión independiente `/root/baseline_review`: inicialmente CHANGES_REQUESTED porque manage_permissions admitía autorizar un hash sin mostrar el comando. Corregido rechazando todas las altas shell desde esa herramienta; regresión conserva revocación. Revisión final APPROVED sin objeciones materiales.
+
+Más confirmaciones son una consecuencia deliberada; no se implementa un parser shell ni confinamiento del SO. Rutas y contenido pueden cambiar después de una autorización exacta. Undo y la denegación no interactiva de acceso a rutas quedan pendientes. Sin publicación; rollback por revert.

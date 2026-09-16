@@ -159,34 +159,34 @@ describe("requiresConfirmation", () => {
   });
 
   describe("bash_exec with command context", () => {
-    it("should NOT require confirmation for safe commands (ls)", async () => {
+    it("should require confirmation even for apparently read-only commands (ls)", async () => {
       const { requiresConfirmation } = await import("./confirmation.js");
 
-      expect(requiresConfirmation("bash_exec", { command: "ls -la" })).toBe(false);
+      expect(requiresConfirmation("bash_exec", { command: "ls -la" })).toBe(true);
     });
 
-    it("should NOT require confirmation for safe commands (grep)", async () => {
+    it("should require confirmation even for apparently read-only commands (grep)", async () => {
       const { requiresConfirmation } = await import("./confirmation.js");
 
-      expect(requiresConfirmation("bash_exec", { command: "grep -r 'pattern' ." })).toBe(false);
+      expect(requiresConfirmation("bash_exec", { command: "grep -r 'pattern' ." })).toBe(true);
     });
 
-    it("should NOT require confirmation for safe commands (git status)", async () => {
+    it("should require confirmation even for apparently read-only commands (git status)", async () => {
       const { requiresConfirmation } = await import("./confirmation.js");
 
-      expect(requiresConfirmation("bash_exec", { command: "git status" })).toBe(false);
+      expect(requiresConfirmation("bash_exec", { command: "git status" })).toBe(true);
     });
 
-    it("should NOT require confirmation for safe commands (cat)", async () => {
+    it("should require confirmation even for apparently read-only commands (cat)", async () => {
       const { requiresConfirmation } = await import("./confirmation.js");
 
-      expect(requiresConfirmation("bash_exec", { command: "cat file.txt" })).toBe(false);
+      expect(requiresConfirmation("bash_exec", { command: "cat file.txt" })).toBe(true);
     });
 
-    it("should NOT require confirmation for --help commands", async () => {
+    it("should require confirmation for --help commands", async () => {
       const { requiresConfirmation } = await import("./confirmation.js");
 
-      expect(requiresConfirmation("bash_exec", { command: "npm --help" })).toBe(false);
+      expect(requiresConfirmation("bash_exec", { command: "npm --help" })).toBe(true);
     });
 
     it("should require confirmation for dangerous commands (curl)", async () => {
@@ -485,7 +485,7 @@ describe("confirmToolExecution", () => {
       const toolCall: ToolCall = {
         id: "tool-1",
         name: "bash_exec",
-        input: { command: longCommand },
+        input: { command: longCommand, cwd: "/project/visible", env: { MODE: "review" } },
       };
 
       mockStdin.sendKey("n");
@@ -495,8 +495,10 @@ describe("confirmToolExecution", () => {
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("EXECUTE"));
       // Should NOT truncate - full command content shown (word-wrapped)
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("echo"));
-      // Should show bash pattern in brackets
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("[bash:echo]"));
+      // Should label the exact shell invocation being authorized
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("[exact shell call]"));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("/project/visible"));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('"MODE":"review"'));
     });
 
     it("should display diff preview for edit_file", async () => {

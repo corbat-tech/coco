@@ -143,12 +143,16 @@ async function applyRecommended(session: ReplSession): Promise<void> {
  * By default git commit always asks — this is the explicit per-project opt-in.
  */
 async function allowCommits(session: ReplSession): Promise<void> {
-  const commitTools = ["git_commit", "bash:git:commit"];
+  const commitTools = ["git_commit"];
   for (const tool of commitTools) {
     session.trustedTools.add(tool);
     await saveTrustedTool(tool, session.projectPath, false);
   }
-  console.log(chalk.green("  ✓ git commit will be auto-approved for this project"));
+  console.log(
+    chalk.green(
+      "  ✓ Native git_commit will be auto-approved for this project; shell calls still need exact approval",
+    ),
+  );
   console.log(chalk.dim("  Use /permissions revoke-commits to require confirmation again."));
 }
 
@@ -164,7 +168,11 @@ async function revokeCommits(session: ReplSession): Promise<void> {
     await removeTrustedTool(tool, session.projectPath, false); // remove project-level trust
     await removeTrustedTool(tool, session.projectPath, true); // remove global trust if present
   }
-  console.log(chalk.yellow("  ○ git commit will now require confirmation for this project"));
+  console.log(
+    chalk.yellow(
+      "  ○ Native git_commit will now require confirmation; remove any exact shell approvals separately",
+    ),
+  );
   console.log(chalk.dim("  Use /permissions allow-commits to enable auto-approve again."));
 }
 

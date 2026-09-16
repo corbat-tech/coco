@@ -10,6 +10,7 @@ import path from "node:path";
 import type { LLMProvider, StreamChunk, ToolCall } from "../../providers/types.js";
 import { AgentRuntime } from "../../runtime/agent-runtime.js";
 import { z } from "zod";
+import { getTrustPattern } from "./bash-patterns.js";
 
 /**
  * Create async iterable from generator
@@ -812,6 +813,35 @@ describe("executeAgentTurn", () => {
   });
 
   describe("confirmation handling", () => {
+    it.each([
+      { command: "git status", legacy: true, allowed: false },
+      { command: "git status > output.txt", legacy: false, allowed: false },
+      { command: "git status; echo unexpected", legacy: false, allowed: false },
+      { command: "git status", legacy: false, allowed: true },
+    ])(
+      "shell trust $command legacy=$legacy allowed=$allowed",
+      async ({ command, legacy, allowed }) => {
+        const { executeAgentTurn } = await import("./agent-loop.js");
+        const { confirmToolExecutionWithFallback } = await import("./confirmation.js");
+        vi.mocked(confirmToolExecutionWithFallback).mockResolvedValue("no");
+        mockSession.trustedTools.add(
+          legacy ? "bash:git:status" : getTrustPattern("bash_exec", { command: "git status" }),
+        );
+        const call: ToolCall = { id: "trust-regression", name: "bash_exec", input: { command } };
+        vi.mocked(mockProvider.streamWithTools!)
+          .mockImplementationOnce(createToolStreamMock("", [call]))
+          .mockImplementation(createTextStreamMock("Finished fixture."));
+        vi.mocked(mockToolRegistry.execute).mockResolvedValue({
+          success: true,
+          data: {},
+          duration: 0,
+        });
+        await executeAgentTurn(mockSession, "Run fixture", mockProvider, mockToolRegistry);
+        expect(mockToolRegistry.execute).toHaveBeenCalledTimes(allowed ? 1 : 0);
+        expect(confirmToolExecutionWithFallback).toHaveBeenCalledTimes(allowed ? 0 : 1);
+      },
+    );
+
     it("should skip confirmation for trusted tools", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
       const { requiresConfirmation, confirmToolExecutionWithFallback } =
@@ -1032,8 +1062,10 @@ describe("executeAgentTurn", () => {
 
       await executeAgentTurn(mockSession, "Run command", mockProvider, mockToolRegistry);
 
-      // Pattern-aware: bash_exec + {command: "ls"} → "bash:ls"
-      expect(mockSession.trustedTools.has("bash:ls")).toBe(true);
+      // Remember only the complete invocation that the user approved.
+      expect(mockSession.trustedTools.has(getTrustPattern(toolCall.name, toolCall.input))).toBe(
+        true,
+      );
     });
 
     it("should trust tool globally when user chooses trust_global", async () => {

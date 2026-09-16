@@ -39,247 +39,18 @@ const ALWAYS_CONFIRM_TOOLS = new Set([
 ]);
 
 /**
- * Safe bash commands that don't require confirmation
- * These are read-only or informational commands
- */
-const SAFE_BASH_COMMANDS = new Set([
-  // File listing & info
-  "ls",
-  "ll",
-  "la",
-  "dir",
-  "find",
-  "locate",
-  "stat",
-  "file",
-  "du",
-  "df",
-  "tree",
-  // Text viewing (read-only)
-  "cat",
-  "head",
-  "tail",
-  "less",
-  "more",
-  "wc",
-  // Search
-  "grep",
-  "egrep",
-  "fgrep",
-  "rg",
-  "ag",
-  "ack",
-  // Process & system info
-  "ps",
-  "top",
-  "htop",
-  "who",
-  "whoami",
-  "id",
-  "uname",
-  "hostname",
-  "uptime",
-  "date",
-  "cal",
-  "env",
-  "printenv",
-  // Git (read-only)
-  "git status",
-  "git log",
-  "git diff",
-  "git branch",
-  "git show",
-  "git blame",
-  "git remote -v",
-  "git tag",
-  "git stash list",
-  // Package info (read-only)
-  "npm list",
-  "npm ls",
-  "npm outdated",
-  "npm view",
-  "pnpm list",
-  "pnpm ls",
-  "pnpm outdated",
-  "yarn list",
-  "pip list",
-  "pip show",
-  "cargo --version",
-  "go version",
-  "node --version",
-  "npm --version",
-  "python --version",
-  // Path & which
-  "which",
-  "whereis",
-  "type",
-  "command -v",
-  // Echo & print
-  "echo",
-  "printf",
-  "pwd",
-  // Help
-  "man",
-  "help",
-  "--help",
-  "-h",
-  "--version",
-  "-v",
-]);
-
-/**
- * Dangerous bash command patterns that ALWAYS require confirmation
- */
-const DANGEROUS_BASH_PATTERNS = [
-  // Network commands
-  /\bcurl\b/i,
-  /\bwget\b/i,
-  /\bssh\b/i,
-  /\bscp\b/i,
-  /\brsync\b/i,
-  /\bnc\b/i,
-  /\bnetcat\b/i,
-  /\bncat\b/i,
-  /\bsocat\b/i,
-  /\btelnet\b/i,
-  /\bftp\b/i,
-  /\bnmap\b/i,
-  // DNS exfiltration (CVE-2025-55284: data exfil via DNS subdomain encoding)
-  /\bping\b/i,
-  /\bnslookup\b/i,
-  /\bdig\b/i,
-  /\bhost\s/i,
-  // Inline code execution (prompt injection vector — attacker can run arbitrary code)
-  /\bpython3?\s+-c\b/i,
-  /\bnode\s+(-e|--eval)\b/i,
-  /\bperl\s+-e\b/i,
-  /\bruby\s+-e\b/i,
-  /\bbun\s+-e\b/i,
-  /\bdeno\s+eval\b/i,
-  // SSRF / cloud metadata (credential theft in cloud environments)
-  /169\.254\.169\.254/,
-  /metadata\.google\.internal/,
-  // Destructive file operations
-  /\brm\b/i,
-  /\brmdir\b/i,
-  /\bmv\b/i,
-  /\bcp\b/i,
-  /\bdd\b/i,
-  /\bshred\b/i,
-  // Permission changes
-  /\bchmod\b/i,
-  /\bchown\b/i,
-  /\bchgrp\b/i,
-  // Package installation (supply chain risk)
-  /\bnpm\s+(install|i|add|ci)\b/i,
-  /\bpnpm\s+(install|i|add)\b/i,
-  /\byarn\s+(add|install)\b/i,
-  /\bpip3?\s+install\b/i,
-  /\buv\s+(pip\s+install|add)\b/i,
-  /\bbun\s+(install|add)\b/i,
-  /\bdeno\s+install\b/i,
-  /\bapt(-get)?\s+(install|remove|purge)\b/i,
-  /\bbrew\s+(install|uninstall|remove)\b/i,
-  // Git write operations
-  /\bgit\s+(push|commit|merge|rebase|reset|checkout|pull|clone)\b/i,
-  // Git force push (data destruction)
-  /\bgit\s+push\s+.*--force\b/i,
-  /\bgit\s+push\s+-f\b/i,
-  // Docker dangerous options
-  /\bdocker\s+run\s+.*--privileged\b/i,
-  /docker\.sock/i,
-  // Process control
-  /\bkill\b/i,
-  /\bpkill\b/i,
-  /\bkillall\b/i,
-  // Sudo & admin
-  /\bsudo\b/i,
-  /\bsu\b/i,
-  // Code execution
-  /\beval\b/i,
-  /\bexec\b/i,
-  /\bsource\b/i,
-  /\b\.\s+\//,
-  // Pipes to shell
-  /\|\s*(ba)?sh\b/i,
-  /\|\s*bash\b/i,
-  // Writing to files
-  /[>|]\s*\/?\w/,
-  /\btee\b/i,
-  // Docker operations
-  /\bdocker\s+(run|exec|build|push|pull|rm|stop|kill)\b/i,
-  /\bdocker-compose\s+(up|down|build|pull|push)\b/i,
-  // Database operations
-  /\bmysql\b/i,
-  /\bpsql\b/i,
-  /\bmongo\b/i,
-  /\bredis-cli\b/i,
-];
-
-/**
- * Check if a bash command is safe (doesn't require confirmation)
- */
-function isSafeBashCommand(command: string): boolean {
-  const trimmed = command.trim();
-
-  // Check against dangerous patterns first
-  for (const pattern of DANGEROUS_BASH_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      return false;
-    }
-  }
-
-  // Extract the base command (first word or git subcommand)
-  const baseCommand = trimmed.split(/\s+/)[0]?.toLowerCase() ?? "";
-
-  // Check if it's a known safe command
-  if (SAFE_BASH_COMMANDS.has(baseCommand)) {
-    return true;
-  }
-
-  // Check for git read-only commands specifically
-  if (trimmed.startsWith("git ")) {
-    const gitCmd = trimmed.slice(0, 20).toLowerCase();
-    for (const safe of SAFE_BASH_COMMANDS) {
-      if (safe.startsWith("git ") && gitCmd.startsWith(safe)) {
-        return true;
-      }
-    }
-  }
-
-  // Check for common safe patterns
-  if (trimmed.endsWith("--help") || trimmed.endsWith("-h")) {
-    return true;
-  }
-  if (trimmed.endsWith("--version") || trimmed.endsWith("-v") || trimmed.endsWith("-V")) {
-    return true;
-  }
-
-  // Default: require confirmation for unknown commands
-  return false;
-}
-
-/**
  * Check if a tool requires confirmation
  * @param toolName - Name of the tool
  * @param input - Optional tool input for context-aware decisions
  */
-export function requiresConfirmation(toolName: string, input?: Record<string, unknown>): boolean {
+export function requiresConfirmation(toolName: string, _input?: Record<string, unknown>): boolean {
   // Always confirm these tools
   if (ALWAYS_CONFIRM_TOOLS.has(toolName)) {
     return true;
   }
 
-  // Special handling for bash_exec and bash_background
-  if (toolName === "bash_exec" || toolName === "bash_background") {
-    const command = input?.command;
-    if (typeof command === "string") {
-      // Safe commands don't need confirmation
-      return !isSafeBashCommand(command);
-    }
-    // If no command provided, require confirmation
-    return true;
-  }
+  // Executables and their arguments may have effects even with --help.
+  if (toolName === "bash_exec" || toolName === "bash_background") return true;
 
   return false;
 }
@@ -465,7 +236,8 @@ function formatToolCallForConfirmation(
   toolCall: ToolCall,
   metadata?: { isCreate?: boolean },
 ): { description: string; pattern: string } {
-  const pattern = getTrustPattern(toolCall.name, toolCall.input);
+  const fingerprint = getTrustPattern(toolCall.name, toolCall.input);
+  const pattern = fingerprint.startsWith("bash:exact:") ? "exact shell call" : fingerprint;
   const { name, input } = toolCall;
 
   let description: string;
@@ -596,6 +368,12 @@ function formatToolCallForConfirmation(
       break;
   }
 
+  if (name === "bash_exec" || name === "bash_background") {
+    const { command: _command, ...options } = input;
+    if (Object.keys(options).length > 0) {
+      description += `\n      Options: ${wrapCommandText(JSON.stringify(options), 70, "      ")}`;
+    }
+  }
   return { description, pattern };
 }
 
@@ -742,14 +520,18 @@ export async function confirmToolExecution(toolCall: ToolCall): Promise<Confirma
     {
       key: "t",
       label: "trust",
-      description: "Always allow (this project)",
+      description: toolCall.name.startsWith("bash_")
+        ? "Allow this exact call (project)"
+        : "Always allow (this project)",
       color: chalk.magenta,
       result: "trust_project",
     },
     {
       key: "!",
       label: "!",
-      description: "Always allow (everywhere)",
+      description: toolCall.name.startsWith("bash_")
+        ? "Allow this exact call (everywhere)"
+        : "Always allow (everywhere)",
       color: chalk.blue,
       result: "trust_global",
     },
@@ -937,8 +719,20 @@ async function confirmToolExecutionFallback(toolCall: ToolCall): Promise<Confirm
   const options: Array<{ value: string; label: string; hint?: string }> = [
     { value: "yes", label: "yes", hint: "Allow once" },
     { value: "no", label: "no", hint: "Skip this action" },
-    { value: "trust_project", label: "trust (project)", hint: "Always allow in this project" },
-    { value: "trust_global", label: "trust (global)", hint: "Always allow everywhere" },
+    {
+      value: "trust_project",
+      label: "trust (project)",
+      hint: toolCall.name.startsWith("bash_")
+        ? "This exact call in this project"
+        : "Always allow in this project",
+    },
+    {
+      value: "trust_global",
+      label: "trust (global)",
+      hint: toolCall.name.startsWith("bash_")
+        ? "This exact call everywhere"
+        : "Always allow everywhere",
+    },
   ];
   if (isBashExec) {
     options.splice(2, 0, { value: "edit", label: "edit command", hint: "Modify before running" });

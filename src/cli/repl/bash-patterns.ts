@@ -1,15 +1,8 @@
+import { createHash } from "node:crypto";
+
 /**
- * Bash command pattern extraction for granular trust
- *
- * Instead of trusting ALL bash commands when user approves one,
- * we extract subcommand-level patterns for precise trust control.
- *
- * Examples:
- * - "git commit -m 'foo'" -> "bash:git:commit"
- * - "curl google.com"     -> "bash:curl"
- * - "npm install lodash"  -> "bash:npm:install"
- * - "sudo git push"       -> "bash:sudo:git:push"
- * - "ls -la"              -> "bash:ls"
+ * Command labels are for display and legacy configuration diagnostics only.
+ * Execution authority uses exact invocation fingerprints below.
  */
 
 /** Commands that have meaningful subcommands worth capturing */
@@ -65,7 +58,7 @@ const INTERPRETER_DANGEROUS_FLAGS: Record<string, Set<string>> = {
 };
 
 /**
- * Extract a trust pattern from a bash command string.
+ * Extract a display label from a bash command string (never an authorization).
  *
  * Produces patterns like "bash:git:commit" or "bash:curl".
  * For tools with known subcommands, captures the subcommand.
@@ -125,29 +118,19 @@ export function extractBashPattern(command: string): string {
 }
 
 /**
- * Get the trust pattern for a tool call.
- *
- * For bash_exec/bash_background: extracts subcommand pattern.
- * For all other tools: returns the tool name as-is.
+ * Bind shell approval to the complete invocation, including cwd/environment.
+ * Legacy command-prefix grants intentionally do not match these fingerprints.
+ * Non-shell tools retain their existing tool-level grants.
  */
 export function getTrustPattern(toolName: string, input?: Record<string, unknown>): string {
-  if (
-    (toolName === "bash_exec" || toolName === "bash_background") &&
-    typeof input?.command === "string"
-  ) {
-    return extractBashPattern(input.command);
+  if (toolName === "bash_exec" || toolName === "bash_background") {
+    const digest = createHash("sha256").update(JSON.stringify({ toolName, input })).digest("hex");
+    return `bash:exact:${digest}`;
   }
   return toolName;
 }
 
-/**
- * Check if a bash command matches a trusted pattern.
- *
- * SECURITY: Only exact match. Trusting "bash:git" does NOT
- * auto-approve "bash:git:push". Each subcommand must be
- * trusted independently.
- */
+/** Compatibility helper for an exact foreground command with no extra options. */
 export function isBashCommandTrusted(command: string, trustedPatterns: Set<string>): boolean {
-  const pattern = extractBashPattern(command);
-  return trustedPatterns.has(pattern);
+  return trustedPatterns.has(getTrustPattern("bash_exec", { command }));
 }
