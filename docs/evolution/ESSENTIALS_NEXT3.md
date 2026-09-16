@@ -33,3 +33,21 @@ Commits827bb01 (CI),45f2934 (shell),9dedfd6 (coordinación). Candidato local2.42
 Publicación pendiente en este punto; no afirmar deploy por haber creado candidato. Confirmado secreto GitHub NPM_TOKEN actualizado2026-09-16T22:01:15Z (solo metadata inspeccionada); validez debe acreditarse al publicar.
 
 Revisión independiente del tarball por codex_terminal_fix: APROBADA para next; inventario/hashes/tamaños coincidentes,26 archivos regulares permitidos, metadata correcta y sin coincidencias en patrones de secretos de alta señal. No auditoría exhaustiva de seguridad ni evaluación de proveedores reales.
+
+
+## Resultado CI y autorización npm
+
+Candidato commit `d0f8531`, tag `v2.42.0-next.3` subidos. [Actions35157287019](https://github.com/corbat-tech/coco/actions/runs/35157287019) superó instalación, gate completo (incluida arquitectura), pack y smoke. El secreto actualizado autenticó correctamente; publish falló con EOTP (doble factor), no E401. Esto acredita reparación de las pruebas y autenticación, pero no publicación automática.
+
+Artefacto CI descargado como `npm-candidate-1` a `.dev/evolution/ci-candidate-2.42.0-next.3/`. SHA256/integridad coinciden exactamente con el candidato local revisado arriba. Registro consultado: next.3 todavía E404. Publicación local interactiva del mismo tarball iniciada; pendiente autorización npm web2FA del propietario. No reconstruir ni publicar otra copia/version si el resultado se vuelve incierto: consultar registro e integridad primero.
+
+### Orden para continuar más adelante
+
+- Antes de promover a estable: cuotas completas MCP, límites de procesos fuera del grupo POSIX y del test runner, callbacks de entrevista/onboarding. Mantener alcance comprobable y sin promesa de sandbox.
+- Recuperar capacidades contenidas: background con propietario y cierre, evaluación agregada con mediciones disponibles/aplicables.
+- Producto: sesiones/rewind fiables, fluidez del terminal y UX, headless y VSIX.
+- Capacidad real: contratos tool/schema y API/modelo revisados, contexto/prompts y comparativas con modelos reales, conservando catálogo existente salvo decisión documentada.
+- Cierre global: deuda/cobertura objetivo80% y auditoría independiente con contexto limpio. La revisión de esta candidata no sustituye E15.
+- Operación: revisar autenticación de publicación CI para evitar confirmación manual de cada release, sin eludir la política2FA de npm.
+
+No se implementan esos extras en esta entrega. El resumen final de publicación se añadirá después de verificar npm y el paquete instalado.
