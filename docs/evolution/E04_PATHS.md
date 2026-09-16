@@ -29,3 +29,11 @@ Regresiones con efectos reales: 13 casos (9 fallan antes, 4 de paridad ya pasaba
 `/root/core_audit` aporta tests reales, `/root/file_fixture_update` adapta únicamente las rutas del filesystem simulado a raíz /test sin conceder accesos universales. Coordinador implementa, refuerza doble enlace y corrige restauración de HOME preexistente en tests. Revisión independiente `/root/baseline_review`: APPROVED, sin hallazgos materiales.
 
 Enumeración (glob/list_dir/tree/file_exists), COMPLETE, shell y undo aún pendientes; no afirmar que COCO-02 está totalmente cerrado. No se eliminan carreras contra procesos externos no confiables. Sin publicación, rollback por revert.
+
+## E04.d · DONE · 2026-09-16
+
+file_exists/list_dir/tree autorizan la raíz canónica antes de consultar. Recursión conserva no-follow de enlaces de directorio. file_exists devuelve ausencia solo para ENOENT y propaga permisos/I/O; pasa a herramienta de lectura en plan/ask/review.
+
+15 casos reales (10 fallan antes, 5 caracterizan paridad), con cada herramienta probada individualmente contra raíz absoluta, traversal y enlace externo. Incluye grant read, ausencia y EACCES. Con consumidores: 6 archivos / 131 tests pasan; typecheck/lint correctos. Logs `file-query-{before,after,unit}.log`. Tests aportados por `/root/core_audit`, matriz reforzada por coordinador; revisión `/root/baseline_review`: APPROVED sin hallazgos materiales. Commit anterior E04.c: `1fc90f0`.
+
+Glob pendiente en E04.e; COMPLETE y shell/undo después. Sin publicación ni afirmación de sandbox contra carreras. Rollback por revert.

@@ -510,18 +510,18 @@ describe("fileExistsTool", () => {
 
     const { fileExistsTool } = await import("./file.js");
 
-    const result = await fileExistsTool.execute({ path: "/existing/file.txt" });
+    const result = await fileExistsTool.execute({ path: "/test/existing/file.txt" });
 
     expect(result.exists).toBe(true);
     expect(result.isFile).toBe(true);
   });
 
   it("should return false for non-existing file", async () => {
-    mockFs.stat.mockRejectedValueOnce(new Error("ENOENT"));
+    mockFs.stat.mockRejectedValueOnce(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
 
     const { fileExistsTool } = await import("./file.js");
 
-    const result = await fileExistsTool.execute({ path: "/missing/file.txt" });
+    const result = await fileExistsTool.execute({ path: "/test/missing/file.txt" });
 
     expect(result.exists).toBe(false);
   });
@@ -535,7 +535,7 @@ describe("fileExistsTool", () => {
 
     const { fileExistsTool } = await import("./file.js");
 
-    const result = await fileExistsTool.execute({ path: "/existing/directory" });
+    const result = await fileExistsTool.execute({ path: "/test/existing/directory" });
 
     expect(result.exists).toBe(true);
     expect(result.isFile).toBe(false);
@@ -565,7 +565,7 @@ describe("listDirTool", () => {
 
     const { listDirTool } = await import("./file.js");
 
-    const result = await listDirTool.execute({ path: "/project" });
+    const result = await listDirTool.execute({ path: "/test/project" });
 
     expect(result.entries).toHaveLength(3);
   });
@@ -579,7 +579,7 @@ describe("listDirTool", () => {
 
     const { listDirTool } = await import("./file.js");
 
-    const result = await listDirTool.execute({ path: "/project" });
+    const result = await listDirTool.execute({ path: "/test/project" });
 
     expect(result.entries[0].type).toBe("file");
     expect(result.entries[1].type).toBe("directory");
@@ -598,7 +598,7 @@ describe("listDirTool", () => {
 
     const { listDirTool } = await import("./file.js");
 
-    const result = await listDirTool.execute({ path: "/project", recursive: true });
+    const result = await listDirTool.execute({ path: "/test/project", recursive: true });
 
     expect(result.entries).toHaveLength(3);
     expect(result.entries.some((e) => e.name === "subdir")).toBe(true);
@@ -611,7 +611,7 @@ describe("listDirTool", () => {
 
     const { listDirTool } = await import("./file.js");
 
-    await expect(listDirTool.execute({ path: "/forbidden" })).rejects.toThrow(
+    await expect(listDirTool.execute({ path: "/test/forbidden" })).rejects.toThrow(
       /Failed to list directory/,
     );
   });
@@ -633,7 +633,7 @@ describe("listDirTool", () => {
 
     const { listDirTool } = await import("./file.js");
 
-    const result = await listDirTool.execute({ path: "/project" });
+    const result = await listDirTool.execute({ path: "/test/project" });
 
     // Socket should be skipped
     expect(result.entries).toHaveLength(2);

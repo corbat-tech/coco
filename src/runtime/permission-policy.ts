@@ -7,6 +7,7 @@ const WRITE_CATEGORIES = new Set(["file", "git", "test", "build", "memory"]);
 const READ_ONLY_TOOL_NAMES = new Set([
   "glob",
   "read_file",
+  "file_exists",
   "list_dir",
   "tree",
   "grep",

@@ -110,7 +110,7 @@ export const readFileTool: ToolDefinition<
   { content: string; lines: number; size: number; truncated: boolean }
 > = defineTool({
   name: "read_file",
-  description: `Read the full text content of a file at the given path and return it as a string. Use this when you need the actual source code, configuration values, or text content of a specific file you already know the path to. Do NOT use this to list files in a directory (use list_directory), to check if a file exists (use file_exists), or to search for files by name pattern (use find_files). Returns an error if the path does not exist or is not a readable text file.
+  description: `Read the full text content of a file at the given path and return it as a string. Use this when you need the actual source code, configuration values, or text content of a specific file you already know the path to. Do NOT use this to list files in a directory (use list_dir), to check if a file exists (use file_exists), or to search for files by name pattern (use find_files). Returns an error if the path does not exist or is not a readable text file.
 
 Examples:
 - Read config: { "path": "package.json" }
@@ -409,7 +409,7 @@ export const fileExistsTool: ToolDefinition<
   { exists: boolean; isFile: boolean; isDirectory: boolean }
 > = defineTool({
   name: "file_exists",
-  description: `Check whether a path exists on disk and whether it is a file or directory. Use this before attempting to read or write a path when you are unsure it exists — it never throws, always returning { exists: false } for missing paths. Do NOT use this to read file contents (use read_file) or to list directory contents (use list_directory). Returns isFile and isDirectory flags so you can distinguish files from directories in a single call.
+  description: `Check whether a path exists on disk and whether it is a file or directory. Use this before attempting to read or write a path when you are unsure it exists — it returns { exists: false } for missing paths and reports permission or I/O failures. Do NOT use this to read file contents (use read_file) or to list directory contents (use list_dir). Returns isFile and isDirectory flags so you can distinguish files from directories in a single call.
 
 Examples:
 - Check file: { "path": "package.json" } → { "exists": true, "isFile": true, "isDirectory": false }
@@ -420,8 +420,8 @@ Examples:
     path: z.string().describe("Path to check"),
   }),
   async execute({ path: filePath }) {
+    const absolutePath = await resolvePathSecurely(filePath, "read");
     try {
-      const absolutePath = resolveUserPath(filePath);
       const stats = await fs.stat(absolutePath);
 
       return {
@@ -429,7 +429,8 @@ Examples:
         isFile: stats.isFile(),
         isDirectory: stats.isDirectory(),
       };
-    } catch {
+    } catch (error) {
+      if (!isENOENT(error)) throw error;
       return {
         exists: false,
         isFile: false,
@@ -459,8 +460,8 @@ Examples:
     recursive: z.boolean().optional().default(false).describe("List recursively"),
   }),
   async execute({ path: dirPath, recursive }) {
+    const absolutePath = await resolvePathSecurely(dirPath, "read");
     try {
-      const absolutePath = resolveUserPath(dirPath);
       const entries: Array<{ name: string; type: "file" | "directory"; size?: number }> = [];
 
       async function listDir(dir: string, prefix: string = "") {
@@ -768,8 +769,8 @@ Examples:
     dirsOnly: z.boolean().optional().default(false).describe("Show only directories"),
   }),
   async execute({ path: dirPath, depth, showHidden, dirsOnly }) {
+    const absolutePath = await resolvePathSecurely(dirPath ?? ".", "read");
     try {
-      const absolutePath = resolveUserPath(dirPath ?? ".");
       let totalFiles = 0;
       let totalDirs = 0;
       const lines: string[] = [path.basename(absolutePath) + "/"];
