@@ -16,9 +16,12 @@ export interface RuntimeToolExecutorOptions {
   permissionPolicy?: PermissionPolicy;
   mode?: RuntimeMode;
   runtimePolicy?: RuntimePolicy;
+  /** Preserve the public runtime API event contract when used by its facade. */
+  eventProfile?: "agent" | "runtime-api";
 }
 
 export interface RuntimeToolExecutorInput {
+  sessionId?: string;
   toolName: string;
   input: Record<string, unknown>;
   mode?: RuntimeMode;
@@ -33,6 +36,7 @@ export class RuntimeToolExecutor {
   private readonly permissionPolicy: PermissionPolicy;
   private readonly defaultMode: RuntimeMode;
   private readonly runtimePolicy?: RuntimePolicy;
+  private readonly eventProfile: "agent" | "runtime-api";
 
   constructor(options: RuntimeToolExecutorOptions) {
     this.toolRegistry = options.toolRegistry;
@@ -40,11 +44,14 @@ export class RuntimeToolExecutor {
     this.permissionPolicy = options.permissionPolicy ?? createPermissionPolicy();
     this.defaultMode = options.mode ?? "ask";
     this.runtimePolicy = options.runtimePolicy;
+    this.eventProfile = options.eventProfile ?? "agent";
   }
 
   async execute(input: RuntimeToolExecutorInput): Promise<RuntimeToolExecutionResult> {
     const startedAt = performance.now();
     const mode = input.mode ?? this.defaultMode;
+    const sessionContext =
+      this.eventProfile === "runtime-api" ? { sessionId: input.sessionId } : {};
     const allowedTools = input.allowedTools ? new Set(input.allowedTools) : undefined;
 
     if (allowedTools && !allowedTools.has(input.toolName)) {
@@ -63,7 +70,7 @@ export class RuntimeToolExecutor {
         reason: "Tool not registered.",
         risk: "read-only",
       };
-      return this.block(input, mode, decision, startedAt);
+      return this.block(input, mode, decision, startedAt, {}, true);
     }
 
     const decision = this.permissionPolicy.canExecuteToolInput
@@ -104,13 +111,16 @@ export class RuntimeToolExecutor {
       );
     }
 
-    this.eventLog.record("agent.tool.called", {
-      mode,
-      tool: input.toolName,
-      risk: decision.risk,
-      metadata: input.metadata,
-    });
+    if (this.eventProfile === "agent") {
+      this.eventLog.record("agent.tool.called", {
+        mode,
+        tool: input.toolName,
+        risk: decision.risk,
+        metadata: input.metadata,
+      });
+    }
     this.eventLog.record("tool.started", {
+      ...sessionContext,
       mode,
       tool: input.toolName,
       risk: decision.risk,
@@ -119,6 +129,7 @@ export class RuntimeToolExecutor {
     });
     const result = await this.toolRegistry.execute(input.toolName, input.input);
     this.eventLog.record("tool.completed", {
+      ...sessionContext,
       mode,
       tool: input.toolName,
       success: result.success,
@@ -132,7 +143,14 @@ export class RuntimeToolExecutor {
       output: result.data,
       error: result.error,
       duration: result.duration,
-      decision,
+      decision:
+        this.eventProfile === "runtime-api"
+          ? {
+              ...decision,
+              risk: runtimeDecision?.risk ?? decision.risk,
+              requiresConfirmation: decision.requiresConfirmation,
+            }
+          : decision,
     };
   }
 
@@ -142,15 +160,19 @@ export class RuntimeToolExecutor {
     decision: PermissionDecision,
     startedAt: number,
     extraData: Record<string, unknown> = {},
+    unregistered = false,
   ): RuntimeToolExecutionResult {
+    const runtimeApi = this.eventProfile === "runtime-api";
     this.eventLog.record("tool.blocked", {
+      ...(runtimeApi ? { sessionId: input.sessionId } : {}),
       mode,
       tool: input.toolName,
       reason: decision.reason,
-      risk: decision.risk,
-      requiresConfirmation: decision.requiresConfirmation,
+      ...(!runtimeApi || !unregistered
+        ? { risk: decision.risk, requiresConfirmation: decision.requiresConfirmation }
+        : {}),
       runtimeApi: true,
-      metadata: input.metadata,
+      ...(!runtimeApi ? { metadata: input.metadata } : {}),
       ...extraData,
     });
     return {

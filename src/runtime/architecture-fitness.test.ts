@@ -27,10 +27,7 @@ describe("architecture fitness", () => {
   });
 
   it("keeps direct tool execution inside runtime tool execution boundaries", () => {
-    const allowed = new Set([
-      join(SRC_ROOT, "runtime", "agent-runtime.ts"),
-      join(SRC_ROOT, "runtime", "runtime-tool-executor.ts"),
-    ]);
+    const allowed = new Set([join(SRC_ROOT, "runtime", "runtime-tool-executor.ts")]);
     const violations = listFiles(SRC_ROOT).filter((file) => {
       if (!file.endsWith(".ts") || file.endsWith(".test.ts")) return false;
       if (allowed.has(file)) return false;
