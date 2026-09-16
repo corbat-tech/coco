@@ -169,3 +169,11 @@ Revisión detectó timeout secundario después de cancel(id) mientras provider s
 ## E07.m2 · DONE · 2026-09-16
 
 AgentExecutor alternativo propaga señal del contexto al modelo, comprueba aborto antes/después de petición y entre tools; cancelación en tool sale del bucle sin ejecutar la siguiente ni pedir otro turno. Respuestas tardías no producen éxito; consumo conocido y diagnóstico de fallo independiente se conservan en resultado estructurado. Siete contratos independientes cubren ejecución directa/delegada mediante runtime real en memoria. Gate6 archivos/82 tests y typecheck/lint/format correctos; logs e07m2-final/types/lint/format. /root/core_audit contratos; /root/baseline_review APPROVED. Graph/workflow y recepción MCP compartida siguen pendientes.
+
+## E07.m3 · DONE · 2026-09-16
+
+Workflow, graph, adaptador y runner reciben señal del host; runner comprueba antes de ejecutar/autorizar tools y después de resolver, con estados cancelled/timeout y consumo conocido. Graph sustituye Promise.race por scope de intento que incluye ejecutor y gates: solicita aborto y espera settlement; executor que ignore señal mantiene la operación pendiente, sin declararla terminada. Cancel/timeout no reintentan y backoff es cancelable. Reintentos ordinarios conservan política explícita previa.
+
+Lotes paralelos esperan todos los nodos y conservan resultados parciales antes de fallar; no inician lotes posteriores. Artefactos del nodo se publican tras gates y postguard, no de intentos fallidos. Workflow conserva graphResult también en fallo. No deshace efectos ni artefactos de hermanos ya aprobados. Revisión corrigió pérdida del diagnóstico independiente al cancelar: estado deriva de señal y error conserva ENOSPC, incluso mediante runner.
+
+Ocho contratos graph independientes y cinco runner/workflow; fixture anterior elimina artefacto de intento fallido que ya no debe publicarse. Gate19 archivos/178 tests y typecheck/lint/format correctos; logs e07m3-final/types/lint/format. /root/file_fixture_update graph; coordinador runner/workflow; /root/core_audit contratosgraph; /root/baseline_review APPROVED. Sin publicación; rollback por revert.

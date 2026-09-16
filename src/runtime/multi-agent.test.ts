@@ -301,7 +301,6 @@ describe("multi-agent runtime contracts", () => {
       "plan",
       "edit",
       "test",
-      "test",
       "verify",
     ]);
     expect(eventLog.list().map((event) => event.type)).toEqual(
