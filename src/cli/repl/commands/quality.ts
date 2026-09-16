@@ -2,7 +2,7 @@
  * /quality command - Toggle quality loop mode
  *
  * Quality loop mode enables automatic quality iteration:
- * auto-test, self-review, iterate until quality converges (≥85/100)
+ * requests tests and iterative self-review; reports remain unverified
  */
 
 import chalk from "chalk";
@@ -12,7 +12,7 @@ import { isQualityLoop, setQualityLoop, saveQualityLoopPreference } from "../qua
 export const qualityCommand: SlashCommand = {
   name: "quality",
   aliases: ["coco"],
-  description: "Toggle quality mode — auto-test, self-review, iterate until converged",
+  description: "Toggle tests and iterative self-review (model reports are unverified)",
   usage: "/quality [on|off]",
 
   async execute(args: string[], session: ReplSession): Promise<boolean> {
@@ -51,9 +51,9 @@ export const qualityCommand: SlashCommand = {
           console.log(chalk.dim("  Using: text protocol injection (skill not found)"));
         }
         console.log(chalk.dim("  1. Implement code + tests"));
-        console.log(chalk.dim("  2. Run tests automatically"));
+        console.log(chalk.dim("  2. Request tests through tools and inspect their results"));
         console.log(chalk.dim("  3. Self-review against 12 quality dimensions"));
-        console.log(chalk.dim("  4. Iterate until quality converges (≥85/100)"));
+        console.log(chalk.dim("  4. Iterate on findings; model scores do not certify acceptance"));
       } else {
         console.log(chalk.dim("  Enable with /quality on for quality-driven development"));
       }
@@ -70,9 +70,7 @@ export const qualityCommand: SlashCommand = {
     console.log();
     if (newState) {
       console.log(chalk.magenta("  Quality loop: ") + chalk.green.bold("ON"));
-      console.log(
-        chalk.dim("  Agent will auto-test, self-review, and iterate until quality ≥ 85/100"),
-      );
+      console.log(chalk.dim("  Requests tests and self-review; model reports are unverified"));
     } else {
       console.log(chalk.magenta("  Quality loop: ") + chalk.dim("OFF"));
       console.log(chalk.dim("  Fast mode — agent responds without quality iteration"));

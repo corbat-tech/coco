@@ -33,3 +33,11 @@ Contención del consumidor: fallbacks/procedencia del evaluador siguen E06.e/E09
 QualityEvaluator rechaza la lectura fallida de fuentes y los rechazos de sus 12 analizadores, en lugar de devolver notas de sustitución (el error de duplicación antes producía 100). Espera todos los análisis iniciados y después propaga el fallo, sin repetirlos. Error indica dimensión, sin causa sensible. Un archivo ilegible no se considera código vacío.
 
 15 casos nuevos: 14 fallan antes, uno conserva paridad. Después quality/tools/iterator: 27 archivos / 496 tests correctos; typecheck/lint/format correctos. Logs `e06e-before.log`, `e06e-after.log`. Coordinador implementa; `/root/core_audit` pruebas; `/root/baseline_review` APPROVED. Disponibilidad interna, aplicabilidad y overrides registry siguen E09; esta contención no acredita medición completa extremo a extremo. Siguiente: presentación REPL de reportes autodeclarados. Sin publicación; rollback por revert.
+
+## E06.f · DONE · 2026-09-16
+
+Reportes QUALITY_LOOP_REPORT del modelo se muestran como self-report (unverified), con métricas Reported y colores neutrales, nunca aprobación verde. converged:false no se traduce a límite de iteraciones. Ayuda/prompt solicitan pruebas y revisión, sin garantizar convergencia; security del ejemplo pasa de 100 a unknown y exige evidencia del resultado final. Parser compatible sin cambios.
+
+Seis regresiones fallan antes; después 3 archivos / 32 tests correctos, typecheck/lint/format correctos. Logs `e06f-before.log`, `e06f-after.log`. Coordinador implementa; `/root/core_audit` tests; `/root/baseline_review` APPROVED. No valida la procedencia de cifras del modelo.
+
+E06 permanece IN_PROGRESS para disponibilidad/aplicabilidad interna de analizadores y overrides en E09 (por ejemplo, linter ausente no es medición de estilo). COCO-06 sigue abierto y bloquea una release estable de esa superficie. Se continúa E07, que depende de E03, manteniendo estos pendientes explícitos. Subpasos a–f terminados no equivalen a certificación de calidad extremo a extremo. Sin publicación; rollback por revert.
