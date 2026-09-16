@@ -13,7 +13,8 @@ import type {
   MCPCallToolResult,
 } from "./types.js";
 import type { ToolDefinition, ToolCategory } from "../tools/registry.js";
-import { MCPError, MCPTimeoutError } from "./errors.js";
+import { MCPError } from "./errors.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 
 /**
  * Default wrapper options
@@ -257,25 +258,18 @@ export function wrapMCPTool(
     category: opts.category as ToolCategory,
     provenance: { kind: "mcp", serverName, toolName: tool.name },
     parameters: parametersSchema,
-    execute: async (params: unknown) => {
-      const timeout = opts.requestTimeout;
-
+    execute: async (params: unknown, context) => {
+      context?.signal?.throwIfAborted();
       try {
-        // Call the MCP tool
-        const result = await Promise.race([
-          client.callTool({
-            name: tool.name,
-            arguments: params as Record<string, unknown>,
-          }),
-          new Promise<never>((_, reject) => {
-            setTimeout(() => {
-              reject(new MCPTimeoutError(`Tool '${tool.name}' timed out after ${timeout}ms`));
-            }, timeout);
-          }),
-        ]);
+        const result = await client.callTool(
+          { name: tool.name, arguments: params as Record<string, unknown> },
+          { signal: context?.signal, timeout: opts.requestTimeout },
+        );
+        context?.signal?.throwIfAborted();
 
         return formatToolResult(result);
       } catch (error) {
+        rethrowCancellation(error, context?.signal);
         if (error instanceof MCPError) {
           throw error;
         }

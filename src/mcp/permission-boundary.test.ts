@@ -84,10 +84,10 @@ describe("MCP provenance is an explicit runtime permission boundary", () => {
         expect(effects()).toBe(allowed ? 2 : 0);
         expect(callTool).toHaveBeenCalledTimes(allowed ? 2 : 0);
         if (allowed)
-          expect(callTool).toHaveBeenLastCalledWith({
-            name: "read_file",
-            arguments: { query: "fixture" },
-          });
+          expect(callTool).toHaveBeenLastCalledWith(
+            { name: "read_file", arguments: { query: "fixture" } },
+            { signal: undefined, timeout: 1000 },
+          );
       }
     },
   );

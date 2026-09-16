@@ -192,6 +192,12 @@ export interface MCPTransport {
   isConnected(): boolean;
 }
 
+/** Local request lifetime; timeout 0 disables the deadline. */
+export interface MCPRequestOptions {
+  signal?: AbortSignal;
+  timeout?: number;
+}
+
 /**
  * MCP Client interface
  */
@@ -203,7 +209,7 @@ export interface MCPClient {
   listTools(): Promise<{ tools: MCPTool[] }>;
 
   /** Call a tool on the MCP server */
-  callTool(params: MCPCallToolParams): Promise<MCPCallToolResult>;
+  callTool(params: MCPCallToolParams, options?: MCPRequestOptions): Promise<MCPCallToolResult>;
 
   /** List available resources */
   listResources(): Promise<{ resources: MCPResource[] }>;

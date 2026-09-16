@@ -131,3 +131,11 @@ Gate área providers/auth25:30 archivos/967 tests correctos; HTTP compartido12 c
 Revisión E07.k3 detectó que el último consumidor cancelado podía ocultar un fallo de persistencia posterior. Ahora espera settlement y conserva ese error; los otros consumidores pueden cancelar independientemente. Tres regresiones cubren ENOSPC y una petición nueva que espera cierre previo, sin renovar después de fallo de guardado. Logs e07k3-final/types/lint/format. Coordinador implementa/HTTP; /root/core_audit contratos.
 
 Revisión final también preserva errores de guardado en initialize y al cancelar un consumidor nuevo durante cierre previo. Dos regresiones adicionales correctas; /root/baseline_review APPROVED. Log e07k3-reviewed.
+
+## E07.l1 · DONE · 2026-09-16
+
+Cliente MCP propio recibe signal/timeout por llamada; preabort evita envío y timeout0 desactiva el plazo. Validación rechaza plazos negativos/no finitos/fuera del rango Node. Settlement único elimina pending, timer y listener ante respuesta, error RPC/transporte, cierre, cancelación y throw/rechazo de send; respuestas tardías se ignoran y cancelar A no afecta B. Wrapper pasa contexto al cliente, conserva causa y comprueba aborto antes de devolver resultado. Eliminado Promise.race con timer huérfano.
+
+Esto cancela la espera local únicamente: transporte y notificación al servidor son E07.l2 y siguientes. [Especificación MCP cancellation](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation), consultada2026-09-16, permite que servidor ignore cancelación; no se promete rollback remoto. Coco no usa aquí SDK MCP sino su cliente propio.
+
+20 casos nuevos independientes y fixtures de contrato/permiso ajustados. Gate MCP15 archivos/248 tests correctos; typecheck/lint/format correctos. Logs e07l1-final/types/lint/format. Coordinador implementa; /root/core_audit contratos; /root/file_fixture_update APPROVED revisión estática. Sin publicación; rollback por revert.
