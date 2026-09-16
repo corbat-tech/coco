@@ -119,3 +119,15 @@ Fallback gh api recibe el mismo token GitHub por entorno, nunca argv, y hostname
 Respuesta exige token no vacío y caducidad válida; revisión detectó overflow de segundos a ms, corregido en HTTP y CLI con dos regresiones. 25 casos nuevos de contrato con FS/HTTP/exec simulados; fixtures previos actualizados para preservación de credenciales y gh único. Las señales de los callers del provider y su renovación compartida aún deben conectarse en E07.k3. Árboles/procesos reales e interacción OAuth continúan fuera de este incremento.
 
 Gate finalE07.k2:5 archivos/116 tests correctos; typecheck/lint/format correctos. Logs e07k2-final/types/lint/format. Coordinador implementa; /root/core_audit contratos25; /root/file_fixture_update fixtures; /root/baseline_review APPROVED tras overflow. Sin publicación; rollback por revert.
+
+## E07.k3 · DONE · 2026-09-16
+
+Provider Copilot enlaza cuatro operaciones a scope total que incluye autenticación/retries/SDK/body. Inicialización e isAvailable también tienen plazo configurado. La renovación compartida por instancia tiene controlador propio y consumidores identificados: cancelar uno no interrumpe otro; al retirarse el último se aborta auth. Estado y promesa permanecen gestionados hasta settlement, incluida persistencia local ya iniciada; señales y listeners de consumidores se retiran al terminar/cancelar. Peticiones nuevas no heredan la cancelación de un intercambio anterior aún cerrándose. Resultado tardío cancelado no sustituye el cliente SDK. No se afirma serialización OAuth global entre instancias/procesos.
+
+41 casos independientes: cuatro rutas, deadlines/timeout0, dos consumidores con cancelación/deadline independientes, último consumidor, respuesta tardía, nuevo refresh, configuración directa y ciclo de streams. Dos casos detectaron lectura upstream adicional tras yield cancelado; wrapper ahora comprueba antes/después de cada emisión. Integración HTTP compartida incluye Copilot con SDKOpenAI real y authfixture, cancelación durante headers/body y desconexión, sin cuenta externa. API y fuentes son las contrastadas en E07.d/k2; catálogo preservado.
+
+Gate área providers/auth25:30 archivos/967 tests correctos; HTTP compartido12 correctos. Gate final3 archivos/71 tests y typecheck/lint/format correctos.
+
+Revisión E07.k3 detectó que el último consumidor cancelado podía ocultar un fallo de persistencia posterior. Ahora espera settlement y conserva ese error; los otros consumidores pueden cancelar independientemente. Tres regresiones cubren ENOSPC y una petición nueva que espera cierre previo, sin renovar después de fallo de guardado. Logs e07k3-final/types/lint/format. Coordinador implementa/HTTP; /root/core_audit contratos.
+
+Revisión final también preserva errores de guardado en initialize y al cancelar un consumidor nuevo durante cierre previo. Dos regresiones adicionales correctas; /root/baseline_review APPROVED. Log e07k3-reviewed.

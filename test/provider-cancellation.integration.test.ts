@@ -1,9 +1,18 @@
 import { createServer } from "node:http";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AnthropicProvider } from "../src/providers/anthropic.js";
+import { CopilotProvider } from "../src/providers/copilot.js";
 import { VertexProvider } from "../src/providers/vertex.js";
 import { GeminiProvider } from "../src/providers/gemini.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
+
+vi.mock("../src/auth/copilot.js", () => ({
+  getValidCopilotToken: async () => ({
+    token: "local-fixture-token",
+    baseUrl: "https://api.githubcopilot.com",
+    isNew: false,
+  }),
+}));
 
 function deferred() {
   let resolve!: () => void;
@@ -20,6 +29,7 @@ describe("Provider SDK cancellation against local HTTP", () => {
     "claude-sonnet-4-6",
     "gemini-2.5-flash",
     "vertex-gemini-2.5-flash",
+    "copilot-gpt-4o",
   ]) {
     it.each([false, true])(
       `aborts ${model} request (streaming=%s) without retrying`,
@@ -66,7 +76,7 @@ describe("Provider SDK cancellation against local HTTP", () => {
                 : [
                     model.includes("gemini-2.5-flash")
                       ? { candidates: [{ content: { role: "model", parts: [{ text: "READY" }] } }] }
-                      : model === "gpt-4o"
+                      : model === "gpt-4o" || model === "copilot-gpt-4o"
                         ? {
                             id: "fixture",
                             choices: [
@@ -93,14 +103,16 @@ describe("Provider SDK cancellation against local HTTP", () => {
           const provider =
             model === "claude-sonnet-4-6"
               ? new AnthropicProvider()
-              : model.startsWith("vertex-")
-                ? new VertexProvider()
-                : model === "gemini-2.5-flash"
-                  ? new GeminiProvider()
-                  : new OpenAIProvider();
+              : model.startsWith("copilot-")
+                ? new CopilotProvider()
+                : model.startsWith("vertex-")
+                  ? new VertexProvider()
+                  : model === "gemini-2.5-flash"
+                    ? new GeminiProvider()
+                    : new OpenAIProvider();
           await provider.initialize({
             apiKey: "local-fixture-key",
-            model: model.replace(/^vertex-/, ""),
+            model: model.replace(/^(vertex|copilot)-/, ""),
             project: "fixture-project",
             baseUrl: `http://127.0.0.1:${address.port}/v1`,
             timeout: 2000,

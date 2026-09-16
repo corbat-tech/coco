@@ -13,6 +13,8 @@
  */
 
 import OpenAI from "openai";
+import { createRequestScope } from "../utils/request-scope.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 import type {
   ProviderConfig,
   Message,
@@ -102,11 +104,24 @@ const COPILOT_HEADERS: Record<string, string> = {
  * initialization (Copilot token management) and adds automatic token
  * refresh before each API call.
  */
+class CopilotRefreshFailure extends Error {
+  constructor(readonly original: unknown) {
+    super("Copilot refresh failed while cancelling");
+  }
+}
+
+interface CopilotRefresh {
+  controller: AbortController;
+  promise: Promise<void>;
+  consumers: Set<symbol>;
+  settled: boolean;
+}
+
 export class CopilotProvider extends OpenAIProvider {
   private baseUrl = "https://api.githubcopilot.com";
   private currentToken: string | null = null;
-  /** In-flight refresh promise to prevent concurrent token exchanges */
-  private refreshPromise: Promise<void> | null = null;
+  /** Retained until auth and any local credential save have settled. */
+  private refreshState: CopilotRefresh | null = null;
 
   constructor() {
     super("copilot", "GitHub Copilot");
@@ -124,25 +139,31 @@ export class CopilotProvider extends OpenAIProvider {
       model: normalizeModel(config.model) ?? DEFAULT_MODEL,
     };
 
-    // Try to get a valid Copilot token
-    const tokenResult = await getValidCopilotToken();
+    const scope = createRequestScope(undefined, this.config.timeout ?? 120000);
+    try {
+      // Try to get a valid Copilot token
+      const tokenResult = await getValidCopilotToken(scope.signal);
+      scope.signal.throwIfAborted();
 
-    if (tokenResult) {
-      this.currentToken = tokenResult.token;
-      this.baseUrl = tokenResult.baseUrl;
-    } else if (config.apiKey) {
-      // Fallback: user provided a token directly (e.g., via GITHUB_TOKEN env var)
-      this.currentToken = config.apiKey;
+      if (tokenResult) {
+        this.currentToken = tokenResult.token;
+        this.baseUrl = tokenResult.baseUrl;
+      } else if (config.apiKey) {
+        // Fallback: user provided a token directly (e.g., via GITHUB_TOKEN env var)
+        this.currentToken = config.apiKey;
+      }
+
+      if (!this.currentToken) {
+        throw new ProviderError(
+          "No Copilot token found. Please authenticate with: coco --provider copilot",
+          { provider: this.id },
+        );
+      }
+
+      this.createCopilotClient();
+    } finally {
+      scope.dispose();
     }
-
-    if (!this.currentToken) {
-      throw new ProviderError(
-        "No Copilot token found. Please authenticate with: coco --provider copilot",
-        { provider: this.id },
-      );
-    }
-
-    this.createCopilotClient();
   }
 
   /**
@@ -157,57 +178,189 @@ export class CopilotProvider extends OpenAIProvider {
     });
   }
 
-  /**
-   * Refresh the Copilot token if expired.
-   *
-   * Uses a mutex so concurrent callers share a single in-flight token
-   * exchange. The slot is cleared inside the IIFE's finally block,
-   * which runs after all awaiting callers have resumed.
-   */
-  private async refreshTokenIfNeeded(): Promise<void> {
-    if (!this.refreshPromise) {
-      this.refreshPromise = (async () => {
+  /** Share an exchange, but keep each caller's cancellation independent. */
+  private async refreshTokenIfNeeded(signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    if (this.refreshState?.controller.signal.aborted) {
+      // A new caller must not inherit the previous callers' cancelled exchange.
+      // Keep ownership until it settles (including an already-started local save).
+      const closing = this.refreshState;
+      try {
+        await this.waitForRefresh(closing, signal);
+      } catch (error) {
+        if (error instanceof CopilotRefreshFailure) throw error;
+        signal.throwIfAborted();
+        if (error !== closing.controller.signal.reason) throw new CopilotRefreshFailure(error);
+      }
+      return this.refreshTokenIfNeeded(signal);
+    }
+    if (!this.refreshState) {
+      const state: CopilotRefresh = {
+        controller: new AbortController(),
+        promise: Promise.resolve(),
+        consumers: new Set(),
+        settled: false,
+      };
+      this.refreshState = state;
+      state.promise = (async () => {
         try {
-          const tokenResult = await getValidCopilotToken();
-          if (tokenResult && tokenResult.isNew) {
+          const tokenResult = await getValidCopilotToken(state.controller.signal);
+          state.controller.signal.throwIfAborted();
+          if (
+            tokenResult &&
+            (tokenResult.isNew ||
+              tokenResult.token !== this.currentToken ||
+              tokenResult.baseUrl !== this.baseUrl)
+          ) {
             this.currentToken = tokenResult.token;
             this.baseUrl = tokenResult.baseUrl;
             this.createCopilotClient();
           }
         } finally {
-          this.refreshPromise = null;
+          state.settled = true;
+          if (this.refreshState === state) this.refreshState = null;
         }
       })();
     }
-    await this.refreshPromise;
+    await this.waitForRefresh(this.refreshState, signal);
+    signal.throwIfAborted();
   }
 
-  // --- Override public methods to add token refresh ---
+  private waitForRefresh(state: CopilotRefresh, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    const consumer = Symbol("copilot request");
+    state.consumers.add(consumer);
+    return new Promise((resolve, reject) => {
+      let finished = false;
+      const cleanup = () => {
+        finished = true;
+        signal.removeEventListener("abort", onAbort);
+        state.consumers.delete(consumer);
+        if (!state.settled && state.consumers.size === 0) state.controller.abort(signal.reason);
+      };
+      const onAbort = () => {
+        if (finished) return;
+        const lastConsumer = state.consumers.size === 1;
+        cleanup();
+        if (lastConsumer) {
+          // Keep a recipient for a credential-save failure after transport abort.
+          state.promise.then(
+            () => reject(signal.reason),
+            (error: unknown) =>
+              reject(
+                error === state.controller.signal.reason
+                  ? signal.reason
+                  : new CopilotRefreshFailure(error),
+              ),
+          );
+        } else {
+          reject(signal.reason);
+        }
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      state.promise.then(
+        () => {
+          if (!finished) {
+            cleanup();
+            if (signal.aborted) reject(signal.reason);
+            else resolve();
+          }
+        },
+        (error: unknown) => {
+          if (!finished) {
+            cleanup();
+            reject(signal.aborted ? signal.reason : error);
+          }
+        },
+      );
+      if (signal.aborted) onAbort();
+    });
+  }
 
+  // The host deadline includes auth, retries and body consumption.
   override async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
-    await this.refreshTokenIfNeeded();
-    return super.chat(messages, options);
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? 120000,
+    );
+    try {
+      await this.refreshTokenIfNeeded(scope.signal);
+      return await super.chat(messages, { ...options, signal: scope.signal });
+    } catch (error) {
+      if (error instanceof CopilotRefreshFailure) throw error.original;
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
   }
 
   override async chatWithTools(
     messages: Message[],
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
-    await this.refreshTokenIfNeeded();
-    return super.chatWithTools(messages, options);
+    const scope = createRequestScope(
+      options.signal,
+      options.timeout ?? this.config.timeout ?? 120000,
+    );
+    try {
+      await this.refreshTokenIfNeeded(scope.signal);
+      return await super.chatWithTools(messages, { ...options, signal: scope.signal });
+    } catch (error) {
+      if (error instanceof CopilotRefreshFailure) throw error.original;
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
   }
 
   override async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
-    await this.refreshTokenIfNeeded();
-    yield* super.stream(messages, options);
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? 120000,
+    );
+    try {
+      await this.refreshTokenIfNeeded(scope.signal);
+      for await (const chunk of super.stream(messages, { ...options, signal: scope.signal })) {
+        scope.signal.throwIfAborted();
+        yield chunk;
+        scope.signal.throwIfAborted();
+      }
+    } catch (error) {
+      if (error instanceof CopilotRefreshFailure) throw error.original;
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
   }
 
   override async *streamWithTools(
     messages: Message[],
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
-    await this.refreshTokenIfNeeded();
-    yield* super.streamWithTools(messages, options);
+    const scope = createRequestScope(
+      options.signal,
+      options.timeout ?? this.config.timeout ?? 120000,
+    );
+    try {
+      await this.refreshTokenIfNeeded(scope.signal);
+      for await (const chunk of super.streamWithTools(messages, {
+        ...options,
+        signal: scope.signal,
+      })) {
+        scope.signal.throwIfAborted();
+        yield chunk;
+        scope.signal.throwIfAborted();
+      }
+    } catch (error) {
+      if (error instanceof CopilotRefreshFailure) throw error.original;
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
   }
 
   // --- Override metadata methods ---
@@ -261,11 +414,15 @@ export class CopilotProvider extends OpenAIProvider {
    * Check if Copilot credentials are available
    */
   override async isAvailable(): Promise<boolean> {
+    const scope = createRequestScope(undefined, this.config.timeout ?? 120000);
     try {
-      const tokenResult = await getValidCopilotToken();
+      const tokenResult = await getValidCopilotToken(scope.signal);
+      scope.signal.throwIfAborted();
       return tokenResult !== null;
     } catch {
       return false;
+    } finally {
+      scope.dispose();
     }
   }
 }
