@@ -198,7 +198,7 @@ Los 14 resultados sustituyen el orden de los 39 pasos; no se finge haber reducid
 
 **Punto de continuación guardado:** [HANDOFF_2026-09-16.md](evolution/HANDOFF_2026-09-16.md). El usuario solicita cerrar lo realizado y publicar un candidato; el resto del programa queda pausado hasta que lo retome.
 
-Paso activo: **cierre de candidato y continuidad** por petición del usuario. E07.n2b terminado; no iniciar E07.n2c hasta reanudar. E07 permanece IN_PROGRESS; quedan integridad de streams en otros adaptadores, cuotas, procesos descendientes y cierre de la cancelación de extremo a extremo.
+Estado de cierre: **candidato validado y guardado; publicación npm bloqueada** (Actions 35152023247, versión ausente del registro, autenticación local E401). `latest` continúa en `2.41.0`. Resolver la publicación según el handoff antes de retomar desarrollo. E07.n2b terminado; no iniciar E07.n2c hasta reanudar. E07 permanece IN_PROGRESS; quedan integridad de streams en otros adaptadores, cuotas, procesos descendientes y cierre de la cancelación de extremo a extremo.
 
 | Bloque | Progreso verificado | Evidencia y límites |
 | --- | --- | --- |
