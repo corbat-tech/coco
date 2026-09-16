@@ -324,7 +324,7 @@ export function processItems(items: any[]): any[] {
   });
 
   describe("Tool Integration", () => {
-    it("should work through calculateQualityTool", async () => {
+    it("should report aggregate certification unavailable through calculateQualityTool", async () => {
       // Create simple source file
       await writeFile(
         join(testProjectPath, "src", "utils.ts"),
@@ -335,35 +335,12 @@ export function hello(name: string): string {
 `.trim(),
       );
 
-      // Use the tool
-      const result = await calculateQualityTool.execute({
-        cwd: testProjectPath,
-        files: [join(testProjectPath, "src", "utils.ts")],
-      });
-
-      // Assertions
-      expect(result).toHaveProperty("overall");
-      expect(result).toHaveProperty("dimensions");
-      expect(result).toHaveProperty("evaluatedAt");
-      expect(result).toHaveProperty("evaluationDurationMs");
-
-      expect(typeof result.overall).toBe("number");
-      expect(result.overall).toBeGreaterThanOrEqual(0);
-      expect(result.overall).toBeLessThanOrEqual(100);
-
-      // Check all dimensions exist
-      expect(result.dimensions).toHaveProperty("correctness");
-      expect(result.dimensions).toHaveProperty("completeness");
-      expect(result.dimensions).toHaveProperty("robustness");
-      expect(result.dimensions).toHaveProperty("readability");
-      expect(result.dimensions).toHaveProperty("maintainability");
-      expect(result.dimensions).toHaveProperty("complexity");
-      expect(result.dimensions).toHaveProperty("duplication");
-      expect(result.dimensions).toHaveProperty("testCoverage");
-      expect(result.dimensions).toHaveProperty("testQuality");
-      expect(result.dimensions).toHaveProperty("security");
-      expect(result.dimensions).toHaveProperty("documentation");
-      expect(result.dimensions).toHaveProperty("style");
+      await expect(
+        calculateQualityTool.execute({
+          cwd: testProjectPath,
+          files: [join(testProjectPath, "src", "utils.ts")],
+        }),
+      ).rejects.toThrow(/not evaluated; no acceptance certified/);
     }, 30000);
   });
 

@@ -308,7 +308,7 @@ describe("REPL Integration Tests", () => {
               yield { type: "text", text: "Let me read that file." };
               yield { type: "tool_use_start", toolCall: { id: toolCall.id, name: toolCall.name } };
               yield { type: "tool_use_end", toolCall };
-              yield { type: "done" };
+              yield { type: "done", stopReason: "tool_use" };
             })(),
           );
         }
@@ -365,7 +365,7 @@ describe("REPL Integration Tests", () => {
                 yield { type: "tool_use_start", toolCall: { id: tc.id, name: tc.name } };
                 yield { type: "tool_use_end", toolCall: tc };
               }
-              yield { type: "done" };
+              yield { type: "done", stopReason: "tool_use" };
             })(),
           );
         }
@@ -411,7 +411,7 @@ describe("REPL Integration Tests", () => {
             (function* (): Generator<StreamChunk> {
               yield { type: "tool_use_start", toolCall: { id: toolCall.id, name: toolCall.name } };
               yield { type: "tool_use_end", toolCall };
-              yield { type: "done" };
+              yield { type: "done", stopReason: "tool_use" };
             })(),
           );
         }
@@ -462,7 +462,7 @@ describe("REPL Integration Tests", () => {
             (function* (): Generator<StreamChunk> {
               yield { type: "tool_use_start", toolCall: { id: toolCall.id, name: toolCall.name } };
               yield { type: "tool_use_end", toolCall };
-              yield { type: "done" };
+              yield { type: "done", stopReason: "tool_use" };
             })(),
           );
         }
@@ -666,7 +666,7 @@ describe("REPL Integration Tests", () => {
               yield { type: "text", text: "Reading the file..." };
               yield { type: "tool_use_start", toolCall: { id: toolCall.id, name: toolCall.name } };
               yield { type: "tool_use_end", toolCall };
-              yield { type: "done" };
+              yield { type: "done", stopReason: "tool_use" };
             })(),
           );
         }
@@ -727,7 +727,7 @@ describe("REPL Integration Tests", () => {
               yield { type: "tool_use_start", toolCall: { id: tc.id, name: tc.name } };
               yield { type: "tool_use_end", toolCall: tc };
             }
-            yield { type: "done" };
+            yield { type: "done", stopReason: "tool_use" };
           })(),
         );
       });

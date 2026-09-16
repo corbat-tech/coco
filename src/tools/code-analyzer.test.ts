@@ -3,13 +3,14 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { analyzeFile, analyzeDirectory } from "./code-analyzer.js";
+
+const fsModule = vi.hoisted(() => ({ readFile: vi.fn() }));
 
 // Mock node:fs/promises before importing the module
 vi.mock("node:fs/promises", () => ({
-  default: {
-    readFile: vi.fn(),
-  },
-  readFile: vi.fn(),
+  default: fsModule,
+  readFile: fsModule.readFile,
 }));
 
 // Mock node:path
@@ -41,24 +42,8 @@ vi.mock("./registry.js", () => ({
 }));
 
 describe("code-analyzer", () => {
-  let analyzeFile: typeof import("./code-analyzer.js").analyzeFile;
-  let analyzeDirectory: typeof import("./code-analyzer.js").analyzeDirectory;
-  let fsModule: { readFile: ReturnType<typeof vi.fn> };
-
-  beforeEach(async () => {
-    vi.resetModules();
-
-    vi.doMock("node:fs/promises", () => {
-      const readFile = vi.fn();
-      return { default: { readFile }, readFile };
-    });
-
-    const mod = await import("./code-analyzer.js");
-    analyzeFile = mod.analyzeFile;
-    analyzeDirectory = mod.analyzeDirectory;
-
-    const fsMod = await import("node:fs/promises");
-    fsModule = fsMod.default as unknown as { readFile: ReturnType<typeof vi.fn> };
+  beforeEach(() => {
+    vi.resetAllMocks();
   });
 
   describe("analyzeFile", () => {
