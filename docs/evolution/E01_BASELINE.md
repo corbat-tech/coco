@@ -43,3 +43,34 @@ E01.a DONE (medición y registro, no baseline verde). Revisión independiente: `
 DONE. `src/mcp/config-loader.test.ts` sustituye solo la ruta de configuración global por un archivo temporal por caso, conservando loader y filesystem reales. Antes: cuatro EPERM; después: 14/14 tests focalizados. Formato y lint correctos. Revisor independiente `/root/baseline_review`: APPROVED sobre SHA-256 `bb423d94cdda4fc2b8624f11e9951c210270a12f895a8f1a7cc5adc8a15076fc`.
 
 Suite completa con cobertura repetida tras el cambio bajo el mismo perfil: exit 0; 292 archivos, 6577 tests correctos y 15 omitidos. Cobertura con exclusiones actuales: sentencias 68,35%, ramas 60,19%, funciones 74,75%, líneas 68,97%. Supera pisos actuales, no alcanza el objetivo 80%. Logs `mcp-isolation.log` y `coverage-after-isolation.log` en el directorio local de evidencia. El código de producto no cambia. El comando e2e dedicado sigue pendiente de E02.a.
+
+## E01.b — corpus inicial
+
+Tres tareas herméticas en `test/e2e/repl-tasks.test.ts`: bug aritmético con verificador que falla antes, nueva función con ejemplos de aceptación, y edición inválida seguida de recuperación. Se ejecutan el loop REPL, registry y file tools reales en disco temporal; solo el proveedor está guionizado. Node ejecuta verificadores independientes y se comprueba conservación de un archivo del usuario.
+
+Los casos usan `skipConfirmation: true`: no evalúan permisos. El sentinel acredita conservación de ese archivo concreto, no ausencia universal de escrituras externas.
+
+Esto prueba integración y efectos, NO la capacidad de un modelo de descubrir una solución. Evaluación real pendiente del proveedor/presupuesto; esa limitación no bloquea reparar CI pero sí atribuir mejoras de éxito de tareas a E13 o cerrar E15. No hay consumo de API.
+
+## Inventario inicial P0/P1 por superficie
+
+El código de producto permanece idéntico al snapshot de auditoría; solo cambia aislamiento de tests. Se conserva la evidencia estática original, sin presentar estos riesgos como nuevos bugs reproducidos dinámicamente. Hasta corregir o contener cada fila, bloquear la publicación de la superficie afectada. Cada paso revalidará su reproducción antes de modificar.
+
+| Hallazgo | Superficie | Estado / destino |
+| --- | --- | --- |
+| COCO-01 P0 | CLI build/resume clásico | Abierto; E06 contención, C02 funcionalidad opcional |
+| COCO-02 P0 | File tools y COMPLETE | Abierto; E03/E04 |
+| COCO-03 P1 | Shell y undo | Abierto; E04 |
+| COCO-04 P1 | MCP | Abierto; E05 |
+| COCO-05 P1 | Ejecución/cancelación | Abierto; E07 |
+| COCO-06 P1 | Aceptación calidad | Abierto; E06/E09 |
+| COCO-07 P1 | Última mejora sin validar | Abierto; E09 |
+| COCO-08 P1 | Recuperación/fases | Abierto; E10 |
+| COCO-09 P1 | Medición/política calidad | Abierto; E09 |
+| COCO-10 P1 | Dependencias entre sprints | Abierto; contener si expuesto, C02 condicionado |
+| COCO-11 P1 | Delegación | Abierto; E05 |
+| COCO-16 P1 | CI/cobertura | E01 mide; E02/E14 pendientes |
+| COCO-17 P1 | npm/VSIX/GitHub release | Abierto; E02, ningún tag de publicación aún |
+| COCO-21 P1 | Starter HTTP | Abierto; E06 local, C05 público condicionado |
+
+E01.b DONE (corpus hermético): 3/3 tests pasan. Revisor `/root/baseline_review`: APPROVED tras reforzar finalización/error y número de calls. SHA-256 probado/revisado: `f4cdfa49b2c6622ac4e874774b8b05d2adcfcd088b4a96f999e2d19bc9c25dfa`. E01 infraestructura completada; baseline de modelo real sigue pendiente y es dependencia explícita de las afirmaciones de E13/E15.
