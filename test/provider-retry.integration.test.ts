@@ -1,10 +1,11 @@
 import { createServer } from "node:http";
 import { expect, it } from "vitest";
 import { AnthropicProvider } from "../src/providers/anthropic.js";
+import { GeminiProvider } from "../src/providers/gemini.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
 import { ResilientProvider } from "../src/providers/resilient.js";
 
-it.each(["openai", "anthropic"])(
+it.each(["openai", "anthropic", "gemini"])(
   "%s real SDK respects the outer retry budget on local HTTP",
   async (kind) => {
     let requests = 0;
@@ -21,10 +22,20 @@ it.each(["openai", "anthropic"])(
     if (!address || typeof address === "string") throw new Error("Missing local server address");
     const controller = new AbortController();
     try {
-      const provider = kind === "openai" ? new OpenAIProvider() : new AnthropicProvider();
+      const provider =
+        kind === "openai"
+          ? new OpenAIProvider()
+          : kind === "gemini"
+            ? new GeminiProvider()
+            : new AnthropicProvider();
       await provider.initialize({
         apiKey: "local-fixture-key",
-        model: kind === "openai" ? "gpt-4o" : "claude-sonnet-4-6",
+        model:
+          kind === "openai"
+            ? "gpt-4o"
+            : kind === "gemini"
+              ? "gemini-2.5-flash"
+              : "claude-sonnet-4-6",
         baseUrl: `http://127.0.0.1:${address.port}`,
         timeout: 1000,
       });

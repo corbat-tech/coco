@@ -30,6 +30,9 @@ import type {
   ToolResultContent,
   ToolUseContent,
 } from "./types.js";
+import { createRequestScope } from "./request-scope.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
+import { DEFAULT_RETRY_CONFIG, resolveRetryConfig, withRetry } from "./retry.js";
 import { ProviderError } from "../utils/errors.js";
 import { mapToGeminiThinkingConfig } from "./thinking.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
@@ -66,22 +69,48 @@ export class GeminiProvider implements LLMProvider {
       );
     }
 
-    this.client = new GoogleGenAI({ apiKey });
+    this.client = new GoogleGenAI({
+      apiKey,
+      httpOptions: { baseUrl: config.baseUrl, retryOptions: { attempts: 1 } },
+    });
   }
 
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? 120000,
+    );
 
     try {
-      const response = await this.client!.models.generateContent({
-        model: this.getModel(options?.model),
-        contents: this.convertContents(messages),
-        config: this.buildConfig(messages, options) as any,
-      });
+      const response = await withRetry(
+        async () => {
+          try {
+            return await this.client!.models.generateContent({
+              model: this.getModel(options?.model),
+              contents: this.convertContents(messages),
+              config: {
+                ...this.buildConfig(messages, options),
+                abortSignal: scope.signal,
+                httpOptions: { timeout: 0, retryOptions: { attempts: 1 } },
+              } as any,
+            });
+          } catch (error) {
+            rethrowCancellation(error, scope.signal);
+            this.handleError(error);
+          }
+        },
+        resolveRetryConfig(DEFAULT_RETRY_CONFIG, options?.maxRetries),
+        scope.signal,
+      );
 
+      scope.signal.throwIfAborted();
       return this.parseResponse(response, options?.model);
     } catch (error) {
+      rethrowCancellation(error, scope.signal);
       throw this.handleError(error);
+    } finally {
+      scope.dispose();
     }
   }
 
@@ -90,36 +119,71 @@ export class GeminiProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? 120000,
+    );
 
     try {
-      const response = await this.client!.models.generateContent({
-        model: this.getModel(options.model),
-        contents: this.convertContents(messages),
-        config: this.buildConfig(messages, options, options.tools, options.toolChoice) as any,
-      });
+      const response = await withRetry(
+        async () => {
+          try {
+            return await this.client!.models.generateContent({
+              model: this.getModel(options.model),
+              contents: this.convertContents(messages),
+              config: {
+                ...this.buildConfig(messages, options, options.tools, options.toolChoice),
+                abortSignal: scope.signal,
+                httpOptions: { timeout: 0, retryOptions: { attempts: 1 } },
+              } as any,
+            });
+          } catch (error) {
+            rethrowCancellation(error, scope.signal);
+            this.handleError(error);
+          }
+        },
+        resolveRetryConfig(DEFAULT_RETRY_CONFIG, options?.maxRetries),
+        scope.signal,
+      );
 
+      scope.signal.throwIfAborted();
       return this.parseResponseWithTools(response, options.model);
     } catch (error) {
+      rethrowCancellation(error, scope.signal);
       throw this.handleError(error);
+    } finally {
+      scope.dispose();
     }
   }
 
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? 120000,
+    );
 
     try {
       const stream = await this.client!.models.generateContentStream({
         model: this.getModel(options?.model),
         contents: this.convertContents(messages),
-        config: this.buildConfig(messages, options) as any,
+        config: {
+          ...this.buildConfig(messages, options),
+          abortSignal: scope.signal,
+          httpOptions: { timeout: 0, retryOptions: { attempts: 1 } },
+        } as any,
       });
 
+      scope.signal.throwIfAborted();
       let streamStopReason: StreamChunk["stopReason"] = "end_turn";
 
       for await (const chunk of stream) {
+        scope.signal.throwIfAborted();
         const text = chunk.text;
         if (text) {
+          scope.signal.throwIfAborted();
           yield { type: "text", text };
+          scope.signal.throwIfAborted();
         }
 
         const finishReason = chunk.candidates?.[0]?.finishReason;
@@ -128,9 +192,16 @@ export class GeminiProvider implements LLMProvider {
         }
       }
 
+      scope.signal.throwIfAborted();
+
       yield { type: "done", stopReason: streamStopReason };
+
+      scope.signal.throwIfAborted();
     } catch (error) {
+      rethrowCancellation(error, scope.signal);
       throw this.handleError(error);
+    } finally {
+      scope.dispose();
     }
   }
 
@@ -139,22 +210,34 @@ export class GeminiProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? 120000,
+    );
 
     try {
       const stream = await this.client!.models.generateContentStream({
         model: this.getModel(options.model),
         contents: this.convertContents(messages),
-        config: this.buildConfig(messages, options, options.tools, options.toolChoice) as any,
+        config: {
+          ...this.buildConfig(messages, options, options.tools, options.toolChoice),
+          abortSignal: scope.signal,
+          httpOptions: { timeout: 0, retryOptions: { attempts: 1 } },
+        } as any,
       });
 
+      scope.signal.throwIfAborted();
       let streamStopReason: StreamChunk["stopReason"] = "end_turn";
       let fallbackToolCounter = 0;
       const emittedToolIds = new Set<string>();
 
       for await (const chunk of stream) {
+        scope.signal.throwIfAborted();
         const text = chunk.text;
         if (text) {
+          scope.signal.throwIfAborted();
           yield { type: "text", text };
+          scope.signal.throwIfAborted();
         }
 
         const toolCalls = this.extractToolCalls(chunk, { includeLegacyFunctionCalls: true });
@@ -168,6 +251,8 @@ export class GeminiProvider implements LLMProvider {
             id: toolCallId,
           };
 
+          scope.signal.throwIfAborted();
+
           yield {
             type: "tool_use_start",
             toolCall: {
@@ -176,10 +261,14 @@ export class GeminiProvider implements LLMProvider {
             },
           };
 
+          scope.signal.throwIfAborted();
+
           yield {
             type: "tool_use_end",
             toolCall: normalizedToolCall,
           };
+
+          scope.signal.throwIfAborted();
         }
 
         const finishReason = chunk.candidates?.[0]?.finishReason;
@@ -190,9 +279,16 @@ export class GeminiProvider implements LLMProvider {
         }
       }
 
+      scope.signal.throwIfAborted();
+
       yield { type: "done", stopReason: streamStopReason };
+
+      scope.signal.throwIfAborted();
     } catch (error) {
+      rethrowCancellation(error, scope.signal);
       throw this.handleError(error);
+    } finally {
+      scope.dispose();
     }
   }
 
@@ -214,10 +310,7 @@ export class GeminiProvider implements LLMProvider {
     if (!this.client) return false;
 
     try {
-      await this.client.models.generateContent({
-        model: this.getModel(),
-        contents: "hi",
-      });
+      await this.chat([{ role: "user", content: "hi" }], { maxRetries: 0 });
       return true;
     } catch {
       return false;
@@ -517,10 +610,21 @@ export class GeminiProvider implements LLMProvider {
   }
 
   private handleError(error: unknown): never {
+    if (error instanceof ProviderError) throw error;
     const message = error instanceof Error ? error.message : String(error);
     const msg = message.toLowerCase();
 
-    let retryable = message.includes("429") || message.includes("500");
+    const status =
+      error !== null &&
+      typeof error === "object" &&
+      "status" in error &&
+      typeof error.status === "number"
+        ? error.status
+        : undefined;
+    let retryable =
+      status !== undefined
+        ? [408, 429, 500, 502, 503, 504].includes(status)
+        : /\b(429|500|502|503|504)\b/.test(message);
 
     if (
       msg.includes("quota") ||
@@ -537,6 +641,7 @@ export class GeminiProvider implements LLMProvider {
 
     throw new ProviderError(message, {
       provider: this.id,
+      statusCode: status,
       retryable,
       cause: error instanceof Error ? error : undefined,
     });

@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import { AnthropicProvider } from "../src/providers/anthropic.js";
+import { GeminiProvider } from "../src/providers/gemini.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
 
 function deferred() {
@@ -12,7 +13,7 @@ function deferred() {
 }
 
 describe("Provider SDK cancellation against local HTTP", () => {
-  for (const model of ["gpt-4o", "gpt-5.2", "claude-sonnet-4-6"]) {
+  for (const model of ["gpt-4o", "gpt-5.2", "claude-sonnet-4-6", "gemini-2.5-flash"]) {
     it.each([false, true])(
       `aborts ${model} request (streaming=%s) without retrying`,
       async (streaming) => {
@@ -56,12 +57,16 @@ describe("Provider SDK cancellation against local HTTP", () => {
                     },
                   ]
                 : [
-                    model === "gpt-4o"
-                      ? {
-                          id: "fixture",
-                          choices: [{ index: 0, delta: { content: "READY" }, finish_reason: null }],
-                        }
-                      : { type: "response.output_text.delta", delta: "READY" },
+                    model === "gemini-2.5-flash"
+                      ? { candidates: [{ content: { role: "model", parts: [{ text: "READY" }] } }] }
+                      : model === "gpt-4o"
+                        ? {
+                            id: "fixture",
+                            choices: [
+                              { index: 0, delta: { content: "READY" }, finish_reason: null },
+                            ],
+                          }
+                        : { type: "response.output_text.delta", delta: "READY" },
                   ];
             for (const event of events) {
               const eventName =
@@ -79,7 +84,11 @@ describe("Provider SDK cancellation against local HTTP", () => {
         let pending: Promise<unknown> | undefined;
         try {
           const provider =
-            model === "claude-sonnet-4-6" ? new AnthropicProvider() : new OpenAIProvider();
+            model === "claude-sonnet-4-6"
+              ? new AnthropicProvider()
+              : model === "gemini-2.5-flash"
+                ? new GeminiProvider()
+                : new OpenAIProvider();
           await provider.initialize({
             apiKey: "local-fixture-key",
             model,
