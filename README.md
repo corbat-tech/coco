@@ -15,7 +15,7 @@
 
 </div>
 
-> **2.42.0-next.2 is an incremental preview targeting npm `next`.** Stable `latest` is unchanged. Tool batches now require complete validated responses across Codex, OpenAI, Anthropic, Gemini and Vertex. Aggregate quality certification is temporarily unavailable. Use trusted local repositories and review effects; process descendants/output limits and the wider evolution programme remain pending. See [progress and publication status](https://github.com/corbat-tech/coco/blob/codex/coco-evolution/docs/evolution/HANDOFF_2026-09-16.md).
+> **2.42.0-next.3 is an incremental preview targeting npm `next`.** Stable `latest` is unchanged. Foreground shell output is bounded and POSIX process groups are owned; unowned background commands are unavailable. Coordinated sprints propagate cancellation and configured deadlines. Windows and `run_tests` retain direct-child cleanup limits. Aggregate quality certification remains unavailable; use trusted local repositories and review effects. See [progress and publication status](https://github.com/corbat-tech/coco/blob/codex/coco-evolution/docs/evolution/ESSENTIALS_NEXT3.md).
 
 **Coco is an open-source CLI coding agent and reusable agent runtime for real-world automation.**
 It plans work, edits files, runs tools/tests, and iterates until quality checks pass. Underneath the CLI, Coco exposes a runtime for building custom agents with providers, tools, permissions, sessions, events, and workflows.

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0-next.3] - 2026-09-17
+
+### Fixed
+
+- Bound foreground shell capture and forwarded output during streaming; preserve ownership of POSIX process groups on cancellation, deadlines and shell exit, with TERM/KILL escalation.
+- Disable unowned `bash_background` explicitly while retaining its compatibility export.
+- Propagate host cancellation and optional total deadlines through coordinated agents, sprint reviewers and test subprocesses. Drain started batches and reject late success; clean up `/build-app` signal listeners.
+- Give only the full-project architecture symbol test a60-second budget for instrumented shared CI runners, preserving all detection and assertions.
+
+### Candidate limits
+
+npm `next` only. Windows shell and `run_tests` cleanup cover direct children; deliberately escaped process groups and remote effects are not controlled. No sandbox claim. Full quality methodology, MCP quotas, recovery, VSIX and final audit remain pending. Existing model catalog retained. See `docs/evolution/ESSENTIALS_NEXT3.md` for verification and publication status.
+
 ## [2.42.0-next.2] - 2026-09-16
 
 ### Fixed

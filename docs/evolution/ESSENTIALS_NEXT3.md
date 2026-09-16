@@ -18,9 +18,18 @@ Por incremento: implementación → pruebas significativas en copia hermética �
 - [x] Coordinador/sprint: señal y deadline total opcional, propagación a agentes/revisores/tests, drenaje de batch iniciado y rechazo de éxito tardío. /build-app posee listeners temporales de SIGINT/SIGTERM y los restaura. 58 tests PASS +typecheck, revisión independiente codex_terminal_fix aprobada. run_tests acredita hijo directo; descendientes y entrevista inicial no ampliados.
 - [x] Presupuesto de prueba de arquitectura:60s solo para resolución de símbolos del proyecto; detector/fixtures/aserciones intactos. Pruebas aisladas4 PASS (resolución2.94s), revisión independiente del padre aprobada. Global30s y cobertura sin cambios.
 - [x] Revisión independiente de incrementos; guardas conservan contratos y límites explícitos.
-- [ ] Gate completo, tarball y smoke.
+- [x] Gate completo:362 archivos,7932 pruebas PASS/15 skip +27 REPL; tipos/lint/formato/build PASS. Cobertura70.63% statements/63.05% branches/76.08% functions/71.28% lines, pisos existentes intactos. Tarball26 archivos, instalación limpia sin scripts y smoke CLI/exports/archivo real PASS (provider fixture).
 - [ ] Publicación y verificación npm; release y handoff actualizado.
 
 ## Pospuesto
 
 E08 fidelidad completa de schemas/API/modelos; E09 mediciones de calidad disponibles/aplicables (calculate_quality continúa indisponible); E10 recuperación/rewind; E11 headless/VSIX; E12 UX; E13 contexto/prompts y comparativas con modelos reales; E14 deuda y objetivo80% de cobertura; E15 auditoría integral con contexto limpio. Cuotas completas de frames MCP, callbacks onboarding y otras superficies de proceso requieren su propio alcance; no se anuncian resueltas aquí. Estos pendientes tienen valor, pero no justifican ampliar esta entrega.
+
+
+## Evidencia del candidato
+
+Commits827bb01 (CI),45f2934 (shell),9dedfd6 (coordinación). Candidato local2.42.0-next.3 conservado en `.dev/evolution/candidate-2.42.0-next.3/`. SHA256 `5873acc3051086f1b3d619e2f67ae6a254b4f3ed4663648924d591337c85535d`; integridad `sha512-3NIvURFgtnlQAudOargTwGArz8VLW2ASgj6YimfQm8PR8bYvtJPEn0PtkzeuGBzOED60abBOAiQqffmk241NHQ==`. CI construirá su artefacto y exigirá su integridad, sin asumir igualdad binaria con el local. Logs en `.dev/evolution/e01-baseline/logs/next3-*` ignorados por Git.
+
+Publicación pendiente en este punto; no afirmar deploy por haber creado candidato. Confirmado secreto GitHub NPM_TOKEN actualizado2026-09-16T22:01:15Z (solo metadata inspeccionada); validez debe acreditarse al publicar.
+
+Revisión independiente del tarball por codex_terminal_fix: APROBADA para next; inventario/hashes/tamaños coincidentes,26 archivos regulares permitidos, metadata correcta y sin coincidencias en patrones de secretos de alta señal. No auditoría exhaustiva de seguridad ni evaluación de proveedores reales.
