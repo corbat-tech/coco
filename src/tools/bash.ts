@@ -7,6 +7,7 @@ import { z } from "zod";
 import { execa, type Options as ExecaOptions } from "execa";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError, TimeoutError } from "../utils/errors.js";
+import { trackSubprocess } from "../utils/subprocess-registry.js";
 
 /**
  * Default timeout for commands (2 minutes)
@@ -172,7 +173,8 @@ Examples:
     timeout: z.number().optional().describe("Timeout in milliseconds"),
     env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
   }),
-  async execute({ command, cwd, timeout, env }) {
+  async execute({ command, cwd, timeout, env }, context) {
+    context?.signal?.throwIfAborted();
     // Check for dangerous commands.
     // DANGEROUS_PATTERNS_FULL are checked against the whole command string.
     // DANGEROUS_PATTERNS_SHELL_ONLY are checked only against the shell command
@@ -215,11 +217,14 @@ Examples:
     });
 
     try {
+      context?.signal?.throwIfAborted();
       heartbeat.start();
 
       const options: ExecaOptions = {
         cwd: cwd ?? process.cwd(),
         timeout: timeoutMs,
+        cancelSignal: context?.signal,
+        forceKillAfterDelay: 3000,
         env: { ...process.env, ...env },
         shell: true,
         reject: false,
@@ -227,37 +232,63 @@ Examples:
         maxBuffer: MAX_OUTPUT_SIZE,
       };
 
-      const subprocess = execa(command, options);
+      const subprocess = trackSubprocess(execa(command, options));
 
       let stdoutBuffer = "";
       let stderrBuffer = "";
 
       // Stream stdout in real-time
-      subprocess.stdout?.on("data", (chunk: Buffer) => {
+      const onStdout = (chunk: Buffer) => {
         const text = chunk.toString();
         stdoutBuffer += text;
         process.stdout.write(text);
         heartbeat.activity();
-      });
+      };
+      subprocess.stdout?.on("data", onStdout);
 
       // Stream stderr in real-time
-      subprocess.stderr?.on("data", (chunk: Buffer) => {
+      const onStderr = (chunk: Buffer) => {
         const text = chunk.toString();
         stderrBuffer += text;
         process.stderr.write(text);
         heartbeat.activity();
-      });
+      };
+      subprocess.stderr?.on("data", onStderr);
 
-      const result = await subprocess;
+      const result = await subprocess.finally(() => {
+        subprocess.stdout?.off("data", onStdout);
+        subprocess.stderr?.off("data", onStderr);
+      });
+      context?.signal?.throwIfAborted();
+      // reject:false returns termination errors as results, never a successful exit.
+      if (result.isCanceled) throw new Error("Command canceled");
+      if (result.timedOut) {
+        throw new TimeoutError(`Command timed out after ${timeoutMs}ms`, {
+          timeoutMs,
+          operation: command.slice(0, 100),
+        });
+      }
+      if (
+        result.signal ||
+        typeof result.exitCode !== "number" ||
+        !Number.isInteger(result.exitCode)
+      ) {
+        throw new Error("Command terminated without an exit code");
+      }
 
       return {
         stdout: truncateOutput(stdoutBuffer),
         stderr: truncateOutput(stderrBuffer),
-        exitCode: result.exitCode ?? 0,
+        exitCode: result.exitCode,
         duration: performance.now() - startTime,
       };
     } catch (error) {
-      if ((error as { timedOut?: boolean }).timedOut) {
+      context?.signal?.throwIfAborted();
+      if (error instanceof TimeoutError) throw error;
+      if ((error as { isCanceled?: boolean } | undefined)?.isCanceled) {
+        throw new ToolError("Command canceled", { tool: "bash_exec" });
+      }
+      if ((error as { timedOut?: boolean } | undefined)?.timedOut) {
         throw new TimeoutError(`Command timed out after ${timeoutMs}ms`, {
           timeoutMs,
           operation: command.slice(0, 100),
