@@ -771,13 +771,13 @@ describe("streamWithTools: content_block_stop guard (regression: data-bleed fix)
   // Regression test for: when two consecutive tool_use content_block_start events
   // arrive without a content_block_stop between them (a malformed stream), the
   // second tool_use would bleed its argument data into the first tool call's input.
-  // The fix detects the unclosed tool call and finalises it before starting the next.
+  // The fix rejects the unclosed tool call without publishing an executable call.
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("should emit both tool calls when content_block_stop is missing between them", async () => {
+  it("should reject all tool calls when content_block_stop is missing between them", async () => {
     // Stream: tool_use A starts and receives args, but content_block_stop never
     // arrives.  Then tool_use B starts — this triggers the guard.
     mockMessagesStream.mockReturnValueOnce({
@@ -785,21 +785,25 @@ describe("streamWithTools: content_block_stop guard (regression: data-bleed fix)
         // Tool A starts
         yield {
           type: "content_block_start",
+          index: 0,
           content_block: { type: "tool_use", id: "tool-a", name: "read_file" },
         };
         yield {
           type: "content_block_delta",
+          index: 0,
           delta: { type: "input_json_delta", partial_json: '{"path":"/a.ts"}' },
         };
         // ← content_block_stop for tool-A is intentionally MISSING
 
-        // Tool B starts — guard must finalise tool-A first
+        // Tool B starts — the unclosed first block must fail
         yield {
           type: "content_block_start",
+          index: 1,
           content_block: { type: "tool_use", id: "tool-b", name: "write_file" },
         };
         yield {
           type: "content_block_delta",
+          index: 1,
           delta: { type: "input_json_delta", partial_json: '{"path":"/b.ts","content":"hi"}' },
         };
         yield { type: "content_block_stop" };
@@ -814,32 +818,25 @@ describe("streamWithTools: content_block_stop guard (regression: data-bleed fix)
       type: string;
       toolCall?: { id?: string; name?: string; input?: unknown };
     }> = [];
-    for await (const chunk of provider.streamWithTools([{ role: "user", content: "do stuff" }], {
-      tools: [
-        {
-          name: "read_file",
-          description: "Read",
-          input_schema: { type: "object", properties: {}, required: [] },
-        },
-        {
-          name: "write_file",
-          description: "Write",
-          input_schema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-    })) {
-      chunks.push(chunk as (typeof chunks)[0]);
-    }
-
-    const toolEnds = chunks.filter((c) => c.type === "tool_use_end");
-    // Both tool calls must be emitted — tool-A finalised by the guard, tool-B normally
-    expect(toolEnds).toHaveLength(2);
-    expect(toolEnds[0]?.toolCall?.name).toBe("read_file");
-    expect(toolEnds[0]?.toolCall?.id).toBe("tool-a");
-    expect(toolEnds[0]?.toolCall?.input).toEqual({ path: "/a.ts" });
-    expect(toolEnds[1]?.toolCall?.name).toBe("write_file");
-    expect(toolEnds[1]?.toolCall?.id).toBe("tool-b");
-    expect(toolEnds[1]?.toolCall?.input).toEqual({ path: "/b.ts", content: "hi" });
+    await expect(async () => {
+      for await (const chunk of provider.streamWithTools([{ role: "user", content: "do stuff" }], {
+        tools: [
+          {
+            name: "read_file",
+            description: "Read",
+            input_schema: { type: "object", properties: {}, required: [] },
+          },
+          {
+            name: "write_file",
+            description: "Write",
+            input_schema: { type: "object", properties: {}, required: [] },
+          },
+        ],
+      })) {
+        chunks.push(chunk as (typeof chunks)[0]);
+      }
+    }).rejects.toThrow(/block|closed|incomplete/i);
+    expect(chunks.filter((chunk) => chunk.type === "tool_use_end")).toEqual([]);
   });
 
   it("should not affect normal streams where content_block_stop is present", async () => {
@@ -847,13 +844,17 @@ describe("streamWithTools: content_block_stop guard (regression: data-bleed fix)
       async *[Symbol.asyncIterator]() {
         yield {
           type: "content_block_start",
+          index: 0,
           content_block: { type: "tool_use", id: "tool-1", name: "read_file" },
         };
         yield {
           type: "content_block_delta",
+          index: 0,
           delta: { type: "input_json_delta", partial_json: '{"path":"/test.ts"}' },
         };
-        yield { type: "content_block_stop" }; // present — no guard needed
+        yield { type: "content_block_stop", index: 0 };
+        yield { type: "message_delta", delta: { stop_reason: "tool_use" } };
+        yield { type: "message_stop" }; // present — no guard needed
       },
     });
 
@@ -970,16 +971,20 @@ describe("system prompt extraction (regression: bug fix)", () => {
       async *[Symbol.asyncIterator]() {
         yield {
           type: "content_block_start",
+          index: 0,
           content_block: { type: "tool_use", id: "tool_1", name: "write_file" },
         };
         yield {
           type: "content_block_delta",
+          index: 0,
           delta: {
             type: "input_json_delta",
             partial_json: '{"path":"out.html","content":"<h1>Hi</h1>"}',
           },
         };
-        yield { type: "content_block_stop" };
+        yield { type: "content_block_stop", index: 0 };
+        yield { type: "message_delta", delta: { stop_reason: "tool_use" } };
+        yield { type: "message_stop" };
       },
     });
 

@@ -74,6 +74,8 @@ function mockSuccess() {
     sdkStream(
       (async function* () {
         yield textEvent;
+        yield { type: "message_delta", delta: { stop_reason: "end_turn" } };
+        yield { type: "message_stop" };
       })(),
     ),
   );
@@ -229,21 +231,26 @@ describe("Anthropic cancellation and request ownership", () => {
   });
 
   it.each(["abort", "timeout"] as const)(
-    "stops between tool end and start from the same event on %s",
+    "stops between validated tool ends from the terminal event on %s",
     async (cause) => {
       const controller = new AbortController();
       const upstream = sdkStream(
         (async function* () {
-          for (const id of ["first", "second"]) {
+          for (const [index, id] of ["first", "second"].entries()) {
             yield {
               type: "content_block_start",
+              index,
               content_block: { type: "tool_use", id, name: "fixture_tool" },
             };
             yield {
               type: "content_block_delta",
+              index,
               delta: { type: "input_json_delta", partial_json: "{}" },
             };
+            yield { type: "content_block_stop", index };
           }
+          yield { type: "message_delta", delta: { stop_reason: "tool_use" } };
+          yield { type: "message_stop" };
         })(),
       );
       sdk.stream.mockResolvedValue(upstream);
@@ -259,6 +266,11 @@ describe("Anthropic cancellation and request ownership", () => {
         type: "tool_use_delta",
         text: "{}",
       });
+      expect((await iterator.next()).value).toMatchObject({
+        type: "tool_use_start",
+        toolCall: { id: "second" },
+      });
+      expect((await iterator.next()).value).toMatchObject({ type: "tool_use_delta", text: "{}" });
       expect((await iterator.next()).value).toMatchObject({
         type: "tool_use_end",
         toolCall: { id: "first" },

@@ -54,7 +54,7 @@ const routes = [
   "responses-stream",
   "anthropic-chat",
   "anthropic-stream",
-  "anthropic-unclosed",
+  "anthropic-two-tools",
   "codex-chat",
   "codex-stream",
 ] as const;
@@ -79,28 +79,30 @@ async function prepare(route: Route, args: string, input: unknown): Promise<LLMP
       stop_reason: "tool_use",
       usage: { input_tokens: 1, output_tokens: 1 },
     });
+    const block = (index: number, argumentsText: string) => [
+      {
+        type: "content_block_start",
+        index,
+        content_block: {
+          type: "tool_use",
+          id: `call-${index + 1}`,
+          name: "fixture_tool",
+          input: {},
+        },
+      },
+      {
+        type: "content_block_delta",
+        index,
+        delta: { type: "input_json_delta", partial_json: argumentsText },
+      },
+      { type: "content_block_stop", index },
+    ];
     mocks.anthropicStream.mockResolvedValue(
       iterable([
-        {
-          type: "content_block_start",
-          content_block: { type: "tool_use", id: "call-1", name: "fixture_tool" },
-        },
-        { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: args } },
-        route === "anthropic-unclosed"
-          ? {
-              type: "content_block_start",
-              content_block: { type: "tool_use", id: "call-2", name: "fixture_tool" },
-            }
-          : { type: "content_block_stop" },
-        ...(route === "anthropic-unclosed"
-          ? [
-              {
-                type: "content_block_delta",
-                delta: { type: "input_json_delta", partial_json: "{}" },
-              },
-              { type: "content_block_stop" },
-            ]
-          : []),
+        ...block(0, args),
+        ...(route === "anthropic-two-tools" ? block(1, "{}") : []),
+        { type: "message_delta", delta: { stop_reason: "tool_use" } },
+        { type: "message_stop" },
       ]),
     );
     return provider;

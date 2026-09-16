@@ -1,6 +1,6 @@
 # Coco: evolución pragmática y entregas progresivas
 
-Fecha: 2026-09-16. Estado: **implementación en curso; E05 activo**.
+Fecha: 2026-09-16. Estado: **cierre de candidato por petición del usuario; desarrollo pausado tras E07.n2b**.
 Base inspeccionada: `174fc4128bc190fe0cb0b581d2153b805c49f4af`, paquete `2.41.0`.
 
 Este es el plan vigente para esta evolución. Sustituye **la secuencia de ejecución**, no la evidencia, del plan de 39 pasos de la [auditoría del 16 de septiembre](../../corbat-coco-auditoria/2026-09-16/public/04-plan-de-progreso.md). La auditoría permanece como snapshot histórico fuera del repositorio; su enlace requiere el directorio hermano. Los IDs COCO y S remiten a ese snapshot. [MASTER_PLAN.md](MASTER_PLAN.md) y [CODEX_IMPROVEMENTS_PLAN.md](CODEX_IMPROVEMENTS_PLAN.md) son antecedentes, no listas adicionales que completar antes de publicar. Mandan [CLAUDE.md](../CLAUDE.md) y los ADR aceptados.
@@ -196,7 +196,7 @@ Los 14 resultados sustituyen el orden de los 39 pasos; no se finge haber reducid
 
 ## 9. Registro de progreso
 
-Paso activo: **E07.n2b**, confirmación terminal de tools Anthropic. E07 permanece IN_PROGRESS; quedan integridad de streams en otros adaptadores, cuotas, procesos descendientes y cierre de la cancelación de extremo a extremo.
+Paso activo: **cierre de candidato y continuidad** por petición del usuario. E07.n2b terminado; no iniciar E07.n2c hasta reanudar. E07 permanece IN_PROGRESS; quedan integridad de streams en otros adaptadores, cuotas, procesos descendientes y cierre de la cancelación de extremo a extremo.
 
 | Bloque | Progreso verificado | Evidencia y límites |
 | --- | --- | --- |
@@ -209,6 +209,7 @@ Paso activo: **E07.n2b**, confirmación terminal de tools Anthropic. E07 permane
 | E07.m1–m3 | Manager, executor y graph/workflow cancelables | Gates269/82/178 tests; resultados parciales y diagnóstico conservados. |
 | E07.n1 | Argumentos estrictos sin reparación ni retry indebido | 988 tests de proveedores, estáticas y revisión independiente correctas. Terminal del stream se aborda en n2. |
 | E07.n2a | Terminales OpenAI con herramientas validados | Gate amplio7790 tests, REPL27, estáticas/build y revisión independiente correctos. |
+| E07.n2b | Terminales Anthropic con herramientas validados | 154 tests, estáticas y revisión independiente correctos. |
 | E08–E15 | Pendientes | Conservan dependencias y criterios de aceptación anteriores. |
 
 Los commits y las revisiones de cada incremento se conservan en Git y en el registro detallado de E07. Los bloqueos abiertos impiden publicar una release estable.

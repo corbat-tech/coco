@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { ResponseIntegrityError } from "./response-integrity.js";
 /**
  * Anthropic Claude provider for Corbat-Coco
@@ -25,7 +26,6 @@ import type {
 import { ProviderError } from "../utils/errors.js";
 import { rethrowCancellation } from "../utils/cancellation.js";
 import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
-import { getLogger } from "../utils/logger.js";
 import { mapToAnthropic, mapToAnthropicEffort } from "./thinking.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
@@ -217,7 +217,21 @@ export class AnthropicProvider implements LLMProvider {
             this.getRequestOptions(options),
           );
 
-          const toolCalls = this.extractToolCalls(response.content);
+          if (
+            !Array.isArray(response.content) ||
+            response.content.some(
+              (block) => !block || typeof block !== "object" || typeof block.type !== "string",
+            )
+          ) {
+            throw new ResponseIntegrityError("Invalid response content blocks", this.name);
+          }
+          this.validateToolStopReason(
+            response.stop_reason,
+            response.content.some((block) => block.type === "tool_use"),
+          );
+          const toolCalls = this.validateCompletedToolCalls(
+            this.extractToolCalls(response.content),
+          );
 
           return {
             id: response.id,
@@ -279,7 +293,7 @@ export class AnthropicProvider implements LLMProvider {
       const timeoutController = new AbortController();
 
       const timeoutInterval = setInterval(() => {
-        if (Date.now() - lastActivityTime > streamTimeout) {
+        if (streamTimeout > 0 && Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
           timeoutTriggered = true;
           timeoutController.abort();
@@ -370,8 +384,16 @@ export class AnthropicProvider implements LLMProvider {
       );
 
       // Track current tool call being built
-      let currentToolCall: Partial<ToolCall> | null = null;
-      let currentToolInputJson = "";
+      type PendingTool = {
+        id: string;
+        name: string;
+        initialInput: unknown;
+        json: string;
+        hasDelta: boolean;
+      };
+      let openBlock: { index: number; type: string; tool?: PendingTool } | null = null;
+      const usedIndices = new Set<number>();
+      const pendingTools: PendingTool[] = [];
 
       // Activity-based timeout: abort the stream if no events for streamTimeout ms.
       // Uses AbortController to safely break the for-await loop (see stream() comment).
@@ -380,7 +402,7 @@ export class AnthropicProvider implements LLMProvider {
       const timeoutController = new AbortController();
 
       const timeoutInterval = setInterval(() => {
-        if (Date.now() - lastActivityTime > streamTimeout) {
+        if (streamTimeout > 0 && Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
           timeoutTriggered = true;
           timeoutController.abort();
@@ -392,95 +414,128 @@ export class AnthropicProvider implements LLMProvider {
       });
 
       try {
-        let streamStopReason: StreamChunk["stopReason"];
-
+        let terminalReason: string | undefined;
         for await (const event of stream) {
           this.assertStreamActive(options, timeoutTriggered);
           lastActivityTime = Date.now();
-
           if (event.type === "message_delta") {
-            const delta = event.delta as { stop_reason?: string };
-            if (delta.stop_reason) {
-              streamStopReason = this.mapStopReason(delta.stop_reason);
+            const reason = event.delta.stop_reason;
+            if (reason) {
+              if (terminalReason && terminalReason !== reason) {
+                throw new ResponseIntegrityError("Conflicting message terminal reasons", this.name);
+              }
+              terminalReason = reason;
             }
           } else if (event.type === "content_block_start") {
-            const contentBlock = event.content_block as {
-              type: string;
-              id?: string;
-              name?: string;
-            };
+            if (
+              openBlock ||
+              terminalReason ||
+              !Number.isInteger(event.index) ||
+              event.index < 0 ||
+              usedIndices.has(event.index)
+            ) {
+              throw new ResponseIntegrityError("Invalid or unclosed content block", this.name);
+            }
+            usedIndices.add(event.index);
+            const contentBlock = event.content_block;
+            if (
+              !contentBlock ||
+              typeof contentBlock !== "object" ||
+              typeof contentBlock.type !== "string"
+            ) {
+              throw new ResponseIntegrityError("Invalid response content block", this.name);
+            }
+            openBlock = { index: event.index, type: contentBlock.type };
             if (contentBlock.type === "tool_use") {
-              // Guard: if a previous tool call was never closed (missing content_block_stop),
-              // finalize it now to prevent argument data bleeding into the next tool call.
-              if (currentToolCall) {
-                getLogger().warn(
-                  `[Anthropic] content_block_stop missing for tool '${currentToolCall.name}' — finalizing early to prevent data bleed.`,
-                );
-                currentToolCall.input = parseToolCallArguments(currentToolInputJson, this.name);
-                this.assertStreamActive(options, timeoutTriggered);
-                yield {
-                  type: "tool_use_end",
-                  toolCall: { ...currentToolCall } as ToolCall,
-                };
-                this.assertStreamActive(options, timeoutTriggered);
+              if (!contentBlock.id?.trim() || !contentBlock.name?.trim()) {
+                throw new ResponseIntegrityError("Tool call is missing its identity", this.name);
               }
-              currentToolCall = {
+              openBlock.tool = {
                 id: contentBlock.id,
                 name: contentBlock.name,
+                initialInput: contentBlock.input,
+                json: "",
+                hasDelta: false,
               };
-              currentToolInputJson = "";
               this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_start",
-                toolCall: { ...currentToolCall },
+                toolCall: { id: contentBlock.id, name: contentBlock.name },
               };
               this.assertStreamActive(options, timeoutTriggered);
             }
           } else if (event.type === "content_block_delta") {
-            const delta = event.delta as {
-              type: string;
-              text?: string;
-              partial_json?: string;
-            };
-            if (delta.type === "text_delta" && delta.text) {
-              this.assertStreamActive(options, timeoutTriggered);
-              yield { type: "text", text: delta.text };
-              this.assertStreamActive(options, timeoutTriggered);
-            } else if (delta.type === "input_json_delta" && delta.partial_json) {
-              currentToolInputJson += delta.partial_json;
+            const delta = event.delta;
+            if (terminalReason || (openBlock && event.index !== openBlock.index)) {
+              throw new ResponseIntegrityError(
+                "Content delta has a mismatched block owner",
+                this.name,
+              );
+            }
+            if (delta.type === "input_json_delta") {
+              if (!openBlock?.tool || event.index !== openBlock.index) {
+                throw new ResponseIntegrityError(
+                  "Tool argument delta has no matching block",
+                  this.name,
+                );
+              }
+              openBlock.tool.hasDelta = true;
+              openBlock.tool.json += delta.partial_json;
               this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_delta",
-                toolCall: {
-                  ...currentToolCall,
-                },
+                toolCall: { id: openBlock.tool.id, name: openBlock.tool.name },
                 text: delta.partial_json,
               };
               this.assertStreamActive(options, timeoutTriggered);
+            } else if (delta.type === "text_delta" && delta.text) {
+              if (openBlock?.tool)
+                throw new ResponseIntegrityError("Text delta belongs to a tool block", this.name);
+              this.assertStreamActive(options, timeoutTriggered);
+              yield { type: "text", text: delta.text };
+              this.assertStreamActive(options, timeoutTriggered);
             }
           } else if (event.type === "content_block_stop") {
-            if (currentToolCall) {
-              currentToolCall.input = parseToolCallArguments(currentToolInputJson, this.name);
-              this.assertStreamActive(options, timeoutTriggered);
-              yield {
-                type: "tool_use_end",
-                toolCall: { ...currentToolCall } as ToolCall,
-              };
-              this.assertStreamActive(options, timeoutTriggered);
-              currentToolCall = null;
-              currentToolInputJson = "";
+            if (!openBlock || event.index !== openBlock.index) {
+              throw new ResponseIntegrityError(
+                "Content block closed without its matching owner",
+                this.name,
+              );
             }
+            if (openBlock.tool) pendingTools.push(openBlock.tool);
+            openBlock = null;
+          } else if (event.type === "message_stop") {
+            if (openBlock)
+              throw new ResponseIntegrityError(
+                "Message ended with an unclosed content block",
+                this.name,
+              );
+            this.validateToolStopReason(terminalReason, pendingTools.length > 0);
+            // Parse and validate the whole batch before publishing the first executable call.
+            const calls = this.validateCompletedToolCalls(
+              pendingTools.map((tool) => ({
+                id: tool.id,
+                name: tool.name,
+                input: tool.hasDelta
+                  ? parseToolCallArguments(tool.json, this.name)
+                  : validateToolCallInput(tool.initialInput, this.name),
+              })),
+            );
+            for (const toolCall of calls) {
+              this.assertStreamActive(options, timeoutTriggered);
+              yield { type: "tool_use_end", toolCall };
+              this.assertStreamActive(options, timeoutTriggered);
+            }
+            this.assertStreamActive(options, timeoutTriggered);
+            yield { type: "done", stopReason: this.mapStopReason(terminalReason!) };
+            this.assertStreamActive(options, timeoutTriggered);
+            return;
           }
         }
         this.assertStreamActive(options, timeoutTriggered);
-        yield { type: "done", stopReason: streamStopReason };
-        this.assertStreamActive(options, timeoutTriggered);
+        throw new ResponseIntegrityError("Tool response ended without message_stop", this.name);
       } finally {
         clearInterval(timeoutInterval);
-      }
-
-      if (timeoutController.signal.aborted) {
-        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
       rethrowCancellation(error, options?.signal);
@@ -718,6 +773,37 @@ export class AnthropicProvider implements LLMProvider {
   /**
    * Extract tool calls from response
    */
+  private validateToolStopReason(reason: string | null | undefined, hasCalls: boolean): void {
+    if (
+      hasCalls
+        ? reason !== "tool_use"
+        : !["end_turn", "stop_sequence", "max_tokens", "refusal"].includes(reason ?? "")
+    ) {
+      throw new ResponseIntegrityError(
+        "Tool response did not finish with a valid terminal reason",
+        this.name,
+      );
+    }
+  }
+
+  private validateCompletedToolCalls(calls: ToolCall[]): ToolCall[] {
+    const byId = new Map<string, ToolCall>();
+    for (const call of calls) {
+      if (!call.id?.trim() || !call.name?.trim()) {
+        throw new ResponseIntegrityError("Tool call is missing its identity", this.name);
+      }
+      const existing = byId.get(call.id);
+      if (
+        existing &&
+        (existing.name !== call.name || !isDeepStrictEqual(existing.input, call.input))
+      ) {
+        throw new ResponseIntegrityError("Conflicting tool calls share an identity", this.name);
+      }
+      byId.set(call.id, call);
+    }
+    return [...byId.values()];
+  }
+
   private extractToolCalls(content: Anthropic.ContentBlock[]): ToolCall[] {
     return content
       .filter((block): block is Anthropic.ToolUseBlock => block.type === "tool_use")
@@ -734,6 +820,7 @@ export class AnthropicProvider implements LLMProvider {
   private mapStopReason(reason: string | null): ChatResponse["stopReason"] {
     switch (reason) {
       case "end_turn":
+      case "refusal":
         return "end_turn";
       case "max_tokens":
         return "max_tokens";
