@@ -478,6 +478,20 @@ describe("confirmToolExecution", () => {
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("[delete_file]"));
     });
 
+    it("shows arguments for an unknown remote tool before confirmation", async () => {
+      const { confirmToolExecution } = await import("./confirmation.js");
+      const toolCall: ToolCall = {
+        id: "remote-call",
+        name: "custom_server_remove",
+        input: { target: "important-record", permanent: true },
+      };
+      mockStdin.sendKey("n");
+      await confirmToolExecution(toolCall);
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("custom_server_remove"));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("important-record"));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('"permanent":true'));
+    });
+
     it("should display bash_exec with full wrapped command", async () => {
       const { confirmToolExecution } = await import("./confirmation.js");
 

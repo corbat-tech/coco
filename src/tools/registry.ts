@@ -16,6 +16,8 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   name: string;
   description: string;
   category: ToolCategory;
+  /** Host-assigned origin; remote declarations never grant execution authority. */
+  provenance?: { kind: "mcp"; serverName: string; toolName: string };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   parameters: z.ZodType<TInput, any, any>;
   execute: (params: TInput) => Promise<TOutput>;

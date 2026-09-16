@@ -59,6 +59,8 @@ const CONFIRMATION_REQUIRED_TOOLS = new Set([
 ]);
 
 function riskForTool(tool: ToolDefinition): PermissionDecision["risk"] {
+  // Remote behavior is unknown: do not infer safety from names, categories or hints.
+  if (tool.provenance?.kind === "mcp") return "secrets-sensitive";
   if (READ_ONLY_TOOL_NAMES.has(tool.name)) return "read-only";
   if (tool.name === "get_env") return "secrets-sensitive";
   if (tool.name === "http_fetch" || tool.name === "http_json") return "network";
@@ -76,7 +78,8 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
     const risk = riskForTool(tool);
 
     const readOnlyTool =
-      READ_ONLY_TOOL_NAMES.has(tool.name) || READ_ONLY_CATEGORIES.has(tool.category);
+      tool.provenance?.kind !== "mcp" &&
+      (READ_ONLY_TOOL_NAMES.has(tool.name) || READ_ONLY_CATEGORIES.has(tool.category));
 
     if (definition.readOnly && !readOnlyTool) {
       return {
@@ -86,7 +89,11 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
       };
     }
 
-    if (risk === "destructive" || CONFIRMATION_REQUIRED_TOOLS.has(tool.name)) {
+    if (
+      tool.provenance?.kind === "mcp" ||
+      risk === "destructive" ||
+      CONFIRMATION_REQUIRED_TOOLS.has(tool.name)
+    ) {
       return {
         allowed: true,
         requiresConfirmation: true,
@@ -106,6 +113,8 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
     tool: ToolDefinition,
     input: Record<string, unknown>,
   ): PermissionDecision {
+    if (tool.provenance?.kind === "mcp") return this.canExecuteTool(mode, tool);
+
     if (tool.name === "spawnSimpleAgent") {
       const risk = riskForSpawnedAgent(input);
       const definition = getAgentMode(mode as AgentModeId);

@@ -364,7 +364,7 @@ function formatToolCallForConfirmation(
     }
 
     default:
-      description = chalk.yellow(name);
+      description = `${chalk.yellow(name)}\n      Arguments: ${wrapCommandText(JSON.stringify(input), 70, "      ")}`;
       break;
   }
 

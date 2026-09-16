@@ -255,6 +255,7 @@ export function wrapMCPTool(
     name: wrappedName,
     description: buildMcpToolDescription(serverName, tool),
     category: opts.category as ToolCategory,
+    provenance: { kind: "mcp", serverName, toolName: tool.name },
     parameters: parametersSchema,
     execute: async (params: unknown) => {
       const timeout = opts.requestTimeout;
