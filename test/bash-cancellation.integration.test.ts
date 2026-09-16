@@ -89,3 +89,88 @@ it.skipIf(process.platform === "win32")(
   },
   20000,
 );
+
+it.each(["cancel", "shell exit"] as const)(
+  "cleans owned TERM-resistant descendants after %s without killing another invocation",
+  async (mode) => {
+    if (process.platform === "win32") return;
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "coco-shell-group-"));
+    const marker = path.join(directory, "escaped-marker");
+    const survivor = path.join(directory, "unrelated-marker");
+    const descendant = path.join(directory, "descendant.cjs");
+    const parent = path.join(directory, "parent.cjs");
+    await fs.writeFile(
+      descendant,
+      `process.on('SIGTERM', () => {}); process.stdout.write('READY\\n'); setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'escaped'), 4500); setInterval(() => {}, 1000);`,
+    );
+    await fs.writeFile(
+      parent,
+      `const child = require('node:child_process').spawn(process.execPath, [${JSON.stringify(descendant)}], {stdio:['ignore','pipe','inherit']}); child.stdout.on('data', data => { process.stdout.write(data); ${mode === "shell exit" ? "process.exit(0);" : ""} }); setInterval(() => {},1000);`,
+    );
+    const { execa: actualExeca } = await vi.importActual<typeof import("execa")>("execa");
+    const environment = {
+      PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`,
+      TMPDIR: directory,
+    };
+    const unrelated = actualExeca(
+      process.execPath,
+      [
+        "-e",
+        `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(survivor)}, 'alive'), 5000)`,
+      ],
+      { env: environment, extendEnv: false },
+    );
+    const controller = new AbortController();
+    let owned: ReturnType<typeof actualExeca> | undefined;
+    const spy = vi.mocked(execaModule.execa).mockImplementation(((
+      command: string,
+      options: execaModule.Options,
+    ) => {
+      owned = actualExeca(command, {
+        ...options,
+        shell: "/bin/sh",
+        env: environment,
+        extendEnv: false,
+      });
+      owned.stdout?.on("data", (chunk) => {
+        if (mode === "cancel" && String(chunk).includes("READY"))
+          controller.abort(new Error("owned cancellation"));
+      });
+      return owned;
+    }) as typeof actualExeca);
+    const quote = (text: string) => "'" + text.replaceAll("'", "'\\''") + "'";
+    let pending: Promise<unknown> | undefined;
+    try {
+      pending = bashExecTool.execute(
+        {
+          command: `exec ${quote(process.execPath)} ${quote(parent)}`,
+          cwd: directory,
+          timeout: 12000,
+        },
+        { signal: controller.signal },
+      );
+      if (mode === "cancel") await expect(pending).rejects.toThrow("owned cancellation");
+      else expect(await pending).toMatchObject({ exitCode: 0 });
+      expect(owned!.exitCode !== null || owned!.signalCode !== null).toBe(true);
+      await unrelated;
+      await expect(fs.readFile(survivor, "utf8")).resolves.toBe("alive");
+      await expect(fs.access(marker)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(_activeSubprocessCount()).toBe(0);
+    } finally {
+      controller.abort();
+      if (owned?.pid) {
+        try {
+          process.kill(-owned.pid, "SIGKILL");
+        } catch {
+          /* Already closed own group. */
+        }
+      }
+      await pending?.catch(() => {});
+      if (unrelated.exitCode === null) unrelated.kill("SIGKILL");
+      await unrelated.catch(() => {});
+      spy.mockImplementation(actualExeca);
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  },
+  20000,
+);

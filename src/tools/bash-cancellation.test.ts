@@ -74,9 +74,9 @@ describe("bash_exec cancellation and terminal outcomes", () => {
     expect(mocked.execa).toHaveBeenCalledWith(
       "fixture-command",
       expect.objectContaining({
-        cancelSignal: controller.signal,
-        forceKillAfterDelay: 3000,
-        timeout: 1234,
+        detached: process.platform !== "win32",
+        buffer: false,
+        timeout: 0,
         reject: false,
       }),
     );
@@ -128,4 +128,43 @@ describe("bash_exec cancellation and terminal outcomes", () => {
     });
     expectCleanup(proc);
   });
+});
+
+it("caps capture and terminal forwarding while draining oversized output", async () => {
+  const stdout = new EventEmitter();
+  const stderr = new EventEmitter();
+  mocked.execa.mockImplementation(() =>
+    Object.assign(
+      new Promise((resolve) => {
+        queueMicrotask(() => {
+          for (let i = 0; i < 64; i++) {
+            stdout.emit("data", Buffer.alloc(65536, "x"));
+            stderr.emit("data", Buffer.alloc(65536, "y"));
+          }
+          resolve({ exitCode: 0 });
+        });
+      }),
+      { stdout, stderr, kill: vi.fn(), killed: false },
+    ),
+  );
+  const result = await bashExecTool.execute({ command: "fixture-large-output" });
+  const stdoutWrites = vi
+    .mocked(process.stdout.write)
+    .mock.calls.map(([data]) => String(data))
+    .join("");
+  const stderrWrites = vi
+    .mocked(process.stderr.write)
+    .mock.calls.map(([data]) => String(data))
+    .join("");
+  expect(Buffer.byteLength(stdoutWrites)).toBeLessThan(1024 * 1024 + 150);
+  expect(Buffer.byteLength(stderrWrites)).toBeLessThan(1024 * 1024 + 150);
+  expect(stdoutWrites.match(/capture limit reached/g)).toHaveLength(1);
+  expect(stderrWrites.match(/capture limit reached/g)).toHaveLength(1);
+  expect(result.stdout).toContain("Output truncated");
+  expect(result.stderr).toContain("Output truncated");
+  expect(result.stdout.length).toBeLessThan(50200);
+  expect(mocked.execa).toHaveBeenCalledWith(
+    "fixture-large-output",
+    expect.objectContaining({ buffer: false, maxBuffer: 1024 * 1024 }),
+  );
 });

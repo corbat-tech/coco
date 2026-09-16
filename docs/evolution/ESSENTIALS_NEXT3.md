@@ -14,7 +14,7 @@ Por incremento: implementación → pruebas significativas en copia hermética �
 
 ## Progreso
 
-- [ ] Shell y regresión con descendiente real/marcador tardío; stdout/stderr excesivos acotados.
+- [x] Shell: captura y reenvío acotados a1MiB por stream; execa sin buffering; grupo POSIX propio con TERM/KILL, espera de cierre y registro compartido; background indisponible. 60 tests PASS +typecheck, incluidos3 procesos reales (cancelación, descendiente resistente al terminar shell, proceso ajeno intacto). Revisión independiente padre aprobada; implementación core_audit. No garantía sobre procesos que abandonen deliberadamente el grupo o efectos remotos.
 - [ ] Coordinador/sprint y propagación al proceso de tests; sin éxito después de cancelación.
 - [x] Presupuesto de prueba de arquitectura:60s solo para resolución de símbolos del proyecto; detector/fixtures/aserciones intactos. Pruebas aisladas4 PASS (resolución2.94s), revisión independiente del padre aprobada. Global30s y cobertura sin cambios.
 - [ ] Revisión independiente de incrementos.

@@ -39,7 +39,7 @@ function createMockSubprocess(result: { exitCode?: number; stdout?: string; stde
   const subprocess = Object.assign(promise, {
     stdout: stdoutEmitter,
     stderr: stderrEmitter,
-    pid: 99999,
+
     kill: vi.fn(),
   });
 
@@ -48,15 +48,6 @@ function createMockSubprocess(result: { exitCode?: number; stdout?: string; stde
 
 vi.mock("execa", () => ({
   execa: vi.fn().mockImplementation((cmd: string, options?: Record<string, unknown>) => {
-    // For background execution (sync call with detached)
-    if (typeof options === "object" && options?.detached) {
-      const mockSubprocess = {
-        pid: 12345,
-        unref: vi.fn(),
-      };
-      return mockSubprocess;
-    }
-
     // For async calls (returns promise)
     if (cmd === "which" || cmd === "where") {
       return createMockSubprocess({ exitCode: 0, stdout: "/usr/bin/node" });
@@ -153,7 +144,7 @@ describe("bashExecTool", () => {
 
     expect(execa).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ timeout: 5000 }),
+      expect.objectContaining({ timeout: 0, buffer: false }),
     );
   });
 });
@@ -163,23 +154,13 @@ describe("bashBackgroundTool", () => {
     vi.clearAllMocks();
   });
 
-  it("should execute command in background", async () => {
+  it("is unavailable without launching an unowned process", async () => {
     const { bashBackgroundTool } = await import("./bash.js");
-
-    const result = await bashBackgroundTool.execute({
-      command: "sleep 10",
-    });
-
-    expect(result.pid).toBeDefined();
-    expect(result.command).toBe("sleep 10");
-  });
-
-  it("should block dangerous commands", async () => {
-    const { bashBackgroundTool } = await import("./bash.js");
-
-    await expect(bashBackgroundTool.execute({ command: "rm -rf /" })).rejects.toThrow(
-      /blocked by safety rule/i,
+    const { execa } = await import("execa");
+    await expect(bashBackgroundTool.execute({ command: "sleep 10" })).rejects.toThrow(
+      /unavailable.*lifecycle owner/,
     );
+    expect(execa).not.toHaveBeenCalled();
   });
 });
 
@@ -398,12 +379,17 @@ describe("bashExecTool output truncation", () => {
 
     const { bashExecTool } = await import("./bash.js");
 
-    const result = await bashExecTool.execute({ command: "cat large_file" });
-
-    // Output should be truncated
-    expect(result.stdout.length).toBeLessThan(longOutput.length);
-    expect(result.stdout).toContain("[Output truncated");
-    expect(result.stdout).toContain("more characters]");
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const result = await bashExecTool.execute({ command: "cat large_file" });
+      expect(result.stdout.length).toBeLessThan(longOutput.length);
+      expect(result.stdout).toContain("[Output truncated");
+      expect(result.stdout).toContain("more characters]");
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+    }
   });
 
   it("should not truncate output within limit", async () => {
@@ -451,25 +437,6 @@ describe("bashExecTool timeout handling", () => {
   });
 });
 
-describe("bashBackgroundTool error handling", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("should throw ToolError when background command fails to start", async () => {
-    const { execa } = await import("execa");
-    vi.mocked(execa).mockImplementationOnce(() => {
-      throw new Error("Failed to spawn process");
-    });
-
-    const { bashBackgroundTool } = await import("./bash.js");
-
-    await expect(bashBackgroundTool.execute({ command: "some_command" })).rejects.toThrow(
-      /Failed to start background command/,
-    );
-  });
-});
-
 // ── Tool description contracts ────────────────────────────────────────────────
 //
 // These tests protect the LLM-facing descriptions from regressions.
@@ -505,13 +472,9 @@ describe("bashExecTool description — LLM capability contract", () => {
 });
 
 describe("bashBackgroundTool description — LLM capability contract", () => {
-  it("mentions that the tool runs in the user's shell environment", async () => {
+  it("truthfully advertises that background execution is unavailable", async () => {
     const { bashBackgroundTool } = await import("./bash.js");
-    expect(bashBackgroundTool.description).toMatch(/user'?s?\s+(shell\s+)?environment/i);
-  });
-
-  it("mentions full PATH inheritance", async () => {
-    const { bashBackgroundTool } = await import("./bash.js");
-    expect(bashBackgroundTool.description).toMatch(/PATH/);
+    expect(bashBackgroundTool.description).toMatch(/unavailable/i);
+    expect(bashBackgroundTool.description).toMatch(/owned lifecycle/i);
   });
 });

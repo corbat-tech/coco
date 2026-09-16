@@ -7,7 +7,8 @@ import { z } from "zod";
 import { execa, type Options as ExecaOptions } from "execa";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError, TimeoutError } from "../utils/errors.js";
-import { trackSubprocess } from "../utils/subprocess-registry.js";
+import { ownShell } from "./utils/owned-shell.js";
+import { createRequestScope } from "../utils/request-scope.js";
 
 /**
  * Default timeout for commands (2 minutes)
@@ -154,6 +155,8 @@ export const bashExecTool: ToolDefinition<
   name: "bash_exec",
   description: `Execute a shell command and return its stdout, stderr, and exit code. Use this for running build scripts, test runners, linters, package managers, CLI tools, git commands, or any other shell operation. Runs in the user's shell environment with their full PATH and locally-configured credentials (kubeconfig, gcloud auth, AWS profiles, SSH keys) so never claim you cannot run a command due to missing credentials — always attempt and report the actual exit code. Do NOT use this to read or write files (use read_file / write_file / edit_file which are safer); prefer specific file tools for file operations.
 
+POSIX invocations own a process group and clean it up on completion/cancellation. Windows cancellation covers the direct child only; descendant cleanup is not guaranteed. This is not a sandbox.
+
 Runs with the user's full PATH and inherited environment — any tool installed
 on the user's machine is available: kubectl, gcloud, aws, docker, git, node,
 pnpm, and others.
@@ -216,15 +219,18 @@ Examples:
       },
     });
 
+    const scope = createRequestScope(context?.signal, timeoutMs);
     try {
-      context?.signal?.throwIfAborted();
+      scope.signal.throwIfAborted();
       heartbeat.start();
 
       const options: ExecaOptions = {
         cwd: cwd ?? process.cwd(),
-        timeout: timeoutMs,
-        cancelSignal: context?.signal,
-        forceKillAfterDelay: 3000,
+        timeout: 0,
+        detached: process.platform !== "win32",
+        ...(process.platform === "win32"
+          ? { cancelSignal: scope.signal, forceKillAfterDelay: 3000 }
+          : {}),
         env: { ...process.env, ...env },
         shell: true,
         reject: false,
@@ -232,34 +238,57 @@ Examples:
         maxBuffer: MAX_OUTPUT_SIZE,
       };
 
-      const subprocess = trackSubprocess(execa(command, options));
+      const subprocess = execa(command, options);
+      const completion = ownShell(subprocess, scope.signal);
 
       let stdoutBuffer = "";
       let stderrBuffer = "";
+      let stdoutBytes = 0;
+      let stderrBytes = 0;
+      let stdoutTruncated = false;
+      let stderrTruncated = false;
 
       // Stream stdout in real-time
       const onStdout = (chunk: Buffer) => {
-        const text = chunk.toString();
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const remaining = MAX_OUTPUT_SIZE - stdoutBytes;
+        const retained = bytes.subarray(0, Math.max(0, remaining));
+        stdoutBytes += retained.length;
+        const text = retained.toString();
         stdoutBuffer += text;
-        process.stdout.write(text);
+        if (text) process.stdout.write(text);
+        if (bytes.length > remaining && !stdoutTruncated) {
+          stdoutTruncated = true;
+          stdoutBuffer += "\n[Output truncated: capture limit reached]";
+          process.stdout.write("\n[Output truncated: capture limit reached]\n");
+        }
         heartbeat.activity();
       };
       subprocess.stdout?.on("data", onStdout);
 
       // Stream stderr in real-time
       const onStderr = (chunk: Buffer) => {
-        const text = chunk.toString();
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const remaining = MAX_OUTPUT_SIZE - stderrBytes;
+        const retained = bytes.subarray(0, Math.max(0, remaining));
+        stderrBytes += retained.length;
+        const text = retained.toString();
         stderrBuffer += text;
-        process.stderr.write(text);
+        if (text) process.stderr.write(text);
+        if (bytes.length > remaining && !stderrTruncated) {
+          stderrTruncated = true;
+          stderrBuffer += "\n[Output truncated: capture limit reached]";
+          process.stderr.write("\n[Output truncated: capture limit reached]\n");
+        }
         heartbeat.activity();
       };
       subprocess.stderr?.on("data", onStderr);
 
-      const result = await subprocess.finally(() => {
+      const result = await completion.finally(() => {
         subprocess.stdout?.off("data", onStdout);
         subprocess.stderr?.off("data", onStderr);
       });
-      context?.signal?.throwIfAborted();
+      scope.signal.throwIfAborted();
       // reject:false returns termination errors as results, never a successful exit.
       if (result.isCanceled) throw new Error("Command canceled");
       if (result.timedOut) {
@@ -285,6 +314,11 @@ Examples:
     } catch (error) {
       context?.signal?.throwIfAborted();
       if (error instanceof TimeoutError) throw error;
+      if (scope.signal.aborted && scope.signal.reason?.name === "TimeoutError")
+        throw new TimeoutError(`Command timed out after ${timeoutMs}ms`, {
+          timeoutMs,
+          operation: "bash_exec",
+        });
       if ((error as { isCanceled?: boolean } | undefined)?.isCanceled) {
         throw new ToolError("Command canceled", { tool: "bash_exec" });
       }
@@ -300,6 +334,7 @@ Examples:
         { tool: "bash_exec", cause: error instanceof Error ? error : undefined },
       );
     } finally {
+      scope.dispose();
       heartbeat.stop();
       // Clear the heartbeat line if it was shown
       process.stderr.write("\r                                        \r");
@@ -322,71 +357,19 @@ export const bashBackgroundTool: ToolDefinition<
   }
 > = defineTool({
   name: "bash_background",
-  description: `Execute a command in the background in the user's shell environment (returns immediately with PID).
-
-Like bash_exec, runs with the user's full PATH and inherited environment — any
-tool available in the user's shell (docker, kubectl, gcloud, etc.) can be used.
-
-Examples:
-- Start dev server:  { "command": "npm run dev" }
-- Run watcher:       { "command": "npx nodemon src/index.ts" }
-- Start database:    { "command": "docker-compose up" }`,
+  description:
+    "Unavailable: background commands require an owned lifecycle. Use bash_exec for bounded foreground commands.",
   category: "bash",
   parameters: z.object({
     command: z.string().describe("Command to execute"),
     cwd: z.string().optional().describe("Working directory"),
     env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
   }),
-  async execute({ command, cwd, env }) {
-    // Check for dangerous commands (same two-pass logic as bashExecTool).
-    const shellPart = getShellCommandPart(command);
-    for (const { pattern, rule } of DANGEROUS_PATTERNS_FULL) {
-      if (pattern.test(command)) {
-        throw new ToolError(
-          `Command blocked by safety rule: "${rule}". Rewrite the command to avoid this pattern, or use a safer alternative.`,
-          { tool: "bash_background" },
-        );
-      }
-    }
-    for (const { pattern, rule } of DANGEROUS_PATTERNS_SHELL_ONLY) {
-      if (pattern.test(shellPart)) {
-        throw new ToolError(
-          `Command blocked by safety rule: "${rule}". Rewrite the command to avoid this pattern, or use a safer alternative.`,
-          { tool: "bash_background" },
-        );
-      }
-    }
-
-    try {
-      // Create filtered environment for background process (security)
-      const filteredEnv: Record<string, string> = {};
-      for (const [key, value] of Object.entries(process.env)) {
-        if (value !== undefined && isEnvVarSafe(key)) {
-          filteredEnv[key] = value;
-        }
-      }
-
-      const subprocess = execa(command, {
-        cwd: cwd ?? process.cwd(),
-        env: { ...filteredEnv, ...env },
-        shell: true,
-        detached: true,
-        stdio: "ignore",
-      });
-
-      // Unref to allow parent to exit
-      subprocess.unref();
-
-      return {
-        pid: subprocess.pid ?? 0,
-        command,
-      };
-    } catch (error) {
-      throw new ToolError(
-        `Failed to start background command: ${error instanceof Error ? error.message : String(error)}`,
-        { tool: "bash_background", cause: error instanceof Error ? error : undefined },
-      );
-    }
+  async execute() {
+    throw new ToolError(
+      "bash_background unavailable: no lifecycle owner; use bash_exec for bounded foreground commands",
+      { tool: "bash_background" },
+    );
   },
 });
 
