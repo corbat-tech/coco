@@ -621,7 +621,6 @@ function runtimeModeForAgentType(type: AgentType): RuntimeMode {
   switch (type) {
     case "explore":
     case "plan":
-    case "docs":
       return "plan";
     case "review":
     case "security":
@@ -635,6 +634,7 @@ function runtimeModeForAgentType(type: AgentType): RuntimeMode {
     case "e2e":
     case "refactor":
     case "database":
+    case "docs":
       return "build";
   }
 }

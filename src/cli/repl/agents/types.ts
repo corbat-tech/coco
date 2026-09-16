@@ -13,19 +13,8 @@ import type {
 /**
  * Available agent types for specialized tasks
  */
-export type AgentType =
-  | "explore"
-  | "plan"
-  | "test"
-  | "debug"
-  | "review"
-  | "architect"
-  | "security"
-  | "tdd"
-  | "refactor"
-  | "e2e"
-  | "docs"
-  | "database";
+import type { AgentType } from "../../../runtime/agent-type.js";
+export type { AgentType } from "../../../runtime/agent-type.js";
 
 /**
  * Agent status indicating current state

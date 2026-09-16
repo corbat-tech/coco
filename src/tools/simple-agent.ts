@@ -9,6 +9,7 @@
 
 import { z } from "zod";
 import { defineTool } from "./registry.js";
+import { AGENT_TYPES, resolveAgentType } from "../runtime/agent-type.js";
 import {
   getAgentProvider,
   getAgentToolRegistry,
@@ -16,37 +17,6 @@ import {
 } from "../agents/provider-bridge.js";
 import type { AgentType } from "../cli/repl/agents/types.js";
 import { AGENT_NAMES, AGENT_DESCRIPTIONS } from "../cli/repl/agents/prompts.js";
-
-/**
- * All available agent types from the unified AgentManager system.
- */
-const AGENT_TYPES = [
-  "explore",
-  "plan",
-  "test",
-  "debug",
-  "review",
-  "architect",
-  "security",
-  "tdd",
-  "refactor",
-  "e2e",
-  "docs",
-  "database",
-] as const;
-
-/**
- * Maps legacy role names to the closest AgentManager type.
- * Ensures backward compatibility with existing callers.
- */
-const LEGACY_ROLE_MAP: Record<string, AgentType> = {
-  researcher: "explore",
-  coder: "debug", // "debug" has write + bash + read — closest to general coding
-  tester: "test",
-  reviewer: "review",
-  optimizer: "refactor",
-  planner: "plan",
-};
 
 const SpawnSimpleAgentSchema = z.object({
   task: z.string().describe("Task description for the sub-agent"),
@@ -63,15 +33,6 @@ const SpawnSimpleAgentSchema = z.object({
     .describe("DEPRECATED: Use 'type' instead. Legacy role name, mapped to new agent types."),
   maxTurns: z.number().default(10).describe("Maximum tool-use turns for the agent"),
 });
-
-/**
- * Resolve the agent type from input, supporting both new 'type' and legacy 'role'.
- */
-function resolveAgentType(input: { type?: AgentType; role?: string }): AgentType {
-  if (input.type) return input.type;
-  if (input.role && input.role in LEGACY_ROLE_MAP) return LEGACY_ROLE_MAP[input.role] as AgentType;
-  return "explore"; // default
-}
 
 /**
  * Spawn a sub-agent with specialized role via the unified AgentManager

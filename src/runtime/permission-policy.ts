@@ -1,3 +1,4 @@
+import { resolveAgentType } from "./agent-type.js";
 import { getAgentMode, type AgentModeId } from "./agent-modes.js";
 import type { ToolDefinition } from "../tools/registry.js";
 import type { PermissionDecision, PermissionPolicy, RuntimeMode } from "./types.js";
@@ -115,13 +116,17 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
   ): PermissionDecision {
     if (tool.provenance?.kind === "mcp") return this.canExecuteTool(mode, tool);
 
-    if (tool.name === "spawnSimpleAgent") {
-      const risk = riskForSpawnedAgent(input);
+    if (tool.name === "spawnSimpleAgent" || tool.name === "delegateTask") {
+      const roleInput =
+        tool.name === "spawnSimpleAgent"
+          ? { type: input["type"], role: input["role"] }
+          : { type: input["agentType"], role: input["agentRole"] };
+      const risk = riskForSpawnedAgent(roleInput);
       const definition = getAgentMode(mode as AgentModeId);
       if (definition.readOnly && risk !== "read-only" && risk !== "network") {
         return {
           allowed: false,
-          reason: `${definition.label} mode is read-only; spawnSimpleAgent with this role can perform ${risk} work.`,
+          reason: `${definition.label} mode is read-only; ${tool.name} with this role can perform ${risk} work.`,
           risk,
         };
       }
@@ -159,9 +164,7 @@ export function createPermissionPolicy(): PermissionPolicy {
 }
 
 function riskForSpawnedAgent(input: Record<string, unknown>): PermissionDecision["risk"] {
-  const type = typeof input["type"] === "string" ? input["type"] : undefined;
-  const role = typeof input["role"] === "string" ? input["role"] : undefined;
-  const resolved = type ?? role;
+  const resolved = resolveAgentType(input);
 
   switch (resolved) {
     case "explore":
@@ -169,22 +172,16 @@ function riskForSpawnedAgent(input: Record<string, unknown>): PermissionDecision
     case "review":
     case "architect":
     case "security":
-    case "docs":
-    case "researcher":
-    case "reviewer":
-    case "planner":
       return "read-only";
     case "database":
       return "secrets-sensitive";
     case "test":
     case "tdd":
     case "e2e":
-    case "tester":
       return "destructive";
+    case "docs":
     case "debug":
     case "refactor":
-    case "coder":
-    case "optimizer":
       return "write";
     default:
       return "read-only";
