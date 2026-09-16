@@ -465,3 +465,74 @@ describe("runSprints", () => {
     expect(s001!.errors.some((e) => /failing|test/i.test(e))).toBe(true);
   });
 });
+
+describe("sprint cancellation", () => {
+  it("rejects pre-abort without setup or child work", async () => {
+    const controller = new AbortController();
+    const reason = new Error("stop before setup");
+    controller.abort(reason);
+    await expect(
+      runSprints({
+        spec: makeSpec(),
+        provider: {} as LLMProvider,
+        onProgress: vi.fn(),
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(reason);
+    expect(mockCoordinateAgents).not.toHaveBeenCalled();
+    expect(mockRunTests).not.toHaveBeenCalled();
+  });
+  it.each(["tasks", "quality", "integration", "tests"])(
+    "does not recover %s cancellation into score or success",
+    async (stage) => {
+      const controller = new AbortController();
+      const reason = new Error("host interrupted");
+      const progress = vi.fn();
+      let count = 0;
+      mockCoordinateAgents.mockImplementation(async (_tasks, options) => {
+        expect(options.signal).toBeInstanceOf(AbortSignal);
+        count++;
+        if (count === { tasks: 1, quality: 2, integration: 3, tests: -1 }[stage]!)
+          controller.abort(reason);
+        return successCoordResult();
+      });
+      mockRunTests.mockImplementation(async (_input, context) => {
+        expect(context.signal).toBeInstanceOf(AbortSignal);
+        if (stage === "tests") controller.abort(reason);
+        return passingTestResult();
+      });
+      await expect(
+        runSprints({
+          spec: makeSpec(),
+          provider: {} as LLMProvider,
+          onProgress: progress,
+          signal: controller.signal,
+        }),
+      ).rejects.toBe(reason);
+      expect(count).toBe({ tasks: 1, quality: 2, integration: 3, tests: 1 }[stage]!);
+      if (stage !== "integration")
+        expect(progress.mock.calls.some(([message]) => message.includes("DONE"))).toBe(false);
+    },
+  );
+  it("cleans its total deadline after a late result and skips following gates", async () => {
+    vi.useFakeTimers();
+    try {
+      mockCoordinateAgents.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        return successCoordResult();
+      });
+      const outcome = runSprints({
+        spec: makeSpec(),
+        provider: {} as LLMProvider,
+        onProgress: vi.fn(),
+        timeoutMs: 10,
+      }).catch((error) => error);
+      await vi.advanceTimersByTimeAsync(15);
+      expect(await outcome).toMatchObject({ name: "TimeoutError" });
+      expect(mockRunTests).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

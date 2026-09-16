@@ -10,6 +10,7 @@ import fs from "node:fs/promises";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
 import { trackSubprocess } from "../utils/subprocess-registry.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 
 /**
  * Test result interface
@@ -170,9 +171,12 @@ Examples:
     watch: z.boolean().optional().default(false).describe("Watch mode"),
     args: z.array(z.string()).optional().describe("Extra arguments (e.g. Maven -pl module)"),
   }),
-  async execute({ cwd, pattern, coverage, framework, watch, args: extraArgs }) {
+  async execute({ cwd, pattern, coverage, framework, watch, args: extraArgs }, executionContext) {
+    const signal = executionContext?.signal;
+    signal?.throwIfAborted();
     const projectDir = cwd ?? process.cwd();
     const detectedFramework = framework ?? (await detectTestFramework(projectDir));
+    signal?.throwIfAborted();
 
     if (!detectedFramework) {
       throw new ToolError(
@@ -234,14 +238,18 @@ Examples:
           });
       }
 
+      signal?.throwIfAborted();
       const proc = execa(command, args, {
         cwd: projectDir,
         reject: false,
         timeout: 300000, // 5 minute timeout
-        cleanup: true, // kill process tree on parent exit
+        cleanup: true, // direct child cleanup on parent exit
+        cancelSignal: signal,
+        forceKillAfterDelay: 3000,
       });
       trackSubprocess(proc);
       const result = await proc;
+      signal?.throwIfAborted();
 
       const duration = performance.now() - startTime;
 
@@ -254,6 +262,7 @@ Examples:
         duration,
       );
     } catch (error) {
+      rethrowCancellation(error, signal);
       const msg = error instanceof Error ? error.message : String(error);
       throw new ToolError(
         `Test execution failed: ${msg}. Use command_exists to verify the test framework is installed, or run_script with a custom command.`,

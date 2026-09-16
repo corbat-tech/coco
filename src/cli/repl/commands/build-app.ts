@@ -192,18 +192,28 @@ export const buildAppCommand: SlashCommand = {
     console.log();
 
     let buildResult;
+    const sprintController = new AbortController();
+    const abortSprint = () =>
+      sprintController.abort(new DOMException("Build interrupted", "AbortError"));
+    process.once("SIGINT", abortSprint);
+    process.once("SIGTERM", abortSprint);
     try {
       buildResult = await runSprints({
         spec,
         provider,
+        signal: sprintController.signal,
         onProgress: (msg) => {
           console.log(chalk.dim(`  ${msg}`));
         },
       });
+      sprintController.signal.throwIfAborted();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       p.log.error(`Sprint runner failed: ${msg}`);
       return false;
+    } finally {
+      process.off("SIGINT", abortSprint);
+      process.off("SIGTERM", abortSprint);
     }
 
     // ------------------------------------------------------------------

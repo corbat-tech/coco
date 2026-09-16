@@ -15,9 +15,9 @@ Por incremento: implementación → pruebas significativas en copia hermética �
 ## Progreso
 
 - [x] Shell: captura y reenvío acotados a1MiB por stream; execa sin buffering; grupo POSIX propio con TERM/KILL, espera de cierre y registro compartido; background indisponible. 60 tests PASS +typecheck, incluidos3 procesos reales (cancelación, descendiente resistente al terminar shell, proceso ajeno intacto). Revisión independiente padre aprobada; implementación core_audit. No garantía sobre procesos que abandonen deliberadamente el grupo o efectos remotos.
-- [ ] Coordinador/sprint y propagación al proceso de tests; sin éxito después de cancelación.
+- [x] Coordinador/sprint: señal y deadline total opcional, propagación a agentes/revisores/tests, drenaje de batch iniciado y rechazo de éxito tardío. /build-app posee listeners temporales de SIGINT/SIGTERM y los restaura. 58 tests PASS +typecheck, revisión independiente codex_terminal_fix aprobada. run_tests acredita hijo directo; descendientes y entrevista inicial no ampliados.
 - [x] Presupuesto de prueba de arquitectura:60s solo para resolución de símbolos del proyecto; detector/fixtures/aserciones intactos. Pruebas aisladas4 PASS (resolución2.94s), revisión independiente del padre aprobada. Global30s y cobertura sin cambios.
-- [ ] Revisión independiente de incrementos.
+- [x] Revisión independiente de incrementos; guardas conservan contratos y límites explícitos.
 - [ ] Gate completo, tarball y smoke.
 - [ ] Publicación y verificación npm; release y handoff actualizado.
 
