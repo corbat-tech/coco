@@ -42,7 +42,7 @@ describe("architecture fitness", () => {
     expect(
       violations.map(({ file, text }) => `${relative(process.cwd(), file)}: ${text}`).sort(),
     ).toEqual([]);
-  });
+  }, 60000); // Full-project symbol resolution exceeded 30s twice under instrumented CI contention.
 });
 
 /** Resolve the actual method symbol, rather than depending on a variable name. */

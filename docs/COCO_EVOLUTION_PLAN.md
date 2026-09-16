@@ -196,6 +196,8 @@ Los 14 resultados sustituyen el orden de los 39 pasos; no se finge haber reducid
 
 ## 9. Registro de progreso
 
+**Bloque activo autorizado:** [Imprescindibles next.3](evolution/ESSENTIALS_NEXT3.md): shell acotado/ownership, cancelación de coordinación y sprints, presupuesto CI; después publicar/verificar y pausar extras.
+
 **Punto de continuación guardado:** [HANDOFF_2026-09-16.md](evolution/HANDOFF_2026-09-16.md). El usuario solicita cerrar lo realizado y publicar un candidato; el resto del programa queda pausado hasta que lo retome.
 
 Cierre next.2 (2026-09-17): **publicada y verificada en npm next**, latest2.41.0 intacto. Ajustes revisados,7909 pruebas +27 REPL y smoke desde registro PASS. Publicación local con2FA del tarball exacto validado en CI intento1; reintentos2/3 de Actions agotaron30s en architecture-fitness, pendiente estabilización para próxima release. [Release](https://github.com/corbat-tech/coco/releases/tag/v2.42.0-next.2) y [handoff definitivo](evolution/HANDOFF_2026-09-16.md). Resto del programa pausado.
