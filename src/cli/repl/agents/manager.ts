@@ -516,7 +516,7 @@ export class AgentManager extends EventEmitter {
         results.push({
           type: "tool_result",
           tool_use_id: toolCall.id,
-          content: result.success ? String(result.output ?? "Success") : `Error: ${result.error}`,
+          content: result.success ? formatToolOutput(result.output) : `Error: ${result.error}`,
           is_error: !result.success,
         });
       } catch (error) {
@@ -592,6 +592,11 @@ export class AgentManager extends EventEmitter {
     this.emit(type, event);
     this.emit("agent", event); // Also emit generic event
   }
+}
+
+function formatToolOutput(output: unknown): string {
+  if (output == null) return "Success";
+  return typeof output === "string" ? output : JSON.stringify(output);
 }
 
 function agentTypeToRuntimeRole(type: AgentType): AgentRole {

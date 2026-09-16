@@ -555,6 +555,45 @@ describe("AgentManager", () => {
   });
 
   describe("Tool Execution", () => {
+    it.each([
+      { output: { files: ["a.ts"], count: 1 }, expected: '{"files":["a.ts"],"count":1}' },
+      { output: ["a.ts", "b.ts"], expected: '["a.ts","b.ts"]' },
+      { output: "plain text", expected: "plain text" },
+      { output: false, expected: "false" },
+      { output: 0, expected: "0" },
+      { output: undefined, expected: "Success" },
+    ])("preserves tool output for the child model: $expected", async ({ output, expected }) => {
+      vi.mocked(mockProvider.chatWithTools)
+        .mockResolvedValueOnce({
+          id: "first",
+          content: "",
+          stopReason: "tool_use",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          model: "fixture",
+          toolCalls: [{ id: "read-result", name: "glob", input: { pattern: "*.ts" } }],
+        })
+        .mockResolvedValueOnce({
+          id: "last",
+          content: "Done",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          model: "fixture",
+          toolCalls: [],
+        });
+      vi.mocked(mockToolRegistry.execute).mockResolvedValue({
+        success: true,
+        data: output,
+        duration: 0,
+      });
+      await agentManager.spawn("explore", "Read fixture");
+      const messages = vi.mocked(mockProvider.chatWithTools).mock.calls[1]![0];
+      const results = messages
+        .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
+        .filter((block) => block.type === "tool_result");
+      expect(results).toHaveLength(1);
+      expect(results[0]?.content).toBe(expected);
+    });
+
     it("should execute tools within agent loop", async () => {
       const firstResponse: ChatWithToolsResponse = {
         id: "msg-1",
