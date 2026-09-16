@@ -77,6 +77,30 @@ jobs:
           fail_ci_if_error: false
           verbose: true
 
+  repl:
+    name: REPL integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run REPL integration
+        run: pnpm test:repl
+
   build:
     name: Build
     runs-on: ubuntu-latest
