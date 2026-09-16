@@ -813,6 +813,48 @@ describe("executeAgentTurn", () => {
   });
 
   describe("confirmation handling", () => {
+    it.each([true, false])(
+      "path denial respects skipConfirmation=%s without retrying or granting access",
+      async (skipConfirmation) => {
+        const { executeAgentTurn } = await import("./agent-loop.js");
+        const { promptAllowPath } = await import("./allow-path-prompt.js");
+        vi.mocked(promptAllowPath).mockResolvedValue(false);
+        const call: ToolCall = {
+          id: "path-denied",
+          name: "read_file",
+          input: { path: "/outside/file.txt" },
+        };
+        vi.mocked(mockProvider.streamWithTools!)
+          .mockImplementationOnce(createToolStreamMock("", [call]))
+          .mockImplementation(createTextStreamMock("Access was denied."));
+        vi.mocked(mockToolRegistry.execute).mockResolvedValue({
+          success: false,
+          error:
+            "Reading files outside project directory is not allowed. Use /allow-path /outside to grant access.",
+          duration: 0,
+        });
+        const beforeConfirmation = vi.fn();
+        const result = await executeAgentTurn(
+          mockSession,
+          "Read fixture",
+          mockProvider,
+          mockToolRegistry,
+          { skipConfirmation, onBeforeConfirmation: beforeConfirmation },
+        );
+        expect(promptAllowPath).toHaveBeenCalledTimes(skipConfirmation ? 0 : 1);
+        expect(beforeConfirmation).toHaveBeenCalledTimes(skipConfirmation ? 0 : 1);
+        expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
+        expect(result.toolCalls).toEqual([
+          expect.objectContaining({
+            result: expect.objectContaining({
+              success: false,
+              error: expect.stringContaining("outside project"),
+            }),
+          }),
+        ]);
+      },
+    );
+
     it.each([
       { command: "git status", legacy: true, allowed: false },
       { command: "git status > output.txt", legacy: false, allowed: false },

@@ -999,6 +999,7 @@ export async function executeAgentTurn(
           },
           signal: options.signal,
           onPathAccessDenied: async (dirPath: string) => {
+            if (options.skipConfirmation) return false;
             // Clear spinner before showing interactive prompt
             options.onBeforeConfirmation?.();
             const result = await promptAllowPath(dirPath);

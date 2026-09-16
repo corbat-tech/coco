@@ -63,3 +63,9 @@ Confianza shell vinculada a huella de toolName e input completo (comando/cwd/env
 Revisión independiente `/root/baseline_review`: inicialmente CHANGES_REQUESTED porque manage_permissions admitía autorizar un hash sin mostrar el comando. Corregido rechazando todas las altas shell desde esa herramienta; regresión conserva revocación. Revisión final APPROVED sin objeciones materiales.
 
 Más confirmaciones son una consecuencia deliberada; no se implementa un parser shell ni confinamiento del SO. Rutas y contenido pueden cambiar después de una autorización exacta. Undo y la denegación no interactiva de acceso a rutas quedan pendientes. Sin publicación; rollback por revert.
+
+## E04.h · DONE · 2026-09-16
+
+El callback de acceso denegado del REPL respeta skipConfirmation: no abre diálogo ni repite operación en headless. Conserva el resultado denegado y no concede acceso. Dos casos interactivo/no interactivo; antes uno falla y otro pasa, después suite de consumidores 3 archivos / 80 tests correctos. Typecheck/lint correctos. Logs `path-headless-{before,after}.log`. Implementación/tests coordinador; revisión `/root/baseline_review`: APPROVED. E04.g commit `61591b9`.
+
+La herramienta explícita authorize_path aún requiere revisar su propio diálogo y respuestas canónicas (E04.i); no afirmar que toda interacción headless está resuelta. Undo después. Sin publicación; rollback por revert.
