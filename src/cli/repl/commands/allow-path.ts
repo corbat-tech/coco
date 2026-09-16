@@ -13,6 +13,7 @@ import type { SlashCommand, ReplSession } from "../types.js";
 import {
   getAllowedPaths,
   addAllowedPathToSession,
+  canonicalizeAllowedDirectory,
   removeAllowedPathFromSession,
   persistAllowedPath,
   removePersistedAllowedPath,
@@ -72,15 +73,16 @@ export const allowPathCommand: SlashCommand = {
  * Add a new allowed path with confirmation
  */
 async function addPath(dirPath: string, session: ReplSession): Promise<void> {
-  const absolute = path.resolve(dirPath);
+  let absolute = path.resolve(dirPath);
 
-  // Validate: must exist and be a directory
+  // Validate and freeze the destination before asking for consent.
   try {
     const stat = await fs.stat(absolute);
     if (!stat.isDirectory()) {
       p.log.error(`Not a directory: ${absolute}`);
       return;
     }
+    absolute = canonicalizeAllowedDirectory(absolute);
   } catch {
     p.log.error(`Directory not found: ${absolute}`);
     return;
@@ -89,7 +91,13 @@ async function addPath(dirPath: string, session: ReplSession): Promise<void> {
   // Validate: not a system path
   for (const blocked of BLOCKED_SYSTEM_PATHS) {
     const normalizedBlocked = path.normalize(blocked);
-    if (absolute === normalizedBlocked || absolute.startsWith(normalizedBlocked + path.sep)) {
+    const requested = path.resolve(dirPath);
+    if (
+      absolute === normalizedBlocked ||
+      absolute.startsWith(normalizedBlocked + path.sep) ||
+      requested === normalizedBlocked ||
+      requested.startsWith(normalizedBlocked + path.sep)
+    ) {
       p.log.error(`System path '${blocked}' cannot be allowed`);
       return;
     }
@@ -134,10 +142,10 @@ async function addPath(dirPath: string, session: ReplSession): Promise<void> {
   const level = (action as string).includes("read") ? "read" : "write";
   const persist = (action as string).startsWith("persist");
 
-  addAllowedPathToSession(absolute, level as "read" | "write");
+  addAllowedPathToSession(absolute, level as "read" | "write", absolute);
 
   if (persist) {
-    await persistAllowedPath(absolute, level as "read" | "write");
+    await persistAllowedPath(absolute, level as "read" | "write", absolute);
   }
 
   const levelLabel = level === "write" ? "write" : "read-only";

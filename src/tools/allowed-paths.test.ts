@@ -5,6 +5,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import path from "node:path";
 
+const canonicalFs = vi.hoisted(() => ({
+  realpathSync: vi.fn((input: string) => input),
+  statSync: vi.fn(() => ({ isDirectory: () => true })),
+}));
+vi.mock("node:fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs")>()),
+  ...canonicalFs,
+}));
+
 // Mock fs before importing the module
 vi.mock("node:fs/promises", () => ({
   default: {
@@ -40,6 +49,8 @@ describe("Allowed Paths Store", () => {
   beforeEach(() => {
     clearSessionAllowedPaths();
     vi.clearAllMocks();
+    canonicalFs.realpathSync.mockImplementation((input: string) => input);
+    canonicalFs.statSync.mockImplementation(() => ({ isDirectory: () => true }));
   });
 
   describe("getAllowedPaths", () => {

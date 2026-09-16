@@ -113,6 +113,10 @@ export async function resolvePathSecurely(
   const absolute = userPath(filePath, root);
   const canonicalRoot = await canonicalPath(root);
   const canonical = await canonicalPath(absolute);
+  const operative =
+    options.followLeaf === false || operation === "delete"
+      ? path.join(await canonicalPath(path.dirname(absolute)), path.basename(absolute))
+      : canonical;
   const grants = options.allowedPaths ?? getAllowedPaths();
   const home = process.env.HOME || process.env.USERPROFILE;
   const homeRead = (candidate: string, homeDir: string): boolean =>
@@ -122,9 +126,17 @@ export async function resolvePathSecurely(
   const allowed = async (): Promise<boolean> => {
     // Check both names and targets: a project symlink cannot import an arbitrary
     // external scope, while platform aliases of the project root remain valid.
-    if (isWithinDirectory(absolute, root) && isWithinDirectory(canonical, canonicalRoot))
+    if (
+      isWithinDirectory(absolute, root) &&
+      isWithinDirectory(canonical, canonicalRoot) &&
+      isWithinDirectory(operative, canonicalRoot)
+    )
       return true;
-    if (isWithinDirectory(absolute, canonicalRoot) && isWithinDirectory(canonical, canonicalRoot))
+    if (
+      isWithinDirectory(absolute, canonicalRoot) &&
+      isWithinDirectory(canonical, canonicalRoot) &&
+      isWithinDirectory(operative, canonicalRoot)
+    )
       return true;
     for (const blocked of BLOCKED_PATHS) {
       if (isWithinDirectory(absolute, blocked)) {
@@ -137,18 +149,30 @@ export async function resolvePathSecurely(
       if (operation !== "read" && entry.level !== "write") continue;
       const grantRoot = path.resolve(entry.path);
       const canonicalGrant = await canonicalPath(grantRoot);
+      if (canonicalGrant !== grantRoot) continue; // A previously pinned directory was retargeted.
       if (
         (isWithinDirectory(absolute, grantRoot) || isWithinDirectory(absolute, canonicalGrant)) &&
-        isWithinDirectory(canonical, canonicalGrant)
+        isWithinDirectory(canonical, canonicalGrant) &&
+        isWithinDirectory(operative, canonicalGrant)
       )
         return true;
-      // A link from the project to an explicitly granted destination is allowed.
-      if (isWithinDirectory(absolute, root) && isWithinDirectory(canonical, canonicalGrant))
+      // Resolve aliases without broadening the destination or mutating an
+      // ungranted link entry. Reads/writes use canonical; unlink/rename use operative.
+      if (
+        isWithinDirectory(canonical, canonicalGrant) &&
+        (isWithinDirectory(operative, canonicalGrant) ||
+          isWithinDirectory(operative, canonicalRoot))
+      )
         return true;
     }
     if (operation === "read" && options.allowHomeConfigReads !== false && home) {
       const canonicalHome = await canonicalPath(home);
-      if (homeRead(absolute, home) && homeRead(canonical, canonicalHome)) return true;
+      if (
+        homeRead(absolute, home) &&
+        homeRead(canonical, canonicalHome) &&
+        homeRead(operative, canonicalHome)
+      )
+        return true;
     }
     return false;
   };
@@ -172,7 +196,5 @@ export async function resolvePathSecurely(
       }
     }
   }
-  return options.followLeaf === false || operation === "delete"
-    ? path.join(await canonicalPath(path.dirname(absolute)), path.basename(absolute))
-    : canonical;
+  return operative;
 }

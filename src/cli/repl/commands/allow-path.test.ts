@@ -29,6 +29,7 @@ vi.mock("chalk", () => ({
 vi.mock("../../../tools/allowed-paths.js", () => ({
   getAllowedPaths: vi.fn().mockReturnValue([]),
   addAllowedPathToSession: vi.fn(),
+  canonicalizeAllowedDirectory: vi.fn((input: string) => input),
   removeAllowedPathFromSession: vi.fn().mockReturnValue(true),
   persistAllowedPath: vi.fn().mockResolvedValue(undefined),
   removePersistedAllowedPath: vi.fn().mockResolvedValue(undefined),
@@ -38,6 +39,7 @@ import * as p from "@clack/prompts";
 import fs from "node:fs/promises";
 import {
   getAllowedPaths,
+  canonicalizeAllowedDirectory,
   addAllowedPathToSession,
   removeAllowedPathFromSession,
   persistAllowedPath,
@@ -57,6 +59,32 @@ afterEach(() => {
 });
 
 describe("allowPathCommand", () => {
+  it("shows and grants the canonical destination resolved before confirmation", async () => {
+    vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => true } as never);
+    vi.mocked(getAllowedPaths).mockReturnValue([]);
+    vi.mocked(canonicalizeAllowedDirectory).mockReturnValueOnce("/resolved/destination");
+    vi.mocked(p.select).mockResolvedValueOnce("session-read");
+    await allowPathCommand.execute(["/alias"], mockSession);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining("/resolved/destination"));
+    expect(addAllowedPathToSession).toHaveBeenCalledExactlyOnceWith(
+      "/resolved/destination",
+      "read",
+      "/resolved/destination",
+    );
+    expect(canonicalizeAllowedDirectory).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not prompt or grant when the destination cannot be canonicalized", async () => {
+    vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => true } as never);
+    vi.mocked(canonicalizeAllowedDirectory).mockImplementationOnce(() => {
+      throw new Error("ELOOP");
+    });
+    await allowPathCommand.execute(["/alias"], mockSession);
+    expect(p.select).not.toHaveBeenCalled();
+    expect(addAllowedPathToSession).not.toHaveBeenCalled();
+    expect(p.log.error).toHaveBeenCalled();
+  });
+
   it("has correct metadata", () => {
     expect(allowPathCommand.name).toBe("allow-path");
     expect(allowPathCommand.aliases).toContain("ap");

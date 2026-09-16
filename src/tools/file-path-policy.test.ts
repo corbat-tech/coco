@@ -143,4 +143,33 @@ describe("canonical file path policy", () => {
     }
     expect(await fs.readFile(sentinel, "utf8")).toBe("unchanged");
   });
+  it.each(["project", "grant"])(
+    "rejects a no-follow operation whose parent escapes %s and leaf points back",
+    async (scope) => {
+      const permitted = scope === "project" ? project : path.join(fixture, "grant");
+      if (scope === "grant") await fs.mkdir(permitted);
+      const target = path.join(permitted, "target.txt");
+      const externalLink = path.join(outside, "link.txt");
+      await fs.writeFile(target, "preserve target");
+      await fs.symlink(target, externalLink);
+      await fs.symlink(outside, path.join(permitted, "escape"), "dir");
+      const input = path.join(permitted, "escape", "link.txt");
+      const scopedOptions: PathPolicyOptions = {
+        ...options,
+        allowedPaths:
+          scope === "grant"
+            ? [{ path: permitted, level: "write", authorizedAt: new Date(0).toISOString() }]
+            : [],
+      };
+      const removeResolved = async () =>
+        fs.unlink(await resolvePathSecurely(input, "delete", scopedOptions));
+      await expect(removeResolved()).rejects.toThrow(/outside project/);
+      await expect(
+        resolvePathSecurely(input, "write", { ...scopedOptions, followLeaf: false }),
+      ).rejects.toThrow(/outside project/);
+      expect((await fs.lstat(externalLink)).isSymbolicLink()).toBe(true);
+      expect(await fs.readFile(target, "utf8")).toBe("preserve target");
+      expect(await fs.readFile(sentinel, "utf8")).toBe("unchanged");
+    },
+  );
 });
