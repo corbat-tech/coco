@@ -87,3 +87,13 @@ REST v1 generateContent/streamGenerateContent y SSE contrastados con [referencia
 Revisión E07.i detectó regresión potencial gcloud.cmd/Windows y se corrigió con launcher fijo sin datos de usuario. Tres regresiones adicionales simulan Windows; no constituyen smoke real en ese SO. Gate final7 archivos/116 tests correctos; typecheck/lint/format correctos (e07i-final).
 
 /root/baseline_review APPROVED tras corrección; total13 casos ADC (10 iniciales y3Windows).
+
+## E07.j · DONE · 2026-09-16
+
+Cuatro operaciones Codex usan scope con señal hasta fetch y plazo total por llamada/configuración (default120000,0desactiva). Sustituye watchdogs que solo marcaban un flag sin desbloquear reader.read. Lector SSE compartido para chat/tools/streams, cancelado y lock liberado en finally; guardias antes/después de lecturas y emisiones, causa preservada, sin resultado final tras cancelación ni petición adicional durante backoff. El parseo separado no absorbe excepciones del consumidor/cancelación como JSON inválido.
+
+Endpoint ChatGPT backend separado de OpenAI API estándar; conserva autenticación, catálogo y payloads existentes. Contraste de transporte Responses con [fuente oficial OpenAI Codex](https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/endpoint/responses.rs), consultada2026-09-16; no se declara contrato público estable del backend ni se asume compatibilidad completa con API OpenAI. Autenticación initialize/isAvailable y renovación OAuth siguen pendientes de incremento propio; tampoco cambia aquí integridad/truncamiento/deduplicación de tools.
+
+48 casos independientes +51 anteriores correctos. Seis integraciones con fetch real redirigido únicamente desde endpoint esperado a HTTP loopback y OAuth fixture: cuatro rutas antes de headers y dos streams con body pendiente; desconexión, motivo preservado y una petición. Gate providers/integración29 archivos/912 tests correctos; typecheck/lint/format correctos. Logs e07j-providers/types/lint/format/http. Coordinador implementación y HTTP; /root/core_audit contratos. Sin conexión a cuentas ni inferencia externa; rollback por revert.
+
+/root/baseline_review APPROVED E07.j; inicialización y renovación OAuth quedan para E07.k.
