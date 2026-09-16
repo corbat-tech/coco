@@ -19,3 +19,13 @@ Diez pruebas reales de grants más consumidores: 6 archivos / 84 tests pasan. Se
 E04.c todavía debe sustituir los accesos de file.ts y demostrar efectos reales negativos; este incremento no afirma que todas las herramientas estén ya protegidas. Sin publicación, rollback por revert.
 
 Hallazgo independiente E04.b: CHANGES_REQUESTED por escape estático de doble enlace en delete/no-follow (padre sale del scope, hoja vuelve al target permitido). Corregido exigiendo pertenencia de la ruta operativa en todas las ramas de autorización, no solo del destino final. Dos regresiones proyecto/grant fallan antes de la corrección y pasan después; incluyen intento condicionado de unlink y preservan entrada y target externos. Log `path-grants-double-link-before.log`; revisión de corrección `/root/baseline_review`: APPROVED, sin objeciones materiales pendientes.
+
+## E04.c · DONE · 2026-09-16
+
+Read/write/edit/delete/copy/move usan el resolver común antes de cualquier acceso que pueda producir efectos. Copy/move validan ambos extremos antes de mkdir; delete y rename conservan la hoja del enlace. El export resolvePathSecurely de file.ts se conserva mediante reexport. Retirada la antigua política duplicada basada parcialmente en HOME.
+
+Regresiones con efectos reales: 13 casos (9 fallan antes, 4 de paridad ya pasaban), con sentinels, ausencia de directorios/archivos externos y conservación de targets al borrar/mover enlaces. Incluye escape de doble enlace cuyo destino vuelve al proyecto. Con corpus REPL, sugerencias y políticas: 6 archivos / 133 pruebas pasan. Typecheck/lint correctos; logs `file-scope-{before,after,consumers}.log` y `e04c-file-fixture.log`.
+
+`/root/core_audit` aporta tests reales, `/root/file_fixture_update` adapta únicamente las rutas del filesystem simulado a raíz /test sin conceder accesos universales. Coordinador implementa, refuerza doble enlace y corrige restauración de HOME preexistente en tests. Revisión independiente `/root/baseline_review`: APPROVED, sin hallazgos materiales.
+
+Enumeración (glob/list_dir/tree/file_exists), COMPLETE, shell y undo aún pendientes; no afirmar que COCO-02 está totalmente cerrado. No se eliminan carreras contra procesos externos no confiables. Sin publicación, rollback por revert.
