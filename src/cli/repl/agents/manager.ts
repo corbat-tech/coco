@@ -14,6 +14,7 @@ import type {
   ToolUseContent,
 } from "../../../providers/types.js";
 import type { ToolRegistry } from "../../../tools/registry.js";
+import { isCancellation, rethrowCancellation } from "../../../utils/cancellation.js";
 import { getLogger } from "../../../utils/logger.js";
 import type {
   AgentType,
@@ -147,56 +148,46 @@ export class AgentManager extends EventEmitter {
       });
     }
 
+    const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
+    if (!Number.isFinite(timeout) || timeout < 0 || timeout > 2147483647) {
+      throw new RangeError("Agent timeout must be between 0 and 2147483647ms");
+    }
     // Create the agent
     const agent = this.createAgent(type, task);
     this.activeAgents.set(agent.id, agent);
-    options.onStatusChange?.(agent);
 
     // Set up abort controller for this agent
     const internalAbortController = new AbortController();
     this.abortControllers.set(agent.id, internalAbortController);
 
-    // Link external signal if provided
-    if (options.signal) {
-      // If already aborted, abort immediately
-      if (options.signal.aborted) {
-        internalAbortController.abort();
-      } else {
-        // Listen for future abort
-        options.signal.addEventListener("abort", () => {
-          internalAbortController.abort();
-        });
-      }
-    }
-
-    // Set up timeout if specified
-    const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
-    const timeoutId = setTimeout(() => {
-      if (this.activeAgents.has(agent.id)) {
-        this.logger.warn(`Agent ${agent.id} timed out after ${timeout}ms`);
-        internalAbortController.abort();
-        agent.error = `Agent timed out after ${timeout}ms`;
-        this.emitEvent("timeout", agent);
-      }
-    }, timeout);
-
-    this.logger.info(`Spawned ${type} agent: ${agent.id}`, { task, timeout });
-    this.emitEvent("spawn", agent);
+    const onExternalAbort = () => internalAbortController.abort(options.signal?.reason);
+    if (options.signal?.aborted) onExternalAbort();
+    else options.signal?.addEventListener("abort", onExternalAbort, { once: true });
+    const timeoutId =
+      timeout > 0
+        ? setTimeout(() => {
+            if (this.activeAgents.has(agent.id) && !internalAbortController.signal.aborted) {
+              const reason = new DOMException(`Agent timed out after ${timeout}ms`, "TimeoutError");
+              internalAbortController.abort(reason);
+              this.emitEvent("timeout", agent);
+            }
+          }, timeout)
+        : undefined;
 
     try {
+      options.onStatusChange?.(agent);
+      this.logger.info(`Spawned ${type} agent: ${agent.id}`, { task, timeout });
+      this.emitEvent("spawn", agent);
       // Execute the agent with internal abort controller
       const result = await this.executeAgent(agent, {
         ...options,
         signal: internalAbortController.signal,
       });
 
-      // Clear timeout on completion
-      clearTimeout(timeoutId);
-
       // Emit appropriate event
       if (result.success) {
         this.emitEvent("complete", agent, result);
-      } else if (agent.error?.includes("Aborted")) {
+      } else if (internalAbortController.signal.aborted) {
         this.emitEvent("cancel", agent, result);
       } else {
         this.emitEvent("fail", agent, result);
@@ -204,9 +195,6 @@ export class AgentManager extends EventEmitter {
 
       return result;
     } catch (error) {
-      // Clear timeout on error
-      clearTimeout(timeoutId);
-
       // Handle unexpected errors
       const errorMessage = error instanceof Error ? error.message : String(error);
       agent.status = "failed";
@@ -218,7 +206,7 @@ export class AgentManager extends EventEmitter {
       options.onStatusChange?.(agent);
 
       this.logger.error(`Agent ${agent.id} failed unexpectedly`, { error: errorMessage });
-      this.emitEvent("fail", agent);
+      this.emitEvent(internalAbortController.signal.aborted ? "cancel" : "fail", agent);
 
       return this.buildResult({
         agent,
@@ -229,6 +217,11 @@ export class AgentManager extends EventEmitter {
         startedAt: agent.createdAt.toISOString(),
         usage: { inputTokens: 0, outputTokens: 0 },
       });
+    } finally {
+      clearTimeout(timeoutId);
+      options.signal?.removeEventListener("abort", onExternalAbort);
+      this.abortControllers.delete(agent.id);
+      this.moveToCompleted(agent.id);
     }
   }
 
@@ -249,7 +242,7 @@ export class AgentManager extends EventEmitter {
     }
 
     this.logger.info(`Cancelling agent ${agentId}`);
-    controller.abort();
+    controller.abort(new Error("Aborted by user"));
     return true;
   }
 
@@ -372,104 +365,108 @@ export class AgentManager extends EventEmitter {
     const startedAt = new Date().toISOString();
     const toolsUsed = new Set<string>();
 
-    // Agent execution loop
-    while (iteration < maxTurns) {
-      iteration++;
+    try {
+      // Agent execution loop
+      while (iteration < maxTurns) {
+        iteration++;
 
-      // Check for abort
-      if (options.signal?.aborted) {
-        agent.status = "failed";
-        agent.error = "Aborted by user";
-        agent.completedAt = new Date();
-        this.moveToCompleted(agent.id);
-        options.onStatusChange?.(agent);
+        options.signal?.throwIfAborted();
 
-        return this.buildResult({
-          agent,
-          success: false,
-          output: "Agent execution was aborted",
-          turns: iteration,
-          toolsUsed: Array.from(toolsUsed),
-          startedAt,
-          usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+        // Call LLM
+        const response = await this.provider.chatWithTools(messages, {
+          system: config.systemPrompt,
+          tools,
+          maxTokens: 4096,
+          signal: options.signal,
+        });
+        totalInputTokens += response.usage.inputTokens;
+        totalOutputTokens += response.usage.outputTokens;
+        options.signal?.throwIfAborted();
+
+        // Capture text output
+        if (response.content) {
+          finalOutput += response.content;
+          options.onOutput?.(agent, response.content);
+        }
+
+        // Check if no more tool calls
+        if (!response.toolCalls || response.toolCalls.length === 0) {
+          // Add final response to messages
+          messages.push({ role: "assistant", content: response.content });
+          break;
+        }
+
+        // Execute tool calls
+        const toolResults = await this.executeToolCalls(
+          response.toolCalls,
+          config,
+          toolsUsed,
+          options,
+        );
+
+        // Build assistant message with tool uses
+        const toolUses: ToolUseContent[] = response.toolCalls.map((tc) => ({
+          type: "tool_use",
+          id: tc.id,
+          name: tc.name,
+          input: tc.input,
+          geminiThoughtSignature: tc.geminiThoughtSignature,
+        }));
+
+        const assistantContent = response.content
+          ? [{ type: "text" as const, text: response.content }, ...toolUses]
+          : toolUses;
+
+        messages.push({ role: "assistant", content: assistantContent });
+
+        // Add tool results as user message
+        messages.push({ role: "user", content: toolResults });
+
+        this.logger.debug(`Agent ${agent.id} completed iteration ${iteration}`, {
+          toolCalls: response.toolCalls.length,
         });
       }
 
-      // Call LLM
-      const response = await this.provider.chatWithTools(messages, {
-        system: config.systemPrompt,
-        tools,
-        maxTokens: 4096,
+      options.signal?.throwIfAborted();
+      // Mark as completed
+      agent.status = "completed";
+      agent.result = finalOutput;
+      agent.completedAt = new Date();
+      this.moveToCompleted(agent.id);
+      options.onStatusChange?.(agent);
+
+      this.logger.info(`Agent ${agent.id} completed`, {
+        iterations: iteration,
+        outputLength: finalOutput.length,
       });
 
-      totalInputTokens += response.usage.inputTokens;
-      totalOutputTokens += response.usage.outputTokens;
-
-      // Capture text output
-      if (response.content) {
-        finalOutput += response.content;
-        options.onOutput?.(agent, response.content);
-      }
-
-      // Check if no more tool calls
-      if (!response.toolCalls || response.toolCalls.length === 0) {
-        // Add final response to messages
-        messages.push({ role: "assistant", content: response.content });
-        break;
-      }
-
-      // Execute tool calls
-      const toolResults = await this.executeToolCalls(
-        response.toolCalls,
-        config,
-        toolsUsed,
-        options,
-      );
-
-      // Build assistant message with tool uses
-      const toolUses: ToolUseContent[] = response.toolCalls.map((tc) => ({
-        type: "tool_use",
-        id: tc.id,
-        name: tc.name,
-        input: tc.input,
-        geminiThoughtSignature: tc.geminiThoughtSignature,
-      }));
-
-      const assistantContent = response.content
-        ? [{ type: "text" as const, text: response.content }, ...toolUses]
-        : toolUses;
-
-      messages.push({ role: "assistant", content: assistantContent });
-
-      // Add tool results as user message
-      messages.push({ role: "user", content: toolResults });
-
-      this.logger.debug(`Agent ${agent.id} completed iteration ${iteration}`, {
-        toolCalls: response.toolCalls.length,
+      return this.buildResult({
+        agent,
+        success: true,
+        output: finalOutput,
+        turns: iteration,
+        toolsUsed: Array.from(toolsUsed),
+        startedAt,
+        usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+      });
+    } catch (error) {
+      const reason =
+        options.signal?.aborted && isCancellation(error) ? options.signal.reason : error;
+      agent.status = "failed";
+      agent.error = reason instanceof Error ? reason.message : String(reason);
+      agent.completedAt = new Date();
+      this.moveToCompleted(agent.id);
+      options.onStatusChange?.(agent);
+      return this.buildResult({
+        agent,
+        success: false,
+        output: agent.error,
+        turns: iteration,
+        toolsUsed: Array.from(toolsUsed),
+        startedAt,
+        usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
       });
     }
-
-    // Mark as completed
-    agent.status = "completed";
-    agent.result = finalOutput;
-    agent.completedAt = new Date();
-    this.moveToCompleted(agent.id);
-    options.onStatusChange?.(agent);
-
-    this.logger.info(`Agent ${agent.id} completed`, {
-      iterations: iteration,
-      outputLength: finalOutput.length,
-    });
-
-    return this.buildResult({
-      agent,
-      success: true,
-      output: finalOutput,
-      turns: iteration,
-      toolsUsed: Array.from(toolsUsed),
-      startedAt,
-      usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
-    });
   }
 
   /**
@@ -495,6 +492,7 @@ export class AgentManager extends EventEmitter {
     const allowedTools = new Set(config.tools);
 
     for (const toolCall of toolCalls) {
+      options.signal?.throwIfAborted();
       toolsUsed.add(toolCall.name);
       // Check if tool is allowed for this agent
       if (!allowedTools.has(toolCall.name)) {
@@ -527,6 +525,7 @@ export class AgentManager extends EventEmitter {
               mode: "ask",
               metadata: { agentType: config.type, toolCallId: toolCall.id },
             });
+        options.signal?.throwIfAborted();
         results.push({
           type: "tool_result",
           tool_use_id: toolCall.id,
@@ -534,6 +533,7 @@ export class AgentManager extends EventEmitter {
           is_error: !result.success,
         });
       } catch (error) {
+        rethrowCancellation(error, options.signal);
         const errorMessage = error instanceof Error ? error.message : String(error);
         results.push({
           type: "tool_result",
