@@ -23,13 +23,15 @@ import type {
   ToolDefinition,
   ToolUseContent,
   ToolResultContent,
+  ToolCall,
 } from "./types.js";
 import { createRequestScope } from "../utils/request-scope.js";
 import { rethrowCancellation } from "../utils/cancellation.js";
 import { ProviderError } from "../utils/errors.js";
 import { getValidAccessToken } from "../auth/index.js";
 import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
-import { ResponsesToolCallAssembler, parseToolCallArguments } from "./tool-call-normalizer.js";
+import { ResponsesToolCallAssembler } from "./tool-call-normalizer.js";
+import { ResponseIntegrityError } from "./response-integrity.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
 /**
@@ -117,6 +119,33 @@ type ResponsesInputItem =
   | ResponsesInputMessage
   | ResponsesFunctionCall
   | ResponsesFunctionCallOutput;
+
+/** Validate the whole response before exposing any executable call. */
+function completeToolResponse(
+  payload: unknown,
+  assembler: ResponsesToolCallAssembler,
+  completedCalls: ToolCall[],
+  provider: string,
+): ToolCall[] {
+  const response = payload as Record<string, unknown> | undefined;
+  if (
+    response?.status !== "completed" ||
+    !Array.isArray(response.output) ||
+    response.output.some((item: unknown) => !item || typeof item !== "object")
+  ) {
+    throw new ResponseIntegrityError("Tool response has an inconsistent terminal status", provider);
+  }
+  const calls = assembler.finalizeCompleted(provider, response.output, completedCalls);
+  if (
+    calls.some(
+      (call) =>
+        typeof call.id !== "string" || !call.id || typeof call.name !== "string" || !call.name,
+    )
+  ) {
+    throw new ResponseIntegrityError("Completed tool call is missing its identity", provider);
+  }
+  return calls;
+}
 
 /**
  * Codex provider implementation
@@ -376,6 +405,7 @@ export class CodexProvider implements LLMProvider {
   private async *readSSEEvents(
     response: Response,
     signal: AbortSignal,
+    strict = false,
   ): AsyncIterable<Record<string, unknown>> {
     if (!response.body) {
       throw new ProviderError("No response body from Codex API", { provider: this.id });
@@ -393,14 +423,19 @@ export class CodexProvider implements LLMProvider {
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6).trim();
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
           if (!data || data === "[DONE]") continue;
           let event: Record<string, unknown>;
           try {
             event = JSON.parse(data);
           } catch {
+            if (strict)
+              throw new ResponseIntegrityError("Malformed tool response event", this.name);
             continue;
+          }
+          if (strict && (!event || typeof event !== "object" || Array.isArray(event))) {
+            throw new ResponseIntegrityError("Malformed tool response event", this.name);
           }
           signal.throwIfAborted();
           yield event;
@@ -533,82 +568,92 @@ export class CodexProvider implements LLMProvider {
 
           const toolCallAssembler = new ResponsesToolCallAssembler();
 
-          await this.readSSEStream(
-            response,
-            (event) => {
-              if (event.id) responseId = event.id as string;
+          let completed = false;
+          for await (const event of this.readSSEEvents(response, scope.signal, true)) {
+            if (event.id) responseId = event.id as string;
 
-              switch (event.type) {
-                case "response.output_text.delta":
-                  content += (event.delta as string) ?? "";
-                  break;
+            switch (event.type) {
+              case "response.output_text.delta":
+                content += (event.delta as string) ?? "";
+                break;
 
-                case "response.output_text.done":
-                  content = (event.text as string) ?? content;
-                  break;
+              case "response.output_text.done":
+                content = (event.text as string) ?? content;
+                break;
 
-                case "response.output_item.added": {
-                  toolCallAssembler.onOutputItemAdded({
-                    output_index: event.output_index as number | undefined,
-                    item: event.item as {
-                      type?: string;
-                      id?: string;
-                      call_id?: string;
-                      name?: string;
-                      arguments?: string;
-                    },
-                  });
-                  break;
-                }
+              case "response.output_item.added": {
+                toolCallAssembler.onOutputItemAdded({
+                  output_index: event.output_index as number | undefined,
+                  item: event.item as {
+                    type?: string;
+                    id?: string;
+                    call_id?: string;
+                    name?: string;
+                    arguments?: string;
+                  },
+                });
+                break;
+              }
 
-                case "response.function_call_arguments.delta": {
-                  toolCallAssembler.onArgumentsDelta({
+              case "response.function_call_arguments.delta": {
+                toolCallAssembler.onArgumentsDelta({
+                  item_id: event.item_id as string | undefined,
+                  output_index: event.output_index as number | undefined,
+                  delta: event.delta as string | undefined,
+                });
+                break;
+              }
+
+              case "response.function_call_arguments.done": {
+                const toolCall = toolCallAssembler.onArgumentsDone(
+                  {
                     item_id: event.item_id as string | undefined,
                     output_index: event.output_index as number | undefined,
-                    delta: event.delta as string | undefined,
+                    arguments: event.arguments as string | undefined,
+                  },
+                  this.name,
+                );
+                if (toolCall) {
+                  toolCalls.push({
+                    id: toolCall.id,
+                    name: toolCall.name,
+                    input: toolCall.input,
                   });
-                  break;
                 }
-
-                case "response.function_call_arguments.done": {
-                  const toolCall = toolCallAssembler.onArgumentsDone(
-                    {
-                      item_id: event.item_id as string | undefined,
-                      output_index: event.output_index as number | undefined,
-                      arguments: event.arguments as string | undefined,
-                    },
-                    this.name,
-                  );
-                  if (toolCall) {
-                    toolCalls.push({
-                      id: toolCall.id,
-                      name: toolCall.name,
-                      input: toolCall.input,
-                    });
-                  }
-                  break;
-                }
-
-                case "response.completed": {
-                  const resp = event.response as Record<string, unknown>;
-                  const usage = resp.usage as Record<string, number> | undefined;
-                  if (usage) {
-                    inputTokens = usage.input_tokens ?? 0;
-                    outputTokens = usage.output_tokens ?? 0;
-                  }
-                  for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
-                    toolCalls.push({
-                      id: toolCall.id,
-                      name: toolCall.name,
-                      input: toolCall.input,
-                    });
-                  }
-                  break;
-                }
+                break;
               }
-            },
-            scope.signal,
-          );
+
+              case "response.incomplete":
+              case "response.failed":
+              case "error":
+                throw new ResponseIntegrityError("Tool response did not complete", this.name);
+
+              case "response.completed": {
+                const calls = completeToolResponse(
+                  event.response,
+                  toolCallAssembler,
+                  toolCalls,
+                  this.name,
+                );
+                const resp = event.response as Record<string, unknown>;
+                const usage = resp.usage as Record<string, number> | undefined;
+                if (usage) {
+                  inputTokens = usage.input_tokens ?? 0;
+                  outputTokens = usage.output_tokens ?? 0;
+                }
+                toolCalls.splice(0, toolCalls.length, ...calls);
+                completed = true;
+                break;
+              }
+            }
+            if (completed) break;
+          }
+          if (!completed) {
+            throw new ResponseIntegrityError(
+              "Tool response ended without a terminal event",
+              this.name,
+            );
+          }
 
           return {
             id: responseId,
@@ -690,8 +735,8 @@ export class CodexProvider implements LLMProvider {
       });
       const response = await this.makeRequest(body, scope.signal);
       const toolCallAssembler = new ResponsesToolCallAssembler();
-      const emittedToolCallIds = new Set<string>();
-      for await (const event of this.readSSEEvents(response, scope.signal)) {
+      const completedCalls: ToolCall[] = [];
+      for await (const event of this.readSSEEvents(response, scope.signal, true)) {
         scope.signal.throwIfAborted();
         switch (event.type) {
           case "response.output_text.delta":
@@ -740,91 +785,35 @@ export class CodexProvider implements LLMProvider {
               },
               this.name,
             );
-            if (toolCall) {
-              if (toolCall.id) emittedToolCallIds.add(toolCall.id);
-
-              scope.signal.throwIfAborted();
-              yield {
-                type: "tool_use_end",
-                toolCall: {
-                  id: toolCall.id,
-                  name: toolCall.name,
-                  input: toolCall.input,
-                },
-              };
-              scope.signal.throwIfAborted();
-            }
+            if (toolCall) completedCalls.push(toolCall);
             break;
           }
 
+          case "response.incomplete":
+          case "response.failed":
+          case "error":
+            throw new ResponseIntegrityError("Tool response did not complete", this.name);
+
           case "response.completed": {
-            // Emit any remaining function calls not finalized via done events
-            for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
-              if (toolCall.id) emittedToolCallIds.add(toolCall.id);
-
+            const calls = completeToolResponse(
+              event.response,
+              toolCallAssembler,
+              completedCalls,
+              this.name,
+            );
+            for (const toolCall of calls) {
               scope.signal.throwIfAborted();
-              yield {
-                type: "tool_use_end",
-                toolCall: {
-                  id: toolCall.id,
-                  name: toolCall.name,
-                  input: toolCall.input,
-                },
-              };
+              yield { type: "tool_use_end", toolCall };
               scope.signal.throwIfAborted();
             }
-
-            const responsePayload = event.response as
-              | {
-                  output?: Array<{
-                    type?: string;
-                    call_id?: string;
-                    name?: string;
-                    arguments?: string;
-                  }>;
-                }
-              | undefined;
-            const output =
-              (responsePayload?.output as Array<{
-                type?: string;
-                call_id?: string;
-                name?: string;
-                arguments?: string;
-              }>) ?? [];
-
-            // Fallback: some compatible backends include function calls in
-            // response.completed.output but may skip the granular done events.
-            for (const item of output) {
-              if (item.type !== "function_call" || !item.call_id || !item.name) continue;
-              // A completed response may repeat an already validated call without arguments.
-              if (emittedToolCallIds.has(item.call_id)) continue;
-              const parsedInput = parseToolCallArguments(item.arguments ?? "", this.name);
-              emittedToolCallIds.add(item.call_id);
-
-              scope.signal.throwIfAborted();
-              yield {
-                type: "tool_use_end",
-                toolCall: {
-                  id: item.call_id,
-                  name: item.name,
-                  input: parsedInput,
-                },
-              };
-              scope.signal.throwIfAborted();
-            }
-
-            const hasToolCalls = output.some((i) => i.type === "function_call");
+            yield { type: "done", stopReason: calls.length ? "tool_use" : "end_turn" };
             scope.signal.throwIfAborted();
-            yield {
-              type: "done",
-              stopReason: hasToolCalls ? "tool_use" : "end_turn",
-            };
-            scope.signal.throwIfAborted();
-            break;
+            return;
           }
         }
       }
       scope.signal.throwIfAborted();
+      throw new ResponseIntegrityError("Tool response ended without a terminal event", this.name);
     } catch (error) {
       rethrowCancellation(error, scope.signal);
       throw error;
