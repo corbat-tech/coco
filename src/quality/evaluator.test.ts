@@ -1,6 +1,5 @@
 /**
- * E2E Tests for Quality Evaluator
- * Verifies integration of all analyzers and 0% hardcoded metrics
+ * Integration tests for Quality Evaluator
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -290,15 +289,17 @@ describe("QualityEvaluator E2E", () => {
   });
 
   describe("Resilience — unreadable files", () => {
-    it("should not throw when a file in the list cannot be read (catch → empty string)", async () => {
-      // Pass a path that does not exist alongside a valid file; evaluate() must not throw.
+    it("rejects evaluation when a source file cannot be read", async () => {
+      // A missing input invalidates the evaluation even when other files are readable.
       const validFile = join(testProject, "resilience-valid.ts");
       await writeFile(validFile, "function ok(): boolean { return true; }");
       const missingFile = join(testProject, "this-file-does-not-exist.ts");
 
       const evaluator = new QualityEvaluator(testProject, false);
-      // Must resolve without throwing — the unreadable file is treated as empty string
-      await expect(evaluator.evaluate([validFile, missingFile])).resolves.toBeDefined();
+      // Missing source content cannot count as verified empty code.
+      await expect(evaluator.evaluate([validFile, missingFile])).rejects.toThrow(
+        "Quality evaluation incomplete",
+      );
     });
   });
 

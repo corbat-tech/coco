@@ -27,3 +27,9 @@ Iterador COMPLETE requiere evaluación terminada, meetsMinimum, dimensiones comp
 15 regresiones fallan antes; después COMPLETE 12 archivos / 284 tests correctos, typecheck/lint/format correctos. Tests antiguos mantienen 46 casos con medición explícita independiente del reviewer; un fixture afectado por caché doMock ahora comprueba feedback real hacia improve con dependencias locales. Logs `e06d-before.log`, `e06d-after.log`. Coordinador implementa; `/root/core_audit` nuevas regresiones; `/root/file_fixture_update` fixtures; `/root/baseline_review` APPROVED.
 
 Contención del consumidor: fallbacks/procedencia del evaluador siguen E06.e/E09 y reportes de texto REPL requieren etiquetado. No acredita calidad real de extremo a extremo ni evals con proveedor real. Sin publicación; rollback por revert.
+
+## E06.e · DONE · 2026-09-16
+
+QualityEvaluator rechaza la lectura fallida de fuentes y los rechazos de sus 12 analizadores, en lugar de devolver notas de sustitución (el error de duplicación antes producía 100). Espera todos los análisis iniciados y después propaga el fallo, sin repetirlos. Error indica dimensión, sin causa sensible. Un archivo ilegible no se considera código vacío.
+
+15 casos nuevos: 14 fallan antes, uno conserva paridad. Después quality/tools/iterator: 27 archivos / 496 tests correctos; typecheck/lint/format correctos. Logs `e06e-before.log`, `e06e-after.log`. Coordinador implementa; `/root/core_audit` pruebas; `/root/baseline_review` APPROVED. Disponibilidad interna, aplicabilidad y overrides registry siguen E09; esta contención no acredita medición completa extremo a extremo. Siguiente: presentación REPL de reportes autodeclarados. Sin publicación; rollback por revert.

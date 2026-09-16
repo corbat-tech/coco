@@ -1,6 +1,6 @@
 /**
  * Unified Quality Evaluator - Integrates all real analyzers
- * All 12 quality dimensions are computed by real analysis — zero hardcoded values
+ * Combines analyzer results; a failed measurement cannot be reported as a valid score.
  */
 
 import { CoverageAnalyzer } from "./analyzers/coverage.js";
@@ -65,7 +65,7 @@ export class QualityEvaluator {
 
   /**
    * Evaluate quality across all 12 dimensions
-   * Every dimension is computed by real static analysis — zero hardcoded values
+   * Rejects incomplete evaluation instead of silently replacing failed measurements.
    */
   async evaluate(files?: string[]): Promise<QualityEvaluation> {
     const startTime = performance.now();
@@ -74,16 +74,35 @@ export class QualityEvaluator {
     const targetFiles = files ?? (await this.findSourceFiles());
 
     // Read file contents for security scanner
-    // Use .catch(() => "") so unreadable files (missing symlinks, permission errors)
-    // produce an empty string instead of crashing the entire evaluate() call.
     const fileContents = await Promise.all(
       targetFiles.map(async (file) => ({
         path: file,
-        content: await readFile(file, "utf-8").catch(() => ""),
+        content: await readFile(file, "utf-8").catch(() => {
+          throw new Error("Quality evaluation incomplete: source read failed");
+        }),
       })),
     );
 
-    // Run all analyzers in parallel
+    // Drain all started work before surfacing an error; never return fallback scores.
+    const measure = <T>(dimension: string, task: Promise<T>): Promise<T> =>
+      task.catch(() => {
+        throw new Error(`Quality evaluation incomplete: ${dimension} analysis failed`);
+      });
+    const measurements = [
+      measure("testCoverage", this.coverageAnalyzer.analyze()),
+      measure("security", this.securityScanner.scan(fileContents)),
+      measure("complexity", this.complexityAnalyzer.analyze(targetFiles)),
+      measure("duplication", this.duplicationAnalyzer.analyze(targetFiles)),
+      measure("correctness", this.correctnessAnalyzer.analyze()),
+      measure("completeness", this.completenessAnalyzer.analyze(targetFiles)),
+      measure("robustness", this.robustnessAnalyzer.analyze(targetFiles)),
+      measure("testQuality", this.testQualityAnalyzer.analyze()),
+      measure("documentation", this.documentationAnalyzer.analyze(targetFiles)),
+      measure("style", this.styleAnalyzer.analyze()),
+      measure("readability", this.readabilityAnalyzer.analyze(targetFiles)),
+      measure("maintainability", this.maintainabilityAnalyzer.analyze(targetFiles)),
+    ] as const;
+    await Promise.allSettled(measurements);
     const [
       coverageResult,
       securityResult,
@@ -97,22 +116,9 @@ export class QualityEvaluator {
       styleResult,
       readabilityResult,
       maintainabilityResult,
-    ] = await Promise.all([
-      this.coverageAnalyzer.analyze().catch(() => null),
-      this.securityScanner.scan(fileContents).catch(() => ({ score: 0, vulnerabilities: [] })),
-      this.complexityAnalyzer.analyze(targetFiles).catch(() => ({ score: 0, files: [] })),
-      this.duplicationAnalyzer.analyze(targetFiles).catch(() => ({ score: 0, percentage: 0 })),
-      this.correctnessAnalyzer.analyze().catch(() => ({ score: 0 })),
-      this.completenessAnalyzer.analyze(targetFiles).catch(() => ({ score: 0 })),
-      this.robustnessAnalyzer.analyze(targetFiles).catch(() => ({ score: 0 })),
-      this.testQualityAnalyzer.analyze().catch(() => ({ score: 0 })),
-      this.documentationAnalyzer.analyze(targetFiles).catch(() => ({ score: 0 })),
-      this.styleAnalyzer.analyze().catch(() => ({ score: 0 })),
-      this.readabilityAnalyzer.analyze(targetFiles).catch(() => ({ score: 0 })),
-      this.maintainabilityAnalyzer.analyze(targetFiles).catch(() => ({ score: 0 })),
-    ]);
+    ] = await Promise.all(measurements);
 
-    // Calculate dimensions — ALL real, ZERO hardcoded
+    // Calculate dimensions from completed analyzers. Applicability is handled separately.
     const dimensions: QualityDimensions = {
       testCoverage: coverageResult?.lines.percentage ?? 0,
       security: securityResult.score,
