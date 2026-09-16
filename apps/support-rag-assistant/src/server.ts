@@ -1,4 +1,4 @@
-import { createServer, type ServerResponse } from "node:http";
+import { createLocalServer, listenLocal, readJsonBody, sendJson } from "../../shared/local-http.js";
 import path from "node:path";
 import { createInMemoryKnowledgeRetriever } from "@corbat-tech/coco/runtime";
 import { supportRagAssistantPreset } from "@corbat-tech/coco/presets";
@@ -44,12 +44,7 @@ const runtime = await supportRagAssistantPreset.createRuntime({
   humanEscalation: requestHumanEscalation,
 });
 
-function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { "content-type": "application/json" });
-  response.end(JSON.stringify(body, null, 2));
-}
-
-const server = createServer(async (request, response) => {
+export const server = createLocalServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/health") {
     sendJson(response, 200, {
       ok: true,
@@ -61,9 +56,7 @@ const server = createServer(async (request, response) => {
 
   if (request.method === "GET" && request.url?.startsWith("/events/")) {
     const sessionId = decodeURIComponent(request.url.slice("/events/".length));
-    const events = runtime.eventLog
-      .list()
-      .filter((event) => event.data["sessionId"] === sessionId);
+    const events = runtime.eventLog.list().filter((event) => event.data["sessionId"] === sessionId);
     sendJson(response, 200, { sessionId, events });
     return;
   }
@@ -73,10 +66,8 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  let raw = "";
-  for await (const chunk of request) raw += chunk;
-  const body = JSON.parse(raw || "{}") as {
-    message?: string;
+  const body = (await readJsonBody(request)) as {
+    message: string;
     sessionId?: string;
     tenantId?: string;
     confirmedTools?: string[];
@@ -119,6 +110,4 @@ const server = createServer(async (request, response) => {
   });
 });
 
-server.listen(port, () => {
-  console.log(`Coco Support/RAG Assistant listening on http://localhost:${port}`);
-});
+listenLocal(server, port, "Coco support-rag-assistant");

@@ -71,6 +71,6 @@ El código de producto permanece idéntico al snapshot de auditoría; solo cambi
 | COCO-11 P1 | Delegación | Autoridad parental corregida E05; aislamiento provider E10 y aceptación E11 pendientes |
 | COCO-16 P1 | CI/cobertura | E01 mide; E02/E14 pendientes |
 | COCO-17 P1 | npm/VSIX/GitHub release | Abierto; E02, ningún tag de publicación aún |
-| COCO-21 P1 | Starter HTTP | Abierto; E06 local, C05 público condicionado |
+| COCO-21 P1 | Starter HTTP | Contenido como demo local E06.b; C05 público condicionado |
 
 E01.b DONE (corpus hermético): 3/3 tests pasan. Revisor `/root/baseline_review`: APPROVED tras reforzar finalización/error y número de calls. SHA-256 probado/revisado: `f4cdfa49b2c6622ac4e874774b8b05d2adcfcd088b4a96f999e2d19bc9c25dfa`. E01 infraestructura completada; baseline de modelo real sigue pendiente y es dependencia explícita de las afirmaciones de E13/E15.
