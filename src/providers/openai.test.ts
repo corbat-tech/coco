@@ -575,6 +575,7 @@ describe("message conversion", () => {
       expect.objectContaining({
         messages: expect.arrayContaining([expect.objectContaining({ role: "system" })]),
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -598,6 +599,7 @@ describe("message conversion", () => {
           expect.objectContaining({ role: "system", content: "You are helpful" }),
         ]),
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -650,6 +652,7 @@ describe("message conversion", () => {
           expect.objectContaining({ role: "tool", tool_call_id: "call_1" }),
         ]),
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -690,6 +693,7 @@ describe("message conversion", () => {
           }),
         ]),
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -735,6 +739,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: undefined,
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -759,6 +764,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: "auto",
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -783,6 +789,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: "required",
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -807,6 +814,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: { type: "function", function: { name: "readFile" } },
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 });
@@ -1049,9 +1057,11 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
     expect(mockCreate).not.toHaveBeenCalledWith(
       expect.objectContaining({ max_tokens: expect.anything() }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -1064,6 +1074,7 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -1076,6 +1087,7 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -1086,9 +1098,13 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     await provider.chat([{ role: "user", content: "Hello" }]);
 
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ max_tokens: 8192 }));
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
+    );
     expect(mockCreate).not.toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: expect.anything() }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -1099,7 +1115,10 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     await provider.chat([{ role: "user", content: "Hello" }]);
 
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ max_tokens: 8192 }));
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
+    );
   });
 
   it("should send max_completion_tokens for chatgpt-4o-latest", async () => {
@@ -1111,6 +1130,7 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -1128,6 +1148,7 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 });
@@ -1187,6 +1208,9 @@ describe("responses temperature compatibility", () => {
 
     await provider.chat([{ role: "user", content: "hi" }]);
 
+    expect(mockResponsesCreate.mock.calls.at(-1)?.[1]).toEqual(
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
+    );
     const req = mockResponsesCreate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(req).toBeDefined();
     expect(req).not.toHaveProperty("temperature");

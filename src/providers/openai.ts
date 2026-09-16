@@ -330,49 +330,58 @@ export class OpenAIProvider implements LLMProvider {
    */
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
     if (this.modelNeedsResponsesApi(model)) {
       return this.chatViaResponses(messages, options);
     }
 
-    return withRetry(async () => {
-      try {
-        const supportsTemp = this.supportsTemperature(model);
+    return withRetry(
+      async () => {
+        try {
+          const supportsTemp = this.supportsTemperature(model);
 
-        const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
-        const reasoningEffort = this.getChatCompletionsReasoningEffort(
-          model,
-          options?.thinking,
-          false,
-        );
-        const response = await this.client!.chat.completions.create({
-          model,
-          ...buildMaxTokensParam(model, maxTokens),
-          messages: this.convertMessages(messages, options?.system),
-          stop: options?.stopSequences,
-          ...(supportsTemp && {
-            temperature: options?.temperature ?? this.config.temperature ?? 0,
-          }),
-          ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-        } as OpenAI.ChatCompletionCreateParamsNonStreaming);
+          const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+          const reasoningEffort = this.getChatCompletionsReasoningEffort(
+            model,
+            options?.thinking,
+            false,
+          );
+          const response = await this.client!.chat.completions.create(
+            {
+              model,
+              ...buildMaxTokensParam(model, maxTokens),
+              messages: this.convertMessages(messages, options?.system),
+              stop: options?.stopSequences,
+              ...(supportsTemp && {
+                temperature: options?.temperature ?? this.config.temperature ?? 0,
+              }),
+              ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+            } as OpenAI.ChatCompletionCreateParamsNonStreaming,
+            this.getRequestOptions(options),
+          );
 
-        const choice = response.choices[0];
+          const choice = response.choices[0];
 
-        return {
-          id: response.id,
-          content: choice?.message?.content ?? "",
-          stopReason: this.mapFinishReason(choice?.finish_reason),
-          usage: {
-            inputTokens: response.usage?.prompt_tokens ?? 0,
-            outputTokens: response.usage?.completion_tokens ?? 0,
-          },
-          model: response.model,
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+          return {
+            id: response.id,
+            content: choice?.message?.content ?? "",
+            stopReason: this.mapFinishReason(choice?.finish_reason),
+            usage: {
+              inputTokens: response.usage?.prompt_tokens ?? 0,
+              outputTokens: response.usage?.completion_tokens ?? 0,
+            },
+            model: response.model,
+          };
+        } catch (error) {
+          options?.signal?.throwIfAborted();
+          throw this.handleError(error);
+        }
+      },
+      this.retryConfig,
+      options?.signal,
+    );
   }
 
   /**
@@ -383,6 +392,7 @@ export class OpenAIProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
     if (this.modelNeedsResponsesApi(model)) {
@@ -391,62 +401,68 @@ export class OpenAIProvider implements LLMProvider {
 
     const tierCfg = getTierConfig(this.id, model);
 
-    return withRetry(async () => {
-      try {
-        const supportsTemp = this.supportsTemperature(model);
-        const extraBody = this.getExtraBody(model, options?.thinking);
-        const reasoningEffort = this.getChatCompletionsReasoningEffort(
-          model,
-          options?.thinking,
-          true,
-        );
+    return withRetry(
+      async () => {
+        try {
+          const supportsTemp = this.supportsTemperature(model);
+          const extraBody = this.getExtraBody(model, options?.thinking);
+          const reasoningEffort = this.getChatCompletionsReasoningEffort(
+            model,
+            options?.thinking,
+            true,
+          );
 
-        // Build request params
-        const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
-        const tools = this.limitTools(options.tools, tierCfg.maxTools);
-        const requestParams: Record<string, unknown> = {
-          model,
-          ...buildMaxTokensParam(model, maxTokens),
-          messages: this.convertMessages(messages, options?.system),
-          tools: this.convertTools(tools),
-          tool_choice: this.convertToolChoice(options.toolChoice),
-          parallel_tool_calls: tierCfg.parallelToolCalls,
-        };
+          // Build request params
+          const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+          const tools = this.limitTools(options.tools, tierCfg.maxTools);
+          const requestParams: Record<string, unknown> = {
+            model,
+            ...buildMaxTokensParam(model, maxTokens),
+            messages: this.convertMessages(messages, options?.system),
+            tools: this.convertTools(tools),
+            tool_choice: this.convertToolChoice(options.toolChoice),
+            parallel_tool_calls: tierCfg.parallelToolCalls,
+          };
 
-        if (supportsTemp) {
-          requestParams.temperature = options?.temperature ?? this.config.temperature ?? 0;
+          if (supportsTemp) {
+            requestParams.temperature = options?.temperature ?? this.config.temperature ?? 0;
+          }
+
+          if (reasoningEffort) {
+            requestParams.reasoning_effort = reasoningEffort;
+          }
+
+          if (extraBody) {
+            Object.assign(requestParams, extraBody);
+          }
+
+          const response = await this.client!.chat.completions.create(
+            requestParams as unknown as OpenAI.ChatCompletionCreateParamsNonStreaming,
+            this.getRequestOptions(options),
+          );
+
+          const choice = response.choices[0];
+          const toolCalls = this.extractToolCalls(choice?.message?.tool_calls);
+
+          return {
+            id: response.id,
+            content: choice?.message?.content ?? "",
+            stopReason: this.mapFinishReason(choice?.finish_reason),
+            usage: {
+              inputTokens: response.usage?.prompt_tokens ?? 0,
+              outputTokens: response.usage?.completion_tokens ?? 0,
+            },
+            model: response.model,
+            toolCalls,
+          };
+        } catch (error) {
+          options?.signal?.throwIfAborted();
+          throw this.handleError(error);
         }
-
-        if (reasoningEffort) {
-          requestParams.reasoning_effort = reasoningEffort;
-        }
-
-        if (extraBody) {
-          Object.assign(requestParams, extraBody);
-        }
-
-        const response = await this.client!.chat.completions.create(
-          requestParams as unknown as OpenAI.ChatCompletionCreateParamsNonStreaming,
-        );
-
-        const choice = response.choices[0];
-        const toolCalls = this.extractToolCalls(choice?.message?.tool_calls);
-
-        return {
-          id: response.id,
-          content: choice?.message?.content ?? "",
-          stopReason: this.mapFinishReason(choice?.finish_reason),
-          usage: {
-            inputTokens: response.usage?.prompt_tokens ?? 0,
-            outputTokens: response.usage?.completion_tokens ?? 0,
-          },
-          model: response.model,
-          toolCalls,
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+      },
+      this.retryConfig,
+      options?.signal,
+    );
   }
 
   /**
@@ -454,6 +470,7 @@ export class OpenAIProvider implements LLMProvider {
    */
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
     if (this.modelNeedsResponsesApi(model)) {
@@ -470,20 +487,27 @@ export class OpenAIProvider implements LLMProvider {
         options?.thinking,
         false,
       );
-      const stream = await this.client!.chat.completions.create({
-        model,
-        ...buildMaxTokensParam(model, maxTokens),
-        messages: this.convertMessages(messages, options?.system),
-        stream: true,
-        ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
-        ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-      } as OpenAI.ChatCompletionCreateParamsStreaming);
+      const stream = await this.client!.chat.completions.create(
+        {
+          model,
+          ...buildMaxTokensParam(model, maxTokens),
+          messages: this.convertMessages(messages, options?.system),
+          stream: true,
+          ...(supportsTemp && {
+            temperature: options?.temperature ?? this.config.temperature ?? 0,
+          }),
+          ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+        } as OpenAI.ChatCompletionCreateParamsStreaming,
+        this.getRequestOptions(options),
+      );
 
       let streamStopReason: StreamChunk["stopReason"];
 
       for await (const chunk of stream) {
+        options?.signal?.throwIfAborted();
         const delta = chunk.choices[0]?.delta;
         if (delta?.content) {
+          this.assertStreamActive(options);
           yield { type: "text", text: delta.content };
         }
         const finishReason = chunk.choices[0]?.finish_reason;
@@ -491,9 +515,12 @@ export class OpenAIProvider implements LLMProvider {
           streamStopReason = this.mapFinishReason(finishReason);
         }
       }
+      options?.signal?.throwIfAborted();
 
+      this.assertStreamActive(options);
       yield { type: "done", stopReason: streamStopReason };
     } catch (error) {
+      options?.signal?.throwIfAborted();
       throw this.handleError(error);
     }
   }
@@ -506,6 +533,7 @@ export class OpenAIProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
     if (this.modelNeedsResponsesApi(model)) {
@@ -551,6 +579,7 @@ export class OpenAIProvider implements LLMProvider {
 
       const stream = await this.client!.chat.completions.create(
         requestParams as unknown as OpenAI.ChatCompletionCreateParamsStreaming,
+        this.getRequestOptions(options),
       );
 
       const toolCallAssembler = new ChatToolCallAssembler();
@@ -559,7 +588,7 @@ export class OpenAIProvider implements LLMProvider {
       // IMPORTANT: We use AbortController instead of throwing from setInterval,
       // because throw inside setInterval causes an unhandled exception that kills
       // the process instead of propagating to the async generator.
-      const streamTimeout = this.config.timeout ?? 120000;
+      const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
       const timeoutController = new AbortController();
 
@@ -580,6 +609,7 @@ export class OpenAIProvider implements LLMProvider {
         let streamStopReason: StreamChunk["stopReason"];
 
         for await (const chunk of stream) {
+          options?.signal?.throwIfAborted();
           const delta = chunk.choices[0]?.delta;
 
           // Reset timeout on any activity (content, tool calls)
@@ -589,6 +619,7 @@ export class OpenAIProvider implements LLMProvider {
 
           // Handle text content
           if (delta?.content) {
+            this.assertStreamActive(options, timeoutTriggered);
             yield { type: "text", text: delta.content };
           }
 
@@ -605,6 +636,7 @@ export class OpenAIProvider implements LLMProvider {
               });
 
               if (consumed.started) {
+                this.assertStreamActive(options, timeoutTriggered);
                 yield {
                   type: "tool_use_start",
                   toolCall: {
@@ -614,6 +646,7 @@ export class OpenAIProvider implements LLMProvider {
                 };
               }
               if (consumed.argumentDelta) {
+                this.assertStreamActive(options, timeoutTriggered);
                 yield {
                   type: "tool_use_delta",
                   toolCall: {
@@ -636,6 +669,7 @@ export class OpenAIProvider implements LLMProvider {
           }
           if (finishReason) {
             for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
+              this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_end",
                 toolCall: {
@@ -647,10 +681,16 @@ export class OpenAIProvider implements LLMProvider {
             }
           }
         }
+        options?.signal?.throwIfAborted();
+
+        if (timeoutController.signal.aborted) {
+          throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
+        }
 
         // Fallback: finalize any remaining tool calls not yet emitted.
         // Handles providers that omit finish_reason in the last chunk.
         for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
+          this.assertStreamActive(options, timeoutTriggered);
           yield {
             type: "tool_use_end",
             toolCall: {
@@ -661,6 +701,7 @@ export class OpenAIProvider implements LLMProvider {
           };
         }
 
+        this.assertStreamActive(options, timeoutTriggered);
         yield { type: "done", stopReason: streamStopReason };
       } finally {
         clearInterval(timeoutInterval);
@@ -671,9 +712,10 @@ export class OpenAIProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      options?.signal?.throwIfAborted();
       if (timeoutTriggered) {
         throw new Error(
-          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+          `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
         );
       }
       throw this.handleError(error);
@@ -879,6 +921,24 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Ensure client is initialized
    */
+  protected assertStreamActive(options?: ChatOptions, timedOut = false): void {
+    options?.signal?.throwIfAborted();
+    if (timedOut) {
+      throw new Error(
+        `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
+      );
+    }
+  }
+
+  protected getRequestOptions(options?: ChatOptions) {
+    return {
+      signal: options?.signal,
+      timeout: options?.timeout ?? this.config.timeout ?? 120000,
+      // Coco owns retries so SDK retries do not multiply attempts.
+      maxRetries: 0,
+    };
+  }
+
   protected ensureInitialized(): void {
     if (!this.client) {
       throw new ProviderError("Provider not initialized. Call initialize() first.", {
@@ -1109,6 +1169,9 @@ export class OpenAIProvider implements LLMProvider {
    * Handle API errors
    */
   protected handleError(error: unknown): never {
+    if (error instanceof Error && ["AbortError", "APIUserAbortError"].includes(error.name)) {
+      throw error;
+    }
     if (error instanceof OpenAI.APIError) {
       // Determine if error is retryable based on status code and message
       const msg = error.message.toLowerCase();
@@ -1170,41 +1233,50 @@ export class OpenAIProvider implements LLMProvider {
     options?: ChatOptions,
   ): Promise<ChatResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
-    return withRetry(async () => {
-      try {
-        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-        const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-        const supportsTemp = this.supportsTemperature(model);
+    return withRetry(
+      async () => {
+        try {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+          const supportsTemp = this.supportsTemperature(model);
 
-        const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
-        const response = await this.client!.responses.create({
-          model,
-          input,
-          instructions: instructions ?? undefined,
-          max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          ...(supportsTemp && {
-            temperature: options?.temperature ?? this.config.temperature ?? 0,
-          }),
-          // Responses API uses nested reasoning.effort (not top-level reasoning_effort)
-          ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
-          store: false,
-        });
+          const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
+          const response = await this.client!.responses.create(
+            {
+              model,
+              input,
+              instructions: instructions ?? undefined,
+              max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+              ...(supportsTemp && {
+                temperature: options?.temperature ?? this.config.temperature ?? 0,
+              }),
+              // Responses API uses nested reasoning.effort (not top-level reasoning_effort)
+              ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
+              store: false,
+            },
+            this.getRequestOptions(options),
+          );
 
-        return {
-          id: response.id,
-          content: response.output_text ?? "",
-          stopReason: response.status === "completed" ? "end_turn" : "max_tokens",
-          usage: {
-            inputTokens: response.usage?.input_tokens ?? 0,
-            outputTokens: response.usage?.output_tokens ?? 0,
-          },
-          model: String(response.model),
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+          return {
+            id: response.id,
+            content: response.output_text ?? "",
+            stopReason: response.status === "completed" ? "end_turn" : "max_tokens",
+            usage: {
+              inputTokens: response.usage?.input_tokens ?? 0,
+              outputTokens: response.usage?.output_tokens ?? 0,
+            },
+            model: String(response.model),
+          };
+        } catch (error) {
+          options?.signal?.throwIfAborted();
+          throw this.handleError(error);
+        }
+      },
+      this.retryConfig,
+      options?.signal,
+    );
   }
 
   /**
@@ -1215,66 +1287,75 @@ export class OpenAIProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
-    return withRetry(async () => {
-      try {
-        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-        const tierCfg = getTierConfig(this.id, model);
-        const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-        const tools = this.convertToolsForResponses(
-          this.limitTools(options.tools, tierCfg.maxTools),
-        );
-        const supportsTemp = this.supportsTemperature(model);
+    return withRetry(
+      async () => {
+        try {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const tierCfg = getTierConfig(this.id, model);
+          const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+          const tools = this.convertToolsForResponses(
+            this.limitTools(options.tools, tierCfg.maxTools),
+          );
+          const supportsTemp = this.supportsTemperature(model);
 
-        const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
-        const response = await this.client!.responses.create({
-          model,
-          input,
-          instructions: instructions ?? undefined,
-          tools,
-          max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          ...(supportsTemp && {
-            temperature: options?.temperature ?? this.config.temperature ?? 0,
-          }),
-          ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
-          store: false,
-        });
+          const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
+          const response = await this.client!.responses.create(
+            {
+              model,
+              input,
+              instructions: instructions ?? undefined,
+              tools,
+              max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+              ...(supportsTemp && {
+                temperature: options?.temperature ?? this.config.temperature ?? 0,
+              }),
+              ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
+              store: false,
+            },
+            this.getRequestOptions(options),
+          );
 
-        // Extract text and tool calls from output
-        let content = "";
-        const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+          // Extract text and tool calls from output
+          let content = "";
+          const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
 
-        for (const item of response.output) {
-          if (item.type === "message") {
-            for (const part of item.content) {
-              if (part.type === "output_text") {
-                content += part.text;
+          for (const item of response.output) {
+            if (item.type === "message") {
+              for (const part of item.content) {
+                if (part.type === "output_text") {
+                  content += part.text;
+                }
               }
+            } else if (item.type === "function_call") {
+              toolCalls.push({
+                id: item.call_id,
+                name: item.name,
+                input: parseToolCallArguments(item.arguments, this.name),
+              });
             }
-          } else if (item.type === "function_call") {
-            toolCalls.push({
-              id: item.call_id,
-              name: item.name,
-              input: parseToolCallArguments(item.arguments, this.name),
-            });
           }
-        }
 
-        return {
-          id: response.id,
-          content,
-          stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
-          usage: {
-            inputTokens: response.usage?.input_tokens ?? 0,
-            outputTokens: response.usage?.output_tokens ?? 0,
-          },
-          model: String(response.model),
-          toolCalls,
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+          return {
+            id: response.id,
+            content,
+            stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
+            usage: {
+              inputTokens: response.usage?.input_tokens ?? 0,
+              outputTokens: response.usage?.output_tokens ?? 0,
+            },
+            model: String(response.model),
+            toolCalls,
+          };
+        } catch (error) {
+          options?.signal?.throwIfAborted();
+          throw this.handleError(error);
+        }
+      },
+      this.retryConfig,
+      options?.signal,
+    );
   }
 
   /**
@@ -1285,6 +1366,7 @@ export class OpenAIProvider implements LLMProvider {
     options?: ChatOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     let timeoutTriggered = false;
     try {
@@ -1293,19 +1375,24 @@ export class OpenAIProvider implements LLMProvider {
       const supportsTemp = this.supportsTemperature(model);
 
       const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
-      const stream = await this.client!.responses.create({
-        model,
-        input,
-        instructions: instructions ?? undefined,
-        max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-        ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
-        ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
-        store: false,
-        stream: true,
-      });
+      const stream = await this.client!.responses.create(
+        {
+          model,
+          input,
+          instructions: instructions ?? undefined,
+          max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+          ...(supportsTemp && {
+            temperature: options?.temperature ?? this.config.temperature ?? 0,
+          }),
+          ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
+          store: false,
+          stream: true,
+        },
+        this.getRequestOptions(options),
+      );
 
       // Activity-based timeout using AbortController (safe for async generators)
-      const streamTimeout = this.config.timeout ?? 120000;
+      const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
       const timeoutController = new AbortController();
 
@@ -1325,13 +1412,17 @@ export class OpenAIProvider implements LLMProvider {
 
       try {
         for await (const event of stream) {
+          options?.signal?.throwIfAborted();
           lastActivityTime = Date.now();
           if (event.type === "response.output_text.delta") {
+            this.assertStreamActive(options, timeoutTriggered);
             yield { type: "text", text: event.delta };
           } else if (event.type === "response.completed") {
+            this.assertStreamActive(options, timeoutTriggered);
             yield { type: "done", stopReason: "end_turn" };
           }
         }
+        options?.signal?.throwIfAborted();
       } finally {
         clearInterval(timeoutInterval);
       }
@@ -1340,9 +1431,10 @@ export class OpenAIProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      options?.signal?.throwIfAborted();
       if (timeoutTriggered) {
         throw new Error(
-          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+          `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
         );
       }
       throw this.handleError(error);
@@ -1361,6 +1453,7 @@ export class OpenAIProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     let timeoutTriggered = false;
     try {
@@ -1390,12 +1483,13 @@ export class OpenAIProvider implements LLMProvider {
 
       const stream = await this.client!.responses.create(
         requestParams as unknown as Responses.ResponseCreateParamsStreaming,
+        this.getRequestOptions(options),
       );
 
       const toolCallAssembler = new ResponsesToolCallAssembler();
 
       // Activity-based timeout using AbortController (safe for async generators)
-      const streamTimeout = this.config.timeout ?? 120000;
+      const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
       const timeoutController = new AbortController();
 
@@ -1415,10 +1509,12 @@ export class OpenAIProvider implements LLMProvider {
 
       try {
         for await (const event of stream) {
+          options?.signal?.throwIfAborted();
           lastActivityTime = Date.now();
 
           switch (event.type) {
             case "response.output_text.delta":
+              this.assertStreamActive(options, timeoutTriggered);
               yield { type: "text", text: event.delta };
               break;
 
@@ -1442,6 +1538,7 @@ export class OpenAIProvider implements LLMProvider {
                   },
                 });
                 if (!start) break;
+                this.assertStreamActive(options, timeoutTriggered);
                 yield {
                   type: "tool_use_start",
                   toolCall: { id: start.id, name: start.name },
@@ -1468,6 +1565,7 @@ export class OpenAIProvider implements LLMProvider {
                   this.name,
                 );
                 if (toolCall) {
+                  this.assertStreamActive(options, timeoutTriggered);
                   yield {
                     type: "tool_use_end",
                     toolCall: {
@@ -1487,6 +1585,7 @@ export class OpenAIProvider implements LLMProvider {
                 // Emit any remaining function calls not finalized via done events
                 for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
                   if (toolCall.id) emittedCallIds.add(toolCall.id);
+                  this.assertStreamActive(options, timeoutTriggered);
                   yield {
                     type: "tool_use_end",
                     toolCall: {
@@ -1511,6 +1610,7 @@ export class OpenAIProvider implements LLMProvider {
                 for (const item of outputItems) {
                   if (item.type !== "function_call" || !item.call_id || !item.name) continue;
                   if (emittedCallIds.has(item.call_id)) continue;
+                  this.assertStreamActive(options, timeoutTriggered);
                   yield {
                     type: "tool_use_end",
                     toolCall: {
@@ -1522,6 +1622,7 @@ export class OpenAIProvider implements LLMProvider {
                 }
 
                 const hasToolCalls = outputItems.some((i) => i.type === "function_call");
+                this.assertStreamActive(options, timeoutTriggered);
                 yield {
                   type: "done",
                   stopReason: hasToolCalls ? "tool_use" : "end_turn",
@@ -1530,6 +1631,7 @@ export class OpenAIProvider implements LLMProvider {
               break;
           }
         }
+        options?.signal?.throwIfAborted();
       } finally {
         clearInterval(timeoutInterval);
       }
@@ -1538,9 +1640,10 @@ export class OpenAIProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      options?.signal?.throwIfAborted();
       if (timeoutTriggered) {
         throw new Error(
-          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+          `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
         );
       }
       throw this.handleError(error);
