@@ -37,3 +37,11 @@ file_exists/list_dir/tree autorizan la raíz canónica antes de consultar. Recur
 15 casos reales (10 fallan antes, 5 caracterizan paridad), con cada herramienta probada individualmente contra raíz absoluta, traversal y enlace externo. Incluye grant read, ausencia y EACCES. Con consumidores: 6 archivos / 131 tests pasan; typecheck/lint correctos. Logs `file-query-{before,after,unit}.log`. Tests aportados por `/root/core_audit`, matriz reforzada por coordinador; revisión `/root/baseline_review`: APPROVED sin hallazgos materiales. Commit anterior E04.c: `1fc90f0`.
 
 Glob pendiente en E04.e; COMPLETE y shell/undo después. Sin publicación ni afirmación de sandbox contra carreras. Rollback por revert.
+
+## E04.e · DONE · 2026-09-16
+
+Glob conserva su motor y recibe un adaptador filesystem que autoriza antes de enumerar, valida los resultados obtenidos desde Dirents, evita fallback síncrono nativo y conserva errores que path-scurry silencia. No devuelve éxito parcial ante scope denegado. Documentación corregida: rutas absolutas y exclusiones reales.
+
+12 casos reales: siete escapes fallan antes y pasan después; un octavo fallo previo verifica que el adaptador instrumentado participa en el positivo con grant (no es una regresión funcional previa). Pruebas comprueban que ningún readdir alcanza destino externo sin permiso. Con consumidores: 5 archivos / 125 tests; typecheck/lint correctos. Logs `glob-scope-{before,after,unit}.log`. Tests por `/root/core_audit`; implementación coordinador; revisión `/root/baseline_review`: APPROVED sin hallazgos materiales. E04.d commit `0194ff4`.
+
+COMPLETE y shell/undo pendientes. Sin publicación; carreras externas no eliminadas. Rollback por revert.

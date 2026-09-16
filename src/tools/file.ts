@@ -6,7 +6,7 @@
 import { z } from "zod";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { glob } from "glob";
+import { scopedGlob } from "./scoped-glob.js";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { FileSystemError, ToolError } from "../utils/errors.js";
 import { resolvePathSecurely } from "./file-path-policy.js";
@@ -359,7 +359,7 @@ export const globTool: ToolDefinition<
   { files: string[]; count: number }
 > = defineTool({
   name: "glob",
-  description: `Find files whose paths match a glob pattern and return their relative paths as a list. Use this when you know the file extension or naming convention but not the exact path (e.g. find all TypeScript test files, all JSON configs). Do NOT use this to search inside file contents — use grep or search for that. Returns an empty list when nothing matches; does not throw an error for zero results. node_modules, .git, and dist directories are excluded by default.
+  description: `Find files whose paths match a glob pattern and return their absolute paths as a list. Use this when you know the file extension or naming convention but not the exact path (e.g. find all TypeScript test files, all JSON configs). Do NOT use this to search inside file contents — use grep or search for that. Returns an empty list when nothing matches; does not throw an error for zero results. node_modules and .git directories are excluded by default. The entire query fails if it encounters a path outside the authorized scope; use a narrower pattern or request access.
 
 Examples:
 - All TypeScript: { "pattern": "**/*.ts" }
@@ -373,17 +373,18 @@ Examples:
   }),
   async execute({ pattern, cwd, ignore }) {
     try {
-      const files = await glob(pattern, {
-        cwd: cwd ?? process.cwd(),
-        ignore: ignore ?? ["**/node_modules/**", "**/.git/**"],
-        absolute: true,
-      });
+      const files = await scopedGlob(
+        pattern,
+        cwd ?? process.cwd(),
+        ignore ?? ["**/node_modules/**", "**/.git/**"],
+      );
 
       return {
         files,
         count: files.length,
       };
     } catch (error) {
+      if (error instanceof ToolError) throw error;
       if (isENOENT(error) && cwd) {
         const enriched = await enrichDirENOENT(cwd);
         throw new FileSystemError(`Glob search failed — ${enriched}`, {

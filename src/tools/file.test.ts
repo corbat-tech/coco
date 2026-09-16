@@ -432,10 +432,10 @@ describe("globTool", () => {
 
     await globTool.execute({
       pattern: "*.ts",
-      cwd: "/project/src",
+      cwd: "/test/src",
     });
 
-    expect(glob).toHaveBeenCalledWith("*.ts", expect.objectContaining({ cwd: "/project/src" }));
+    expect(glob).toHaveBeenCalledWith("*.ts", expect.objectContaining({ cwd: "/test/src" }));
   });
 
   it("should handle no matches", async () => {
