@@ -419,7 +419,12 @@ export class AgentManager extends EventEmitter {
       }
 
       // Execute tool calls
-      const toolResults = await this.executeToolCalls(response.toolCalls, config, toolsUsed);
+      const toolResults = await this.executeToolCalls(
+        response.toolCalls,
+        config,
+        toolsUsed,
+        options,
+      );
 
       // Build assistant message with tool uses
       const toolUses: ToolUseContent[] = response.toolCalls.map((tc) => ({
@@ -484,6 +489,7 @@ export class AgentManager extends EventEmitter {
     toolCalls: ToolCall[],
     config: AgentConfig,
     toolsUsed: Set<string>,
+    options: SpawnAgentOptions,
   ): Promise<ToolResultContent[]> {
     const results: ToolResultContent[] = [];
     const allowedTools = new Set(config.tools);
@@ -503,16 +509,24 @@ export class AgentManager extends EventEmitter {
 
       // Execute the tool
       try {
-        const result = await this.runtimeToolExecutor.execute({
+        const call = {
           toolName: toolCall.name,
           input: toolCall.input,
-          allowedTools: config.tools,
-          mode: runtimeModeForAgentType(config.type),
-          metadata: {
-            agentType: config.type,
-            toolCallId: toolCall.id,
-          },
-        });
+          allowedTools: [...allowedTools],
+          toolCallId: toolCall.id,
+          signal: options.signal,
+        };
+        const result = options.executionContext?.executeDelegatedTool
+          ? await options.executionContext.executeDelegatedTool({
+              ...call,
+              mode: runtimeModeForAgentType(config.type),
+            })
+          : await this.runtimeToolExecutor.execute({
+              ...call,
+              // An unbound manager has no parental authority to grant mutations.
+              mode: "ask",
+              metadata: { agentType: config.type, toolCallId: toolCall.id },
+            });
         results.push({
           type: "tool_result",
           tool_use_id: toolCall.id,

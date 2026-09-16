@@ -99,7 +99,7 @@ Use 'explore' for quick codebase searches, 'plan' for design before execution.`,
   category: "build" as const,
   parameters: SpawnSimpleAgentSchema,
 
-  async execute(input) {
+  async execute(input, executionContext) {
     const typedInput = input as {
       task: string;
       context?: string;
@@ -136,6 +136,8 @@ Use 'explore' for quick codebase searches, 'plan' for design before execution.`,
 
     const startTime = Date.now();
     const result = await manager.spawn(agentType, taskDescription, {
+      executionContext,
+      signal: executionContext?.signal,
       timeout: typedInput.maxTurns * 60_000, // rough estimate: 1 min per turn
     });
 

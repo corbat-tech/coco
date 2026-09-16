@@ -1,3 +1,4 @@
+import type { ToolExecutionContext } from "../tools/execution-context.js";
 /**
  * Agent Executor
  * Executes specialized agents with real multi-turn tool use via LLM tool-use protocol
@@ -73,9 +74,14 @@ export class AgentExecutor {
   }
 
   /**
-   * Execute an agent on a task with multi-turn tool use
+   * Execute an agent on a task with multi-turn tool use.
+   * Without host execution context, tool execution is restricted to read-only mode.
    */
-  async execute(agent: AgentDefinition, task: AgentTask): Promise<AgentResult> {
+  async execute(
+    agent: AgentDefinition,
+    task: AgentTask,
+    executionContext?: ToolExecutionContext,
+  ): Promise<AgentResult> {
     const startTime = Date.now();
     const startedAt = new Date().toISOString();
     const toolsUsed = new Set<string>();
@@ -90,6 +96,7 @@ export class AgentExecutor {
 
     // Get tool definitions filtered for this agent's allowed tools
     const agentToolDefs = this.getToolDefinitionsForAgent(agent.allowedTools);
+    const allowedTools = agentToolDefs.map((tool) => tool.name);
 
     let turn = 0;
     let totalTokens = 0;
@@ -157,17 +164,23 @@ export class AgentExecutor {
           toolsUsed.add(toolCall.name);
 
           try {
-            const result = await this.runtimeToolExecutor.execute({
+            const call = {
               toolName: toolCall.name,
               input: toolCall.input,
-              allowedTools: agent.allowedTools.length > 0 ? agent.allowedTools : undefined,
-              mode: runtimeModeForAgent(agent.role),
-              metadata: {
-                agentRole: agent.role,
-                taskId: task.id,
-                toolCallId: toolCall.id,
-              },
-            });
+              allowedTools,
+              toolCallId: toolCall.id,
+              signal: executionContext?.signal,
+            };
+            const result = executionContext?.executeDelegatedTool
+              ? await executionContext.executeDelegatedTool({
+                  ...call,
+                  mode: runtimeModeForAgent(agent.role),
+                })
+              : await this.runtimeToolExecutor.execute({
+                  ...call,
+                  mode: "ask",
+                  metadata: { agentRole: agent.role, taskId: task.id, toolCallId: toolCall.id },
+                });
 
             toolResults.push({
               type: "tool_result",

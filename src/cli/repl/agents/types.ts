@@ -1,3 +1,4 @@
+import type { ToolExecutionContext } from "../../../tools/execution-context.js";
 /**
  * Subagent types for Corbat-Coco
  * Defines the types for specialized agents that can be spawned for different tasks
@@ -73,6 +74,8 @@ export interface AgentConfig {
  * Options for spawning a subagent
  */
 export interface SpawnAgentOptions {
+  /** Host authority for this execution; without it, tools are restricted to read-only mode. */
+  executionContext?: ToolExecutionContext;
   /** Callback when agent status changes */
   onStatusChange?: (agent: SubAgent) => void;
   /** Callback when agent produces intermediate output */

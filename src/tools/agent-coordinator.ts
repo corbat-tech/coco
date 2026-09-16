@@ -320,7 +320,7 @@ export const delegateTaskTool = defineTool({
     maxTurns: z.number().default(10),
   }),
 
-  async execute(input) {
+  async execute(input, executionContext) {
     const typedInput = input as {
       taskId: string;
       task: string;
@@ -356,6 +356,8 @@ export const delegateTaskTool = defineTool({
 
     const startTime = Date.now();
     const result = await manager.spawn(agentType, taskDescription, {
+      executionContext,
+      signal: executionContext?.signal,
       timeout: typedInput.maxTurns * 60_000,
     });
 

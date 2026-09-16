@@ -25,3 +25,9 @@ Siete casos por `/root/core_audit`: seis fallan antes y uno conserva compatibili
 RuntimeToolExecutor ofrece delegación ligada al mismo registro/política/eventos/sesión. Cada descendiente respeta los modos y listas de tools de todos sus ancestros, además de su propia restricción. Captura listas por ejecución y política al construir; ninguna confirmación parental o campo extra del hijo se convierte en consentimiento. Señales se combinan.
 
 18 casos por `/root/core_audit`: todos fallan antes por ausencia del callback (no 18 exploits). Después 19 archivos / 220 tests correctos, typecheck/lint/format correctos. Logs `e05d-before.log`, `e05d-after.log`. Mocks de consumidores actualizados para contexto host. Coordinador implementa, `/root/baseline_review` APPROVED sin hallazgos. Conexión de manager/executor pendiente E05.e; E05 no está completo. Sin publicación; rollback por revert.
+
+## E05.e · DONE · 2026-09-16
+
+spawnSimpleAgent y delegateTask pasan contexto host a AgentManager; este y AgentExecutor ejecutan tools mediante el callback parental. Sin contexto, fallback ask de lectura; el rol no concede escritura. AgentExecutor convierte catálogo legacy vacío (todas las tools publicadas) en lista concreta por ejecución. El manager transmite señal interna al despacho.
+
+11 integraciones con runtime, registry y manager reales/proveedor simulado fallan antes; después 21 archivos / 262 tests correctos, typecheck/lint/format correctos. Logs `e05e-before.log`, `e05e-after.log`. Tests `/root/core_audit`, implementación coordinador, revisión `/root/baseline_review` APPROVED. No se ha probado capacidad con LLM real. Cancelación del proveedor pendiente E07; resultado agregado success después de una tool denegada preexistente pendiente E11, por lo que las pruebas afirman autoridad de efectos, no éxito de la tarea. Coherencia de roles pendiente E05.f. Sin publicación; rollback por revert.
