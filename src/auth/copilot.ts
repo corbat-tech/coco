@@ -14,6 +14,9 @@
  * used by VS Code, opencode, copilot-api, etc.
  */
 
+import { createRequestScope } from "../utils/request-scope.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
+import { saveCredentialFile } from "./credential-storage.js";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
@@ -100,9 +103,9 @@ const REFRESH_BUFFER_MS = 60_000;
 const execFileAsync = promisify(execFile);
 
 /**
- * Error indicating the GitHub token is permanently invalid and credentials
- * should be deleted. Only thrown for definitive auth failures (401, 403),
- * never for transient errors like network timeouts or server errors.
+ * Error indicating an authentication rejection (401, 403). It does not
+ * authorize deleting credentials: intermediaries can also return these statuses.
+ * Transient errors like network timeouts or server errors use ordinary Error.
  */
 export class CopilotAuthError extends Error {
   constructor(
@@ -193,9 +196,14 @@ export async function pollGitHubForToken(
 /**
  * Exchange a GitHub access token for a Copilot API token
  */
-export async function exchangeForCopilotToken(githubToken: string): Promise<CopilotToken> {
+export async function exchangeForCopilotToken(
+  githubToken: string,
+  signal?: AbortSignal,
+): Promise<CopilotToken> {
+  signal?.throwIfAborted();
   const response = await fetch(COPILOT_TOKEN_URL, {
     method: "GET",
+    signal,
     headers: {
       Authorization: `token ${githubToken}`,
       Accept: "application/json",
@@ -204,7 +212,8 @@ export async function exchangeForCopilotToken(githubToken: string): Promise<Copi
   });
 
   if (!response.ok) {
-    const error = await response.text();
+    await response.body?.cancel();
+    signal?.throwIfAborted();
 
     if (response.status === 401) {
       throw new CopilotAuthError(
@@ -223,10 +232,21 @@ export async function exchangeForCopilotToken(githubToken: string): Promise<Copi
     }
 
     // Transient errors (5xx, network) — do NOT delete credentials
-    throw new Error(`Copilot token exchange failed: ${response.status} - ${error}`);
+    throw new Error(`Copilot token exchange failed: ${response.status}`);
   }
 
-  return (await response.json()) as CopilotToken;
+  const data = (await response.json()) as CopilotToken;
+  if (
+    !data ||
+    typeof data.token !== "string" ||
+    !data.token.trim() ||
+    !Number.isFinite(data.expires_at) ||
+    !Number.isFinite(data.expires_at * 1000) ||
+    data.expires_at <= 0
+  ) {
+    throw new Error("Invalid Copilot token response");
+  }
+  return data;
 }
 
 /**
@@ -254,12 +274,18 @@ export async function getGitHubLogin(githubToken: string): Promise<string | null
  * Best-effort fallback to GitHub CLI token.
  * Mirrors official Copilot CLI behavior when no direct token is available.
  */
-export async function getGitHubCliToken(): Promise<string | null> {
+export async function getGitHubCliToken(signal?: AbortSignal): Promise<string | null> {
+  signal?.throwIfAborted();
   try {
-    const { stdout } = await execFileAsync("gh", ["auth", "token"], { timeout: 5000 });
+    const { stdout } = await execFileAsync("gh", ["auth", "token", "--hostname", "github.com"], {
+      timeout: 5000,
+      signal,
+    });
+    signal?.throwIfAborted();
     const token = stdout.trim();
     return token.length > 0 ? token : null;
-  } catch {
+  } catch (error) {
+    rethrowCancellation(error, signal);
     return null;
   }
 }
@@ -289,10 +315,7 @@ export function getCopilotCredentialsPath(): string {
  */
 export async function saveCopilotCredentials(creds: CopilotCredentials): Promise<void> {
   const filePath = getCopilotCredentialsPath();
-  const dir = path.dirname(filePath);
-
-  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  await fs.writeFile(filePath, JSON.stringify(creds, null, 2), { mode: 0o600 });
+  await saveCredentialFile(filePath, creds);
 }
 
 /** Zod schema for validating stored credentials */
@@ -348,20 +371,46 @@ function isCopilotTokenExpired(creds: CopilotCredentials): boolean {
  * Uses a raw callback (not promisify) so tests can mock execFile cleanly
  * without needing util.promisify.custom semantics.
  */
-export function exchangeForCopilotTokenViaGhCli(): Promise<CopilotToken | null> {
-  return new Promise((resolve) => {
-    execFile("gh", ["api", "/copilot_internal/v2/token"], { timeout: 10_000 }, (err, stdout) => {
-      if (err || !stdout) {
-        resolve(null);
-        return;
-      }
-      try {
-        const parsed = JSON.parse(stdout) as CopilotToken;
-        resolve(parsed.token && parsed.expires_at ? parsed : null);
-      } catch {
-        resolve(null);
-      }
-    });
+export async function exchangeForCopilotTokenViaGhCli(
+  signal?: AbortSignal,
+  githubToken?: string,
+): Promise<CopilotToken | null> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    execFile(
+      "gh",
+      ["api", "/copilot_internal/v2/token", "--hostname", "github.com"],
+      {
+        timeout: 10_000,
+        signal,
+        ...(githubToken ? { env: { ...process.env, GH_TOKEN: githubToken } } : {}),
+      },
+      (err, stdout) => {
+        if (signal?.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        if (err || !stdout) {
+          resolve(null);
+          return;
+        }
+        try {
+          const parsed = JSON.parse(stdout) as CopilotToken;
+          resolve(
+            parsed &&
+              typeof parsed.token === "string" &&
+              parsed.token.trim() &&
+              Number.isFinite(parsed.expires_at) &&
+              Number.isFinite(parsed.expires_at * 1000) &&
+              parsed.expires_at > 0
+              ? parsed
+              : null,
+          );
+        } catch {
+          resolve(null);
+        }
+      },
+    );
   });
 }
 
@@ -399,77 +448,65 @@ export function getGitHubCliAuthStatus(): Promise<string | null> {
  * Get a valid Copilot API token, refreshing if necessary.
  *
  * Returns the bearer token and base URL to use for API calls.
- * If credentials are missing or GitHub token is invalid, returns null.
+ * Missing credentials return null; failed exchanges preserve credentials and reject.
  *
  * On corporate networks using PAC proxies or TLS interception, Node's
  * direct fetch may fail even if the user has a valid subscription. In that
- * case we fall back to `gh api` which uses Go's HTTP client (PAC-aware,
- * system-CA-aware) before concluding that credentials are invalid.
+ * case we try `gh api` with the same GitHub token; failure is not proof that
+ * stored credentials should be deleted.
  */
-export async function getValidCopilotToken(): Promise<{
+export async function getValidCopilotToken(signal?: AbortSignal): Promise<{
   token: string;
   baseUrl: string;
   isNew: boolean;
 } | null> {
-  const creds = await loadCopilotCredentials();
-  const envToken =
-    process.env["COPILOT_GITHUB_TOKEN"] || process.env["GH_TOKEN"] || process.env["GITHUB_TOKEN"];
-  const fallbackGhToken = await getGitHubCliToken();
-  const githubToken = envToken || creds?.githubToken || fallbackGhToken;
-  if (!githubToken) return null;
-
-  // Check if current Copilot token is still valid
-  if (creds && !isCopilotTokenExpired(creds) && creds.copilotToken) {
-    return {
-      token: creds.copilotToken,
-      baseUrl: getCopilotBaseUrl(creds.accountType),
-      isNew: false,
-    };
-  }
-
-  // Helper: save and return a freshly-obtained Copilot token
-  const saveAndReturn = async (copilotToken: CopilotToken) => {
+  const scope = createRequestScope(signal, 30000);
+  let saving = false;
+  try {
+    const creds = await loadCopilotCredentials();
+    scope.signal.throwIfAborted();
+    if (creds && !isCopilotTokenExpired(creds) && creds.copilotToken) {
+      return {
+        token: creds.copilotToken,
+        baseUrl: getCopilotBaseUrl(creds.accountType),
+        isNew: false,
+      };
+    }
+    const envToken =
+      process.env["COPILOT_GITHUB_TOKEN"] || process.env["GH_TOKEN"] || process.env["GITHUB_TOKEN"];
+    const githubToken = envToken || creds?.githubToken || (await getGitHubCliToken(scope.signal));
+    scope.signal.throwIfAborted();
+    if (!githubToken) return null;
+    let copilotToken: CopilotToken;
+    try {
+      copilotToken = await exchangeForCopilotToken(githubToken, scope.signal);
+    } catch (error) {
+      rethrowCancellation(error, scope.signal);
+      // A CLI failure is not proof that saved credentials are invalid.
+      const fallback = await exchangeForCopilotTokenViaGhCli(scope.signal, githubToken);
+      scope.signal.throwIfAborted();
+      if (!fallback) throw error;
+      copilotToken = fallback;
+    }
     const updatedCreds: CopilotCredentials = {
-      ...(creds ?? { githubToken }),
-      githubToken: creds?.githubToken ?? githubToken,
+      githubToken,
       copilotToken: copilotToken.token,
       copilotTokenExpiresAt: copilotToken.expires_at * 1000,
       accountType: copilotToken.annotations?.copilot_plan ?? creds?.accountType,
     };
+    saving = true;
     await saveCopilotCredentials(updatedCreds);
+    saving = false;
+    scope.signal.throwIfAborted();
     return {
       token: copilotToken.token,
       baseUrl: getCopilotBaseUrl(updatedCreds.accountType),
       isNew: true,
     };
-  };
-
-  // Need to refresh the Copilot token — try direct fetch first
-  try {
-    const copilotToken = await exchangeForCopilotToken(githubToken);
-    return saveAndReturn(copilotToken);
   } catch (error) {
-    if (error instanceof CopilotAuthError && error.permanent) {
-      // 403 received — could be from a corporate proxy, not from GitHub.
-      // Try `gh api` before concluding the credentials are invalid.
-      const ghCliToken = await exchangeForCopilotTokenViaGhCli();
-      if (ghCliToken) {
-        return saveAndReturn(ghCliToken);
-      }
-      // Both direct fetch and gh cli confirm auth failure → delete credentials
-      await deleteCopilotCredentials();
-      return null;
-    }
-
-    // Network / transient error — also try gh api fallback before re-throwing.
-    // This covers PAC proxy environments where Node's fetch cannot route the
-    // request but gh's Go HTTP client can.
-    const ghCliToken = await exchangeForCopilotTokenViaGhCli();
-    if (ghCliToken) {
-      return saveAndReturn(ghCliToken);
-    }
-
-    // Both paths failed — re-throw original error so the retry layer handles it
+    if (!saving) rethrowCancellation(error, scope.signal);
     throw error;
+  } finally {
+    scope.dispose();
   }
 }

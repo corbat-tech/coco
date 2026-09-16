@@ -16,6 +16,7 @@ vi.mock("node:fs/promises", async () => {
     ...actual,
     readFile: vi.fn(),
     writeFile: vi.fn(),
+    rename: vi.fn().mockResolvedValue(undefined),
     mkdir: vi.fn(),
     unlink: vi.fn(),
   };
@@ -61,6 +62,7 @@ const mockedExecFile = vi.mocked(execFile);
 const mockedReadFile = vi.mocked(fs.readFile);
 const mockedWriteFile = vi.mocked(fs.writeFile);
 const mockedMkdir = vi.mocked(fs.mkdir);
+const mockedRename = vi.mocked(fs.rename);
 const mockedUnlink = vi.mocked(fs.unlink);
 
 describe("Copilot Authentication", () => {
@@ -302,10 +304,15 @@ describe("Copilot Authentication", () => {
         mode: 0o700,
       });
       expect(mockedWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining("copilot.json"),
-        expect.any(String),
-        { mode: 0o600 },
+        expect.stringMatching(/copilot\.json\.[0-9a-f-]{36}\.tmp$/),
+        JSON.stringify(creds, null, 2),
+        { mode: 0o600, flag: "wx" },
       );
+      expect(mockedRename).toHaveBeenCalledWith(
+        mockedWriteFile.mock.calls[0][0],
+        expect.stringMatching(/copilot\.json$/),
+      );
+      expect(mockedUnlink).not.toHaveBeenCalled();
     });
 
     it("should load and validate credentials", async () => {
@@ -378,6 +385,7 @@ describe("Copilot Authentication", () => {
       });
       // Should NOT call fetch (no refresh needed)
       expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockedExecFile).not.toHaveBeenCalled();
     });
 
     it("should refresh expired token", async () => {
@@ -411,6 +419,16 @@ describe("Copilot Authentication", () => {
         baseUrl: "https://api.githubcopilot.com",
         isNew: true,
       });
+      expect(mockedExecFile).not.toHaveBeenCalled();
+      expect(JSON.parse(String(mockedWriteFile.mock.calls[0][1]))).toMatchObject({
+        githubToken: creds.githubToken,
+        copilotToken: "tid=new_token",
+        copilotTokenExpiresAt: newExpiry * 1000,
+      });
+      expect(mockedRename).toHaveBeenCalledWith(
+        mockedWriteFile.mock.calls[0][0],
+        expect.stringMatching(/copilot\.json$/),
+      );
     });
 
     it("should return null when no credentials exist", async () => {
@@ -420,7 +438,7 @@ describe("Copilot Authentication", () => {
       expect(result).toBeNull();
     });
 
-    it("should delete credentials on permanent auth error (401)", async () => {
+    it("should preserve credentials and reject the original 401 when CLI fallback is unavailable", async () => {
       const creds: CopilotCredentials = {
         githubToken: "gho_expired",
         copilotToken: "tid=old",
@@ -437,9 +455,12 @@ describe("Copilot Authentication", () => {
         text: async () => "Unauthorized",
       });
 
-      const result = await getValidCopilotToken();
-      expect(result).toBeNull();
-      expect(mockedUnlink).toHaveBeenCalledWith(expect.stringContaining("copilot.json"));
+      await expect(getValidCopilotToken()).rejects.toMatchObject({
+        name: "CopilotAuthError",
+        permanent: true,
+        message: expect.stringContaining("invalid or expired"),
+      });
+      expect(mockedUnlink).not.toHaveBeenCalled();
     });
 
     it("should re-throw transient errors (500) without deleting credentials", async () => {
@@ -493,6 +514,7 @@ describe("Copilot Authentication", () => {
       // Should use env var token, not file token
       const fetchHeaders = mockFetch.mock.calls[0][1].headers;
       expect(fetchHeaders.Authorization).toBe("token gho_from_env");
+      expect(mockedExecFile).not.toHaveBeenCalled();
     });
   });
 
@@ -514,6 +536,12 @@ describe("Copilot Authentication", () => {
       const result = await exchangeForCopilotTokenViaGhCli();
       expect(result?.token).toBe("tid=gh_cli_token");
       expect(result?.annotations?.copilot_plan).toBe("business");
+      expect(mockedExecFile).toHaveBeenCalledWith(
+        "gh",
+        ["api", "/copilot_internal/v2/token", "--hostname", "github.com"],
+        expect.any(Object),
+        expect.any(Function),
+      );
     });
 
     it("returns null when gh is not installed", async () => {
@@ -598,19 +626,8 @@ describe("Copilot Authentication", () => {
       annotations: { copilot_plan: "business" },
     });
 
-    // getValidCopilotToken() always calls getGitHubCliToken() (execFile call #1
-    // via promisify) before it calls exchangeForCopilotTokenViaGhCli() (execFile
-    // call #2 via raw callback). The two calls use different invocation styles:
-    //   getGitHubCliToken: promisify → callback is 3rd arg (no opts object)
-    //   exchangeForCopilotTokenViaGhCli: raw → callback is 4th arg (with opts object)
-    const enoentCb = (cb: unknown) => {
-      const err = Object.assign(new Error("gh not mocked"), { code: "ENOENT" });
-      if (typeof cb === "function") (cb as (e: Error) => void)(err);
-    };
-    const enoentMock = (_cmd: unknown, _args: unknown, _opts: unknown, cb?: unknown) => {
-      enoentCb(typeof _opts === "function" ? _opts : cb);
-      return {} as ReturnType<typeof execFile>;
-    };
+    // Stored credentials avoid a separate `gh auth token` lookup. Only the
+    // fallback `gh api` command runs when the direct exchange fails.
     const successMock = (_cmd: unknown, _args: unknown, _opts: unknown, cb?: unknown) => {
       const callback = typeof _opts === "function" ? _opts : cb;
       if (typeof callback === "function")
@@ -630,14 +647,21 @@ describe("Copilot Authentication", () => {
         text: async () => "Forbidden",
       });
 
-      // Call #1 (getGitHubCliToken via promisify) → ENOENT
-      // Call #2 (exchangeForCopilotTokenViaGhCli via raw callback) → success
-      mockedExecFile.mockImplementationOnce(enoentMock).mockImplementationOnce(successMock);
+      mockedExecFile.mockImplementationOnce(successMock);
 
       const result = await getValidCopilotToken();
 
       // Should succeed via gh cli, NOT delete credentials
       expect(result?.token).toBe("tid=gh_cli_fresh");
+      expect(mockedExecFile).toHaveBeenCalledTimes(1);
+      expect(mockedExecFile).toHaveBeenCalledWith(
+        "gh",
+        ["api", "/copilot_internal/v2/token", "--hostname", "github.com"],
+        expect.objectContaining({
+          env: expect.objectContaining({ GH_TOKEN: expiredCreds.githubToken }),
+        }),
+        expect.any(Function),
+      );
       expect(mockedUnlink).not.toHaveBeenCalled();
     });
 
@@ -649,14 +673,22 @@ describe("Copilot Authentication", () => {
       // Direct fetch throws network error (PAC proxy not followed by Node)
       mockFetch.mockRejectedValueOnce(new TypeError("fetch failed"));
 
-      // Call #1 → ENOENT; call #2 → success
-      mockedExecFile.mockImplementationOnce(enoentMock).mockImplementationOnce(successMock);
+      mockedExecFile.mockImplementationOnce(successMock);
 
       const result = await getValidCopilotToken();
       expect(result?.token).toBe("tid=gh_cli_fresh");
+      expect(mockedExecFile).toHaveBeenCalledTimes(1);
+      expect(mockedExecFile).toHaveBeenCalledWith(
+        "gh",
+        ["api", "/copilot_internal/v2/token", "--hostname", "github.com"],
+        expect.objectContaining({
+          env: expect.objectContaining({ GH_TOKEN: expiredCreds.githubToken }),
+        }),
+        expect.any(Function),
+      );
     });
 
-    it("deletes credentials when both direct fetch (403) and gh cli fail", async () => {
+    it("preserves credentials and rejects the original 403 when gh cli is unavailable", async () => {
       mockedReadFile.mockResolvedValue(JSON.stringify(expiredCreds));
       mockedUnlink.mockResolvedValue(undefined);
 
@@ -666,18 +698,21 @@ describe("Copilot Authentication", () => {
         status: 403,
         text: async () => "Forbidden",
       });
-      // Both calls to execFile return ENOENT (default mock behaviour)
+      // The fallback CLI call returns ENOENT (default mock behaviour)
 
-      const result = await getValidCopilotToken();
-      expect(result).toBeNull();
-      expect(mockedUnlink).toHaveBeenCalledWith(expect.stringContaining("copilot.json"));
+      await expect(getValidCopilotToken()).rejects.toMatchObject({
+        name: "CopilotAuthError",
+        permanent: true,
+        message: expect.stringContaining("not enabled"),
+      });
+      expect(mockedUnlink).not.toHaveBeenCalled();
     });
 
     it("re-throws when both direct fetch (network) and gh cli fail", async () => {
       mockedReadFile.mockResolvedValue(JSON.stringify(expiredCreds));
 
       mockFetch.mockRejectedValueOnce(new TypeError("fetch failed"));
-      // Both execFile calls return ENOENT (default mock)
+      // The fallback CLI call returns ENOENT (default mock)
 
       await expect(getValidCopilotToken()).rejects.toThrow("fetch failed");
     });

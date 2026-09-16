@@ -109,3 +109,13 @@ Fundamento: [RFC6749 sección6](https://www.rfc-editor.org/rfc/rfc6749#section-6
 28 casos OAuth con red/FS simulados y cuatro de filesystem temporal real: permisos POSIX600/700, reemplazo, escritura parcial fallida y rename fallido preservan anterior/limpian temporales. No se cambian HOME ni credenciales reales; FSredirigido estrictamente a fixture. Gate amplio:337 archivos/7482 tests correctos,15 omitidos; REPL separado27 correctos; typecheck/lint/format/build correctos. Logs e07k1-main/repl/types/lint/format/build. Coordinador implementa y añade caso overflow; /root/core_audit pruebas de contrato; /root/file_fixture_update integración FS. Sin publicación; rollback por revert.
 
 /root/baseline_review APPROVED E07.k1; no valida concurrencia de renovación ni Copilot.
+
+## E07.k2 · DONE · 2026-09-16
+
+Autenticación Copilot tiene scope30s, señal a HTTP y procesos gh, preabort y preservación de causa. Caché válida evita CLI; token GitHub de entorno/credenciales evita gh auth token innecesario. Abortos no activan fallback; fallo de gh no demuestra invalidez y nunca borra credenciales automáticamente. Fallo de persistencia tampoco activa fallback y prevalece ante aborto concurrente. Se comparte con OAuth la escritura privada/atómica extraída a credential-storage, sin duplicar implementación.
+
+Fallback gh api recibe el mismo token GitHub por entorno, nunca argv, y hostnamegithub.com explícito; evita mezclar cuentas y respeta el host del HTTP original frente a GH_HOST. Las credenciales guardadas corresponden al token usado realmente. [Manual gh auth token](https://cli.github.com/manual/gh_auth_token), [gh api](https://cli.github.com/manual/gh_api) y [variables de entorno](https://cli.github.com/manual/gh_help_environment), consultados2026-09-16: hostname configurable y GH_TOKEN tiene precedencia. Esto no convierte copilot_internal en API pública estable ni acredita funcionamiento de cuentas reales. No cambia modelos/clientID/endpoints.
+
+Respuesta exige token no vacío y caducidad válida; revisión detectó overflow de segundos a ms, corregido en HTTP y CLI con dos regresiones. 25 casos nuevos de contrato con FS/HTTP/exec simulados; fixtures previos actualizados para preservación de credenciales y gh único. Las señales de los callers del provider y su renovación compartida aún deben conectarse en E07.k3. Árboles/procesos reales e interacción OAuth continúan fuera de este incremento.
+
+Gate finalE07.k2:5 archivos/116 tests correctos; typecheck/lint/format correctos. Logs e07k2-final/types/lint/format. Coordinador implementa; /root/core_audit contratos25; /root/file_fixture_update fixtures; /root/baseline_review APPROVED tras overflow. Sin publicación; rollback por revert.

@@ -17,7 +17,7 @@
  * - Gemini (Google account login, same as Gemini CLI)
  */
 
-import { randomUUID } from "node:crypto";
+import { saveCredentialFile } from "./credential-storage.js";
 import { createRequestScope } from "../utils/request-scope.js";
 import { rethrowCancellation } from "../utils/cancellation.js";
 import * as fs from "node:fs/promises";
@@ -340,25 +340,7 @@ function getTokenStoragePath(provider: string): string {
  */
 export async function saveTokens(provider: string, tokens: OAuthTokens): Promise<void> {
   const filePath = getTokenStoragePath(provider);
-  const dir = path.dirname(filePath);
-
-  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
-  let mayOwnTemporaryFile = true;
-  try {
-    try {
-      await fs.writeFile(temporaryPath, JSON.stringify(tokens, null, 2), {
-        mode: 0o600,
-        flag: "wx",
-      });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") mayOwnTemporaryFile = false;
-      throw error;
-    }
-    await fs.rename(temporaryPath, filePath);
-  } finally {
-    if (mayOwnTemporaryFile) await fs.unlink(temporaryPath).catch(() => {});
-  }
+  await saveCredentialFile(filePath, tokens);
 }
 
 /**
