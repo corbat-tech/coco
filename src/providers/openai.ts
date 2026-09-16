@@ -21,7 +21,7 @@ import type {
   ToolResultContent,
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
-import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import {
   ChatToolCallAssembler,
   ResponsesToolCallAssembler,
@@ -379,7 +379,7 @@ export class OpenAIProvider implements LLMProvider {
           throw this.handleError(error);
         }
       },
-      this.retryConfig,
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
       options?.signal,
     );
   }
@@ -460,7 +460,7 @@ export class OpenAIProvider implements LLMProvider {
           throw this.handleError(error);
         }
       },
-      this.retryConfig,
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
       options?.signal,
     );
   }
@@ -1274,7 +1274,7 @@ export class OpenAIProvider implements LLMProvider {
           throw this.handleError(error);
         }
       },
-      this.retryConfig,
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
       options?.signal,
     );
   }
@@ -1353,7 +1353,7 @@ export class OpenAIProvider implements LLMProvider {
           throw this.handleError(error);
         }
       },
-      this.retryConfig,
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
       options?.signal,
     );
   }

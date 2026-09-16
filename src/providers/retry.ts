@@ -32,6 +32,17 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   jitterFactor: 0.1,
 };
 
+/** Resolve the host's per-call budget without changing a provider's defaults. */
+export function resolveRetryConfig(
+  config: RetryConfig,
+  maxRetries = config.maxRetries,
+): RetryConfig {
+  if (!Number.isSafeInteger(maxRetries) || maxRetries < 0) {
+    throw new RangeError("maxRetries must be a non-negative safe integer");
+  }
+  return { ...config, maxRetries };
+}
+
 /**
  * Sleep for a given number of milliseconds
  */
@@ -114,7 +125,7 @@ export async function withRetry<T>(
   config: Partial<RetryConfig> = {},
   signal?: AbortSignal,
 ): Promise<T> {
-  const fullConfig: RetryConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
+  const fullConfig = resolveRetryConfig({ ...DEFAULT_RETRY_CONFIG, ...config });
   let lastError: unknown;
   let delay = fullConfig.initialDelayMs;
 

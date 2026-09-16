@@ -22,7 +22,7 @@ import type {
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
 import { getCachedADCToken } from "../auth/gcloud.js";
-import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
 const DEFAULT_MODEL = getCatalogDefaultModel("vertex");
@@ -170,10 +170,14 @@ export class VertexProvider implements LLMProvider {
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
 
-    return withRetry(async () => {
-      const response = await this.generateContent(messages, options);
-      return this.parseResponse(response, options?.model);
-    }, this.retryConfig);
+    return withRetry(
+      async () => {
+        const response = await this.generateContent(messages, options);
+        return this.parseResponse(response, options?.model);
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   async chatWithTools(
@@ -182,15 +186,19 @@ export class VertexProvider implements LLMProvider {
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
 
-    return withRetry(async () => {
-      const response = await this.generateContent(
-        messages,
-        options,
-        options.tools,
-        options.toolChoice,
-      );
-      return this.parseResponseWithTools(response, options.model);
-    }, this.retryConfig);
+    return withRetry(
+      async () => {
+        const response = await this.generateContent(
+          messages,
+          options,
+          options.tools,
+          options.toolChoice,
+        );
+        return this.parseResponseWithTools(response, options.model);
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {

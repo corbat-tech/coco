@@ -22,7 +22,7 @@ import type {
   ToolResultContent,
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
-import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import { getLogger } from "../utils/logger.js";
 import { mapToAnthropic, mapToAnthropicEffort } from "./thinking.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
@@ -121,6 +121,7 @@ export class AnthropicProvider implements LLMProvider {
       apiKey,
       baseURL: config.baseUrl,
       timeout: config.timeout ?? 120000,
+      maxRetries: 0,
     });
   }
 
@@ -130,41 +131,45 @@ export class AnthropicProvider implements LLMProvider {
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
 
-    return withRetry(async () => {
-      try {
-        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-        const thinkingParam = mapToAnthropic(options?.thinking, model);
-        const outputConfig = getAnthropicOutputConfig(options?.thinking, model);
-        const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+    return withRetry(
+      async () => {
+        try {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const thinkingParam = mapToAnthropic(options?.thinking, model);
+          const outputConfig = getAnthropicOutputConfig(options?.thinking, model);
+          const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
 
-        const response = await this.client!.messages.create({
-          model,
-          max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
-          temperature: getAnthropicTemperature(
-            thinkingParam,
-            options?.temperature ?? this.config.temperature ?? 0,
-          ),
-          system: this.extractSystem(messages, options?.system),
-          messages: this.convertMessages(messages),
-          stop_sequences: options?.stopSequences,
-          ...(thinkingParam && { thinking: thinkingParam }),
-          ...(outputConfig && { output_config: outputConfig }),
-        });
+          const response = await this.client!.messages.create({
+            model,
+            max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
+            temperature: getAnthropicTemperature(
+              thinkingParam,
+              options?.temperature ?? this.config.temperature ?? 0,
+            ),
+            system: this.extractSystem(messages, options?.system),
+            messages: this.convertMessages(messages),
+            stop_sequences: options?.stopSequences,
+            ...(thinkingParam && { thinking: thinkingParam }),
+            ...(outputConfig && { output_config: outputConfig }),
+          });
 
-        return {
-          id: response.id,
-          content: this.extractTextContent(response.content),
-          stopReason: this.mapStopReason(response.stop_reason),
-          usage: {
-            inputTokens: response.usage.input_tokens,
-            outputTokens: response.usage.output_tokens,
-          },
-          model: response.model,
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+          return {
+            id: response.id,
+            content: this.extractTextContent(response.content),
+            stopReason: this.mapStopReason(response.stop_reason),
+            usage: {
+              inputTokens: response.usage.input_tokens,
+              outputTokens: response.usage.output_tokens,
+            },
+            model: response.model,
+          };
+        } catch (error) {
+          throw this.handleError(error);
+        }
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   /**
@@ -176,45 +181,51 @@ export class AnthropicProvider implements LLMProvider {
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
 
-    return withRetry(async () => {
-      try {
-        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-        const thinkingParam = mapToAnthropic(options?.thinking, model);
-        const outputConfig = getAnthropicOutputConfig(options?.thinking, model);
-        const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+    return withRetry(
+      async () => {
+        try {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const thinkingParam = mapToAnthropic(options?.thinking, model);
+          const outputConfig = getAnthropicOutputConfig(options?.thinking, model);
+          const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
 
-        const response = await this.client!.messages.create({
-          model,
-          max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
-          temperature: getAnthropicTemperature(
-            thinkingParam,
-            options?.temperature ?? this.config.temperature ?? 0,
-          ),
-          system: this.extractSystem(messages, options?.system),
-          messages: this.convertMessages(messages),
-          tools: this.convertTools(options.tools),
-          tool_choice: options.toolChoice ? this.convertToolChoice(options.toolChoice) : undefined,
-          ...(thinkingParam && { thinking: thinkingParam }),
-          ...(outputConfig && { output_config: outputConfig }),
-        });
+          const response = await this.client!.messages.create({
+            model,
+            max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
+            temperature: getAnthropicTemperature(
+              thinkingParam,
+              options?.temperature ?? this.config.temperature ?? 0,
+            ),
+            system: this.extractSystem(messages, options?.system),
+            messages: this.convertMessages(messages),
+            tools: this.convertTools(options.tools),
+            tool_choice: options.toolChoice
+              ? this.convertToolChoice(options.toolChoice)
+              : undefined,
+            ...(thinkingParam && { thinking: thinkingParam }),
+            ...(outputConfig && { output_config: outputConfig }),
+          });
 
-        const toolCalls = this.extractToolCalls(response.content);
+          const toolCalls = this.extractToolCalls(response.content);
 
-        return {
-          id: response.id,
-          content: this.extractTextContent(response.content),
-          stopReason: this.mapStopReason(response.stop_reason),
-          usage: {
-            inputTokens: response.usage.input_tokens,
-            outputTokens: response.usage.output_tokens,
-          },
-          model: response.model,
-          toolCalls,
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+          return {
+            id: response.id,
+            content: this.extractTextContent(response.content),
+            stopReason: this.mapStopReason(response.stop_reason),
+            usage: {
+              inputTokens: response.usage.input_tokens,
+              outputTokens: response.usage.output_tokens,
+            },
+            model: response.model,
+            toolCalls,
+          };
+        } catch (error) {
+          throw this.handleError(error);
+        }
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   /**

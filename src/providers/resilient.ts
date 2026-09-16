@@ -10,6 +10,7 @@ import type {
 } from "./types.js";
 import { rethrowCancellation } from "../utils/cancellation.js";
 import {
+  resolveRetryConfig,
   waitForRetry,
   withRetry,
   type RetryConfig,
@@ -70,9 +71,14 @@ export class ResilientProvider implements LLMProvider {
   }
 
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
+    const retryConfig = resolveRetryConfig(this.retryConfig, options?.maxRetries);
     return this.breaker.execute(
       () =>
-        withRetry(() => this.provider.chat(messages, options), this.retryConfig, options?.signal),
+        withRetry(
+          () => this.provider.chat(messages, { ...options, maxRetries: 0 }),
+          retryConfig,
+          options?.signal,
+        ),
       options?.signal,
     );
   }
@@ -81,11 +87,12 @@ export class ResilientProvider implements LLMProvider {
     messages: Message[],
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
+    const retryConfig = resolveRetryConfig(this.retryConfig, options?.maxRetries);
     return this.breaker.execute(
       () =>
         withRetry(
-          () => this.provider.chatWithTools(messages, options),
-          this.retryConfig,
+          () => this.provider.chatWithTools(messages, { ...options, maxRetries: 0 }),
+          retryConfig,
           options?.signal,
         ),
       options?.signal,
@@ -93,7 +100,11 @@ export class ResilientProvider implements LLMProvider {
   }
 
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
-    yield* this.streamWithPolicy(() => this.provider.stream(messages, options), options?.signal);
+    yield* this.streamWithPolicy(
+      () => this.provider.stream(messages, { ...options, maxRetries: 0 }),
+      options?.signal,
+      options?.maxRetries,
+    );
   }
 
   async *streamWithTools(
@@ -101,8 +112,9 @@ export class ResilientProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
     yield* this.streamWithPolicy(
-      () => this.provider.streamWithTools(messages, options),
+      () => this.provider.streamWithTools(messages, { ...options, maxRetries: 0 }),
       options?.signal,
+      options?.maxRetries,
     );
   }
 
@@ -136,10 +148,12 @@ export class ResilientProvider implements LLMProvider {
   private async *streamWithPolicy(
     createStream: () => AsyncIterable<StreamChunk>,
     signal?: AbortSignal,
+    maxRetries?: number,
   ): AsyncIterable<StreamChunk> {
+    const retryConfig = resolveRetryConfig(this.streamRetryConfig, maxRetries);
     let attempt = 0;
 
-    while (attempt <= this.streamRetryConfig.maxRetries) {
+    while (attempt <= retryConfig.maxRetries) {
       signal?.throwIfAborted();
       if (this.breaker.isOpen()) {
         throw new CircuitOpenError(this.id, 0);
@@ -160,13 +174,13 @@ export class ResilientProvider implements LLMProvider {
         rethrowCancellation(error, signal);
         this.breaker.recordFailure();
         const shouldRetry =
-          !emittedChunk && attempt < this.streamRetryConfig.maxRetries && isRetryableError(error);
+          !emittedChunk && attempt < retryConfig.maxRetries && isRetryableError(error);
 
         if (!shouldRetry) {
           throw error;
         }
 
-        const delay = computeRetryDelay(attempt, this.streamRetryConfig);
+        const delay = computeRetryDelay(attempt, retryConfig);
         await waitForRetry(delay, signal);
         attempt++;
       }

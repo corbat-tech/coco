@@ -26,7 +26,7 @@ import type {
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
 import { getValidAccessToken } from "../auth/index.js";
-import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import { ResponsesToolCallAssembler, parseToolCallArguments } from "./tool-call-normalizer.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
@@ -435,55 +435,59 @@ export class CodexProvider implements LLMProvider {
    * Send a chat message using Codex Responses API format
    */
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
-    return withRetry(async () => {
-      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-      const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-      const body = this.buildRequestBody(model, input, instructions, {
-        maxTokens: options?.maxTokens,
-        temperature: options?.temperature,
-      });
+    return withRetry(
+      async () => {
+        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+        const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+        const body = this.buildRequestBody(model, input, instructions, {
+          maxTokens: options?.maxTokens,
+          temperature: options?.temperature,
+        });
 
-      const response = await this.makeRequest(body);
+        const response = await this.makeRequest(body);
 
-      let content = "";
-      let responseId = `codex-${Date.now()}`;
-      let inputTokens = 0;
-      let outputTokens = 0;
-      let status = "completed";
+        let content = "";
+        let responseId = `codex-${Date.now()}`;
+        let inputTokens = 0;
+        let outputTokens = 0;
+        let status = "completed";
 
-      await this.readSSEStream(response, (event) => {
-        if (event.id) responseId = event.id as string;
+        await this.readSSEStream(response, (event) => {
+          if (event.id) responseId = event.id as string;
 
-        if (event.type === "response.output_text.delta" && event.delta) {
-          content += event.delta as string;
-        } else if (event.type === "response.output_text.done" && event.text) {
-          content = event.text as string;
-        } else if (event.type === "response.completed" && event.response) {
-          const resp = event.response as Record<string, unknown>;
-          const usage = resp.usage as Record<string, number> | undefined;
-          if (usage) {
-            inputTokens = usage.input_tokens ?? 0;
-            outputTokens = usage.output_tokens ?? 0;
+          if (event.type === "response.output_text.delta" && event.delta) {
+            content += event.delta as string;
+          } else if (event.type === "response.output_text.done" && event.text) {
+            content = event.text as string;
+          } else if (event.type === "response.completed" && event.response) {
+            const resp = event.response as Record<string, unknown>;
+            const usage = resp.usage as Record<string, number> | undefined;
+            if (usage) {
+              inputTokens = usage.input_tokens ?? 0;
+              outputTokens = usage.output_tokens ?? 0;
+            }
+            status = (resp.status as string) ?? "completed";
           }
-          status = (resp.status as string) ?? "completed";
-        }
-      });
+        });
 
-      const stopReason =
-        status === "completed"
-          ? ("end_turn" as const)
-          : status === "incomplete"
-            ? ("max_tokens" as const)
-            : ("end_turn" as const);
+        const stopReason =
+          status === "completed"
+            ? ("end_turn" as const)
+            : status === "incomplete"
+              ? ("max_tokens" as const)
+              : ("end_turn" as const);
 
-      return {
-        id: responseId,
-        content,
-        stopReason,
-        model,
-        usage: { inputTokens, outputTokens },
-      };
-    }, this.retryConfig);
+        return {
+          id: responseId,
+          content,
+          stopReason,
+          model,
+          usage: { inputTokens, outputTokens },
+        };
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   /**
@@ -493,106 +497,110 @@ export class CodexProvider implements LLMProvider {
     messages: Message[],
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
-    return withRetry(async () => {
-      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-      const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-      const body = this.buildRequestBody(model, input, instructions, {
-        tools: options.tools,
-        maxTokens: options?.maxTokens,
-      });
+    return withRetry(
+      async () => {
+        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+        const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+        const body = this.buildRequestBody(model, input, instructions, {
+          tools: options.tools,
+          maxTokens: options?.maxTokens,
+        });
 
-      const response = await this.makeRequest(body);
+        const response = await this.makeRequest(body);
 
-      let content = "";
-      let responseId = `codex-${Date.now()}`;
-      let inputTokens = 0;
-      let outputTokens = 0;
-      const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+        let content = "";
+        let responseId = `codex-${Date.now()}`;
+        let inputTokens = 0;
+        let outputTokens = 0;
+        const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
 
-      const toolCallAssembler = new ResponsesToolCallAssembler();
+        const toolCallAssembler = new ResponsesToolCallAssembler();
 
-      await this.readSSEStream(response, (event) => {
-        if (event.id) responseId = event.id as string;
+        await this.readSSEStream(response, (event) => {
+          if (event.id) responseId = event.id as string;
 
-        switch (event.type) {
-          case "response.output_text.delta":
-            content += (event.delta as string) ?? "";
-            break;
+          switch (event.type) {
+            case "response.output_text.delta":
+              content += (event.delta as string) ?? "";
+              break;
 
-          case "response.output_text.done":
-            content = (event.text as string) ?? content;
-            break;
+            case "response.output_text.done":
+              content = (event.text as string) ?? content;
+              break;
 
-          case "response.output_item.added": {
-            toolCallAssembler.onOutputItemAdded({
-              output_index: event.output_index as number | undefined,
-              item: event.item as {
-                type?: string;
-                id?: string;
-                call_id?: string;
-                name?: string;
-                arguments?: string;
-              },
-            });
-            break;
-          }
+            case "response.output_item.added": {
+              toolCallAssembler.onOutputItemAdded({
+                output_index: event.output_index as number | undefined,
+                item: event.item as {
+                  type?: string;
+                  id?: string;
+                  call_id?: string;
+                  name?: string;
+                  arguments?: string;
+                },
+              });
+              break;
+            }
 
-          case "response.function_call_arguments.delta": {
-            toolCallAssembler.onArgumentsDelta({
-              item_id: event.item_id as string | undefined,
-              output_index: event.output_index as number | undefined,
-              delta: event.delta as string | undefined,
-            });
-            break;
-          }
-
-          case "response.function_call_arguments.done": {
-            const toolCall = toolCallAssembler.onArgumentsDone(
-              {
+            case "response.function_call_arguments.delta": {
+              toolCallAssembler.onArgumentsDelta({
                 item_id: event.item_id as string | undefined,
                 output_index: event.output_index as number | undefined,
-                arguments: event.arguments as string | undefined,
-              },
-              this.name,
-            );
-            if (toolCall) {
-              toolCalls.push({
-                id: toolCall.id,
-                name: toolCall.name,
-                input: toolCall.input,
+                delta: event.delta as string | undefined,
               });
+              break;
             }
-            break;
-          }
 
-          case "response.completed": {
-            const resp = event.response as Record<string, unknown>;
-            const usage = resp.usage as Record<string, number> | undefined;
-            if (usage) {
-              inputTokens = usage.input_tokens ?? 0;
-              outputTokens = usage.output_tokens ?? 0;
+            case "response.function_call_arguments.done": {
+              const toolCall = toolCallAssembler.onArgumentsDone(
+                {
+                  item_id: event.item_id as string | undefined,
+                  output_index: event.output_index as number | undefined,
+                  arguments: event.arguments as string | undefined,
+                },
+                this.name,
+              );
+              if (toolCall) {
+                toolCalls.push({
+                  id: toolCall.id,
+                  name: toolCall.name,
+                  input: toolCall.input,
+                });
+              }
+              break;
             }
-            for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
-              toolCalls.push({
-                id: toolCall.id,
-                name: toolCall.name,
-                input: toolCall.input,
-              });
-            }
-            break;
-          }
-        }
-      });
 
-      return {
-        id: responseId,
-        content,
-        stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
-        model,
-        usage: { inputTokens, outputTokens },
-        toolCalls,
-      };
-    }, this.retryConfig);
+            case "response.completed": {
+              const resp = event.response as Record<string, unknown>;
+              const usage = resp.usage as Record<string, number> | undefined;
+              if (usage) {
+                inputTokens = usage.input_tokens ?? 0;
+                outputTokens = usage.output_tokens ?? 0;
+              }
+              for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
+                toolCalls.push({
+                  id: toolCall.id,
+                  name: toolCall.name,
+                  input: toolCall.input,
+                });
+              }
+              break;
+            }
+          }
+        });
+
+        return {
+          id: responseId,
+          content,
+          stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
+          model,
+          usage: { inputTokens, outputTokens },
+          toolCalls,
+        };
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   /**

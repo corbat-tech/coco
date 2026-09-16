@@ -100,6 +100,8 @@ export interface ChatOptions {
   stopSequences?: string[];
   system?: string;
   timeout?: number;
+  /** Additional retries for this call; 0 means one attempt, omitted keeps provider defaults. */
+  maxRetries?: number;
   /** Abort signal to cancel in-flight requests */
   signal?: AbortSignal;
   /** Thinking/reasoning mode to pass to the model (if supported) */
