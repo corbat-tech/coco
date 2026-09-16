@@ -15,3 +15,9 @@ bash_exec recibe AbortSignal del host, rechaza antes de lanzar si ya está cance
 SDK local Execa 9.6.1; contraste con [documentación oficial de terminación de esa versión](https://github.com/sindresorhus/execa/blob/v9.6.1/docs/termination.md), consultada 2026-09-16: cancelSignal envía SIGTERM y forceKillAfterDelay controla escalada. Diez regresiones simuladas fallan antes; después 4 archivos / 60 tests correctos, incluida cancelación real tras READY de un shell exec Node con handle propio y salida confirmada. Integración Unix, omitida en Windows. Logs `e07b-before.log`, `e07b-focused.log`. Coordinador implementa; `/root/core_audit` tests; `/root/baseline_review` APPROVED. Typecheck, lint y format correctos.
 
 Pendientes explícitos: árboles/descendientes y background, límites de acumulación de stdout/stderr, transporte LLM/MCP y streams incompletos. Cancelar no revierte efectos anteriores del comando. Sin publicación; rollback por revert.
+
+## E07.c · DONE · 2026-09-16
+
+withRetry acepta señal opcional del host, verifica cancelación antes/después de la petición y antes de reintentar. La espera entre intentos libera timer/listener al cancelar o finalizar y preserva el motivo de aborto. AbortError no se considera recuperable aunque contenga un texto como 429. Mantiene las llamadas anteriores sin señal. No puede interrumpir una función que ignore la señal: el cableado efectivo de SDK sigue en E07.d.
+
+Siete casos nuevos sobre preabort, cancelación durante espera/petición, éxito tardío, AbortError, limpieza de listeners propios y compatibilidad anterior. 2 archivos / 31 tests correctos (`e07c-focused.log`). Coordinador implementa; `/root/core_audit` tests; `/root/baseline_review` APPROVED. Typecheck, lint y format correctos. Sin llamadas pagadas ni publicación; rollback por revert.
