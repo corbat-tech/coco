@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0-next.2] - 2026-09-16
+
+### Fixed
+
+- Codex and Google providers require valid terminal responses and validate complete tool batches before exposing executable calls. Preserve native Google identities and thought signatures.
+- REPL refuses incomplete or contradictory tool batches without execution or automatic replay; provisional identity fragments remain supported.
+- `calculate_quality` now explicitly reports aggregate evaluation unavailable, without a score or acceptance certification, pending E09. Individual test/lint/complexity tools remain available.
+- npm publication reports controlled authentication, permission, OTP and network diagnostics without exposing raw output; verifies immutable integrity and release channel.
+
+### Candidate limits
+
+Target npm `next` only; stable `latest` stays unchanged. Process descendant/background ownership, streaming output quotas, full analyzer applicability, final independent audit and live-model evaluations remain pending. No VSIX/hosted deployment or model catalog changes. See the handoff for actual publication status; a version entry does not establish that npm publication succeeded.
+
 ## [2.42.0-next.1] - 2026-09-16
 
 ### Candidate scope
