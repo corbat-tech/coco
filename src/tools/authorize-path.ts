@@ -1,19 +1,16 @@
 /**
  * Authorize Path Tool
  *
- * Allows the LLM to request user authorization for directories
- * outside the project root, via an interactive prompt.
- *
- * The tool shows the user a confirmation dialog with options
- * (session/persistent, read/write). The user decides — the LLM
- * never bypasses the prompt.
+ * Checks canonical read authority. Interactive permission requests belong to
+ * the shared REPL boundary, so embedded/headless execution never opens a dialog.
  */
 
 import path from "node:path";
 import fs from "node:fs/promises";
 import { z } from "zod";
 import { defineTool, type ToolDefinition } from "./registry.js";
-import { getAllowedPaths, isWithinAllowedPath } from "./allowed-paths.js";
+import { resolvePathSecurely } from "./file-path-policy.js";
+import { ToolError } from "../utils/errors.js";
 
 /**
  * System paths that can never be authorized
@@ -45,102 +42,58 @@ interface AuthorizePathOutput {
 export const authorizePathTool: ToolDefinition<AuthorizePathInput, AuthorizePathOutput> =
   defineTool({
     name: "authorize_path",
-    description: `Request user permission to access a directory outside the project root.
+    description: `Check read access to a directory outside the project root. If permission is missing, interactive Coco can offer a canonical path grant and retry; non-interactive callers receive an access error without a prompt.
 
-Use this BEFORE attempting file operations on external directories. The user will see
-an interactive prompt where they choose to allow or deny access.
-
-Returns whether the path was authorized. If authorized, subsequent file operations
-on that directory will succeed.
-
-Examples:
-- Need to read config from another project: authorize_path({ path: "/home/user/other-project" })
-- Need to access shared libraries: authorize_path({ path: "/opt/shared/libs", reason: "Read shared type definitions" })`,
+The tool itself never grants access. An authorized result means read access is available; writes still require a write grant. Use /allow-path to grant access explicitly.`,
     category: "config",
     parameters: z.object({
       path: z.string().min(1).describe("Absolute path to the directory to authorize"),
       reason: z.string().optional().describe("Why access is needed (shown to user for context)"),
     }),
     async execute({ path: dirPath, reason }) {
+      if (dirPath.includes("\0"))
+        throw new ToolError("Path contains invalid characters", { tool: "authorize_path" });
       const absolute = path.resolve(dirPath);
-
-      // Check if already authorized
-      if (isWithinAllowedPath(absolute, "read")) {
-        return {
-          authorized: true,
-          path: absolute,
-          message: "Path is already authorized.",
-        };
-      }
-
-      // Block system paths
-      for (const blocked of BLOCKED_SYSTEM_PATHS) {
-        const normalizedBlocked = path.normalize(blocked);
-        if (absolute === normalizedBlocked || absolute.startsWith(normalizedBlocked + path.sep)) {
-          return {
-            authorized: false,
-            path: absolute,
-            message: `System path '${blocked}' cannot be authorized for security reasons.`,
-          };
-        }
-      }
-
-      // Check if within project directory (already accessible)
-      const cwd = process.cwd();
-      if (absolute === path.normalize(cwd) || absolute.startsWith(path.normalize(cwd) + path.sep)) {
-        return {
-          authorized: true,
-          path: absolute,
-          message: "Path is within the project directory — already accessible.",
-        };
-      }
-
-      // Validate directory exists
+      const blockedPath = (candidate: string) =>
+        BLOCKED_SYSTEM_PATHS.find(
+          (blocked) => candidate === blocked || candidate.startsWith(blocked + path.sep),
+        );
+      const blockedResult = (candidate: string): AuthorizePathOutput => ({
+        authorized: false,
+        path: candidate,
+        message: "System path cannot be authorized for security reasons.",
+      });
+      if (blockedPath(absolute)) return blockedResult(absolute);
+      let canonical: string;
       try {
-        const stat = await fs.stat(absolute);
-        if (!stat.isDirectory()) {
-          return {
-            authorized: false,
-            path: absolute,
-            message: `Not a directory: ${absolute}`,
-          };
+        canonical = await fs.realpath(absolute);
+        if (blockedPath(canonical)) return blockedResult(canonical);
+        if (!(await fs.stat(canonical)).isDirectory()) {
+          return { authorized: false, path: canonical, message: `Not a directory: ${canonical}` };
         }
-      } catch {
+      } catch (error) {
         return {
           authorized: false,
           path: absolute,
-          message: `Directory not found: ${absolute}`,
+          message:
+            (error as NodeJS.ErrnoException).code === "ENOENT"
+              ? `Directory not found: ${absolute}`
+              : `Cannot access directory: ${absolute}`,
         };
       }
-
-      // Check if already in allowed paths (duplicate check after validation)
-      const existing = getAllowedPaths();
-      if (existing.some((e) => path.normalize(e.path) === path.normalize(absolute))) {
-        return {
-          authorized: true,
-          path: absolute,
-          message: "Path is already authorized.",
-        };
+      try {
+        await resolvePathSecurely(absolute, "read");
+      } catch (error) {
+        if (!(error instanceof ToolError)) throw error;
+        throw new ToolError(
+          `Directory requires read permission.${reason ? ` Reason: ${reason}.` : ""} Use /allow-path ${canonical} to grant access.`,
+          { tool: "authorize_path", cause: error },
+        );
       }
-
-      // Delegate to the interactive prompt
-      // Import dynamically to avoid circular dependency with CLI modules
-      const { promptAllowPath } = await import("../cli/repl/allow-path-prompt.js");
-
-      const wasAuthorized = await promptAllowPath(absolute);
-
-      if (wasAuthorized) {
-        return {
-          authorized: true,
-          path: absolute,
-          message: `Access granted to ${absolute}.${reason ? ` Reason: ${reason}` : ""}`,
-        };
-      }
-
       return {
-        authorized: false,
-        path: absolute,
-        message: "User denied access to this directory.",
+        authorized: true,
+        path: canonical,
+        message: `Directory is already accessible with current read permissions.${reason ? ` Reason: ${reason}` : ""}`,
       };
     },
   });

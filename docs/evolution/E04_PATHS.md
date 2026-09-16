@@ -69,3 +69,11 @@ Más confirmaciones son una consecuencia deliberada; no se implementa un parser 
 El callback de acceso denegado del REPL respeta skipConfirmation: no abre diálogo ni repite operación en headless. Conserva el resultado denegado y no concede acceso. Dos casos interactivo/no interactivo; antes uno falla y otro pasa, después suite de consumidores 3 archivos / 80 tests correctos. Typecheck/lint correctos. Logs `path-headless-{before,after}.log`. Implementación/tests coordinador; revisión `/root/baseline_review`: APPROVED. E04.g commit `61591b9`.
 
 La herramienta explícita authorize_path aún requiere revisar su propio diálogo y respuestas canónicas (E04.i); no afirmar que toda interacción headless está resuelta. Undo después. Sin publicación; rollback por revert.
+
+## E04.i · DONE · 2026-09-16
+
+authorize_path verifica directorio canónico y autoridad efectiva de lectura; no presume permiso por prefijo del proyecto o por grant retargeteado. Nunca concede permisos ni importa la UI. La petición de permiso usa el mismo error /allow-path que maneja el REPL interactivo; headless conserva la denegación. Respuesta positiva solo afirma lectura, con destino canónico.
+
+10 pruebas reales por `/root/core_audit` (9 fallan antes, 1 pasa; algunos detectan también importación indebida de UI). Con consumidores: 6 archivos / 114 tests correctos; typecheck/lint correctos. Logs `authorize-path-{before,after}.log`. Implementación y adaptación unitaria coordinador; revisión `/root/baseline_review`: APPROVED. E04.h commit `0ff8c49`.
+
+Undo pendiente; sin publicación ni garantía contra carreras externas. Rollback por revert.
