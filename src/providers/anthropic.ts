@@ -1,9 +1,10 @@
+import { ResponseIntegrityError } from "./response-integrity.js";
 /**
  * Anthropic Claude provider for Corbat-Coco
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { jsonrepair } from "jsonrepair";
+import { parseToolCallArguments, validateToolCallInput } from "./tool-call-normalizer.js";
 import type {
   LLMProvider,
   ProviderConfig,
@@ -415,13 +416,7 @@ export class AnthropicProvider implements LLMProvider {
                 getLogger().warn(
                   `[Anthropic] content_block_stop missing for tool '${currentToolCall.name}' — finalizing early to prevent data bleed.`,
                 );
-                try {
-                  currentToolCall.input = currentToolInputJson
-                    ? JSON.parse(currentToolInputJson)
-                    : {};
-                } catch {
-                  currentToolCall.input = {};
-                }
+                currentToolCall.input = parseToolCallArguments(currentToolInputJson, this.name);
                 this.assertStreamActive(options, timeoutTriggered);
                 yield {
                   type: "tool_use_end",
@@ -465,30 +460,7 @@ export class AnthropicProvider implements LLMProvider {
             }
           } else if (event.type === "content_block_stop") {
             if (currentToolCall) {
-              // Parse the accumulated JSON input
-              try {
-                currentToolCall.input = currentToolInputJson
-                  ? JSON.parse(currentToolInputJson)
-                  : {};
-              } catch {
-                // Try to repair malformed JSON (e.g. unescaped newlines/quotes in content)
-                let repaired = false;
-                if (currentToolInputJson) {
-                  try {
-                    currentToolCall.input = JSON.parse(jsonrepair(currentToolInputJson));
-                    repaired = true;
-                    getLogger().debug(`Repaired JSON for tool ${currentToolCall.name}`);
-                  } catch {
-                    // repair also failed — fall through
-                  }
-                }
-                if (!repaired) {
-                  getLogger().warn(
-                    `Failed to parse tool call arguments for ${currentToolCall.name}: ${currentToolInputJson?.slice(0, 300)}`,
-                  );
-                  currentToolCall.input = {};
-                }
-              }
+              currentToolCall.input = parseToolCallArguments(currentToolInputJson, this.name);
               this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_end",
@@ -752,7 +724,7 @@ export class AnthropicProvider implements LLMProvider {
       .map((block) => ({
         id: block.id,
         name: block.name,
-        input: block.input as Record<string, unknown>,
+        input: validateToolCallInput(block.input, this.name),
       }));
   }
 
@@ -778,6 +750,7 @@ export class AnthropicProvider implements LLMProvider {
    * Handle API errors
    */
   private handleError(error: unknown): never {
+    if (error instanceof ResponseIntegrityError) throw error;
     if (error instanceof Anthropic.APIError) {
       const msg = error.message.toLowerCase();
       let retryable = error.status === 429 || error.status >= 500;

@@ -21,21 +21,24 @@ class MockOpenAIAPIError extends Error {
 
 vi.mock("openai", () => {
   return {
-    default: vi.fn().mockImplementation(function () {
-      return {
-        chat: {
-          completions: {
-            create: mockCreate,
+    default: Object.assign(
+      vi.fn().mockImplementation(function () {
+        return {
+          chat: {
+            completions: {
+              create: mockCreate,
+            },
           },
-        },
-        responses: {
-          create: mockResponsesCreate,
-        },
-        models: {
-          list: mockList,
-        },
-      };
-    }),
+          responses: {
+            create: mockResponsesCreate,
+          },
+          models: {
+            list: mockList,
+          },
+        };
+      }),
+      { APIError: MockOpenAIAPIError },
+    ),
     APIError: MockOpenAIAPIError,
   };
 });
@@ -998,7 +1001,7 @@ describe("tool call extraction", () => {
     expect(response.toolCalls).toEqual([]);
   });
 
-  it("should handle tool calls with empty arguments", async () => {
+  it("should reject tool calls with empty arguments", async () => {
     mockCreate.mockResolvedValue({
       id: "chatcmpl-123",
       model: "gpt-4o",
@@ -1027,11 +1030,11 @@ describe("tool call extraction", () => {
     const provider = new OpenAIProvider();
     await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
-    const response = await provider.chatWithTools([{ role: "user", content: "Hello" }], {
-      tools: [],
-    });
-
-    expect(response.toolCalls[0]?.input).toEqual({});
+    await expect(
+      provider.chatWithTools([{ role: "user", content: "Hello" }], {
+        tools: [],
+      }),
+    ).rejects.toThrow(/Invalid tool arguments/);
   });
 });
 

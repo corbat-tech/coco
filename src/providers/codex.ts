@@ -691,7 +691,6 @@ export class CodexProvider implements LLMProvider {
       const response = await this.makeRequest(body, scope.signal);
       const toolCallAssembler = new ResponsesToolCallAssembler();
       const emittedToolCallIds = new Set<string>();
-      const emittedToolCallSignatures = new Set<string>();
       for await (const event of this.readSSEEvents(response, scope.signal)) {
         scope.signal.throwIfAborted();
         switch (event.type) {
@@ -743,8 +742,7 @@ export class CodexProvider implements LLMProvider {
             );
             if (toolCall) {
               if (toolCall.id) emittedToolCallIds.add(toolCall.id);
-              const signature = `${toolCall.name}:${JSON.stringify(toolCall.input ?? {})}`;
-              emittedToolCallSignatures.add(signature);
+
               scope.signal.throwIfAborted();
               yield {
                 type: "tool_use_end",
@@ -763,8 +761,7 @@ export class CodexProvider implements LLMProvider {
             // Emit any remaining function calls not finalized via done events
             for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
               if (toolCall.id) emittedToolCallIds.add(toolCall.id);
-              const signature = `${toolCall.name}:${JSON.stringify(toolCall.input ?? {})}`;
-              emittedToolCallSignatures.add(signature);
+
               scope.signal.throwIfAborted();
               yield {
                 type: "tool_use_end",
@@ -799,16 +796,11 @@ export class CodexProvider implements LLMProvider {
             // response.completed.output but may skip the granular done events.
             for (const item of output) {
               if (item.type !== "function_call" || !item.call_id || !item.name) continue;
-              const parsedInput = parseToolCallArguments(item.arguments ?? "{}", this.name);
-              const signature = `${item.name}:${JSON.stringify(parsedInput ?? {})}`;
-              if (
-                emittedToolCallIds.has(item.call_id) ||
-                emittedToolCallSignatures.has(signature)
-              ) {
-                continue;
-              }
+              // A completed response may repeat an already validated call without arguments.
+              if (emittedToolCallIds.has(item.call_id)) continue;
+              const parsedInput = parseToolCallArguments(item.arguments ?? "", this.name);
               emittedToolCallIds.add(item.call_id);
-              emittedToolCallSignatures.add(signature);
+
               scope.signal.throwIfAborted();
               yield {
                 type: "tool_use_end",

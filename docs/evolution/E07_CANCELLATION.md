@@ -199,3 +199,11 @@ Manager conserva conexiones desde antes del arranque hasta desconexión confirma
 Health usa timeout5000 nativo de listTools, con cancelación MCP y limpieza del request. Revisión detectó publicación saludable tras cierre durante tools/list: guards de conexión viva en inicio, reutilización y health corrigen los tres casos. HTTP conserva sends y arranque hasta settlement, desconexión compartida, reader cancel único y estado de sesión reiniciado por conexión.
 
 Trece contratos lifecycle independientes, cuatro HTTP y un cliente tools/list deadline. Gate final23 archivos/343 tests correctos; gate anterior incluye además proceso real, con typecheck/lint/format correctos. Logs e07l5b-final y e07l5b-reviewed/types/lint/format. /root/core_audit contratos; coordinador implementación; /root/baseline_review APPROVED. Sin publicación; rollback por revert.
+
+## E07.n1 · DONE · 2026-09-16
+
+Argumentos de tools requieren JSON completo cuyo valor sea un objeto no nulo y no array; vacío, truncado, primitivos y JSON reparable se rechazan sin inventar {}. Parser compartido en ensambladores/OpenAI/Anthropic y fallback Responses/Codex. Error no incluye payload ni causa del parser; ResponseIntegrityError no recuperable se preserva en adaptadores. Codex comprueba ID ya validado antes de parsear duplicado de completed.output y conserva IDs distintos aunque compartan argumentos.
+
+Revisión detectó que Error genérico se convertía en recuperable y provocaba peticiones adicionales; corregido y cubierto con retries3 y exactamente una petición CC/Responses/Anthropic y Resilient stream. 31 contratos independientes crossprovider y 15 normalizer; gate30 archivos/988 tests, typecheck/lint/format correctos. Logs e07n1-final/final-types/final-lint/final-format. /root/file_fixture_update fuente/fixtures; coordinador error tipado; /root/core_audit contratos; /root/baseline_review APPROVED.
+
+Este paso valida argumentos, no acredita terminal del stream ni ensamblado completo: emisión prematura, EOF y truncamiento con JSON válido permanecen para E07.n2. Sin publicación; rollback por revert.

@@ -1,3 +1,4 @@
+import { ResponseIntegrityError } from "./response-integrity.js";
 /**
  * OpenAI provider for Corbat-Coco
  * Also supports OpenAI-compatible APIs (Kimi/Moonshot, etc.)
@@ -1136,16 +1137,7 @@ export class OpenAIProvider implements LLMProvider {
       .map((tc) => ({
         id: tc.id,
         name: tc.function.name,
-        input: (() => {
-          try {
-            return JSON.parse(tc.function.arguments || "{}");
-          } catch {
-            console.warn(
-              `[${this.name}] Failed to parse tool call arguments: ${tc.function.arguments?.slice(0, 100)}`,
-            );
-            return {};
-          }
-        })(),
+        input: parseToolCallArguments(tc.function.arguments, this.name),
       }));
   }
 
@@ -1169,6 +1161,7 @@ export class OpenAIProvider implements LLMProvider {
    * Handle API errors
    */
   protected handleError(error: unknown): never {
+    if (error instanceof ResponseIntegrityError) throw error;
     if (error instanceof Error && ["AbortError", "APIUserAbortError"].includes(error.name)) {
       throw error;
     }
@@ -1616,7 +1609,7 @@ export class OpenAIProvider implements LLMProvider {
                     toolCall: {
                       id: item.call_id,
                       name: item.name,
-                      input: parseToolCallArguments(item.arguments ?? "{}", this.name),
+                      input: parseToolCallArguments(item.arguments ?? "", this.name),
                     },
                   };
                 }

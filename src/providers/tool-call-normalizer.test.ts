@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   ChatToolCallAssembler,
   ResponsesToolCallAssembler,
@@ -11,9 +11,43 @@ describe("parseToolCallArguments", () => {
     expect(parsed).toEqual({ path: "src/a.ts" });
   });
 
-  it("repairs truncated JSON when possible", () => {
-    const parsed = parseToolCallArguments('{"path":"src/a.ts","content":"hi"', "test-provider");
-    expect(parsed).toEqual({ path: "src/a.ts", content: "hi" });
+  it.each([
+    "",
+    " ",
+    '{"path":"src/a.ts","content":"hi"',
+    '{"x":1,}',
+    "null",
+    "[]",
+    "42",
+    '"text"',
+    "true",
+  ])("rejects incomplete or non-object arguments %j", (args) => {
+    expect(() => parseToolCallArguments(args, "test-provider")).toThrow(/Invalid tool arguments/);
+  });
+
+  it("accepts an explicit empty object", () => {
+    expect(parseToolCallArguments("{}", "test-provider")).toEqual({});
+  });
+
+  it("does not expose argument secrets in errors or logs", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      let thrown: unknown;
+      try {
+        parseToolCallArguments('{"secret":"fixture-private-value"', "test-provider");
+      } catch (failure) {
+        thrown = failure;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      expect(String(thrown)).not.toContain("fixture-private-value");
+      expect((thrown as Error).cause).toBeUndefined();
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
   });
 });
 

@@ -239,6 +239,10 @@ describe("Anthropic cancellation and request ownership", () => {
               type: "content_block_start",
               content_block: { type: "tool_use", id, name: "fixture_tool" },
             };
+            yield {
+              type: "content_block_delta",
+              delta: { type: "input_json_delta", partial_json: "{}" },
+            };
           }
         })(),
       );
@@ -250,6 +254,10 @@ describe("Anthropic cancellation and request ownership", () => {
       expect((await iterator.next()).value).toMatchObject({
         type: "tool_use_start",
         toolCall: { id: "first" },
+      });
+      expect((await iterator.next()).value).toMatchObject({
+        type: "tool_use_delta",
+        text: "{}",
       });
       expect((await iterator.next()).value).toMatchObject({
         type: "tool_use_end",

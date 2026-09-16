@@ -1,4 +1,4 @@
-import { jsonrepair } from "jsonrepair";
+import { ResponseIntegrityError } from "./response-integrity.js";
 import type { ToolCall } from "./types.js";
 
 export interface ToolCallBuilder {
@@ -11,23 +11,35 @@ function getSingleBuilderKey(builders: Map<string, unknown>): string | null {
   return builders.size === 1 ? (Array.from(builders.keys())[0] ?? null) : null;
 }
 
+/** Tool inputs must be complete objects; never synthesize executable arguments. */
+export function validateToolCallInput(
+  input: unknown,
+  providerName: string,
+): Record<string, unknown> {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    throw new ResponseIntegrityError(
+      "Invalid tool arguments: expected a JSON object",
+      providerName,
+    );
+  }
+  return input as Record<string, unknown>;
+}
+
 export function parseToolCallArguments(
   args: string,
   providerName: string,
 ): Record<string, unknown> {
+  let input: unknown;
   try {
-    return args ? JSON.parse(args) : {};
+    input = JSON.parse(args);
   } catch {
-    try {
-      if (args) {
-        const repaired = jsonrepair(args);
-        return JSON.parse(repaired);
-      }
-    } catch {
-      console.error(`[${providerName}] Cannot parse tool arguments: ${args.slice(0, 200)}`);
-    }
-    return {};
+    // Parser errors may contain argument values: do not expose their message/cause.
+    throw new ResponseIntegrityError(
+      "Invalid tool arguments: expected complete JSON",
+      providerName,
+    );
   }
+  return validateToolCallInput(input, providerName);
 }
 
 export interface ChatToolCallDelta {
