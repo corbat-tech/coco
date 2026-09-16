@@ -41,7 +41,9 @@ async function fixture(kind: (typeof kinds)[number], timeout?: number) {
                 finishRead = () => resolve({ done: true });
               }),
             releaseLock: vi.fn(),
-            cancel: vi.fn().mockResolvedValue(undefined),
+            cancel: vi.fn(async () => {
+              finishRead?.();
+            }),
           }),
         },
       };

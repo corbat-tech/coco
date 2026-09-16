@@ -178,4 +178,68 @@ describe("MCP HTTP request cancellation on loopback", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+  it("SSE disconnect closes its receiver before reconnecting", async () => {
+    const closed = [deferred(), deferred()];
+    const delivered = [deferred(), deferred()];
+    let connections = 0;
+    const server = createServer((request, response) => {
+      request.resume();
+      const index = connections++;
+      response.on("close", closed[index]!.resolve);
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.write(
+        `data: ${JSON.stringify({ jsonrpc: "2.0", id: index, result: "fixture" })}\n\n`,
+      );
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing address");
+    const transport = new SSETransport({ url: `http://127.0.0.1:${address.port}` });
+    const messages: unknown[] = [];
+    transport.onMessage((message) => {
+      messages.push(message);
+      delivered[Number(message.id)]!.resolve();
+    });
+    try {
+      await transport.connect();
+      await delivered[0]!.promise;
+      await transport.disconnect();
+      await closed[0]!.promise;
+      expect(transport.isConnected()).toBe(false);
+      await transport.connect();
+      await delivered[1]!.promise;
+      await transport.disconnect();
+      await closed[1]!.promise;
+      expect(connections).toBe(2);
+      expect(messages).toHaveLength(2);
+    } finally {
+      await transport.disconnect();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("SSE handshake deadline disconnects a real request waiting for headers", async () => {
+    const closed = deferred();
+    let requests = 0;
+    const server = createServer((request, response) => {
+      requests++;
+      request.resume();
+      response.on("close", closed.resolve);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing address");
+    const transport = new SSETransport({ url: `http://127.0.0.1:${address.port}`, timeout: 250 });
+    try {
+      await expect(transport.connect()).rejects.toThrow();
+      await closed.promise;
+      expect(requests).toBe(1);
+      expect(transport.isConnected()).toBe(false);
+    } finally {
+      await transport.disconnect();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 });

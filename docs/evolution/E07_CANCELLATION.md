@@ -177,3 +177,11 @@ Workflow, graph, adaptador y runner reciben señal del host; runner comprueba an
 Lotes paralelos esperan todos los nodos y conservan resultados parciales antes de fallar; no inician lotes posteriores. Artefactos del nodo se publican tras gates y postguard, no de intentos fallidos. Workflow conserva graphResult también en fallo. No deshace efectos ni artefactos de hermanos ya aprobados. Revisión corrigió pérdida del diagnóstico independiente al cancelar: estado deriva de señal y error conserva ENOSPC, incluso mediante runner.
 
 Ocho contratos graph independientes y cinco runner/workflow; fixture anterior elimina artefacto de intento fallido que ya no debe publicarse. Gate19 archivos/178 tests y typecheck/lint/format correctos; logs e07m3-final/types/lint/format. /root/file_fixture_update graph; coordinador runner/workflow; /root/core_audit contratosgraph; /root/baseline_review APPROVED. Sin publicación; rollback por revert.
+
+## E07.l4 · DONE · 2026-09-16
+
+SSE posee el receptor, el handshake y los POST pendientes por generación. Desconectar aborta y espera su finalización; EOF agota reconexiones acotadas, drena envíos y cierra una sola vez. Backoff cancelable, deadline de headers configurable (0 desactiva), cancel/release del reader único y reconexión concurrente serializada. JSON inválido y errores de callback se distinguen; endpoint relativo se resuelve, endpoint de otro origen o con credenciales cierra la conexión. No se repiten POST.
+
+Contraste con [transportes MCP2024-11-05](https://modelcontextprotocol.io/specification/2024-11-05/basic/transports), consultado2026-09-16, para transporte SSE legado. Once contratos de ciclo de vida y dos nuevas integraciones HTTP loopback reales. La revisión detectó una carrera al reconectar durante drenaje automático; corregida y cubierta con dos callers concurrentes y un único GET nuevo.
+
+Gate final:7 archivos/95 tests correctos; typecheck/lint/format correctos. Logs e07l4-final-reviewed/final-types/final-lint/final-format. /root/file_fixture_update implementación; /root/core_audit contratos; coordinador integración y correcciones; /root/baseline_review APPROVED. Stdio y manager de conexiones siguen pendientes. Sin publicación; rollback por revert.
