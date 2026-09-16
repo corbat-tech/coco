@@ -4,70 +4,37 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-function resolveLocalBin(name) {
-  const binName = process.platform === "win32" ? `${name}.cmd` : name;
-  let current = process.cwd();
-
-  while (true) {
-    const candidate = path.join(current, "node_modules", ".bin", binName);
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-
-    const parent = path.dirname(current);
-    if (parent === current) {
-      break;
-    }
-    current = parent;
-  }
-
-  return name;
-}
-
-const tscBin = resolveLocalBin("tsc");
-const oxlintBin = resolveLocalBin("oxlint");
-const vitestBin = resolveLocalBin("vitest");
-
+// Invoke local JavaScript entrypoints with the same Node version on every OS.
+// Never fall back to unrelated global executables from PATH.
 const checks = [
+  { name: "Typecheck", entry: "typescript/bin/tsc", args: ["--noEmit"] },
+  { name: "Lint", entry: "oxlint/bin/oxlint", args: ["src", "test"] },
+  { name: "Format", entry: "oxfmt/bin/oxfmt", args: ["--check", "src", "test"] },
+  { name: "Main Suite", entry: "vitest/vitest.mjs", args: ["run", "--maxWorkers=4"] },
   {
-    name: "Typecheck",
-    cmd: [tscBin, "--noEmit"],
+    name: "REPL Integration",
+    entry: "vitest/vitest.mjs",
+    args: ["run", "--config", "vitest.repl.config.ts"],
   },
-  {
-    name: "Lint",
-    cmd: [oxlintBin, "src", "test"],
-  },
-  {
-    name: "Stable Provider/Agent Suites",
-    cmd: [
-      vitestBin,
-      "run",
-      "src/providers/openai.test.ts",
-      "src/providers/codex.test.ts",
-      "src/providers/gemini.test.ts",
-      "src/providers/index.test.ts",
-      "src/providers/integration.test.ts",
-      "src/providers/resilient.test.ts",
-      "src/providers/tool-call-normalizer.test.ts",
-      "src/cli/repl/agent-loop.test.ts",
-      "src/cli/repl/agent-loop-error-handling.test.ts",
-      "src/cli/repl/error-resilience.test.ts",
-      "src/cli/repl/replay-harness.test.ts",
-      "src/cli/repl/turn-quality.test.ts",
-    ],
-  },
+  { name: "Build", entry: "tsup/dist/cli-default.js", args: [] },
 ];
 
 for (const check of checks) {
   console.log(`\n[release-gate] ${check.name}`);
-  const result = spawnSync(check.cmd[0], check.cmd.slice(1), {
+  const entry = path.resolve("node_modules", check.entry);
+  if (!existsSync(entry)) {
+    console.error(`[release-gate] FAILED: missing local dependency ${check.entry}`);
+    process.exit(1);
+  }
+  const result = spawnSync(process.execPath, [entry, ...check.args], {
     stdio: "inherit",
     shell: false,
-    env: process.env,
+    env: { ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS ?? "--max-old-space-size=4096" },
   });
-
-  if (result.status !== 0) {
-    console.error(`\n[release-gate] FAILED: ${check.name}`);
+  if (result.error || result.signal || result.status !== 0) {
+    console.error(
+      `[release-gate] FAILED: ${check.name}${result.signal ? ` (${result.signal})` : ""}`,
+    );
     process.exit(result.status ?? 1);
   }
 }

@@ -12,3 +12,9 @@ Estado: IN_PROGRESS. Baseline de producto: 174fc41; rama `codex/coco-evolution`.
 Revisor `/root/baseline_review`: APPROVED. Scripts mantienen la convención POSIX existente; no se acredita ejecución desde cmd.exe de Windows.
 
 Los tests e2e actuales son herméticos; el smoke instalado y el control de publicación siguen pendientes de E02.b/c. No se ha publicado ni creado un tag.
+
+## E02.b — gate de procesos (DONE)
+
+`check:release` ejecuta typecheck, lint, formato, suite completa, REPL separado y build mediante entrypoints JS locales y el mismo Node. No usa binarios globales como fallback. Nueve tests de procesos reales verifican éxito, fallo por etapa, parada inmediata, dependencia ausente y señal. Tests focalizados y gate completo exit 0. Revisor `/root/baseline_review`: APPROVED; hashes coincidentes con copia probada. Logs locales `release-gate-tests.log` y `release-gate.log` en evidencia E01.
+
+Cobertura se midió en E01; conectar su umbral al gate final, smoke de artefacto y canales sigue pendiente de E02.c. No confundir el mensaje de checks correctos con aprobación para publicar superficies con P0/P1 abiertos.
