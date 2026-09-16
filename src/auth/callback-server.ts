@@ -18,6 +18,7 @@
 export const OAUTH_CALLBACK_PORT = 1455;
 
 import * as http from "node:http";
+import { createRequestScope } from "../utils/request-scope.js";
 
 /**
  * Escape a string for safe HTML insertion to prevent XSS
@@ -335,130 +336,117 @@ export async function createCallbackServer(
   expectedState: string,
   timeout = 5 * 60 * 1000,
   port = OAUTH_CALLBACK_PORT,
-): Promise<{ port: number; resultPromise: Promise<CallbackResult> }> {
-  let resolveResult: (result: CallbackResult) => void;
-  let rejectResult: (error: Error) => void;
-
+  signal?: AbortSignal,
+): Promise<{ port: number; resultPromise: Promise<CallbackResult>; close: () => Promise<void> }> {
+  const scope = createRequestScope(signal, timeout);
+  let resolveResult!: (result: CallbackResult) => void;
+  let rejectResult!: (error: unknown) => void;
   const resultPromise = new Promise<CallbackResult>((resolve, reject) => {
     resolveResult = resolve;
     rejectResult = reject;
   });
-
+  // Registration/browser setup can still be running when the callback times out.
+  void resultPromise.catch(() => {});
+  let settled = false;
+  let closing: Promise<void> | undefined;
+  const stop = (): Promise<void> => {
+    closing ??= new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections();
+    });
+    return closing;
+  };
+  const finish = (error?: unknown, result?: CallbackResult) => {
+    if (settled) return;
+    settled = true;
+    scope.signal.removeEventListener("abort", onAbort);
+    if (result) resolveResult(result);
+    else rejectResult(error);
+    scope.dispose();
+    void stop();
+  };
+  const onAbort = () => finish(scope.signal.reason);
   const server = http.createServer((req, res) => {
-    // Log incoming request for debugging
-    console.log(`   [OAuth] ${req.method} ${req.url?.split("?")[0]}`);
-
-    // Add CORS headers for all responses
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "*");
-
-    // Handle CORS preflight
-    if (req.method === "OPTIONS") {
-      res.writeHead(204);
-      res.end();
-      return;
-    }
-
-    // Only handle the callback path
-    if (!req.url?.startsWith("/auth/callback")) {
-      res.writeHead(404);
-      res.end("Not Found");
-      return;
-    }
-
+    let url: URL;
     try {
-      const url = new URL(req.url, `http://localhost`);
-      const code = url.searchParams.get("code");
-      const state = url.searchParams.get("state");
-      const error = url.searchParams.get("error");
-      const errorDescription = url.searchParams.get("error_description");
-
-      // Handle error response from OAuth provider
-      if (error) {
-        res.writeHead(200, { "Content-Type": "text/html" });
-        res.end(ERROR_HTML(errorDescription || error));
-        server.close();
-        rejectResult(new Error(errorDescription || error));
-        return;
-      }
-
-      // Validate code and state
-      if (!code || !state) {
-        res.writeHead(200, { "Content-Type": "text/html" });
-        res.end(ERROR_HTML("Missing authorization code or state"));
-        server.close();
-        rejectResult(new Error("Missing authorization code or state"));
-        return;
-      }
-
-      // Validate state matches (CSRF protection)
-      if (state !== expectedState) {
-        res.writeHead(200, { "Content-Type": "text/html" });
-        res.end(ERROR_HTML("State mismatch - possible CSRF attack"));
-        server.close();
-        rejectResult(new Error("State mismatch - possible CSRF attack"));
-        return;
-      }
-
-      // Success!
-      res.writeHead(200, { "Content-Type": "text/html" });
-      res.end(SUCCESS_HTML);
-      server.close();
-      resolveResult({ code, state });
-    } catch (err) {
-      res.writeHead(500, { "Content-Type": "text/html" });
-      res.end(ERROR_HTML(String(err)));
-      server.close();
-      rejectResult(err instanceof Error ? err : new Error(String(err)));
+      url = new URL(req.url ?? "/", "http://localhost");
+    } catch {
+      res.writeHead(400).end("Bad Request");
+      return;
     }
-  });
-
-  // Wait for server to be ready on the specified port
-  const actualPort = await new Promise<number>((resolve, reject) => {
-    // First, set up the error handler before calling listen
-    const errorHandler = (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE") {
-        // Port 1455 is in use (probably by OpenCode), try a different port
-        console.log(`   Port ${port} is in use, trying alternative port...`);
-        server.removeListener("error", errorHandler);
-        server.listen(0, () => {
-          const address = server.address();
-          if (typeof address === "object" && address) {
-            resolve(address.port);
-          } else {
-            reject(new Error("Failed to get server port"));
-          }
-        });
-      } else {
-        reject(err);
-      }
-    };
-
-    server.on("error", errorHandler);
-
-    // Listen on all interfaces (localhost and 127.0.0.1)
-    server.listen(port, () => {
-      server.removeListener("error", errorHandler);
-      const address = server.address();
-      if (typeof address === "object" && address) {
-        resolve(address.port);
-      } else {
-        reject(new Error("Failed to get server port"));
-      }
+    if (req.method !== "GET" || url.pathname !== "/auth/callback") {
+      res.writeHead(404).end("Not Found");
+      return;
+    }
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    const providerError = url.searchParams.get("error");
+    const failure = providerError
+      ? new Error(url.searchParams.get("error_description") || providerError)
+      : !code || !state
+        ? new Error("Missing authorization code or state")
+        : state !== expectedState
+          ? new Error("State mismatch - possible CSRF attack")
+          : undefined;
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(failure ? ERROR_HTML(failure.message) : SUCCESS_HTML, () => {
+      finish(failure, failure ? undefined : { code: code!, state: state! });
     });
   });
-
-  // Set timeout
-  const timeoutId = setTimeout(() => {
-    server.close();
-    rejectResult(new Error("Authentication timed out. Please try again."));
-  }, timeout);
-
-  // Clean up timeout on close
-  server.on("close", () => {
-    clearTimeout(timeoutId);
-  });
-
-  return { port: actualPort, resultPromise };
+  scope.signal.addEventListener("abort", onAbort, { once: true });
+  const listen = (requestedPort: number) =>
+    new Promise<number>((resolve, reject) => {
+      const cleanup = () => {
+        server.removeListener("error", onError);
+        server.removeListener("listening", onListening);
+        scope.signal.removeEventListener("abort", onListenAbort);
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const onListenAbort = () => {
+        cleanup();
+        reject(scope.signal.reason);
+      };
+      const onListening = () => {
+        cleanup();
+        const address = server.address();
+        if (address && typeof address === "object") resolve(address.port);
+        else reject(new Error("Failed to get server port"));
+      };
+      scope.signal.addEventListener("abort", onListenAbort, { once: true });
+      server.once("error", onError);
+      server.once("listening", onListening);
+      try {
+        scope.signal.throwIfAborted();
+        server.listen({ port: requestedPort, host: "127.0.0.1", signal: scope.signal });
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
+    });
+  try {
+    let actualPort: number;
+    try {
+      actualPort = await listen(port);
+    } catch (error) {
+      scope.signal.throwIfAborted();
+      if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE" || port === 0) throw error;
+      actualPort = await listen(0);
+    }
+    scope.signal.throwIfAborted();
+    return {
+      port: actualPort,
+      resultPromise,
+      close: async () => {
+        finish(new Error("Authentication callback closed"));
+        await stop();
+      },
+    };
+  } catch (error) {
+    finish(error);
+    await stop();
+    throw error;
+  }
 }

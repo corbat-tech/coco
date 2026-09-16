@@ -11,7 +11,7 @@ import type {
   JSONRPCResponse,
 } from "../types.js";
 import { MCPConnectionError, MCPTransportError } from "../errors.js";
-import { getStoredMcpOAuthToken } from "../oauth.js";
+import { authenticateMcpOAuth, getStoredMcpOAuthToken } from "../oauth.js";
 import { createRequestScope } from "../../utils/request-scope.js";
 
 /**
@@ -271,6 +271,7 @@ export class HTTPTransport implements MCPTransport {
     const scope = createRequestScope(hostSignal, this.config.timeout!);
     this.pendingRequests.add(controller);
     let response: Response | undefined;
+    let authenticating = false;
     try {
       scope.signal.throwIfAborted();
       // A failed POST may already have executed a mutating tool. Never replay it,
@@ -283,6 +284,31 @@ export class HTTPTransport implements MCPTransport {
         signal: scope.signal,
       });
       scope.signal.throwIfAborted();
+      // Only the initialization handshake may recover authentication automatically.
+      // Tool requests and application-level error hints never authorize replay.
+      if (message.method === "initialize" && response.status === 401 && this.shouldAttemptOAuth()) {
+        const challenge = response.headers.get("www-authenticate");
+        await response.body?.cancel();
+        authenticating = true;
+        const token = await authenticateMcpOAuth({
+          serverName: this.config.name ?? this.config.url,
+          resourceUrl: this.config.url,
+          wwwAuthenticateHeader: challenge,
+          forceRefresh: true,
+          signal: scope.signal,
+        });
+        authenticating = false;
+        scope.signal.throwIfAborted();
+        this.oauthToken = token;
+        response = await fetch(this.config.url, {
+          method: "POST",
+          redirect: "error",
+          headers: this.buildHeaders("POST"),
+          body: JSON.stringify(message),
+          signal: scope.signal,
+        });
+        scope.signal.throwIfAborted();
+      }
       this.captureResponseSession(response);
       if (!response.ok) {
         const guidance =
@@ -313,6 +339,8 @@ export class HTTPTransport implements MCPTransport {
       }
       this.messageCallback?.(data);
     } catch (error) {
+      // Auth owns cancellation normalization and must retain credential-save failures.
+      if (authenticating) throw error;
       scope.signal.throwIfAborted();
       if (error instanceof MCPTransportError) throw error;
       throw new MCPTransportError(

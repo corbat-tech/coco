@@ -115,6 +115,8 @@ export class MCPClientImpl implements MCPClient {
     return new Promise<T>((resolve, reject) => {
       let settled = false;
       let dispatched = false;
+      let sending = false;
+      let deferredCancellation: { reason: unknown } | undefined;
       const transportController = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
       const cleanup = () => {
@@ -133,12 +135,21 @@ export class MCPClientImpl implements MCPClient {
       };
       const cancel = (reason: unknown) => {
         if (settled) return;
+        if (method === "initialize" && sending) {
+          // Auth may be committing a known token rotation. Keep a recipient for
+          // a save failure before exposing the deadline to the initializer.
+          deferredCancellation = { reason };
+          clearTimeout(timer);
+          transportController.abort(reason);
+          return;
+        }
         fail(reason);
         if (dispatched && method !== "initialize") this.notifyCancellation(id);
       };
       const onAbort = () => cancel(signal?.reason);
       this.pendingRequests.set(id, {
         resolve: (value) => {
+          if (deferredCancellation) return;
           if (cleanup()) {
             resolve(value as T);
             transportController.abort();
@@ -159,8 +170,16 @@ export class MCPClientImpl implements MCPClient {
       try {
         // A transport may synchronously deliver a response or throw on dispatch.
         dispatched = true;
-        Promise.resolve(this.transport.send(request, { signal: transportController.signal })).catch(
-          fail,
+        sending = true;
+        Promise.resolve(this.transport.send(request, { signal: transportController.signal })).then(
+          () => {
+            sending = false;
+            if (deferredCancellation) fail(deferredCancellation.reason);
+          },
+          (error: unknown) => {
+            sending = false;
+            fail(error);
+          },
         );
       } catch (error) {
         fail(error);

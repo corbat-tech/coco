@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { MCPClientImpl } from "../client.js";
 import { HTTPTransport } from "./http.js";
 import { MCPConnectionError, MCPTransportError } from "../errors.js";
 import { authenticateMcpOAuth, getStoredMcpOAuthToken } from "../oauth.js";
@@ -363,6 +364,92 @@ describe("HTTPTransport", () => {
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(authenticateMcpOAuth).not.toHaveBeenCalled();
       expect(callback).toHaveBeenCalledWith(response);
+    });
+
+    it("recovers initialize once on HTTP401 using the request signal", async () => {
+      const callback = vi.fn();
+      transport.onMessage(callback);
+      const controller = new AbortController();
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } })),
+        );
+      await transport.send(
+        { jsonrpc: "2.0", id: 1, method: "initialize" },
+        { signal: controller.signal },
+      );
+      expect(authenticateMcpOAuth).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ forceRefresh: true, signal: expect.any(AbortSignal) }),
+      );
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(fetch).mock.calls[1]?.[1]?.headers).toMatchObject({
+        Authorization: "Bearer oauth-token",
+      });
+      expect(callback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 1, result: { ok: true } });
+    });
+
+    it("does not loop on a second initialize HTTP401", async () => {
+      vi.mocked(fetch).mockImplementation(
+        async () => new Response("Unauthorized", { status: 401 }),
+      );
+      await expect(transport.send({ jsonrpc: "2.0", id: 1, method: "initialize" })).rejects.toThrow(
+        /401/,
+      );
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(authenticateMcpOAuth).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["cancellation", "persistence failure"] as const)(
+      "initialize preserves auth %s without another POST",
+      async (ending) => {
+        const controller = new AbortController();
+        const abort = new Error("fixture abort");
+        const saveError = Object.assign(new Error("fixture save failure"), { code: "ENOSPC" });
+        vi.mocked(fetch).mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
+        vi.mocked(authenticateMcpOAuth).mockImplementationOnce(async ({ signal }) => {
+          controller.abort(abort);
+          expect(signal?.aborted).toBe(true);
+          throw ending === "cancellation" ? signal?.reason : saveError;
+        });
+        await expect(
+          transport.send(
+            { jsonrpc: "2.0", id: 1, method: "initialize" },
+            { signal: controller.signal },
+          ),
+        ).rejects.toBe(ending === "cancellation" ? abort : saveError);
+        expect(fetch).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it("client initialization keeps ownership until a credential-save failure settles", async () => {
+      const client = new MCPClientImpl(transport, 15);
+      let authSignal: AbortSignal | undefined;
+      let rejectSave!: (error: Error) => void;
+      vi.mocked(fetch).mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
+      vi.mocked(authenticateMcpOAuth).mockImplementationOnce(({ signal }) => {
+        authSignal = signal;
+        return new Promise<string>((_resolve, reject) => {
+          rejectSave = reject;
+        });
+      });
+      let settled = false;
+      const pending = client
+        .initialize({
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "fixture", version: "1" },
+        })
+        .catch((error: unknown) => error)
+        .finally(() => {
+          settled = true;
+        });
+      await vi.waitFor(() => expect(authSignal?.aborted).toBe(true));
+      expect(settled).toBe(false);
+      const failure = Object.assign(new Error("fixture save failure"), { code: "ENOSPC" });
+      rejectSave(failure);
+      expect(await pending).toBe(failure);
+      expect(fetch).toHaveBeenCalledTimes(1);
     });
 
     it("should not trigger oauth for non-auth domain errors", async () => {

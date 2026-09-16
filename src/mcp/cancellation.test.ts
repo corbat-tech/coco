@@ -352,3 +352,48 @@ describe("MCP transport cancellation and protocol notification", () => {
     },
   );
 });
+
+describe("MCP initialize deadline waits for transport persistence", () => {
+  it.each(["save failure", "send success"] as const)(
+    "deadline aborts transport but retains pending initialization until %s",
+    async (ending) => {
+      const f = await fixture();
+      let resolveSend!: () => void;
+      let rejectSend!: (error: unknown) => void;
+      f.send.mockImplementation(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            resolveSend = resolve;
+            rejectSend = reject;
+          }),
+      );
+      const client = new MCPClientImpl(f.transport, 11);
+      let settled = false;
+      const outcome = client
+        .initialize({
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "fixture", version: "1" },
+        })
+        .catch((error: unknown) => error)
+        .finally(() => {
+          settled = true;
+        });
+      const signal = f.send.mock.calls[0]?.[1]?.signal;
+      await vi.advanceTimersByTimeAsync(11);
+      expect(signal?.aborted).toBe(true);
+      expect(settled).toBe(false);
+      if (ending === "save failure") {
+        const failure = Object.assign(new Error("fixture persistence failed"), { code: "ENOSPC" });
+        rejectSend(failure);
+        expect(await outcome).toBe(failure);
+      } else {
+        resolveSend();
+        expect(await outcome).toBe(signal?.reason);
+        expect(String(signal?.reason)).toMatch(/timeout|timed out/i);
+      }
+      expect(f.send).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+});
