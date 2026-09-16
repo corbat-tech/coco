@@ -84,7 +84,11 @@ export class TaskIterator {
           testResults,
         );
 
-        // Enhance LLM review with real analyzer measurements
+        let verificationError = this.qualityEvaluator
+          ? undefined
+          : "Quality verification unavailable: no evaluator configured";
+        let measuredMinimum = false;
+        // LLM scores alone cannot authorize acceptance.
         if (this.qualityEvaluator) {
           try {
             const filePaths = currentFiles
@@ -92,6 +96,7 @@ export class TaskIterator {
               .map((f) => join(context.projectPath, f.path));
             const realScores = await this.qualityEvaluator.evaluate(filePaths);
 
+            measuredMinimum = realScores.meetsMinimum;
             // Override all dimensions with real measurements
             const dims = review.scores.dimensions;
             const real = realScores.scores.dimensions;
@@ -128,11 +133,8 @@ export class TaskIterator {
                 suggestion: issue.suggestion,
               });
             }
-          } catch (evalError) {
-            // If real evaluation fails, continue with LLM-only scores
-            if (process.env["COCO_DEBUG"]) {
-              console.error("[iterator] Real evaluation failed, using LLM-only scores:", evalError);
-            }
+          } catch {
+            verificationError = "Quality verification failed: analyzer evaluation did not complete";
           }
         }
 
@@ -157,31 +159,48 @@ export class TaskIterator {
         );
         versions.push(version);
 
-        // Check if we should stop
+        if (verificationError) {
+          return {
+            taskId: context.task.id,
+            success: false,
+            versions,
+            finalScore: 0,
+            converged: false,
+            iterations: iteration,
+            error: verificationError,
+          };
+        }
+
+        const dimensionsValid = Object.keys(DEFAULT_QUALITY_WEIGHTS).every((key) => {
+          const score = review.scores.dimensions[key as keyof QualityDimensions];
+          return Number.isFinite(score) && score >= 0 && score <= 100;
+        });
+        const testsPassed =
+          Number.isInteger(testResults.passed) &&
+          testResults.passed > 0 &&
+          testResults.failed === 0 &&
+          testResults.failures.length === 0;
+        const accepted =
+          measuredMinimum &&
+          dimensionsValid &&
+          testsPassed &&
+          review.scores.overall >= this.config.minScore &&
+          review.scores.dimensions.testCoverage >= this.config.minCoverage &&
+          !review.issues.some((issue) => issue.severity === "critical");
         const convergence = this.checkConvergence(scoreHistory, review, iteration);
-
-        if (convergence.converged) {
+        if (accepted) {
           return {
             taskId: context.task.id,
             success: true,
             versions,
             finalScore: review.scores.overall,
-            converged: true,
+            converged: convergence.converged,
             iterations: iteration,
           };
         }
 
-        // Check if we passed quality threshold
-        if (this.reviewer.checkPassed(review.scores)) {
-          return {
-            taskId: context.task.id,
-            success: true,
-            versions,
-            finalScore: review.scores.overall,
-            converged: true,
-            iterations: iteration,
-          };
-        }
+        // Do not leave an untested improvement as the final on-disk result.
+        if (iteration >= this.config.maxIterations) break;
 
         // Improve code for next iteration
         const improved = await this.generator.improve(
@@ -211,12 +230,12 @@ export class TaskIterator {
       // Max iterations reached
       return {
         taskId: context.task.id,
-        success: lastReview ? this.reviewer.checkPassed(lastReview.scores) : false,
+        success: false,
         versions,
         finalScore: lastReview?.scores.overall || 0,
         converged: false,
         iterations: iteration,
-        error: "Max iterations reached without convergence",
+        error: "Max iterations reached without verified quality acceptance",
       };
     } catch (error) {
       return {

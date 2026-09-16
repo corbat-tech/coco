@@ -19,3 +19,11 @@ Coordinador implementa; `/root/core_audit` escribe tests; revisión `/root/basel
 ## E06.c · DONE · 2026-09-16
 
 Callback de escalación de soporte devuelve queued:false, ID vacío y propuesta explícitamente no enviada. README coincide; no hay cola ni envío real. Test captura el callback que el entrypoint instala en el preset: falla antes por queued:true; después 73 tests HTTP correctos, lint/format correctos. Logs `e06c-before.log`, `e06c-after.log`. Implementación y test coordinador; revisión `/root/baseline_review` APPROVED. Sin publicación; rollback por revert.
+
+## E06.d · DONE · 2026-09-16
+
+Iterador COMPLETE requiere evaluación terminada, meetsMinimum, dimensiones completas finitas 0–100, umbrales, pruebas positivas sin fallos y ausencia de críticos para aceptar. Evaluador ausente/error devuelve fallo explícito y conserva trabajo/versiones; finalScore 0 no presenta nota LLM como medición. Success y converged separados. Límite agotado nunca acepta por nota aislada ni guarda una mejora final sin probar.
+
+15 regresiones fallan antes; después COMPLETE 12 archivos / 284 tests correctos, typecheck/lint/format correctos. Tests antiguos mantienen 46 casos con medición explícita independiente del reviewer; un fixture afectado por caché doMock ahora comprueba feedback real hacia improve con dependencias locales. Logs `e06d-before.log`, `e06d-after.log`. Coordinador implementa; `/root/core_audit` nuevas regresiones; `/root/file_fixture_update` fixtures; `/root/baseline_review` APPROVED.
+
+Contención del consumidor: fallbacks/procedencia del evaluador siguen E06.e/E09 y reportes de texto REPL requieren etiquetado. No acredita calidad real de extremo a extremo ni evals con proveedor real. Sin publicación; rollback por revert.
