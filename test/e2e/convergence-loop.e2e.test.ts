@@ -2,10 +2,10 @@
  * E2E Integration Tests for the Convergence Loop
  *
  * Tests the full generate -> evaluate -> improve -> converge loop end-to-end.
- * Uses a mock LLM provider but exercises real convergence logic.
+ * Uses a mock LLM provider and explicit analyzer evidence, with real convergence logic and file writes.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,7 +27,15 @@ import type {
   StreamChunk,
   ProviderConfig,
 } from "../../src/providers/types.js";
-import type { QualityDimensions } from "../../src/quality/types.js";
+import { DEFAULT_QUALITY_WEIGHTS } from "../../src/quality/types.js";
+import type { QualityEvaluation, QualityDimensions } from "../../src/quality/types.js";
+
+const { mockEvaluate } = vi.hoisted(() => ({ mockEvaluate: vi.fn() }));
+vi.mock("../../src/quality/evaluator.js", () => ({
+  QualityEvaluator: vi.fn(function () {
+    return { evaluate: mockEvaluate };
+  }),
+}));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -48,6 +56,25 @@ function uniformDimensions(value: number): QualityDimensions {
     security: value,
     documentation: value,
     style: value,
+  };
+}
+
+/** Explicit analyzer fixture, independent of the model's self-assessed score. */
+function measuredQuality(score: number, security = 100): QualityEvaluation {
+  const dimensions = { ...uniformDimensions(score), security };
+  const overall = Math.round(
+    Object.entries(dimensions).reduce(
+      (sum, [key, value]) => sum + value * DEFAULT_QUALITY_WEIGHTS[key as keyof QualityDimensions],
+      0,
+    ),
+  );
+  return {
+    scores: { overall, dimensions, evaluatedAt: new Date(0), evaluationDurationMs: 1 },
+    meetsMinimum: overall >= 85 && dimensions.testCoverage >= 80 && security === 100,
+    meetsTarget: overall >= 95 && dimensions.testCoverage >= 90 && security === 100,
+    converged: false,
+    issues: [],
+    suggestions: [],
   };
 }
 
@@ -279,6 +306,10 @@ describe("Convergence Loop E2E", () => {
   describe("Full convergence loop", () => {
     let testProjectPath: string;
 
+    beforeEach(() => {
+      mockEvaluate.mockReset();
+    });
+
     beforeAll(async () => {
       testProjectPath = await mkdtemp(join(tmpdir(), "coco-convergence-e2e-"));
       await mkdir(join(testProjectPath, "src"), { recursive: true });
@@ -289,6 +320,11 @@ describe("Convergence Loop E2E", () => {
     });
 
     it("should converge after multiple iterations with improving scores", async () => {
+      // Iteration 2 has a sufficient overall score but security is still below 100.
+      mockEvaluate
+        .mockResolvedValueOnce(measuredQuality(70, 70))
+        .mockResolvedValueOnce(measuredQuality(88, 99))
+        .mockResolvedValueOnce(measuredQuality(89, 100));
       let chatCallCount = 0;
 
       /**
@@ -369,8 +405,7 @@ describe("Convergence Loop E2E", () => {
         minConvergenceIterations: 2,
       };
 
-      // No projectPath so real quality evaluator is not used
-      const iterator = new TaskIterator(llm, config);
+      const iterator = new TaskIterator(llm, config, testProjectPath);
 
       const context: TaskExecutionContext = {
         task: {
@@ -421,11 +456,15 @@ describe("Convergence Loop E2E", () => {
       expect(result.versions.length).toBeGreaterThan(0);
       expect(result.finalScore).toBeGreaterThanOrEqual(config.minScore);
 
-      // Either converged or passed threshold — both set converged: true
+      // Final measured score is accepted and stable relative to iteration 2.
       expect(result.converged).toBe(true);
 
       // Files should have been saved at least twice (initial + improvements)
-      expect(savedFiles.length).toBeGreaterThanOrEqual(1);
+      expect(savedFiles).toHaveLength(3);
+      expect(result.versions).toHaveLength(3);
+      expect(mockEvaluate).toHaveBeenCalledTimes(3);
+      expect(mockEvaluate).toHaveBeenLastCalledWith([join(testProjectPath, "src/greet.ts")]);
+      expect(chatCallCount).toBe(6); // generation, three reviews, two improvements
 
       // Progress callback should have been called
       expect(progressUpdates.length).toBeGreaterThan(0);
@@ -433,6 +472,10 @@ describe("Convergence Loop E2E", () => {
     }, 30000);
 
     it("should stop at max iterations when score does not converge", async () => {
+      mockEvaluate
+        .mockResolvedValueOnce(measuredQuality(52, 52))
+        .mockResolvedValueOnce(measuredQuality(54, 54))
+        .mockResolvedValueOnce(measuredQuality(56, 56));
       let chatCallCount = 0;
 
       // Return a score that is always below minScore and never converges
@@ -476,7 +519,7 @@ describe("Convergence Loop E2E", () => {
         minConvergenceIterations: 2,
       };
 
-      const iterator = new TaskIterator(llm, config);
+      const iterator = new TaskIterator(llm, config, testProjectPath);
 
       const context: TaskExecutionContext = {
         task: {
@@ -517,11 +560,14 @@ describe("Convergence Loop E2E", () => {
       expect(result.iterations).toBe(config.maxIterations);
       expect(result.converged).toBe(false);
       expect(result.error).toContain("Max iterations reached");
-      // Success depends on whether the final score happens to pass — with our mock it should not
+      expect(mockEvaluate).toHaveBeenCalledTimes(3);
+      expect(chatCallCount).toBe(6); // No unverified improvement after the final review.
+      // Failing measured quality cannot be accepted at the iteration limit.
       expect(result.success).toBe(false);
     }, 30000);
 
-    it("should succeed on first iteration when review score passes threshold immediately", async () => {
+    it("should succeed on first iteration when measured quality passes immediately", async () => {
+      mockEvaluate.mockResolvedValueOnce(measuredQuality(95));
       let chatCallCount = 0;
 
       const mockChat: MockChatHandler = async () => {
@@ -549,7 +595,7 @@ describe("Convergence Loop E2E", () => {
       };
 
       const llm = createMockLLMProvider(mockChat);
-      const iterator = new TaskIterator(llm, DEFAULT_CONFIG);
+      const iterator = new TaskIterator(llm, DEFAULT_CONFIG, testProjectPath);
 
       const context: TaskExecutionContext = {
         task: {
@@ -588,14 +634,18 @@ describe("Convergence Loop E2E", () => {
 
       expect(result.taskId).toBe("task-003");
       expect(result.success).toBe(true);
-      expect(result.converged).toBe(true);
-      // Passes on first iteration via checkPassed
+      expect(result.converged).toBe(false);
+      // Acceptance on the first iteration does not establish convergence.
       expect(result.iterations).toBe(1);
       expect(result.finalScore).toBeGreaterThanOrEqual(85);
       expect(result.versions).toHaveLength(1);
     }, 30000);
 
     it("should record version snapshots with correct structure at each iteration", async () => {
+      // An optimistic LLM review cannot skip the improvement required by measured evidence.
+      mockEvaluate
+        .mockResolvedValueOnce(measuredQuality(70, 70))
+        .mockResolvedValueOnce(measuredQuality(92));
       let chatCallCount = 0;
 
       const mockChat: MockChatHandler = async () => {
@@ -625,7 +675,7 @@ describe("Convergence Loop E2E", () => {
       };
 
       const llm = createMockLLMProvider(mockChat);
-      const iterator = new TaskIterator(llm, DEFAULT_CONFIG);
+      const iterator = new TaskIterator(llm, DEFAULT_CONFIG, testProjectPath);
 
       const context: TaskExecutionContext = {
         task: {
@@ -663,7 +713,9 @@ describe("Convergence Loop E2E", () => {
       );
 
       expect(result.success).toBe(true);
-      expect(result.versions.length).toBeGreaterThan(0);
+      expect(result.versions).toHaveLength(2);
+      expect(result.versions.map((version) => version.scores.overall)).toEqual([70, 93]);
+      expect(chatCallCount).toBe(4);
 
       // Verify version structure
       for (const version of result.versions) {
@@ -699,6 +751,7 @@ describe("Convergence Loop E2E", () => {
     }, 30000);
 
     it("should handle LLM errors gracefully and return an error result", async () => {
+      mockEvaluate.mockImplementation(async () => measuredQuality(70, 70));
       let chatCallCount = 0;
 
       const mockChat: MockChatHandler = async () => {
@@ -718,7 +771,7 @@ describe("Convergence Loop E2E", () => {
       };
 
       const llm = createMockLLMProvider(mockChat);
-      const iterator = new TaskIterator(llm, DEFAULT_CONFIG);
+      const iterator = new TaskIterator(llm, DEFAULT_CONFIG, testProjectPath);
 
       const context: TaskExecutionContext = {
         task: {

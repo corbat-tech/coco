@@ -41,3 +41,9 @@ Reportes QUALITY_LOOP_REPORT del modelo se muestran como self-report (unverified
 Seis regresiones fallan antes; después 3 archivos / 32 tests correctos, typecheck/lint/format correctos. Logs `e06f-before.log`, `e06f-after.log`. Coordinador implementa; `/root/core_audit` tests; `/root/baseline_review` APPROVED. No valida la procedencia de cifras del modelo.
 
 E06 permanece IN_PROGRESS para disponibilidad/aplicabilidad interna de analizadores y overrides en E09 (por ejemplo, linter ausente no es medición de estilo). COCO-06 sigue abierto y bloquea una release estable de esa superficie. Se continúa E07, que depende de E03, manteniendo estos pendientes explícitos. Subpasos a–f terminados no equivalen a certificación de calidad extremo a extremo. Sin publicación; rollback por revert.
+
+## E06.g · DONE · 2026-09-16
+
+Gate amplio detectó cuatro fixtures E2E obsoletos que no configuraban evaluador. Migrados a evidencia simulada explícita e independiente de la opinión LLM, conservando lógica real del iterador y escritura de archivos. Se comprueban tres iteraciones hasta convergencia aceptada, éxito inmediato sin convergencia, snapshots medidos y ninguna mejora posterior a la última verificación. No equivale a evaluación con LLM/analizadores reales.
+
+Antes: cuatro fallos en `e06-main.log`. Después: 319 archivos, 7089 tests correctos y 15 omitidos; REPL separado 27 correctos; build, typecheck, lint y format correctos. Logs `e06g-focused.log`, `e06g-main.log`, `e06g-repl.log`, `e06g-build.log`. Autor fixtures `/root/file_fixture_update`; coordinador valida; revisión independiente `/root/baseline_review` APPROVED. E06 sigue IN_PROGRESS: primer incremento E09 debe completar disponibilidad/aplicabilidad pendiente; no publicación.
