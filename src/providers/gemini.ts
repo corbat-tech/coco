@@ -23,7 +23,6 @@ import type {
   ChatWithToolsOptions,
   ChatWithToolsResponse,
   StreamChunk,
-  ToolCall,
   ToolDefinition,
   MessageContent,
   ImageContent,
@@ -36,6 +35,8 @@ import { DEFAULT_RETRY_CONFIG, resolveRetryConfig, withRetry } from "./retry.js"
 import { ProviderError } from "../utils/errors.js";
 import { mapToGeminiThinkingConfig } from "./thinking.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
+
+import { GoogleToolBatch } from "./google-tool-integrity.js";
 
 const DEFAULT_MODEL = getCatalogDefaultModel("gemini");
 const SKIP_THOUGHT_SIGNATURE_VALIDATOR = "skip_thought_signature_validator";
@@ -227,61 +228,25 @@ export class GeminiProvider implements LLMProvider {
       });
 
       scope.signal.throwIfAborted();
-      let streamStopReason: StreamChunk["stopReason"] = "end_turn";
-      let fallbackToolCounter = 0;
-      const emittedToolIds = new Set<string>();
-
+      const batch = new GoogleToolBatch("gemini");
       for await (const chunk of stream) {
         scope.signal.throwIfAborted();
-        const text = chunk.text;
-        if (text) {
+        batch.add(this.toolParts(chunk), chunk.candidates?.[0]?.finishReason);
+        if (chunk.text) {
+          yield { type: "text", text: chunk.text };
           scope.signal.throwIfAborted();
-          yield { type: "text", text };
-          scope.signal.throwIfAborted();
-        }
-
-        const toolCalls = this.extractToolCalls(chunk, { includeLegacyFunctionCalls: true });
-        for (const toolCall of toolCalls) {
-          const toolCallId = toolCall.id ?? `gemini_call_${++fallbackToolCounter}`;
-          if (emittedToolIds.has(toolCallId)) continue;
-          emittedToolIds.add(toolCallId);
-
-          const normalizedToolCall: ToolCall = {
-            ...toolCall,
-            id: toolCallId,
-          };
-
-          scope.signal.throwIfAborted();
-
-          yield {
-            type: "tool_use_start",
-            toolCall: {
-              id: normalizedToolCall.id,
-              name: normalizedToolCall.name,
-            },
-          };
-
-          scope.signal.throwIfAborted();
-
-          yield {
-            type: "tool_use_end",
-            toolCall: normalizedToolCall,
-          };
-
-          scope.signal.throwIfAborted();
-        }
-
-        const finishReason = chunk.candidates?.[0]?.finishReason;
-        if (toolCalls.length > 0) {
-          streamStopReason = "tool_use";
-        } else if (finishReason) {
-          streamStopReason = this.mapFinishReason(finishReason);
         }
       }
-
       scope.signal.throwIfAborted();
-
-      yield { type: "done", stopReason: streamStopReason };
+      const { toolCalls, stopReason } = batch.complete();
+      for (const toolCall of toolCalls) {
+        scope.signal.throwIfAborted();
+        yield { type: "tool_use_start", toolCall: { id: toolCall.id, name: toolCall.name } };
+        scope.signal.throwIfAborted();
+        yield { type: "tool_use_end", toolCall };
+      }
+      scope.signal.throwIfAborted();
+      yield { type: "done", stopReason };
 
       scope.signal.throwIfAborted();
     } catch (error) {
@@ -508,52 +473,11 @@ export class GeminiProvider implements LLMProvider {
     };
   }
 
-  private extractThoughtSignatureFromPart(part: Part): string | undefined {
-    const withSignature = part as Part & {
-      thoughtSignature?: string;
-      thought_signature?: string;
-      functionCall?: FunctionCall & {
-        thoughtSignature?: string;
-        thought_signature?: string;
-      };
-    };
-    return (
-      withSignature.thoughtSignature ??
-      withSignature.thought_signature ??
-      withSignature.functionCall?.thoughtSignature ??
-      withSignature.functionCall?.thought_signature
-    );
-  }
-
-  private extractToolCalls(
-    response: GenerateContentResponse,
-    options?: { includeLegacyFunctionCalls?: boolean },
-  ): ToolCall[] {
-    const toolCallsFromParts = (response.candidates?.[0]?.content?.parts ?? [])
-      .filter((part) => !!part.functionCall)
-      .map((part, index) => ({
-        id: part.functionCall!.id ?? `gemini_call_${index + 1}`,
-        name: part.functionCall!.name ?? "unknown_function",
-        input: (part.functionCall!.args ?? {}) as Record<string, unknown>,
-        geminiThoughtSignature: this.extractThoughtSignatureFromPart(part),
-      }));
-
-    if (toolCallsFromParts.length > 0) {
-      return toolCallsFromParts;
-    }
-
-    if (!options?.includeLegacyFunctionCalls || !response.functionCalls?.length) {
-      return [];
-    }
-
-    return response.functionCalls.map((functionCall, index) => ({
-      id: functionCall.id ?? `gemini_call_${index + 1}`,
-      name: functionCall.name ?? "unknown_function",
-      input: (functionCall.args ?? {}) as Record<string, unknown>,
-      geminiThoughtSignature: this.extractThoughtSignatureFromPart({
-        functionCall: functionCall as Part["functionCall"],
-      } as Part),
-    }));
+  private toolParts(response: GenerateContentResponse): Part[] {
+    const parts = response.candidates?.[0]?.content?.parts ?? [];
+    if (parts.some((part) => part?.functionCall !== undefined)) return parts;
+    // The SDK accessor exposes the same calls when candidate parts are unavailable.
+    return [...parts, ...(response.functionCalls ?? []).map((functionCall) => ({ functionCall }))];
   }
 
   private parseResponse(response: GenerateContentResponse, model?: string): ChatResponse {
@@ -576,15 +500,14 @@ export class GeminiProvider implements LLMProvider {
     model?: string,
   ): ChatWithToolsResponse {
     const usage = response.usageMetadata;
-    const toolCalls = this.extractToolCalls(response, { includeLegacyFunctionCalls: true });
+    const batch = new GoogleToolBatch("gemini");
+    batch.add(this.toolParts(response), response.candidates?.[0]?.finishReason);
+    const { toolCalls, stopReason } = batch.complete();
 
     return {
       id: `gemini-${Date.now()}`,
       content: response.text ?? "",
-      stopReason:
-        toolCalls.length > 0
-          ? "tool_use"
-          : this.mapFinishReason(response.candidates?.[0]?.finishReason),
+      stopReason,
       usage: {
         inputTokens: usage?.promptTokenCount ?? 0,
         outputTokens: usage?.candidatesTokenCount ?? 0,

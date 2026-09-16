@@ -253,7 +253,12 @@ describe("Vertex stream reader ownership", () => {
   it("deadline between tool start and end cancels and releases the reader", async () => {
     const provider = await providerFor();
     const fixture = readerFixture({
-      candidates: [{ content: { parts: [{ functionCall: { name: "fixture_tool", args: {} } }] } }],
+      candidates: [
+        {
+          content: { parts: [{ functionCall: { name: "fixture_tool", args: {} } }] },
+          finishReason: "STOP",
+        },
+      ],
     });
     let owned!: AbortSignal;
     mocks.fetch.mockImplementation(async (_url: string, options: RequestInit) => {
@@ -264,7 +269,7 @@ describe("Vertex stream reader ownership", () => {
     expect((await iterator.next()).value).toMatchObject({ type: "tool_use_start" });
     await vi.advanceTimersByTimeAsync(11);
     await expect(iterator.next()).rejects.toBe(owned.reason);
-    expect(fixture.reader.read).toHaveBeenCalledOnce();
+    expect(fixture.reader.read).toHaveBeenCalledTimes(2);
     expect(fixture.reader.cancel).toHaveBeenCalledOnce();
     expect(fixture.reader.releaseLock).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
@@ -344,7 +349,7 @@ describe("Vertex stream reader ownership", () => {
       const reason = new Error("between emissions");
       controller.abort(reason);
       await expect(iterator.next()).rejects.toBe(reason);
-      expect(fixture.reader.read).toHaveBeenCalledOnce();
+      expect(fixture.reader.read).toHaveBeenCalledTimes(first === "tool_use_start" ? 2 : 1);
       expect(fixture.reader.cancel).toHaveBeenCalledOnce();
       expect(fixture.reader.releaseLock).toHaveBeenCalledOnce();
       expectClean(controller.signal);

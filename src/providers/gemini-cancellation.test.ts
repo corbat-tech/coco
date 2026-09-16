@@ -250,6 +250,7 @@ describe("Gemini per-call cancellation scope", () => {
           try {
             yield {
               ...(firstEmission === "text" ? { text: "fixture" } : {}),
+              candidates: [{ finishReason: "STOP" }],
               functionCalls: [
                 { id: "call-1", name: "fixture_tool", args: {} },
                 { id: "call-2", name: "fixture_tool", args: {} },
@@ -268,7 +269,8 @@ describe("Gemini per-call cancellation scope", () => {
       const reason = new Error("same chunk abort");
       controller.abort(reason);
       await expect(iterator.next()).rejects.toBe(reason);
-      expect(advanced).not.toHaveBeenCalled();
+      if (firstEmission === "text") expect(advanced).not.toHaveBeenCalled();
+      else expect(advanced).toHaveBeenCalledOnce();
       expect(cleanup).toHaveBeenCalledOnce();
       expect(vi.getTimerCount()).toBe(0);
     },
@@ -313,7 +315,10 @@ describe("Gemini per-call cancellation scope", () => {
       owned = config.abortSignal;
       return (async function* () {
         try {
-          yield { functionCalls: [{ id: "call-1", name: "fixture_tool", args: {} }] };
+          yield {
+            candidates: [{ finishReason: "STOP" }],
+            functionCalls: [{ id: "call-1", name: "fixture_tool", args: {} }],
+          };
         } finally {
           cleanup();
         }

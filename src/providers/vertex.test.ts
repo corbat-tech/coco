@@ -88,7 +88,7 @@ describe("VertexProvider", () => {
         role: "model",
         parts: [
           {
-            functionCall: { name: "get_weather", args: { city: "Madrid" } },
+            functionCall: { id: "tool-1", name: "get_weather", args: { city: "Madrid" } },
             thoughtSignature: "skip_thought_signature_validator",
             thought_signature: "skip_thought_signature_validator",
           },
@@ -96,7 +96,11 @@ describe("VertexProvider", () => {
       },
       {
         role: "user",
-        parts: [{ functionResponse: { name: "get_weather", response: { result: "Sunny" } } }],
+        parts: [
+          {
+            functionResponse: { id: "tool-1", name: "get_weather", response: { result: "Sunny" } },
+          },
+        ],
       },
     ]);
   });
@@ -336,19 +340,19 @@ describe("VertexProvider", () => {
     expect(chunks.join("")).toBe("ok");
   });
 
-  it("deduplicates repeated functionCall chunks in streamWithTools", async () => {
+  it("deduplicates repeated explicit functionCall IDs before terminal in streamWithTools", async () => {
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(
           encoder.encode(
-            'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_env","args":{"name":"HOME"}},"thoughtSignature":"sig-home"}]},"finishReason":"STOP"}]}\r\n\r\n',
+            'data: {"candidates":[{"content":{"parts":[{"functionCall":{"id":"vertex_call_1","name":"get_env","args":{"name":"HOME"}},"thoughtSignature":"sig-home"}]}}]}\r\n\r\n',
           ),
         );
-        // Some Vertex streams repeat cumulative parts; this duplicate must not emit twice.
+        // Only an identical explicit ID identifies a retransmitted call.
         controller.enqueue(
           encoder.encode(
-            'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_env","args":{"name":"HOME"}},"thoughtSignature":"sig-home"}]},"finishReason":"STOP"}]}\r\n\r\n',
+            'data: {"candidates":[{"content":{"parts":[{"functionCall":{"id":"vertex_call_1","name":"get_env","args":{"name":"HOME"}},"thoughtSignature":"sig-home"}]},"finishReason":"STOP"}]}\r\n\r\n',
           ),
         );
         controller.enqueue(encoder.encode("data: [DONE]\r\n\r\n"));

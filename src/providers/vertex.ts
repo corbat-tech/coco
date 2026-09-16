@@ -13,7 +13,6 @@ import type {
   ChatWithToolsOptions,
   ChatWithToolsResponse,
   StreamChunk,
-  ToolCall,
   ToolDefinition,
   MessageContent,
   ImageContent,
@@ -26,6 +25,9 @@ import { ProviderError } from "../utils/errors.js";
 import { getCachedADCToken } from "../auth/gcloud.js";
 import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
+
+import { GoogleToolBatch } from "./google-tool-integrity.js";
+import { ResponseIntegrityError } from "./response-integrity.js";
 
 const DEFAULT_MODEL = getCatalogDefaultModel("vertex");
 const DEFAULT_BASE_URL = "https://aiplatform.googleapis.com/v1";
@@ -48,6 +50,7 @@ interface VertexInlineData {
 }
 
 interface VertexFunctionCall {
+  id?: string;
   name: string;
   args?: Record<string, unknown>;
   thoughtSignature?: string;
@@ -55,6 +58,7 @@ interface VertexFunctionCall {
 }
 
 interface VertexFunctionResponse {
+  id?: string;
   name: string;
   response: Record<string, unknown>;
 }
@@ -105,23 +109,6 @@ function extractSseEventData(rawEvent: string): string | null {
   }
 
   return dataLines.join("\n");
-}
-
-function getToolCallFingerprint(part: VertexPart): string {
-  const name = part.functionCall?.name ?? "unknown_function";
-  let argsSerialized = "{}";
-  try {
-    argsSerialized = JSON.stringify(part.functionCall?.args ?? {});
-  } catch {
-    argsSerialized = "{}";
-  }
-  const thoughtSignature =
-    part.thoughtSignature ??
-    part.thought_signature ??
-    part.functionCall?.thoughtSignature ??
-    part.functionCall?.thought_signature ??
-    "";
-  return `${name}:${argsSerialized}:${thoughtSignature}`;
 }
 
 export class VertexProvider implements LLMProvider {
@@ -286,63 +273,30 @@ export class VertexProvider implements LLMProvider {
         options.tools,
         options.toolChoice,
       );
-      let stopReason: StreamChunk["stopReason"] = "end_turn";
-      let streamToolCallCounter = 0;
-      const emittedToolFingerprints = new Set<string>();
-
+      const batch = new GoogleToolBatch("vertex");
       for await (const chunk of stream) {
         scope.signal.throwIfAborted();
+        if (chunk.error)
+          throw new ResponseIntegrityError("Vertex stream reported failure", this.id);
         const candidate = chunk.candidates?.[0];
         const parts = candidate?.content?.parts ?? [];
+        batch.add(parts, candidate?.finishReason);
         for (const part of parts) {
           if (part.text) {
-            scope.signal.throwIfAborted();
             yield { type: "text", text: part.text };
             scope.signal.throwIfAborted();
           }
-          if (part.functionCall) {
-            const fingerprint = getToolCallFingerprint(part);
-            if (emittedToolFingerprints.has(fingerprint)) {
-              continue;
-            }
-            emittedToolFingerprints.add(fingerprint);
-            streamToolCallCounter++;
-            const geminiThoughtSignature =
-              part.thoughtSignature ??
-              part.thought_signature ??
-              part.functionCall.thoughtSignature ??
-              part.functionCall.thought_signature;
-            scope.signal.throwIfAborted();
-            yield {
-              type: "tool_use_start",
-              toolCall: {
-                id: `vertex_call_${streamToolCallCounter}`,
-                name: part.functionCall.name,
-                input: part.functionCall.args ?? {},
-                geminiThoughtSignature,
-              },
-            };
-            scope.signal.throwIfAborted();
-            scope.signal.throwIfAborted();
-            yield {
-              type: "tool_use_end",
-              toolCall: {
-                id: `vertex_call_${streamToolCallCounter}`,
-                name: part.functionCall.name,
-                input: part.functionCall.args ?? {},
-                geminiThoughtSignature,
-              },
-            };
-            scope.signal.throwIfAborted();
-          }
         }
-        stopReason = parts.some((part) => part.functionCall)
-          ? "tool_use"
-          : this.mapFinishReason(candidate?.finishReason);
       }
-
       scope.signal.throwIfAborted();
-
+      const { toolCalls, stopReason } = batch.complete();
+      for (const toolCall of toolCalls) {
+        scope.signal.throwIfAborted();
+        yield { type: "tool_use_start", toolCall };
+        scope.signal.throwIfAborted();
+        yield { type: "tool_use_end", toolCall };
+      }
+      scope.signal.throwIfAborted();
       yield { type: "done", stopReason };
 
       scope.signal.throwIfAborted();
@@ -470,6 +424,7 @@ export class VertexProvider implements LLMProvider {
               const toolResult = block as ToolResultContent;
               functionResponses.push({
                 functionResponse: {
+                  id: toolResult.tool_use_id,
                   name: toolNameByUseId.get(toolResult.tool_use_id) ?? toolResult.tool_use_id,
                   response: { result: toolResult.content },
                 },
@@ -508,6 +463,7 @@ export class VertexProvider implements LLMProvider {
         const thoughtSignature = toolUse.geminiThoughtSignature ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR;
         parts.push({
           functionCall: {
+            id: toolUse.id,
             name: toolUse.name,
             args: toolUse.input,
           },
@@ -670,6 +626,7 @@ export class VertexProvider implements LLMProvider {
           try {
             parsed = JSON.parse(data) as VertexGenerateContentResponse;
           } catch {
+            if (tools) throw new ResponseIntegrityError("Invalid Vertex stream event", this.id);
             continue;
           }
           options?.signal?.throwIfAborted();
@@ -684,7 +641,7 @@ export class VertexProvider implements LLMProvider {
         try {
           parsed = JSON.parse(trailingData) as VertexGenerateContentResponse;
         } catch {
-          // Incomplete trailing fragments are handled in the stream-integrity increment.
+          if (tools) throw new ResponseIntegrityError("Incomplete Vertex stream event", this.id);
           return;
         }
         options?.signal?.throwIfAborted();
@@ -727,33 +684,15 @@ export class VertexProvider implements LLMProvider {
   ): ChatWithToolsResponse {
     const candidate = response.candidates?.[0];
     const parts = candidate?.content?.parts ?? [];
-    const toolCalls: ToolCall[] = [];
-    let textContent = "";
-    let toolIndex = 0;
-
-    for (const part of parts) {
-      if (part.text) {
-        textContent += part.text;
-      }
-      if (part.functionCall) {
-        toolIndex++;
-        toolCalls.push({
-          id: `vertex_call_${toolIndex}`,
-          name: part.functionCall.name,
-          input: part.functionCall.args ?? {},
-          geminiThoughtSignature:
-            part.thoughtSignature ??
-            part.thought_signature ??
-            part.functionCall.thoughtSignature ??
-            part.functionCall.thought_signature,
-        });
-      }
-    }
+    const batch = new GoogleToolBatch("vertex");
+    batch.add(parts, candidate?.finishReason);
+    const { toolCalls, stopReason } = batch.complete();
+    const textContent = parts.map((part) => part.text ?? "").join("");
 
     return {
       id: `vertex-${Date.now()}`,
       content: textContent,
-      stopReason: toolCalls.length > 0 ? "tool_use" : this.mapFinishReason(candidate?.finishReason),
+      stopReason,
       usage: {
         inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
         outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
