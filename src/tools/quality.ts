@@ -10,7 +10,6 @@ import fs from "node:fs/promises";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
 import type { QualityScores } from "../quality/types.js";
-import { createQualityEvaluatorWithRegistry } from "../quality/evaluator.js";
 
 /**
  * Lint result interface
@@ -544,27 +543,14 @@ function analyzeFileComplexity(content: string, file: string): FileComplexity {
   };
 }
 
-/**
- * Calculate full quality scores using the new QualityEvaluator
- * This replaces hardcoded values with real measurements
- */
+/** Aggregate certification is unavailable until analyzer applicability is verified (E09). */
 export const calculateQualityTool: ToolDefinition<
   { cwd?: string; files?: string[]; useSnyk?: boolean },
   QualityScores
 > = defineTool({
   name: "calculate_quality",
-  description: `Calculate comprehensive quality scores using REAL analyzers (coverage, security, complexity).
-
-This tool now uses the unified QualityEvaluator which provides:
-- Real test coverage from c8/nyc instrumentation
-- Security scanning (static analysis + npm audit + optional Snyk)
-- AST-based complexity analysis
-- Code duplication detection
-
-Examples:
-- Full analysis: {} → { "overall": 85, "dimensions": { "complexity": 90, "testCoverage": 82, "security": 100, ... } }
-- Specific files: { "files": ["src/core/*.ts"] }
-- With Snyk: { "useSnyk": true }`,
+  description:
+    "Aggregate quality evaluation is temporarily unavailable. This tool cannot certify acceptance. Use run_tests, run_linter and analyze_complexity for individual results with their stated limits.",
   category: "quality",
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),
@@ -575,23 +561,11 @@ Examples:
       .default(false)
       .describe("Use Snyk for enhanced security scanning"),
   }),
-  async execute({ cwd, files, useSnyk }) {
-    const projectDir = cwd ?? process.cwd();
-
-    try {
-      // Use the new unified QualityEvaluator
-      const evaluator = createQualityEvaluatorWithRegistry(projectDir, useSnyk);
-      const evaluation = await evaluator.evaluate(files);
-
-      // Return QualityScores format
-      return evaluation.scores;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      throw new ToolError(
-        `Quality calculation failed: ${msg}. Run run_linter and run_tests separately for partial results.`,
-        { tool: "calculate_quality", cause: error instanceof Error ? error : undefined },
-      );
-    }
+  async execute() {
+    throw new ToolError(
+      "Aggregate quality evaluation unavailable: not evaluated; no acceptance certified. Use run_tests, run_linter and analyze_complexity for partial results. Restoration requires E09 analyzer applicability validation.",
+      { tool: "calculate_quality" },
+    );
   },
 });
 
