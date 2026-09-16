@@ -17,7 +17,18 @@ import { MCPConnectionError, MCPTransportError } from "../errors.js";
 /**
  * Stdio transport for MCP communication
  */
+interface OwnedChild {
+  child: ChildProcess;
+  closed: boolean;
+  closing: boolean;
+  settled: Promise<void>;
+  resolveClose(): void;
+  termTimer?: ReturnType<typeof setTimeout>;
+  killTimer?: ReturnType<typeof setTimeout>;
+}
+
 export class StdioTransport implements MCPTransport {
+  private ownedChild: OwnedChild | null = null;
   private process: ChildProcess | null = null;
   private messageCallback: ((message: JSONRPCResponse) => void) | null = null;
   private errorCallback: ((error: Error) => void) | null = null;
@@ -31,58 +42,87 @@ export class StdioTransport implements MCPTransport {
    * Connect to the stdio transport by spawning the process
    */
   async connect(): Promise<void> {
-    if (this.connected) {
-      throw new MCPConnectionError("Transport already connected");
+    if (this.process || this.ownedChild) {
+      throw new MCPConnectionError("Transport already connected or process still closing");
     }
-
-    return new Promise((resolve, reject) => {
-      const { command, args = [], env, cwd } = this.config;
-
-      this.process = spawn(command, args, {
+    const { command, args = [], env, cwd } = this.config;
+    let child: ChildProcess;
+    try {
+      child = spawn(command, args, {
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...process.env, ...env },
         cwd,
       });
-
-      this.process.on("error", (error) => {
-        reject(new MCPConnectionError(`Failed to spawn process: ${error.message}`));
-      });
-
-      this.process.on("spawn", () => {
+    } catch (error) {
+      throw new MCPConnectionError(
+        `Failed to spawn process: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    let resolveClose!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      resolveClose = resolve;
+    });
+    const owner: OwnedChild = { child, closed: false, closing: false, settled, resolveClose };
+    this.ownedChild = owner;
+    this.process = child;
+    this.buffer = "";
+    return new Promise<void>((resolve, reject) => {
+      let ready = false;
+      const onSpawn = () => {
+        if (owner.closed || owner.closing) {
+          reject(new MCPConnectionError("Process closed while connecting"));
+          return;
+        }
+        ready = true;
         this.connected = true;
-        this.setupHandlers();
         resolve();
-      });
-
-      this.process.stderr?.on("data", (data: Buffer) => {
-        // Log stderr for debugging but don't treat as error
-        // eslint-disable-next-line no-console
+      };
+      const onError = (error: Error) => {
+        if (!ready) reject(new MCPConnectionError(`Failed to spawn process: ${error.message}`));
+        else this.errorCallback?.(new MCPTransportError(`Process error: ${error.message}`));
+      };
+      const onData = (data: Buffer) => {
+        if (!owner.closed) this.handleData(data);
+      };
+      const onStderr = (data: Buffer) => {
         console.debug(`[MCP Server stderr]: ${data.toString()}`);
-      });
-    });
-  }
-
-  /**
-   * Setup data handlers for the process
-   */
-  private setupHandlers(): void {
-    if (!this.process?.stdout) return;
-
-    this.process.stdout.on("data", (data: Buffer) => {
-      this.handleData(data);
-    });
-
-    this.process.on("exit", (code) => {
-      this.connected = false;
-      if (code !== 0 && code !== null) {
-        this.errorCallback?.(new MCPTransportError(`Process exited with code ${code}`));
-      }
-      this.closeCallback?.();
-    });
-
-    this.process.on("close", () => {
-      this.connected = false;
-      this.closeCallback?.();
+      };
+      const onExit = (code: number | null) => {
+        this.connected = false;
+        if (!ready) reject(new MCPConnectionError("Process exited before connection was ready"));
+        if (code !== 0 && code !== null) {
+          this.errorCallback?.(new MCPTransportError(`Process exited with code ${code}`));
+        }
+        // exit/killed acknowledge neither stream closure nor complete process ownership release.
+      };
+      const onClose = () => {
+        if (owner.closed) return;
+        owner.closed = true;
+        clearTimeout(owner.termTimer);
+        clearTimeout(owner.killTimer);
+        child.removeListener("spawn", onSpawn);
+        child.removeListener("error", onError);
+        child.removeListener("exit", onExit);
+        child.removeListener("close", onClose);
+        child.stdout?.removeListener("data", onData);
+        child.stderr?.removeListener("data", onStderr);
+        if (this.ownedChild === owner) {
+          this.connected = false;
+          this.process = null;
+          this.ownedChild = null;
+          this.buffer = "";
+        }
+        if (!ready) reject(new MCPConnectionError("Process closed before connection was ready"));
+        owner.resolveClose();
+        this.closeCallback?.();
+      };
+      // Register all ownership handlers before the asynchronous spawn event.
+      child.on("error", onError);
+      child.on("spawn", onSpawn);
+      child.on("exit", onExit);
+      child.on("close", onClose);
+      child.stdout?.on("data", onData);
+      child.stderr?.on("data", onStderr);
     });
   }
 
@@ -156,33 +196,39 @@ export class StdioTransport implements MCPTransport {
    * Disconnect from the transport
    */
   async disconnect(): Promise<void> {
-    if (!this.process) return;
-
-    return new Promise((resolve) => {
-      if (!this.process) {
-        resolve();
-        return;
+    const owner = this.ownedChild;
+    if (!owner) return;
+    if (owner.closing) return owner.settled;
+    owner.closing = true;
+    this.connected = false;
+    const signalChild = (signal: NodeJS.Signals) => {
+      if (owner.closed) return;
+      try {
+        owner.child.kill(signal);
+      } catch (error) {
+        this.errorCallback?.(
+          new MCPTransportError(
+            `Failed to signal process: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
       }
-
-      this.process.stdin?.end();
-
-      const timeout = setTimeout(() => {
-        this.process?.kill("SIGTERM");
-      }, 5000);
-
-      this.process.on("close", () => {
-        clearTimeout(timeout);
-        this.connected = false;
-        this.process = null;
-        resolve();
-      });
-
-      if (this.process.killed || !this.connected) {
-        clearTimeout(timeout);
-        this.process = null;
-        resolve();
-      }
-    });
+    };
+    owner.termTimer = setTimeout(() => {
+      if (owner.closed) return;
+      // Schedule before signalling: a synchronous close must clear this timer too.
+      owner.killTimer = setTimeout(() => signalChild("SIGKILL"), 3000);
+      signalChild("SIGTERM");
+    }, 5000);
+    try {
+      owner.child.stdin?.end();
+    } catch (error) {
+      this.errorCallback?.(
+        new MCPTransportError(
+          `Failed to close process stdin: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    }
+    await owner.settled;
   }
 
   /**

@@ -185,3 +185,9 @@ SSE posee el receptor, el handshake y los POST pendientes por generación. Desco
 Contraste con [transportes MCP2024-11-05](https://modelcontextprotocol.io/specification/2024-11-05/basic/transports), consultado2026-09-16, para transporte SSE legado. Once contratos de ciclo de vida y dos nuevas integraciones HTTP loopback reales. La revisión detectó una carrera al reconectar durante drenaje automático; corregida y cubierta con dos callers concurrentes y un único GET nuevo.
 
 Gate final:7 archivos/95 tests correctos; typecheck/lint/format correctos. Logs e07l4-final-reviewed/final-types/final-lint/final-format. /root/file_fixture_update implementación; /root/core_audit contratos; coordinador integración y correcciones; /root/baseline_review APPROVED. Stdio y manager de conexiones siguen pendientes. Sin publicación; rollback por revert.
+
+## E07.l5a · DONE · 2026-09-16
+
+Stdio conserva propiedad del proceso desde spawn hasta close, incluyendo fallo de arranque. Disconnect concurrente comparte efectos: stdin.end único, SIGTERM a5s y SIGKILL tres segundos después, sin confundir killed/exit con cierre. Timers/listeners se limpian al close, callback único; connect rechaza mientras exista un child pendiente. No afirma terminar descendientes.
+
+Seis contratos independientes y una integración con proceso Node real que ignora SIGTERM: espera escalada y verifica PID directo inexistente al resolver. Gate4 archivos/19 tests correctos; typecheck/lint correctos; formato final correcto (primera pasada detectó exclusivamente fixture aún sin formatear del siguiente incremento). Logs e07l5a-contracts/types/lint/final-format. /root/file_fixture_update fuente; /root/core_audit contratos; coordinador integración; /root/baseline_review APPROVED. Sin publicación; rollback por revert.
