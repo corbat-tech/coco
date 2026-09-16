@@ -1,6 +1,6 @@
 # Coco: evolución pragmática y entregas progresivas
 
-Fecha: 2026-09-16. Estado: **implementación en curso; E06.a activo**.
+Fecha: 2026-09-16. Estado: **implementación en curso; E03 activo**.
 Base inspeccionada: `174fc4128bc190fe0cb0b581d2153b805c49f4af`, paquete `2.41.0`.
 
 Este es el plan vigente para esta evolución. Sustituye **la secuencia de ejecución**, no la evidencia, del plan de 39 pasos de la [auditoría del 16 de septiembre](../../corbat-coco-auditoria/2026-09-16/public/04-plan-de-progreso.md). La auditoría permanece como snapshot histórico fuera del repositorio; su enlace requiere el directorio hermano. Los IDs COCO y S remiten a ese snapshot. [MASTER_PLAN.md](MASTER_PLAN.md) y [CODEX_IMPROVEMENTS_PLAN.md](CODEX_IMPROVEMENTS_PLAN.md) son antecedentes, no listas adicionales que completar antes de publicar. Mandan [CLAUDE.md](../CLAUDE.md) y los ADR aceptados.
@@ -80,7 +80,7 @@ Desde esta entrega se pueden preparar candidatos, pero no publicar como estable 
 
 | ID / estado | Cambio y dependencias | Aceptación mínima |
 | --- | --- | --- |
-| E03 / TODO | Caracterizar y unificar la frontera de tools. Depende E01. Compartir política/ejecución antes de extenderla. | Misma matriz de permisos desde REPL, headless, runtime y delegación; hooks, concurrencia de lecturas, confirmaciones y errores conservados. Detectar bypass con alias; sin doble ejecución ni doble aprobación. |
+| E03 / IN_PROGRESS | Caracterizar y unificar la frontera de tools. Depende E01. Compartir política/ejecución antes de extenderla. | Misma matriz de permisos desde REPL, headless, runtime y delegación; hooks, concurrencia de lecturas, confirmaciones y errores conservados. Detectar bypass con alias; sin doble ejecución ni doble aprobación. |
 | E04 / TODO | Rutas, COMPLETE, shell y undo. Depende E03. Separar integración de file tools, generación y shell/undo en subpasos. | Traversal, symlinks, padre symlink, sibling-prefix y rutas externas; validar acción antes de mutar. Composición/redirección no hereda permiso por primera palabra o sufijo help. Undo sin interpolación shell ni pérdida de cambios previos/staged/ajenos. |
 | E05 / TODO | Permisos MCP y autoridad delegada. Depende E03–E04. | Tools remotas desconocidas no se consideran lecturas seguras; modo plan no muta. Hijo recibe concesión acotada del padre, nunca `confirmed=true` universal; rol docs coherente y resultados estructurados, sin `[object Object]`. |
 | E06 / IN_PROGRESS | Contener promesas y superficies incompletas. Depende E01; puede adelantarse como parche. | Build/resume clásicos sin éxito simulado; mensajes y exit codes honestos. Starter loopback, límites de body y errores controlados; no soporte público anunciado. Quality gates no permiten éxito con medición ausente o crítico: corregir o deshabilitar explícitamente esa salida mientras E09 se completa. Ayuda no recomienda funciones retiradas. |
@@ -184,7 +184,7 @@ Los 14 resultados sustituyen el orden de los 39 pasos; no se finge haber reducid
 
 ## 9. Registro de progreso
 
-Paso activo: **E06.a**, contención del CLI simulado. E02 infraestructura npm local DONE; ejecución remota pendiente y VSIX bloqueado hasta E11; ver [registro](evolution/E02_RELEASE.md). E01 completado para baseline hermético; evaluación con modelo real pendiente, requisito de E13/E15; ver [resultados y limitaciones](evolution/E01_BASELINE.md). Después E02.a CI/gate. Commit de arranque y baseline: `df14586`. E06.a puede adelantarse para contener una promesa falsa, una vez caracterizada. Ningún paso de producto está DONE por haberse escrito este documento.
+Paso activo: **E03.a**, frontera runtime compartida. E06.a DONE ([evidencia](evolution/E06_CONTAINMENT.md)); resto de E06 pendiente. E02 infraestructura npm local DONE; ejecución remota pendiente y VSIX bloqueado hasta E11; ver [registro](evolution/E02_RELEASE.md). E01 completado para baseline hermético; evaluación con modelo real pendiente, requisito de E13/E15; ver [resultados y limitaciones](evolution/E01_BASELINE.md). Después E02.a CI/gate. Commit de arranque y baseline: `df14586`. E06.a puede adelantarse para contener una promesa falsa, una vez caracterizada. Ningún paso de producto está DONE por haberse escrito este documento.
 
 Copiar esta ficha al activar cada subpaso; conservar registros anteriores:
 

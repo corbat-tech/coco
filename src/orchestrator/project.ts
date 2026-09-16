@@ -170,9 +170,10 @@ This directory contains the Corbat-Coco project metadata and state.
 ## Commands
 
 - \`coco status\` - Show current progress
-- \`coco resume\` - Resume from last checkpoint
 - \`coco plan\` - Run/update planning
-- \`coco build\` - Execute tasks
+- \`coco\` - Work with the interactive coding agent
+
+Legacy backlog execution and automatic phase checkpoint recovery are not implemented.
 
 ## Configuration
 

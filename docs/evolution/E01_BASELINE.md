@@ -58,7 +58,7 @@ El código de producto permanece idéntico al snapshot de auditoría; solo cambi
 
 | Hallazgo | Superficie | Estado / destino |
 | --- | --- | --- |
-| COCO-01 P0 | CLI build/resume clásico | Abierto; E06 contención, C02 funcionalidad opcional |
+| COCO-01 P0 | CLI build/resume clásico | Contenido en E06.a (ver E06_CONTAINMENT.md); C02 funcionalidad opcional |
 | COCO-02 P0 | File tools y COMPLETE | Abierto; E03/E04 |
 | COCO-03 P1 | Shell y undo | Abierto; E04 |
 | COCO-04 P1 | MCP | Abierto; E05 |

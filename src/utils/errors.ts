@@ -195,7 +195,7 @@ export class PhaseError extends CocoError {
       code: "PHASE_ERROR",
       context: { phase: options.phase },
       recoverable: options.recoverable ?? true,
-      suggestion: `Phase '${options.phase}' failed. Try 'coco resume' to continue.`,
+      suggestion: `Phase '${options.phase}' failed. Inspect the error and saved state before retrying; automatic phase resume is unavailable.`,
       cause: options.cause,
     });
     this.name = "PhaseError";
@@ -357,9 +357,10 @@ export const ERROR_SUGGESTIONS: Record<string, string> = {
   CONFIG_ERROR: "Check your .coco/config.json or run 'coco setup' to reconfigure.",
   FILESYSTEM_ERROR: "Check that the path exists and you have read/write permissions.",
   VALIDATION_ERROR: "Check the input data format. See 'coco --help' for usage.",
-  PHASE_ERROR: "Phase execution failed. Try 'coco resume' to continue from the last checkpoint.",
+  PHASE_ERROR:
+    "Phase execution failed. Inspect the error and saved state; automatic phase resume is unavailable.",
   TASK_ERROR:
-    "Task execution failed. The task can be retried from the last checkpoint with 'coco resume'.",
+    "Task execution failed. Inspect completed effects before retrying; automatic phase resume is unavailable.",
   QUALITY_ERROR:
     "Quality score below threshold. Review the issues listed above and iterate on the code.",
   RECOVERY_ERROR: "Checkpoint may be corrupted. Try 'coco init --force' to start fresh.",

@@ -1,5 +1,8 @@
 # Corbat-Coco: Agent Evaluation and Practical Tutorial
 
+> Compatibility note (2026-09-16): legacy `coco build` and `coco resume` are not implemented and now exit with an error. Examples below using those commands describe a planned workflow, not supported execution or recovery. Use the interactive `coco` agent; it does not automatically execute legacy backlogs or restore phase checkpoints.
+
+
 > Comprehensive analysis of the AI agent following OpenClaw best practices, with practical tutorial for Java/Spring Boot developers.
 
 ---

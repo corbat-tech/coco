@@ -133,8 +133,9 @@ describe("createProjectStructure", () => {
     const readmeContent = String(readmeCall![1]);
     expect(readmeContent).toContain("my-project");
     expect(readmeContent).toContain("coco status");
-    expect(readmeContent).toContain("coco resume");
-    expect(readmeContent).toContain("coco build");
+    expect(readmeContent).not.toContain("coco resume");
+    expect(readmeContent).not.toContain("coco build");
+    expect(readmeContent).toContain("not implemented");
   });
 
   it("should set default quality thresholds in config", async () => {
