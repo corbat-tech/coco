@@ -61,14 +61,14 @@ El código de producto permanece idéntico al snapshot de auditoría; solo cambi
 | COCO-01 P0 | CLI build/resume clásico | Contenido en E06.a (ver E06_CONTAINMENT.md); C02 funcionalidad opcional |
 | COCO-02 P0 | File tools y COMPLETE | Corregido en alcance E04; límites y pruebas en E04_PATHS.md |
 | COCO-03 P1 | Shell y undo | Shell corregido E04; undo de archivos contenido hasta snapshots E10 |
-| COCO-04 P1 | MCP | Abierto; E05 |
+| COCO-04 P1 | MCP | Corregida política conservadora E05; schemas/cancelación E08/E07 pendientes |
 | COCO-05 P1 | Ejecución/cancelación | Abierto; E07 |
 | COCO-06 P1 | Aceptación calidad | Abierto; E06/E09 |
 | COCO-07 P1 | Última mejora sin validar | Abierto; E09 |
 | COCO-08 P1 | Recuperación/fases | Abierto; E10 |
 | COCO-09 P1 | Medición/política calidad | Abierto; E09 |
 | COCO-10 P1 | Dependencias entre sprints | Abierto; contener si expuesto, C02 condicionado |
-| COCO-11 P1 | Delegación | Abierto; E05 |
+| COCO-11 P1 | Delegación | Autoridad parental corregida E05; aislamiento provider E10 y aceptación E11 pendientes |
 | COCO-16 P1 | CI/cobertura | E01 mide; E02/E14 pendientes |
 | COCO-17 P1 | npm/VSIX/GitHub release | Abierto; E02, ningún tag de publicación aún |
 | COCO-21 P1 | Starter HTTP | Abierto; E06 local, C05 público condicionado |
