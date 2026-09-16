@@ -196,6 +196,8 @@ Los 14 resultados sustituyen el orden de los 39 pasos; no se finge haber reducid
 
 ## 9. Registro de progreso
 
+**Punto de continuación guardado:** [HANDOFF_2026-09-16.md](evolution/HANDOFF_2026-09-16.md). El usuario solicita cerrar lo realizado y publicar un candidato; el resto del programa queda pausado hasta que lo retome.
+
 Paso activo: **cierre de candidato y continuidad** por petición del usuario. E07.n2b terminado; no iniciar E07.n2c hasta reanudar. E07 permanece IN_PROGRESS; quedan integridad de streams en otros adaptadores, cuotas, procesos descendientes y cierre de la cancelación de extremo a extremo.
 
 | Bloque | Progreso verificado | Evidencia y límites |

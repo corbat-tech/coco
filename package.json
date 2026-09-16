@@ -1,7 +1,7 @@
 {
   "name": "@corbat-tech/coco",
-  "version": "2.41.0",
-  "description": "Autonomous Coding Agent with Self-Review, Quality Convergence, and Production-Ready Output",
+  "version": "2.42.0-next.1",
+  "description": "CLI coding agent and reusable runtime with tools, permissions, and review workflows",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -66,11 +66,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/corbat/corbat-coco.git"
+    "url": "https://github.com/corbat-tech/coco.git"
   },
-  "homepage": "https://github.com/corbat/corbat-coco#readme",
+  "homepage": "https://github.com/corbat-tech/coco#readme",
   "bugs": {
-    "url": "https://github.com/corbat/corbat-coco/issues"
+    "url": "https://github.com/corbat-tech/coco/issues"
   },
   "author": "Corbat",
   "license": "MIT",

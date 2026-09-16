@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0-next.1] - 2026-09-16
+
+### Candidate scope
+
+Incremental hardening candidate on npm `next`; `latest` remains unchanged. The evolution programme is paused after E07.n2b, not declared complete. Use only in trusted local repositories with human review.
+
+### Fixed
+
+- Shared authorization for local, delegated and MCP tools; stricter path and shell approval boundaries.
+- Honest unavailable states for unfinished legacy build/resume and unsafe file undo paths.
+- Cancellation ownership across providers, authentication, delegated agents, graph execution and MCP connections; no automatic replay of uncertain MCP tool writes.
+- Strict tool argument parsing without JSON repair or invented empty inputs; OpenAI and Anthropic require valid response completion before exposing executable tools.
+- MCP stdio shutdown waits for process closure and escalates when necessary; SSE and HTTP shutdown drain owned work.
+- Release checks cover the installed artifact and fail publication when validation fails. Gemini SDK updated to2.22.0; existing model catalog retained.
+
+### Known limitations
+
+- Terminal integrity for Codex/Gemini/Vertex and consumer-side defenses remain pending.
+- Process descendant/background ownership, streaming output quotas and quality measurement availability still require work. Cancellation does not guarantee rollback or termination of remote effects.
+- No claim of sandboxing untrusted repositories, a completed quality audit, or improved task success with live models. VSIX/hosted deployment and model catalog expansion are outside this candidate.
+
+See `docs/evolution/HANDOFF_2026-09-16.md` for exact progress and resumption steps.
+
 ## [2.41.0] - 2026-06-20
 
 ### Added
