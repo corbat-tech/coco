@@ -77,3 +77,11 @@ authorize_path verifica directorio canónico y autoridad efectiva de lectura; no
 10 pruebas reales por `/root/core_audit` (9 fallan antes, 1 pasa; algunos detectan también importación indebida de UI). Con consumidores: 6 archivos / 114 tests correctos; typecheck/lint correctos. Logs `authorize-path-{before,after}.log`. Implementación y adaptación unitaria coordinador; revisión `/root/baseline_review`: APPROVED. E04.h commit `0ff8c49`.
 
 Undo pendiente; sin publicación ni garantía contra carreras externas. Rollback por revert.
+
+## E04.j · DONE · 2026-09-16
+
+/undo de archivos contenido: sin snapshot verificado no restaura desde Git ni borra trabajo previo. Informa indisponibilidad sin efectos; E10 debe conectar recuperación conservadora. --last-commit sigue disponible únicamente como argumento único, mediante execFileSync y argv fijos; conserva índice y worktree. Ayuda refleja el alcance.
+
+11 pruebas en repos Git reales temporales por `/root/core_audit` (9 fallan antes, 2 pasan), con dos commits y comparación de bytes del índice, contenido staged/unstaged/untracked y nombres con espacios/comillas/substitución shell. Suite de consumidores: 4 archivos / 48 tests; typecheck/lint correctos. Logs `undo-scope-{before,after}.log`. Implementación/tests unitarios coordinador; revisión `/root/baseline_review`: APPROVED. E04.i commit `79c255c`.
+
+La recuperación funcional de archivos sigue pendiente de E10; esto es contención, no implementación de snapshots. Validación amplia de E04 en curso. Sin publicación; rollback por revert.

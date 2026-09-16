@@ -69,7 +69,7 @@ export const helpCommand: SlashCommand = {
           { cmd: "/status, /s", desc: "Show project and git status" },
           { cmd: "/diff, /d", desc: "Show git diff of changes" },
           { cmd: "/commit, /ci", desc: "Commit staged changes" },
-          { cmd: "/undo", desc: "Undo file changes or last commit" },
+          { cmd: "/undo --last-commit", desc: "Undo local commit; file undo unavailable" },
         ],
       },
       {

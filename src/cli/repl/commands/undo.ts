@@ -1,53 +1,41 @@
-/**
- * /undo command - Undo last git change
- */
-
+/** Conservative undo: file changes require a verified before/after snapshot. */
 import chalk from "chalk";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import type { SlashCommand, ReplSession } from "../types.js";
 
 export const undoCommand: SlashCommand = {
   name: "undo",
   aliases: [],
-  description: "Undo last file changes (git checkout)",
-  usage: "/undo [file] or /undo --last-commit",
+  description: "Undo last local commit; file undo currently unavailable",
+  usage: "/undo --last-commit",
 
   async execute(args: string[], session: ReplSession): Promise<boolean> {
-    try {
-      if (args.includes("--last-commit")) {
-        // Undo last commit (soft reset)
-        execSync("git reset --soft HEAD~1", {
+    if (args.length === 1 && args[0] === "--last-commit") {
+      try {
+        execFileSync("git", ["reset", "--soft", "HEAD~1"], {
           cwd: session.projectPath,
           encoding: "utf-8",
           timeout: 5000,
         });
-        console.log(chalk.green("\n✓ Last commit undone (changes preserved as staged)\n"));
-        return false;
+        console.log(
+          chalk.green("\n✓ Last local commit undone; working files and staging preserved.\n"),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(chalk.red(`\nUndo failed: ${message}\n`));
       }
-
-      if (args.length > 0) {
-        // Undo specific file
-        const file = args.join(" ");
-        execSync(`git checkout -- "${file}"`, {
-          cwd: session.projectPath,
-          encoding: "utf-8",
-          timeout: 5000,
-        });
-        console.log(chalk.green(`\n✓ Restored: ${file}\n`));
-        return false;
-      }
-
-      // Show help
-      console.log(chalk.cyan("\nUsage:"));
-      console.log(chalk.dim("  /undo <file>        - Restore file to last commit"));
-      console.log(chalk.dim("  /undo --last-commit - Undo last commit (soft reset)"));
-      console.log();
-      console.log(chalk.yellow("Warning: This discards uncommitted changes!\n"));
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.log(chalk.red(`\nUndo failed: ${msg}\n`));
+      return false;
     }
-
+    console.log(
+      chalk.yellow(
+        "\nFile undo is unavailable: there is no verified snapshot of these changes. No files were changed.",
+      ),
+    );
+    console.log(
+      chalk.dim(
+        "Usage: /undo --last-commit — move HEAD to its parent while preserving working files and staging.\n",
+      ),
+    );
     return false;
   },
 };

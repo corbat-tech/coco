@@ -19,7 +19,7 @@ vi.mock("chalk", () => ({
 
 // Mock child_process
 vi.mock("node:child_process", () => ({
-  execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
 describe("undoCommand", () => {
@@ -39,6 +39,7 @@ describe("undoCommand", () => {
       },
       trustedTools: new Set(),
     };
+    vi.clearAllMocks();
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -66,111 +67,67 @@ describe("undoCommand", () => {
 
   describe("execute with --last-commit flag", () => {
     it("should soft reset last commit", async () => {
-      const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("");
+      const { execFileSync } = await import("node:child_process");
+      vi.mocked(execFileSync).mockReturnValue("");
 
       await undoCommand.execute(["--last-commit"], mockSession);
 
-      expect(execSync).toHaveBeenCalledWith(
-        "git reset --soft HEAD~1",
+      expect(execFileSync).toHaveBeenCalledWith(
+        "git",
+        ["reset", "--soft", "HEAD~1"],
         expect.objectContaining({ cwd: "/test/project" }),
       );
     });
 
     it("should show success message", async () => {
-      const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("");
+      const { execFileSync } = await import("node:child_process");
+      vi.mocked(execFileSync).mockReturnValue("");
 
       await undoCommand.execute(["--last-commit"], mockSession);
 
       const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("Last commit undone");
+      expect(allOutput).toContain("Last local commit undone");
       expect(allOutput).toContain("preserved");
     });
 
     it("should return false", async () => {
-      const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("");
+      const { execFileSync } = await import("node:child_process");
+      vi.mocked(execFileSync).mockReturnValue("");
 
       const result = await undoCommand.execute(["--last-commit"], mockSession);
       expect(result).toBe(false);
     });
   });
 
-  describe("execute with file argument", () => {
-    it("should checkout specific file", async () => {
-      const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("");
-
-      await undoCommand.execute(["src/file.ts"], mockSession);
-
-      expect(execSync).toHaveBeenCalledWith('git checkout -- "src/file.ts"', expect.any(Object));
-    });
-
-    it("should handle file paths with spaces", async () => {
-      const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("");
-
-      await undoCommand.execute(["path", "with", "spaces.ts"], mockSession);
-
-      expect(execSync).toHaveBeenCalledWith(
-        'git checkout -- "path with spaces.ts"',
-        expect.any(Object),
-      );
-    });
-
-    it("should show success message with filename", async () => {
-      const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockReturnValue("");
-
-      await undoCommand.execute(["file.ts"], mockSession);
-
-      const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("Restored");
-      expect(allOutput).toContain("file.ts");
-    });
-  });
-
-  describe("execute with no arguments", () => {
-    it("should show usage help", async () => {
-      await undoCommand.execute([], mockSession);
-
-      const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("Usage");
-      expect(allOutput).toContain("/undo <file>");
-      expect(allOutput).toContain("--last-commit");
-    });
-
-    it("should show warning about discarding changes", async () => {
-      await undoCommand.execute([], mockSession);
-
-      const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
-      expect(allOutput).toContain("Warning");
-      expect(allOutput).toContain("discards");
-    });
-
-    it("should return false", async () => {
-      const result = await undoCommand.execute([], mockSession);
+  it.each([["src/file.ts"], ["path", "with", "spaces.ts"], ["--last-commit", "file.ts"], []])(
+    "does not restore unverified file changes for %j",
+    async (...args) => {
+      const { execFileSync } = await import("node:child_process");
+      const result = await undoCommand.execute(args as string[], mockSession);
+      expect(execFileSync).not.toHaveBeenCalled();
+      const output = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
+      expect(output).toContain("unavailable");
+      expect(output).toContain("No files were changed");
       expect(result).toBe(false);
-    });
-  });
+    },
+  );
 
   describe("error handling", () => {
     it("should handle git errors", async () => {
-      const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockImplementation(() => {
+      const { execFileSync } = await import("node:child_process");
+      vi.mocked(execFileSync).mockImplementation(() => {
         throw new Error("pathspec 'file.ts' did not match any file(s)");
       });
 
-      await undoCommand.execute(["file.ts"], mockSession);
+      await undoCommand.execute(["--last-commit"], mockSession);
 
       const allOutput = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
       expect(allOutput).toContain("failed");
     });
 
     it("should return false on error", async () => {
-      const { execSync } = await import("node:child_process");
-      vi.mocked(execSync).mockImplementation(() => {
+      const { execFileSync } = await import("node:child_process");
+      vi.mocked(execFileSync).mockImplementation(() => {
         throw new Error("error");
       });
 
