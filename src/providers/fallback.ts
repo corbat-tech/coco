@@ -16,6 +16,7 @@ import type {
   StreamChunk,
 } from "./types.js";
 import { CircuitBreaker, CircuitOpenError, type CircuitBreakerConfig } from "./circuit-breaker.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 import { ProviderError } from "../utils/errors.js";
 
 /**
@@ -126,7 +127,10 @@ export class ProviderFallback implements LLMProvider {
    * @throws ProviderError if all providers fail
    */
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
-    return this.executeWithFallback((provider) => provider.chat(messages, options));
+    return this.executeWithFallback(
+      (provider) => provider.chat(messages, options),
+      options?.signal,
+    );
   }
 
   /**
@@ -144,32 +148,43 @@ export class ProviderFallback implements LLMProvider {
     messages: Message[],
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
-    return this.executeWithFallback((provider) => provider.chatWithTools(messages, options));
+    return this.executeWithFallback(
+      (provider) => provider.chatWithTools(messages, options),
+      options?.signal,
+    );
   }
 
   /**
    * Stream a chat response with fallback
    *
-   * Note: Streaming with fallback will restart from the beginning
-   * if a provider fails mid-stream.
+   * Fallback is allowed only before any output has been emitted.
    */
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
+    options?.signal?.throwIfAborted();
     const providers = this.getAvailableProviders();
 
     for (const { provider, breaker } of providers) {
+      options?.signal?.throwIfAborted();
       if (breaker.isOpen()) {
         continue;
       }
 
+      let emittedChunk = false;
       try {
         for await (const chunk of provider.stream(messages, options)) {
+          options?.signal?.throwIfAborted();
+          emittedChunk = true;
           yield chunk;
+          options?.signal?.throwIfAborted();
         }
+        options?.signal?.throwIfAborted();
         breaker.recordSuccess();
         return;
-      } catch {
+      } catch (error) {
+        rethrowCancellation(error, options?.signal);
         breaker.recordFailure();
-        // Continue to next provider
+        if (emittedChunk) throw error;
+        // Continue to next provider only before output.
       }
     }
 
@@ -186,22 +201,31 @@ export class ProviderFallback implements LLMProvider {
     messages: Message[],
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
+    options?.signal?.throwIfAborted();
     const providers = this.getAvailableProviders();
 
     for (const { provider, breaker } of providers) {
+      options?.signal?.throwIfAborted();
       if (breaker.isOpen()) {
         continue;
       }
 
+      let emittedChunk = false;
       try {
         for await (const chunk of provider.streamWithTools(messages, options)) {
+          options?.signal?.throwIfAborted();
+          emittedChunk = true;
           yield chunk;
+          options?.signal?.throwIfAborted();
         }
+        options?.signal?.throwIfAborted();
         breaker.recordSuccess();
         return;
-      } catch {
+      } catch (error) {
+        rethrowCancellation(error, options?.signal);
         breaker.recordFailure();
-        // Continue to next provider
+        if (emittedChunk) throw error;
+        // Continue to next provider only before output.
       }
     }
 
@@ -309,15 +333,20 @@ export class ProviderFallback implements LLMProvider {
   /**
    * Execute a function with provider fallback
    */
-  private async executeWithFallback<T>(fn: (provider: LLMProvider) => Promise<T>): Promise<T> {
+  private async executeWithFallback<T>(
+    fn: (provider: LLMProvider) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    signal?.throwIfAborted();
     const providers = this.getAvailableProviders();
     const errors: Array<{ provider: string; error: unknown }> = [];
 
     for (const { provider, breaker } of providers) {
       try {
-        const result = await breaker.execute(() => fn(provider));
+        const result = await breaker.execute(() => fn(provider), signal);
         return result;
       } catch (error) {
+        rethrowCancellation(error, signal);
         // Circuit open errors are expected, try next provider
         if (error instanceof CircuitOpenError) {
           errors.push({ provider: provider.id, error });

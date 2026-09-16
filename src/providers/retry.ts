@@ -2,6 +2,7 @@
  * Retry utility with exponential backoff for Corbat-Coco providers
  */
 
+import { isCancellation } from "../utils/cancellation.js";
 import { ProviderError } from "../utils/errors.js";
 
 /**
@@ -34,7 +35,7 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
 /**
  * Sleep for a given number of milliseconds
  */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+export function waitForRetry(ms: number, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const cleanup = () => signal?.removeEventListener("abort", onAbort);
@@ -66,7 +67,7 @@ function calculateDelay(baseDelay: number, jitterFactor: number, maxDelay: numbe
  * Check if an error is retryable
  */
 export function isRetryableError(error: unknown): boolean {
-  if (error instanceof Error && error.name === "AbortError") return false;
+  if (isCancellation(error)) return false;
   // Check ProviderError recoverable flag
   if (error instanceof ProviderError) {
     return error.recoverable;
@@ -136,7 +137,7 @@ export async function withRetry<T>(
       const actualDelay = calculateDelay(delay, fullConfig.jitterFactor, fullConfig.maxDelayMs);
 
       // Wait before retry
-      await sleep(actualDelay, signal);
+      await waitForRetry(actualDelay, signal);
 
       // Increase delay for next attempt
       delay = Math.min(delay * fullConfig.backoffMultiplier, fullConfig.maxDelayMs);
