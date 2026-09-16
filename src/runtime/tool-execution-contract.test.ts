@@ -30,6 +30,45 @@ function fixture(permissionPolicy?: PermissionPolicy) {
 const read = { toolName: "read_file", input: { path: "README.md" } };
 
 describe("AgentRuntime tool execution contract", () => {
+  it("does not dispatch a tool when the caller has already cancelled", async () => {
+    const { runtime, execute, events } = fixture();
+    const controller = new AbortController();
+    controller.abort();
+    const result = await runtime.executeTool({ ...read, signal: controller.signal });
+    expect(result).toMatchObject({ success: false, error: "Operation cancelled" });
+    expect(execute).not.toHaveBeenCalled();
+    expect(events().filter(({ type }) => type === "tool.completed")[0]?.data).toMatchObject({
+      success: false,
+    });
+  });
+
+  it("keeps cancellation isolated between simultaneous callers", async () => {
+    const { runtime, registry } = fixture();
+    const first = new AbortController();
+    const second = new AbortController();
+    const seen: Array<AbortSignal | undefined> = [];
+    vi.spyOn(registry, "execute").mockImplementation(async (_name, _input, options) => {
+      seen.push(options?.signal);
+      if (!options?.signal) throw new Error("Cancellation signal lost");
+      const signal = options.signal;
+      await new Promise<void>((resolve) =>
+        signal.addEventListener("abort", () => resolve(), { once: true }),
+      );
+      return { success: false, error: "Operation cancelled", duration: 0 };
+    });
+    const a = runtime.executeTool({ ...read, signal: first.signal });
+    let bFinished = false;
+    const b = runtime.executeTool({ ...read, signal: second.signal }).finally(() => {
+      bFinished = true;
+    });
+    first.abort();
+    await a;
+    expect(bFinished).toBe(false);
+    second.abort();
+    await b;
+    expect(seen).toEqual([first.signal, second.signal]);
+  });
+
   it("resolves explicit mode before session mode, then defaults to ask without mutating sessions", async () => {
     const canExecuteTool = vi.fn<PermissionPolicy["canExecuteTool"]>(() => ({
       allowed: true,

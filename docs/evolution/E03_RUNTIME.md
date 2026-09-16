@@ -9,3 +9,9 @@ Seis pruebas nuevas de caracterización pasan antes y después: aislamiento de s
 Revisor independiente: `/root/baseline_review`, APPROVED, sin defectos materiales. Tests de contrato aportados por `/root/core_audit`; implementación por coordinador. Rollback: revertir el commit de este incremento. Sin publicación: todavía hay bloqueantes abiertos del programa.
 
 E03 sigue IN_PROGRESS: REPL/headless aún ejecutan por un alias del registry; la prueba de arquitectura textual no detecta esos alias. Integración, detección del bypass y matriz completa pendientes. No se declara una frontera universal todavía.
+
+## E03.b · DONE · 2026-09-16
+
+Preparación de integración: el API/runtime acepta y transmite AbortSignal al registry. Una cancelación previa impide efectos reales, y cada ejecución concurrente conserva su propia señal. No afirma detener procesos en curso: ToolDefinition todavía no recibe contexto de ejecución; eso corresponde a E07.
+
+Regresión: las dos nuevas pruebas fallan antes de propagar la señal. Ajustado el spy de un consumidor a la llamada con opciones explícitas. Validación: 22 archivos / 227 tests pasan, typecheck y lint correctos. Revisor `/root/baseline_review`: APPROVED, sin hallazgos materiales. Sin publicación; rollback por revert. logs `runtime-signal-before.log` y `runtime-signal-after.log`.

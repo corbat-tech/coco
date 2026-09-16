@@ -184,7 +184,7 @@ Los 14 resultados sustituyen el orden de los 39 pasos; no se finge haber reducid
 
 ## 9. Registro de progreso
 
-Paso activo: **E03.b**, integración de la frontera compartida con REPL/headless. E03.a DONE ([evidencia](evolution/E03_RUNTIME.md)). E06.a DONE ([evidencia](evolution/E06_CONTAINMENT.md)); resto de E06 pendiente. E02 infraestructura npm local DONE; ejecución remota pendiente y VSIX bloqueado hasta E11; ver [registro](evolution/E02_RELEASE.md). E01 completado para baseline hermético; evaluación con modelo real pendiente, requisito de E13/E15; ver [resultados y limitaciones](evolution/E01_BASELINE.md). Después E02.a CI/gate. Commit de arranque y baseline: `df14586`. E06.a puede adelantarse para contener una promesa falsa, una vez caracterizada. Ningún paso de producto está DONE por haberse escrito este documento.
+Paso activo: **E03.c**, corregir espera de tandas antes de integrar REPL/headless. E03.a–b DONE ([evidencia](evolution/E03_RUNTIME.md)). E06.a DONE ([evidencia](evolution/E06_CONTAINMENT.md)); resto de E06 pendiente. E02 infraestructura npm local DONE; ejecución remota pendiente y VSIX bloqueado hasta E11; ver [registro](evolution/E02_RELEASE.md). E01 completado para baseline hermético; evaluación con modelo real pendiente, requisito de E13/E15; ver [resultados y limitaciones](evolution/E01_BASELINE.md). Después E02.a CI/gate. Commit de arranque y baseline: `df14586`. E06.a puede adelantarse para contener una promesa falsa, una vez caracterizada. Ningún paso de producto está DONE por haberse escrito este documento.
 
 Copiar esta ficha al activar cada subpaso; conservar registros anteriores:
 

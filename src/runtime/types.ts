@@ -229,6 +229,8 @@ export interface RuntimeTurnRunner {
 }
 
 export interface RuntimeToolExecutionInput {
+  /** Cancellation forwarded to the registry without changing tool authority. */
+  signal?: AbortSignal;
   sessionId?: string;
   mode?: RuntimeMode;
   toolName: string;

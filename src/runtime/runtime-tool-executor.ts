@@ -21,6 +21,8 @@ export interface RuntimeToolExecutorOptions {
 }
 
 export interface RuntimeToolExecutorInput {
+  /** Cancellation forwarded to the registry without changing tool authority. */
+  signal?: AbortSignal;
   sessionId?: string;
   toolName: string;
   input: Record<string, unknown>;
@@ -127,7 +129,9 @@ export class RuntimeToolExecutor {
       runtimeApi: true,
       metadataKeys: Object.keys(input.metadata ?? {}).sort(),
     });
-    const result = await this.toolRegistry.execute(input.toolName, input.input);
+    const result = await this.toolRegistry.execute(input.toolName, input.input, {
+      signal: input.signal,
+    });
     this.eventLog.record("tool.completed", {
       ...sessionContext,
       mode,

@@ -157,7 +157,11 @@ describe("AgentExecutor", () => {
       expect(result.output).toBe("I have read the file and completed the task.");
       expect(result.tokensUsed).toBe(300);
       expect(mockProvider.chatWithTools).toHaveBeenCalledTimes(2);
-      expect(mockToolRegistry.execute).toHaveBeenCalledWith("read_file", { path: "/src/main.ts" });
+      expect(mockToolRegistry.execute).toHaveBeenCalledWith(
+        "read_file",
+        { path: "/src/main.ts" },
+        { signal: undefined },
+      );
     });
 
     it("should return failure when max turns is reached", async () => {
