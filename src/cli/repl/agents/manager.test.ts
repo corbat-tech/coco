@@ -629,7 +629,7 @@ describe("AgentManager", () => {
       expect(mockToolRegistry.execute).toHaveBeenCalledWith(
         "glob",
         { pattern: "**/*.ts" },
-        { signal: undefined },
+        { signal: undefined, context: { executeDelegatedTool: expect.any(Function) } },
       );
     });
 

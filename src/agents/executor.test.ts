@@ -160,7 +160,7 @@ describe("AgentExecutor", () => {
       expect(mockToolRegistry.execute).toHaveBeenCalledWith(
         "read_file",
         { path: "/src/main.ts" },
-        { signal: undefined },
+        { signal: undefined, context: { executeDelegatedTool: expect.any(Function) } },
       );
     });
 

@@ -19,3 +19,9 @@ Autoridad parental pendiente. Sin publicación; rollback por revert.
 Registry transporta un contexto host separado de argumentos del modelo, con callback de delegación y señal de cancelación. Copia y congela el contexto por llamada; combina señales de opciones/contexto y rechaza preabort. Sin contexto ni señal conserva la invocación de un argumento. No introduce estado global ni autoriza por JSON.
 
 Siete casos por `/root/core_audit`: seis fallan antes y uno conserva compatibilidad; después 19 archivos / 214 tests correctos, typecheck/lint correctos. Logs `e05c-before.log` y `e05c-after.log`. Implementación coordinador, revisión `/root/baseline_review`: APPROVED. La cancelación efectiva de procesos/red sigue E07; conexión de autoridad parental pendiente E05.d. Sin publicación; rollback por revert.
+
+## E05.d · DONE · 2026-09-16
+
+RuntimeToolExecutor ofrece delegación ligada al mismo registro/política/eventos/sesión. Cada descendiente respeta los modos y listas de tools de todos sus ancestros, además de su propia restricción. Captura listas por ejecución y política al construir; ninguna confirmación parental o campo extra del hijo se convierte en consentimiento. Señales se combinan.
+
+18 casos por `/root/core_audit`: todos fallan antes por ausencia del callback (no 18 exploits). Después 19 archivos / 220 tests correctos, typecheck/lint/format correctos. Logs `e05d-before.log`, `e05d-after.log`. Mocks de consumidores actualizados para contexto host. Coordinador implementa, `/root/baseline_review` APPROVED sin hallazgos. Conexión de manager/executor pendiente E05.e; E05 no está completo. Sin publicación; rollback por revert.

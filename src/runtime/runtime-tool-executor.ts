@@ -34,6 +34,11 @@ export interface RuntimeToolExecutorInput {
   metadata?: Record<string, unknown>;
 }
 
+interface AuthorityCeiling {
+  readonly mode: RuntimeMode;
+  readonly allowedTools?: ReadonlySet<string>;
+}
+
 export class RuntimeToolExecutor {
   private readonly toolRegistry: ToolRegistry;
   private readonly eventLog: EventLog;
@@ -47,11 +52,20 @@ export class RuntimeToolExecutor {
     this.eventLog = options.eventLog ?? createEventLog();
     this.permissionPolicy = options.permissionPolicy ?? createPermissionPolicy();
     this.defaultMode = options.mode ?? "ask";
-    this.runtimePolicy = options.runtimePolicy;
+    this.runtimePolicy = options.runtimePolicy ? structuredClone(options.runtimePolicy) : undefined;
     this.eventProfile = options.eventProfile ?? "agent";
   }
 
   async execute(input: RuntimeToolExecutorInput): Promise<RuntimeToolExecutionResult> {
+    return this.executeScoped(input, []);
+  }
+
+  private async executeScoped(
+    input: RuntimeToolExecutorInput,
+    ancestors: readonly AuthorityCeiling[],
+  ): Promise<RuntimeToolExecutionResult> {
+    // Capture authority before any tool/provider awaits or caller mutations.
+    input = { ...input, allowedTools: input.allowedTools ? [...input.allowedTools] : undefined };
     const startedAt = performance.now();
     const mode = input.mode ?? this.defaultMode;
     const sessionContext = {
@@ -60,7 +74,10 @@ export class RuntimeToolExecutor {
     };
     const allowedTools = input.allowedTools ? new Set(input.allowedTools) : undefined;
 
-    if (allowedTools && !allowedTools.has(input.toolName)) {
+    if (
+      (allowedTools && !allowedTools.has(input.toolName)) ||
+      ancestors.some((ceiling) => ceiling.allowedTools && !ceiling.allowedTools.has(input.toolName))
+    ) {
       const decision: PermissionDecision = {
         allowed: false,
         reason: `Tool '${input.toolName}' is not available to this agent.`,
@@ -79,42 +96,52 @@ export class RuntimeToolExecutor {
       return this.block(input, mode, decision, startedAt, {}, true);
     }
 
-    const decision = this.permissionPolicy.canExecuteToolInput
-      ? this.permissionPolicy.canExecuteToolInput(mode, tool, input.input)
-      : this.permissionPolicy.canExecuteTool(mode, tool);
-    const runtimeDecision = decision.allowed
-      ? evaluateRuntimeToolPolicy(this.runtimePolicy, {
-          toolName: input.toolName,
-          risk: decision.risk,
-          confirmed: input.confirmed,
-        })
-      : undefined;
+    const decisions = [mode, ...ancestors.map((ceiling) => ceiling.mode)].map((scopeMode) =>
+      this.permissionPolicy.canExecuteToolInput
+        ? this.permissionPolicy.canExecuteToolInput(scopeMode, tool, input.input)
+        : this.permissionPolicy.canExecuteTool(scopeMode, tool),
+    );
+    const decision = decisions[0]!;
+    const runtimeDecision = evaluateRuntimeToolPolicy(this.runtimePolicy, {
+      toolName: input.toolName,
+      risk: decision.risk,
+      confirmed: input.confirmed,
+    });
 
-    if (
-      !decision.allowed ||
-      runtimeDecision?.allowed === false ||
-      (decision.requiresConfirmation && input.confirmed !== true)
-    ) {
-      const reason =
-        runtimeDecision?.reason ??
-        decision.reason ??
-        (decision.requiresConfirmation
-          ? "Tool requires explicit runtime confirmation."
-          : "Tool is not allowed.");
-      return this.block(
-        input,
-        mode,
-        {
-          ...decision,
-          allowed: false,
-          reason,
-          requiresConfirmation:
-            runtimeDecision?.requiresConfirmation ?? decision.requiresConfirmation,
-          risk: runtimeDecision?.risk ?? decision.risk,
-        },
-        startedAt,
-        { runtimePolicyBlocked: runtimeDecision ? !runtimeDecision.allowed : false },
-      );
+    for (const scopedDecision of decisions) {
+      const scopedRuntimeDecision = scopedDecision.allowed
+        ? evaluateRuntimeToolPolicy(this.runtimePolicy, {
+            toolName: input.toolName,
+            risk: scopedDecision.risk,
+            confirmed: input.confirmed,
+          })
+        : undefined;
+      if (
+        !scopedDecision.allowed ||
+        scopedRuntimeDecision?.allowed === false ||
+        (scopedDecision.requiresConfirmation && input.confirmed !== true)
+      ) {
+        const reason =
+          scopedRuntimeDecision?.reason ??
+          scopedDecision.reason ??
+          (scopedDecision.requiresConfirmation
+            ? "Tool requires explicit runtime confirmation."
+            : "Tool is not allowed.");
+        return this.block(
+          input,
+          mode,
+          {
+            ...scopedDecision,
+            allowed: false,
+            reason,
+            requiresConfirmation:
+              scopedRuntimeDecision?.requiresConfirmation ?? scopedDecision.requiresConfirmation,
+            risk: scopedRuntimeDecision?.risk ?? scopedDecision.risk,
+          },
+          startedAt,
+          { runtimePolicyBlocked: scopedRuntimeDecision ? !scopedRuntimeDecision.allowed : false },
+        );
+      }
     }
 
     if (this.eventProfile === "agent") {
@@ -135,6 +162,26 @@ export class RuntimeToolExecutor {
     });
     const result = await this.toolRegistry.execute(input.toolName, input.input, {
       signal: input.signal,
+      context: {
+        executeDelegatedTool: (call) => {
+          const signals = [input.signal, call.signal].filter(
+            (signal): signal is AbortSignal => signal !== undefined,
+          );
+          return this.executeScoped(
+            {
+              toolName: call.toolName,
+              input: call.input,
+              mode: call.mode,
+              allowedTools: [...call.allowedTools],
+              toolCallId: call.toolCallId,
+              sessionId: input.sessionId,
+              signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0],
+              confirmed: false,
+            },
+            [...ancestors, { mode, allowedTools }],
+          );
+        },
+      },
     });
     this.eventLog.record("tool.completed", {
       ...sessionContext,
