@@ -1,6 +1,6 @@
 # Coco: evolución pragmática y entregas progresivas
 
-Fecha: 2026-09-16. Estado: **bloque final acotado autorizado para candidato next.2; resto del programa pausado**.
+Fecha: 2026-09-16. Estado: **bloque acotado completado y next.2 publicada/verificada; resto del programa pausado**.
 Base inspeccionada: `174fc4128bc190fe0cb0b581d2153b805c49f4af`, paquete `2.41.0`.
 
 Este es el plan vigente para esta evolución. Sustituye **la secuencia de ejecución**, no la evidencia, del plan de 39 pasos de la [auditoría del 16 de septiembre](../../corbat-coco-auditoria/2026-09-16/public/04-plan-de-progreso.md). La auditoría permanece como snapshot histórico fuera del repositorio; su enlace requiere el directorio hermano. Los IDs COCO y S remiten a ese snapshot. [MASTER_PLAN.md](MASTER_PLAN.md) y [CODEX_IMPROVEMENTS_PLAN.md](CODEX_IMPROVEMENTS_PLAN.md) son antecedentes, no listas adicionales que completar antes de publicar. Mandan [CLAUDE.md](../CLAUDE.md) y los ADR aceptados.
@@ -198,7 +198,7 @@ Los 14 resultados sustituyen el orden de los 39 pasos; no se finge haber reducid
 
 **Punto de continuación guardado:** [HANDOFF_2026-09-16.md](evolution/HANDOFF_2026-09-16.md). El usuario solicita cerrar lo realizado y publicar un candidato; el resto del programa queda pausado hasta que lo retome.
 
-Cierre next.2: **ajustes acotados terminados, revisados y validados** (7909 pruebas +27 REPL; gate y smoke también PASS en CI). Publicación bloqueada por E401 de la credencial npm en [Actions35154072394](https://github.com/corbat-tech/coco/actions/runs/35154072394). Tag v2.42.0-next.2 subido, paquete conservado, latest2.41.0 intacto. Siguiente paso: renovar autenticación y publicar/verificar ese candidato según [handoff](evolution/HANDOFF_2026-09-16.md); resto del programa pausado.
+Cierre next.2 (2026-09-17): **publicada y verificada en npm next**, latest2.41.0 intacto. Ajustes revisados,7909 pruebas +27 REPL y smoke desde registro PASS. Publicación local con2FA del tarball exacto validado en CI intento1; reintentos2/3 de Actions agotaron30s en architecture-fitness, pendiente estabilización para próxima release. [Release](https://github.com/corbat-tech/coco/releases/tag/v2.42.0-next.2) y [handoff definitivo](evolution/HANDOFF_2026-09-16.md). Resto del programa pausado.
 
 | Bloque | Progreso verificado | Evidencia y límites |
 | --- | --- | --- |
