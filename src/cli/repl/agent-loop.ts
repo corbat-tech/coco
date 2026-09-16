@@ -35,7 +35,7 @@ import {
   saveDeniedTool,
   removeDeniedTool,
 } from "./session.js";
-import { requiresConfirmation, confirmToolExecutionWithFallback } from "./confirmation.js";
+import { confirmToolExecutionWithFallback } from "./confirmation.js";
 import { getTrustPattern } from "./bash-patterns.js";
 import { ParallelToolExecutor } from "./parallel-executor.js";
 import {
@@ -904,8 +904,7 @@ export async function executeAgentTurn(
         decision?.allowed !== false &&
         !options.skipConfirmation &&
         !trusted &&
-        (requiresConfirmation(toolCall.name, toolCall.input) ||
-          decision?.requiresConfirmation === true);
+        decision?.requiresConfirmation === true;
 
       if (needsConfirmation) {
         // Notify UI to clear any spinners before showing confirmation

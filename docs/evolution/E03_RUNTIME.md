@@ -37,3 +37,13 @@ El test de frontera usa el checker de TypeScript ya instalado para resolver el s
 Cuatro pruebas pasan en ~3,5 s. La prueba contra el antiguo ParallelToolExecutor comprueba los tres accesos `registry.execute` que la búsqueda textual omitía. Lint y diff-check correctos; revisor `/root/baseline_review`: APPROVED. Logs `runtime-boundary-detector{,-before}.log`. Rollback por revert; sin cambios de producción ni publicación.
 
 Observación de revisión: E03 aún no puede cerrarse. El adaptador REPL conservaba confirmaciones adicionales (p. ej. copy_file) que la política runtime no exigía. E03.f debe llevar esa decisión a la política común y comprobar la matriz por entrada. Autoridad delegada sigue abierta en E05.
+
+## E03.f · DONE · 2026-09-16
+
+La política común exige consentimiento para copiar/mover, git pull, instalación/scripts, HTTP, entorno y cambios de permisos, además de operaciones destructivas. Bash en background también se clasifica destructivo. get_env es sensible a secretos y HTTP es red; no quedan sujetos a clasificación accidental por categoría. REPL consulta esa política para preguntar y el adaptador solo transmite consentimiento exacto; se elimina su regla adicional de confirmación.
+
+Matriz de 14 herramientas × 6 modos × 2 estados de consentimiento, comparando API runtime, ejecutor compartido y adaptador REPL: 168 casos, 504 ejecuciones con efectos en memoria verificados. No acredita herencia de autoridad padre/hijo ni modelo real. Suites de consumidores: 24 archivos / 289 pruebas pasan. Typecheck/lint/diff-check correctos. Matriz: 168 casos pasan; fallaba contra el commit anterior. Logs `runtime-confirmation-parity-{before,after,consumers}.log`. Revisor `/root/baseline_review`: APPROVED, sin hallazgos materiales. Rollback por revert, sin publicación.
+
+## Cierre E03
+
+DONE como consolidación de la frontera compartida, confirmado por revisión independiente. La matriz acredita API runtime, ejecutor compartido y adaptador REPL usado por headless; no finge acreditar concesiones reales entre padre e hijo (E05) ni cancelación efectiva de procesos (E07). E04 puede usar la frontera consolidada. La auditoría final aún no se ha ejecutado.

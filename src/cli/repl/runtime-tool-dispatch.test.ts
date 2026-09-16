@@ -102,7 +102,7 @@ describe("runtime tool dispatch", () => {
     expect(effect).toHaveBeenCalledExactlyOnceWith(original.input);
   });
 
-  it("retains the legacy confirmation gate for copy_file despite runtime classifying it as write", async () => {
+  it("requires common runtime confirmation for copy_file", async () => {
     const { effect, dispatch } = fixture();
     const copy = call("copy_file");
     expect((await dispatch()(copy)).success).toBe(false);

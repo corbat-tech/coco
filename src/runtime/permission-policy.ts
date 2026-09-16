@@ -32,6 +32,7 @@ const READ_ONLY_TOOL_NAMES = new Set([
 const WRITE_CAPABLE_TOOL_NAMES = new Set(["run_linter"]);
 const DESTRUCTIVE_TOOL_NAMES = new Set([
   "bash_exec",
+  "bash_background",
   "write_file",
   "edit_file",
   "delete_file",
@@ -41,8 +42,25 @@ const DESTRUCTIVE_TOOL_NAMES = new Set([
   "request_human_escalation",
 ]);
 
+// Shared across CLI, embedded runtime and delegated execution. These operations
+// need consent even when their risk is not destructive (e.g. network/secrets).
+const CONFIRMATION_REQUIRED_TOOLS = new Set([
+  "copy_file",
+  "move_file",
+  "git_pull",
+  "install_deps",
+  "make",
+  "run_script",
+  "http_fetch",
+  "http_json",
+  "get_env",
+  "manage_permissions",
+]);
+
 function riskForTool(tool: ToolDefinition): PermissionDecision["risk"] {
   if (READ_ONLY_TOOL_NAMES.has(tool.name)) return "read-only";
+  if (tool.name === "get_env") return "secrets-sensitive";
+  if (tool.name === "http_fetch" || tool.name === "http_json") return "network";
   if (DESTRUCTIVE_TOOL_NAMES.has(tool.name)) return "destructive";
   if (WRITE_CAPABLE_TOOL_NAMES.has(tool.name)) return "write";
   if (tool.category === "web") return "network";
@@ -67,11 +85,14 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
       };
     }
 
-    if (risk === "destructive") {
+    if (risk === "destructive" || CONFIRMATION_REQUIRED_TOOLS.has(tool.name)) {
       return {
         allowed: true,
         requiresConfirmation: true,
-        reason: `${tool.name} can change repository state and should be confirmed.`,
+        reason:
+          risk === "destructive"
+            ? `${tool.name} can change repository state and should be confirmed.`
+            : `${tool.name} requires explicit confirmation.`,
         risk,
       };
     }
