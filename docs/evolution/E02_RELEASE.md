@@ -18,3 +18,11 @@ Los tests e2e actuales son herméticos; el smoke instalado y el control de publi
 `check:release` ejecuta typecheck, lint, formato, suite completa, REPL separado y build mediante entrypoints JS locales y el mismo Node. No usa binarios globales como fallback. Nueve tests de procesos reales verifican éxito, fallo por etapa, parada inmediata, dependencia ausente y señal. Tests focalizados y gate completo exit 0. Revisor `/root/baseline_review`: APPROVED; hashes coincidentes con copia probada. Logs locales `release-gate-tests.log` y `release-gate.log` en evidencia E01.
 
 Cobertura se midió en E01; conectar su umbral al gate final, smoke de artefacto y canales sigue pendiente de E02.c. No confundir el mensaje de checks correctos con aprobación para publicar superficies con P0/P1 abiertos.
+
+## E02.c.1 — paquete instalado (DONE)
+
+Nuevo `scripts/smoke-package.mjs <consumer> <expected-version>` verifica CLI --version/--help, exports públicos y un turno de runtime con provider guionizado y read_file real. Exige instalación local y versión exacta, comprueba resultado de tool y archivo intacto.
+
+Tarball producido con npm pack --ignore-scripts a partir del build probado; SHA-256 `280c1c073f26db018b55efa6fdcf647597604c2fb55584855a9935ee8e9c878d`. Instalación limpia de 244 paquetes con npm configs vacías, sin credenciales heredadas ni lifecycle scripts. Smoke PASS; versiones incorrectas y paquete ausente fallan. Revisor `/root/baseline_review`: APPROVED sobre SHA-256 del script `09ba2428a977d860501e3fb0bfe1ca06b78405320327501e0360a67a558113eb`. No se ha publicado al registro.
+
+Primer smoke falló con ruta /var/folders: la política de archivos la clasifica como sistema mientras su alias canónico /private/var/folders permite acceso. Se preserva `package-smoke-initial.log`, y se usa realpath para el consumer. E04 debe revisar coherencia de alias; esto no resuelve el defecto de producto. Logs locales en evidencia E01.
