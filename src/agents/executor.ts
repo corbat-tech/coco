@@ -1,3 +1,4 @@
+import { isCancellation, rethrowCancellation } from "../utils/cancellation.js";
 import type { ToolExecutionContext } from "../tools/execution-context.js";
 /**
  * Agent Executor
@@ -107,16 +108,19 @@ export class AgentExecutor {
       turn++;
 
       try {
+        executionContext?.signal?.throwIfAborted();
         // Call LLM with tools via the tool-use protocol
         const response = await this.provider.chatWithTools(messages, {
           tools: agentToolDefs,
           system: agent.systemPrompt,
+          signal: executionContext?.signal,
         });
 
         const usage = response.usage;
         totalInputTokens += usage?.inputTokens || 0;
         totalOutputTokens += usage?.outputTokens || 0;
         totalTokens += (usage?.inputTokens || 0) + (usage?.outputTokens || 0);
+        executionContext?.signal?.throwIfAborted();
 
         // If no tool calls, the agent is done
         if (response.stopReason !== "tool_use" || response.toolCalls.length === 0) {
@@ -161,6 +165,7 @@ export class AgentExecutor {
         const toolResults: ToolResultContent[] = [];
 
         for (const toolCall of response.toolCalls) {
+          executionContext?.signal?.throwIfAborted();
           toolsUsed.add(toolCall.name);
 
           try {
@@ -182,6 +187,7 @@ export class AgentExecutor {
                   metadata: { agentRole: agent.role, taskId: task.id, toolCallId: toolCall.id },
                 });
 
+            executionContext?.signal?.throwIfAborted();
             toolResults.push({
               type: "tool_result",
               tool_use_id: toolCall.id,
@@ -189,6 +195,7 @@ export class AgentExecutor {
               is_error: !result.success,
             });
           } catch (error) {
+            rethrowCancellation(error, executionContext?.signal);
             toolResults.push({
               type: "tool_result",
               tool_use_id: toolCall.id,
@@ -204,7 +211,11 @@ export class AgentExecutor {
           content: toolResults as unknown as MessageContent,
         });
       } catch (error) {
-        const output = `Agent error on turn ${turn}: ${error instanceof Error ? error.message : String(error)}`;
+        const reason =
+          executionContext?.signal?.aborted && isCancellation(error)
+            ? executionContext.signal.reason
+            : error;
+        const output = `Agent error on turn ${turn}: ${reason instanceof Error ? reason.message : String(reason)}`;
         return this.toAgentResult({
           agent,
           task,
