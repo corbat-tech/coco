@@ -85,3 +85,11 @@ Undo pendiente; sin publicación ni garantía contra carreras externas. Rollback
 11 pruebas en repos Git reales temporales por `/root/core_audit` (9 fallan antes, 2 pasan), con dos commits y comparación de bytes del índice, contenido staged/unstaged/untracked y nombres con espacios/comillas/substitución shell. Suite de consumidores: 4 archivos / 48 tests; typecheck/lint correctos. Logs `undo-scope-{before,after}.log`. Implementación/tests unitarios coordinador; revisión `/root/baseline_review`: APPROVED. E04.i commit `79c255c`.
 
 La recuperación funcional de archivos sigue pendiente de E10; esto es contención, no implementación de snapshots. Validación amplia de E04 en curso. Sin publicación; rollback por revert.
+
+## E04.k · DONE · cierre de alcance · 2026-09-16
+
+Snapshot fuente `aade7a0` (mismos archivos de código que el checkout validado). Suite principal hermética Node22: 310 archivos, 6890 tests correctos, 15 omitidos preexistentes; REPL separado 27 tests correctos. Lint global, formato global, typecheck y build correctos. Logs `e04-main.log`, `e04-repl.log`, `e04-build.log`. No se repite cobertura: no se ha corregido todavía la deuda registrada en E01/E14, ni se afirma 80%.
+
+Cierra el alcance E04 de file tools/COMPLETE, autorización shell y contención de undo. Undo de archivos requiere snapshots en E10. La política de rutas es de aplicación, no confinamiento del SO; no garantiza resistencia a carreras de un proceso externo malicioso ni restringe todo efecto de un comando shell ya aprobado. No sustituye los límites de delegación de E05 ni la separación por sesión/proyecto de E10. No se ha publicado: siguen abiertos los demás bloqueos P0/P1.
+
+Revisión documental y de evidencias `/root/baseline_review`: APPROVED; E04.j commit `aade7a0`.
