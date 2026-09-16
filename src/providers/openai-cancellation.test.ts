@@ -208,7 +208,7 @@ describe("OpenAI cancellation at both SDK API boundaries", () => {
     },
   );
 
-  it.each(["responses completed", "CC inline finish", "CC EOF fallback"])(
+  it.each(["responses completed", "CC inline finish", "CC separate finish"])(
     "checks cancellation between yields within %s",
     async (scenario) => {
       const model = scenario === "responses completed" ? "gpt-5.2" : "gpt-4o";
@@ -226,6 +226,7 @@ describe("OpenAI cancellation at both SDK API boundaries", () => {
           ? {
               type: "response.completed",
               response: {
+                status: "completed",
                 output: calls.map((call) => ({
                   type: "function_call",
                   call_id: call.id,
@@ -237,8 +238,10 @@ describe("OpenAI cancellation at both SDK API boundaries", () => {
           : {
               choices: [
                 {
-                  delta: { tool_calls: scenario === "CC EOF fallback" ? calls.slice(0, 1) : calls },
-                  finish_reason: scenario === "CC EOF fallback" ? null : "tool_calls",
+                  delta: {
+                    tool_calls: scenario === "CC separate finish" ? calls.slice(0, 1) : calls,
+                  },
+                  finish_reason: scenario === "CC separate finish" ? null : "tool_calls",
                 },
               ],
             };
@@ -246,6 +249,8 @@ describe("OpenAI cancellation at both SDK API boundaries", () => {
         Object.assign(
           (async function* () {
             yield event;
+            if (scenario === "CC separate finish")
+              yield { choices: [{ delta: {}, finish_reason: "tool_calls" }] };
           })(),
           { controller: new AbortController() },
         ),
@@ -282,6 +287,7 @@ describe("OpenAI cancellation at both SDK API boundaries", () => {
           yield {
             type: "response.completed",
             response: {
+              status: "completed",
               output: [0, 1].map((index) => ({
                 type: "function_call",
                 call_id: `call-${index}`,
@@ -321,6 +327,42 @@ describe("OpenAI cancellation at both SDK API boundaries", () => {
         expect.any(Object),
         expect.objectContaining({ timeout: 120000, maxRetries: 0 }),
       );
+    },
+  );
+});
+
+describe("OpenAI disabled stream watchdog", () => {
+  it.each(streaming)(
+    "$model $method respects timeout zero while idle",
+    async ({ model, method }) => {
+      const provider = await providerFor(model, 0);
+      const controller = new AbortController();
+      const create = model === "gpt-4o" ? sdk.cc : sdk.responses;
+      create.mockResolvedValue(
+        Object.assign(
+          (async function* () {
+            yield textEvent(model);
+            yield model === "gpt-4o"
+              ? { choices: [{ delta: {}, finish_reason: "stop" }] }
+              : { type: "response.completed", response: successResponse(model) };
+          })(),
+          { controller },
+        ),
+      );
+      const iterator = (
+        method === "stream"
+          ? provider.stream(messages, { timeout: 0 })
+          : provider.streamWithTools(messages, { tools: [], timeout: 0 })
+      )[Symbol.asyncIterator]();
+      try {
+        expect((await iterator.next()).value.type).toBe("text");
+        await vi.advanceTimersByTimeAsync(150000);
+        expect(controller.signal.aborted).toBe(false);
+        expect((await iterator.next()).value.type).toBe("done");
+      } finally {
+        await iterator.return?.();
+      }
+      expect(vi.getTimerCount()).toBe(0);
     },
   );
 });

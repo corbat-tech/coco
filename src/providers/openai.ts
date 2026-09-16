@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { ResponseIntegrityError } from "./response-integrity.js";
 /**
  * OpenAI provider for Corbat-Coco
@@ -443,7 +444,13 @@ export class OpenAIProvider implements LLMProvider {
           );
 
           const choice = response.choices[0];
-          const toolCalls = this.extractToolCalls(choice?.message?.tool_calls);
+          this.validateToolFinish(
+            choice?.finish_reason,
+            Boolean(choice?.message?.tool_calls?.length),
+          );
+          const toolCalls = this.validateCompletedToolCalls(
+            this.extractToolCalls(choice?.message?.tool_calls),
+          );
 
           return {
             id: response.id,
@@ -594,7 +601,7 @@ export class OpenAIProvider implements LLMProvider {
       const timeoutController = new AbortController();
 
       const timeoutInterval = setInterval(() => {
-        if (Date.now() - lastActivityTime > streamTimeout) {
+        if (streamTimeout > 0 && Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
           timeoutTriggered = true;
           timeoutController.abort();
@@ -607,7 +614,7 @@ export class OpenAIProvider implements LLMProvider {
       });
 
       try {
-        let streamStopReason: StreamChunk["stopReason"];
+        let hasToolCalls = false;
 
         for await (const chunk of stream) {
           options?.signal?.throwIfAborted();
@@ -626,6 +633,7 @@ export class OpenAIProvider implements LLMProvider {
 
           // Handle tool calls
           if (delta?.tool_calls) {
+            if (delta.tool_calls.length > 0) hasToolCalls = true;
             for (const toolCallDelta of delta.tool_calls) {
               const consumed = toolCallAssembler.consume({
                 index: toolCallDelta.index,
@@ -660,57 +668,25 @@ export class OpenAIProvider implements LLMProvider {
             }
           }
 
-          // Finalize tool calls inline when finish_reason is received.
-          // This ensures tool_use_end events are yielded to the consumer
-          // while still inside the for-await loop — so they are never lost
-          // if the consumer breaks out of the generator early (e.g. on abort).
           const finishReason = chunk.choices[0]?.finish_reason;
           if (finishReason) {
-            streamStopReason = this.mapFinishReason(finishReason);
-          }
-          if (finishReason) {
-            for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
+            this.validateToolFinish(finishReason, hasToolCalls);
+            const calls = this.validateCompletedToolCalls(toolCallAssembler.finalizeAll(this.name));
+            for (const toolCall of calls) {
               this.assertStreamActive(options, timeoutTriggered);
-              yield {
-                type: "tool_use_end",
-                toolCall: {
-                  id: toolCall.id,
-                  name: toolCall.name,
-                  input: toolCall.input,
-                },
-              };
+              yield { type: "tool_use_end", toolCall };
+              this.assertStreamActive(options, timeoutTriggered);
             }
+            this.assertStreamActive(options, timeoutTriggered);
+            yield { type: "done", stopReason: this.mapFinishReason(finishReason) };
+            this.assertStreamActive(options, timeoutTriggered);
+            return;
           }
         }
-        options?.signal?.throwIfAborted();
-
-        if (timeoutController.signal.aborted) {
-          throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
-        }
-
-        // Fallback: finalize any remaining tool calls not yet emitted.
-        // Handles providers that omit finish_reason in the last chunk.
-        for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
-          this.assertStreamActive(options, timeoutTriggered);
-          yield {
-            type: "tool_use_end",
-            toolCall: {
-              id: toolCall.id,
-              name: toolCall.name,
-              input: toolCall.input,
-            },
-          };
-        }
-
         this.assertStreamActive(options, timeoutTriggered);
-        yield { type: "done", stopReason: streamStopReason };
+        throw new ResponseIntegrityError("Tool response ended without a terminal event", this.name);
       } finally {
         clearInterval(timeoutInterval);
-      }
-
-      // If we exited the loop because of our timeout, throw a descriptive error
-      if (timeoutController.signal.aborted) {
-        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
       options?.signal?.throwIfAborted();
@@ -1126,6 +1102,33 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Extract tool calls from response
    */
+  private validateToolFinish(reason: string | null | undefined, hasCalls: boolean): void {
+    if (hasCalls ? reason !== "tool_calls" : reason !== "stop" && reason !== "length") {
+      throw new ResponseIntegrityError(
+        "Tool response did not finish with a valid terminal reason",
+        this.name,
+      );
+    }
+  }
+
+  private validateCompletedToolCalls(calls: ToolCall[]): ToolCall[] {
+    const byId = new Map<string, ToolCall>();
+    for (const call of calls) {
+      if (!call.id?.trim() || !call.name?.trim()) {
+        throw new ResponseIntegrityError("Completed tool call is missing its identity", this.name);
+      }
+      const existing = byId.get(call.id);
+      if (
+        existing &&
+        (existing.name !== call.name || !isDeepStrictEqual(existing.input, call.input))
+      ) {
+        throw new ResponseIntegrityError("Conflicting tool calls share an identity", this.name);
+      }
+      byId.set(call.id, call);
+    }
+    return [...byId.values()];
+  }
+
   private extractToolCalls(toolCalls?: OpenAI.ChatCompletionMessageToolCall[]): ToolCall[] {
     if (!toolCalls) return [];
 
@@ -1310,6 +1313,13 @@ export class OpenAIProvider implements LLMProvider {
             this.getRequestOptions(options),
           );
 
+          if (
+            response.status !== "completed" ||
+            !Array.isArray(response.output) ||
+            response.output.some((item) => !item || typeof item !== "object")
+          ) {
+            throw new ResponseIntegrityError("Tool response did not complete", this.name);
+          }
           // Extract text and tool calls from output
           let content = "";
           const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
@@ -1339,7 +1349,7 @@ export class OpenAIProvider implements LLMProvider {
               outputTokens: response.usage?.output_tokens ?? 0,
             },
             model: String(response.model),
-            toolCalls,
+            toolCalls: this.validateCompletedToolCalls(toolCalls),
           };
         } catch (error) {
           options?.signal?.throwIfAborted();
@@ -1390,7 +1400,7 @@ export class OpenAIProvider implements LLMProvider {
       const timeoutController = new AbortController();
 
       const timeoutInterval = setInterval(() => {
-        if (Date.now() - lastActivityTime > streamTimeout) {
+        if (streamTimeout > 0 && Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
           timeoutTriggered = true;
           timeoutController.abort();
@@ -1480,6 +1490,7 @@ export class OpenAIProvider implements LLMProvider {
       );
 
       const toolCallAssembler = new ResponsesToolCallAssembler();
+      const completedCalls: ToolCall[] = [];
 
       // Activity-based timeout using AbortController (safe for async generators)
       const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
@@ -1487,7 +1498,7 @@ export class OpenAIProvider implements LLMProvider {
       const timeoutController = new AbortController();
 
       const timeoutInterval = setInterval(() => {
-        if (Date.now() - lastActivityTime > streamTimeout) {
+        if (streamTimeout > 0 && Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
           timeoutTriggered = true;
           timeoutController.abort();
@@ -1539,13 +1550,23 @@ export class OpenAIProvider implements LLMProvider {
               }
               break;
 
-            case "response.function_call_arguments.delta":
-              toolCallAssembler.onArgumentsDelta({
+            case "response.function_call_arguments.delta": {
+              const delta = toolCallAssembler.onArgumentsDelta({
                 item_id: event.item_id,
                 output_index: event.output_index,
                 delta: event.delta,
               });
+              if (delta?.text) {
+                this.assertStreamActive(options, timeoutTriggered);
+                yield {
+                  type: "tool_use_delta",
+                  toolCall: { id: delta.id, name: delta.name },
+                  text: delta.text,
+                };
+                this.assertStreamActive(options, timeoutTriggered);
+              }
               break;
+            }
 
             case "response.function_call_arguments.done":
               {
@@ -1557,80 +1578,49 @@ export class OpenAIProvider implements LLMProvider {
                   },
                   this.name,
                 );
-                if (toolCall) {
-                  this.assertStreamActive(options, timeoutTriggered);
-                  yield {
-                    type: "tool_use_end",
-                    toolCall: {
-                      id: toolCall.id,
-                      name: toolCall.name,
-                      input: toolCall.input,
-                    },
-                  };
-                }
+                if (toolCall) completedCalls.push(toolCall);
               }
               break;
 
-            case "response.completed":
-              {
-                const emittedCallIds = new Set<string>();
+            case "response.incomplete":
+            case "response.failed":
+            case "error":
+              throw new ResponseIntegrityError("Tool response did not complete", this.name);
 
-                // Emit any remaining function calls not finalized via done events
-                for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
-                  if (toolCall.id) emittedCallIds.add(toolCall.id);
-                  this.assertStreamActive(options, timeoutTriggered);
-                  yield {
-                    type: "tool_use_end",
-                    toolCall: {
-                      id: toolCall.id,
-                      name: toolCall.name,
-                      input: toolCall.input,
-                    },
-                  };
-                }
-
-                const outputItems =
-                  (event.response?.output as Array<{
-                    type?: string;
-                    call_id?: string;
-                    name?: string;
-                    arguments?: string;
-                  }>) ?? [];
-
-                // Fallback: some OpenAI-compatible providers only include
-                // function calls in response.completed.output and may omit
-                // fine-grained function_call_arguments.done events.
-                for (const item of outputItems) {
-                  if (item.type !== "function_call" || !item.call_id || !item.name) continue;
-                  if (emittedCallIds.has(item.call_id)) continue;
-                  this.assertStreamActive(options, timeoutTriggered);
-                  yield {
-                    type: "tool_use_end",
-                    toolCall: {
-                      id: item.call_id,
-                      name: item.name,
-                      input: parseToolCallArguments(item.arguments ?? "", this.name),
-                    },
-                  };
-                }
-
-                const hasToolCalls = outputItems.some((i) => i.type === "function_call");
+            case "response.completed": {
+              if (
+                event.response?.status !== "completed" ||
+                !Array.isArray(event.response.output) ||
+                event.response.output.some((item) => !item || typeof item !== "object")
+              ) {
+                throw new ResponseIntegrityError(
+                  "Tool response has an inconsistent terminal status",
+                  this.name,
+                );
+              }
+              const calls = this.validateCompletedToolCalls(
+                toolCallAssembler.finalizeCompleted(
+                  this.name,
+                  event.response.output.filter((item) => item.type === "function_call"),
+                  completedCalls,
+                ),
+              );
+              for (const toolCall of calls) {
                 this.assertStreamActive(options, timeoutTriggered);
-                yield {
-                  type: "done",
-                  stopReason: hasToolCalls ? "tool_use" : "end_turn",
-                };
+                yield { type: "tool_use_end", toolCall };
+                this.assertStreamActive(options, timeoutTriggered);
               }
-              break;
+              this.assertStreamActive(options, timeoutTriggered);
+              yield { type: "done", stopReason: calls.length ? "tool_use" : "end_turn" };
+              this.assertStreamActive(options, timeoutTriggered);
+              return;
+            }
           }
         }
-        options?.signal?.throwIfAborted();
+        this.assertStreamActive(options, timeoutTriggered);
+        throw new ResponseIntegrityError("Tool response ended without a terminal event", this.name);
       } finally {
         clearInterval(timeoutInterval);
-      }
-
-      if (timeoutController.signal.aborted) {
-        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
       options?.signal?.throwIfAborted();

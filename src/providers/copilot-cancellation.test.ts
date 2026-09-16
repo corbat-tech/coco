@@ -79,6 +79,7 @@ function sdkSuccess(method: Method) {
       ? Object.assign(
           (async function* () {
             yield chunk;
+            yield { choices: [{ delta: {}, finish_reason: "stop" }] };
           })(),
           { controller: new AbortController() },
         )

@@ -447,7 +447,10 @@ describe("streamWithTools regressions", () => {
         };
         yield {
           type: "response.completed",
-          response: { output: [{ type: "function_call" }] },
+          response: {
+            status: "completed",
+            output: [{ type: "function_call", call_id: "call_1", name: "write_file" }],
+          },
         };
       },
     };
@@ -493,7 +496,10 @@ describe("streamWithTools regressions", () => {
         };
         yield {
           type: "response.completed",
-          response: { output: [{ type: "function_call" }] },
+          response: {
+            status: "completed",
+            output: [{ type: "function_call", call_id: "call_1", name: "write_file" }],
+          },
         };
       },
     };
@@ -520,6 +526,7 @@ describe("streamWithTools regressions", () => {
         yield {
           type: "response.completed",
           response: {
+            status: "completed",
             output: [
               {
                 type: "function_call",
