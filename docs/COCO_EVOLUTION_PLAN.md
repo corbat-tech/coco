@@ -198,7 +198,7 @@ Los 14 resultados sustituyen el orden de los 39 pasos; no se finge haber reducid
 
 **Punto de continuación guardado:** [HANDOFF_2026-09-16.md](evolution/HANDOFF_2026-09-16.md). El usuario solicita cerrar lo realizado y publicar un candidato; el resto del programa queda pausado hasta que lo retome.
 
-Paso activo: **cierre acotado next.2**: integridad Codex/Google/consumidor, contención calculate_quality y diagnóstico/publicación npm. Pruebas aisladas → revisión independiente → commits → gate del candidato → verificación del registro. No iniciar procesos/cuotas, E08–E15 ni mejoras accesorias. El [handoff](evolution/HANDOFF_2026-09-16.md) conserva bloqueos, evidencias y resultado de publicación.
+Cierre next.2: **ajustes acotados terminados, revisados y validados** (7909 pruebas +27 REPL; gate y smoke también PASS en CI). Publicación bloqueada por E401 de la credencial npm en [Actions35154072394](https://github.com/corbat-tech/coco/actions/runs/35154072394). Tag v2.42.0-next.2 subido, paquete conservado, latest2.41.0 intacto. Siguiente paso: renovar autenticación y publicar/verificar ese candidato según [handoff](evolution/HANDOFF_2026-09-16.md); resto del programa pausado.
 
 | Bloque | Progreso verificado | Evidencia y límites |
 | --- | --- | --- |
