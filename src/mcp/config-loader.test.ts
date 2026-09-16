@@ -2,7 +2,7 @@
  * Tests for MCP Config Loader
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,21 @@ import {
 } from "./config-loader.js";
 import { MCPError } from "./errors.js";
 import type { MCPServerConfig } from "./types.js";
+
+// Exercise the real hierarchical loader without reading the developer's config.
+const isolatedPaths = vi.hoisted(() => ({ globalConfig: "" }));
+vi.mock("../config/paths.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../config/paths.js")>();
+  return {
+    ...original,
+    CONFIG_PATHS: {
+      ...original.CONFIG_PATHS,
+      get config() {
+        return isolatedPaths.globalConfig;
+      },
+    },
+  };
+});
 
 describe("loadMCPConfigFile", () => {
   let tempDir: string;
@@ -214,6 +229,8 @@ describe("loadMCPServersFromCOCOConfig", () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), "coco-mcp-test-"));
+    isolatedPaths.globalConfig = join(tempDir, "global-config.json");
+    await writeFile(isolatedPaths.globalConfig, "{}", "utf-8");
   });
 
   afterEach(async () => {

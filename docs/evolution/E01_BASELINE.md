@@ -37,3 +37,9 @@ Cobertura aún no medida. Pisos configurados: líneas 66, funciones 72, ramas 57
 - E02.a: reparar scripts de suites, ejecutar REPL en CI y retirar opción obsoleta comprobada.
 
 E01.a DONE (medición y registro, no baseline verde). Revisión independiente: `/root/baseline_review`, aprobada tras comprobar logs, cifras y hashes. E01 global sigue IN_PROGRESS; inventario P0/P1 y corpus pendientes. Ningún fallo previo se silencia para declarar baseline verde.
+
+## E01.a.1 — aislamiento de configuración MCP
+
+DONE. `src/mcp/config-loader.test.ts` sustituye solo la ruta de configuración global por un archivo temporal por caso, conservando loader y filesystem reales. Antes: cuatro EPERM; después: 14/14 tests focalizados. Formato y lint correctos. Revisor independiente `/root/baseline_review`: APPROVED sobre SHA-256 `bb423d94cdda4fc2b8624f11e9951c210270a12f895a8f1a7cc5adc8a15076fc`.
+
+Suite completa con cobertura repetida tras el cambio bajo el mismo perfil: exit 0; 292 archivos, 6577 tests correctos y 15 omitidos. Cobertura con exclusiones actuales: sentencias 68,35%, ramas 60,19%, funciones 74,75%, líneas 68,97%. Supera pisos actuales, no alcanza el objetivo 80%. Logs `mcp-isolation.log` y `coverage-after-isolation.log` en el directorio local de evidencia. El código de producto no cambia. El comando e2e dedicado sigue pendiente de E02.a.
