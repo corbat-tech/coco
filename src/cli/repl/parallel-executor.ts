@@ -4,7 +4,7 @@
  */
 
 import type { ToolCall } from "../../providers/types.js";
-import type { ToolRegistry, ToolResult } from "../../tools/registry.js";
+import type { ToolResult } from "../../tools/registry.js";
 import type { ExecutedToolCall } from "./types.js";
 import type {
   HookRegistryInterface,
@@ -13,6 +13,8 @@ import type {
   HookExecutionResult,
 } from "./hooks/index.js";
 import { isAbortError } from "./error-resilience.js";
+
+export type ToolDispatch = (toolCall: ToolCall, signal?: AbortSignal) => Promise<ToolResult>;
 
 /**
  * Options for parallel tool execution
@@ -84,13 +86,13 @@ export class ParallelToolExecutor {
    * while maintaining the order of results.
    *
    * @param toolCalls - Array of tool calls to execute
-   * @param registry - Tool registry for execution
+   * @param dispatch - Authorized execution boundary
    * @param options - Execution options
    * @returns Results of all executed tools
    */
   async executeParallel(
     toolCalls: ToolCall[],
-    registry: ToolRegistry,
+    dispatch: ToolDispatch,
     options: ParallelExecutorOptions = {},
   ): Promise<ParallelExecutionResult> {
     const {
@@ -180,7 +182,7 @@ export class ParallelToolExecutor {
                 task.toolCall,
                 task.index,
                 total,
-                registry,
+                dispatch,
                 options,
               ).then(({ executed, skipped: wasSkipped, reason }) => {
                 if (wasSkipped) {
@@ -194,7 +196,7 @@ export class ParallelToolExecutor {
                 task.toolCall,
                 task.index,
                 total,
-                registry,
+                dispatch,
                 onToolStart,
                 onToolEnd,
                 signal,
@@ -297,7 +299,7 @@ export class ParallelToolExecutor {
     toolCall: ToolCall,
     index: number,
     total: number,
-    registry: ToolRegistry,
+    dispatch: ToolDispatch,
     onToolStart?: (toolCall: ToolCall, index: number, total: number) => void,
     onToolEnd?: (result: ExecutedToolCall) => void,
     signal?: AbortSignal,
@@ -314,7 +316,7 @@ export class ParallelToolExecutor {
     let result: ToolResult;
 
     try {
-      result = await registry.execute(toolCall.name, toolCall.input, { signal });
+      result = await dispatch(toolCall, signal);
     } catch (error) {
       // Handle abort errors silently
       if (isAbortError(error, signal)) {
@@ -357,7 +359,7 @@ export class ParallelToolExecutor {
           // Retry the tool now that the path is authorized.
           // Wrap retry in try/catch so an unexpected registry error never propagates.
           try {
-            result = await registry.execute(toolCall.name, toolCall.input, { signal });
+            result = await dispatch(toolCall, signal);
           } catch (retryError) {
             if (isAbortError(retryError, signal)) return null;
             const msg = retryError instanceof Error ? retryError.message : String(retryError);
@@ -397,7 +399,7 @@ export class ParallelToolExecutor {
     toolCall: ToolCall,
     index: number,
     total: number,
-    registry: ToolRegistry,
+    dispatch: ToolDispatch,
     options: ParallelExecutorOptions,
   ): Promise<{ executed: ExecutedToolCall | null; skipped: boolean; reason?: string }> {
     const {
@@ -471,7 +473,7 @@ export class ParallelToolExecutor {
     const startTime = performance.now();
     let result: ToolResult;
     try {
-      result = await registry.execute(toolCall.name, toolCall.input, { signal });
+      result = await dispatch(toolCall, signal);
     } catch (error) {
       if (isAbortError(error, signal)) {
         return { executed: null, skipped: true, reason: "Operation cancelled" };

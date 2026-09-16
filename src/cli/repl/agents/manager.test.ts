@@ -587,7 +587,11 @@ describe("AgentManager", () => {
       const result = await agentManager.spawn("explore", "Find all TS files");
 
       expect(result.success).toBe(true);
-      expect(mockToolRegistry.execute).toHaveBeenCalledWith("glob", { pattern: "**/*.ts" });
+      expect(mockToolRegistry.execute).toHaveBeenCalledWith(
+        "glob",
+        { pattern: "**/*.ts" },
+        { signal: undefined },
+      );
     });
 
     it("should reject unauthorized tools for agent type", async () => {

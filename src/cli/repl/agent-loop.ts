@@ -12,6 +12,8 @@
  */
 
 import chalk from "chalk";
+import { AgentRuntime } from "../../runtime/agent-runtime.js";
+import { createRuntimeToolDispatch } from "./runtime-tool-dispatch.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -94,6 +96,21 @@ export async function executeAgentTurn(
   toolRegistry: ToolRegistry,
   options: AgentTurnOptions = {},
 ): Promise<AgentTurnResult> {
+  const mode = session.planMode ? "plan" : (session.agentMode ?? "build");
+  const runtime =
+    session.runtime ??
+    new AgentRuntime({
+      providerType: session.config.provider.type,
+      model: session.config.provider.model,
+      provider,
+      toolRegistry,
+    });
+  if (runtime.toolRegistry !== toolRegistry) {
+    throw new Error("REPL registry does not match its runtime execution boundary.");
+  }
+  session.runtime = runtime;
+  if (!runtime.getSession(session.id)) runtime.createSession({ id: session.id, mode });
+
   // Reset line buffer at start of each turn
   resetLineBuffer();
   session.runtime?.eventLog.record("turn.started", {
@@ -838,6 +855,7 @@ export async function executeAgentTurn(
     // Phase 1: Handle confirmations sequentially (user interaction required)
     // Build list of confirmed tools and declined/skipped tools
     const confirmedTools: ToolCall[] = [];
+    const approvedTools: ToolCall[] = [];
     const declinedTools: Map<string, string> = new Map(); // toolCall.id -> decline reason
 
     for (const toolCall of response.toolCalls) {
@@ -876,10 +894,18 @@ export async function executeAgentTurn(
       // Check if confirmation is needed (skip if tool is trusted for session)
       // Uses pattern-aware trust: "bash:git:commit" instead of just "bash_exec"
       const trustPattern = getTrustPattern(toolCall.name, toolCall.input);
+      const definition = toolRegistry.get(toolCall.name);
+      const decision = definition
+        ? (runtime.permissionPolicy.canExecuteToolInput?.(mode, definition, toolCall.input) ??
+          runtime.permissionPolicy.canExecuteTool(mode, definition))
+        : undefined;
+      const trusted = session.trustedTools.has(trustPattern);
       const needsConfirmation =
+        decision?.allowed !== false &&
         !options.skipConfirmation &&
-        !session.trustedTools.has(trustPattern) &&
-        requiresConfirmation(toolCall.name, toolCall.input);
+        !trusted &&
+        (requiresConfirmation(toolCall.name, toolCall.input) ||
+          decision?.requiresConfirmation === true);
 
       if (needsConfirmation) {
         // Notify UI to clear any spinners before showing confirmation
@@ -909,6 +935,7 @@ export async function executeAgentTurn(
             input: { ...toolCall.input, command: confirmResult.newCommand },
           };
           confirmedTools.push(editedToolCall);
+          approvedTools.push(editedToolCall);
           continue;
         }
 
@@ -947,55 +974,46 @@ export async function executeAgentTurn(
         }
       }
 
-      // Tool is confirmed for execution
+      // Eligibility is distinct from authority: headless skipping UI grants nothing.
+      if (needsConfirmation || trusted) approvedTools.push(toolCall);
       confirmedTools.push(toolCall);
     }
 
     // Phase 2: Execute confirmed tools in parallel
     if (!turnAborted && confirmedTools.length > 0) {
       const executor = new ParallelToolExecutor();
-      const parallelResult = await executor.executeParallel(confirmedTools, toolRegistry, {
-        maxConcurrency: 5,
-        onToolStart: (toolCall, _index, _total) => {
-          // Adjust index to account for declined tools for accurate progress
-          const originalIndex = response.toolCalls.findIndex((tc) => tc.id === toolCall.id) + 1;
-          options.onToolStart?.(toolCall, originalIndex, totalTools);
-          session.runtime?.eventLog.record("tool.started", {
-            sessionId: session.id,
-            tool: toolCall.name,
-            toolCallId: toolCall.id,
-            index: originalIndex,
-            total: totalTools,
-          });
+      const parallelResult = await executor.executeParallel(
+        confirmedTools,
+        createRuntimeToolDispatch(runtime, session.id, mode, approvedTools),
+        {
+          maxConcurrency: 5,
+          onToolStart: (toolCall, _index, _total) => {
+            // Adjust index to account for declined tools for accurate progress
+            const originalIndex = response.toolCalls.findIndex((tc) => tc.id === toolCall.id) + 1;
+            options.onToolStart?.(toolCall, originalIndex, totalTools);
+          },
+          onToolEnd: (result) => {
+            options.onToolEnd?.(result);
+          },
+          onToolSkipped: (toolCall, reason) => {
+            recordToolSkipped(toolCall, reason);
+          },
+          signal: options.signal,
+          onPathAccessDenied: async (dirPath: string) => {
+            // Clear spinner before showing interactive prompt
+            options.onBeforeConfirmation?.();
+            const result = await promptAllowPath(dirPath);
+            options.onAfterConfirmation?.();
+            return result;
+          },
+          // Pass hooks through so PreToolUse/PostToolUse hooks fire during execution
+          hookRegistry: options.hookRegistry,
+          hookExecutor: options.hookExecutor,
+          sessionId: session.id,
+          projectPath: session.projectPath,
+          onHookExecuted: options.onHookExecuted,
         },
-        onToolEnd: (result) => {
-          session.runtime?.eventLog.record("tool.completed", {
-            sessionId: session.id,
-            tool: result.name,
-            toolCallId: result.id,
-            success: result.result.success,
-            duration: result.duration,
-          });
-          options.onToolEnd?.(result);
-        },
-        onToolSkipped: (toolCall, reason) => {
-          recordToolSkipped(toolCall, reason);
-        },
-        signal: options.signal,
-        onPathAccessDenied: async (dirPath: string) => {
-          // Clear spinner before showing interactive prompt
-          options.onBeforeConfirmation?.();
-          const result = await promptAllowPath(dirPath);
-          options.onAfterConfirmation?.();
-          return result;
-        },
-        // Pass hooks through so PreToolUse/PostToolUse hooks fire during execution
-        hookRegistry: options.hookRegistry,
-        hookExecutor: options.hookExecutor,
-        sessionId: session.id,
-        projectPath: session.projectPath,
-        onHookExecuted: options.onHookExecuted,
-      });
+      );
 
       // Collect executed tools and apply side-effects
       for (const executed of parallelResult.executed) {

@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
+import { z } from "zod";
 import type { LLMProvider, Message, StreamChunk, ToolCall } from "../../providers/types.js";
 import type { ToolRegistry, ToolResult } from "../../tools/registry.js";
 import type { ReplSession } from "./types.js";
@@ -122,7 +123,16 @@ function createMockToolRegistry(): ToolRegistry {
     execute: vi.fn(),
     register: vi.fn(),
     unregister: vi.fn(),
-    get: vi.fn(),
+    get: vi.fn((name: string) =>
+      ["read_file", "write_file", "bash_exec"].includes(name)
+        ? {
+            name,
+            category: name === "bash_exec" ? "bash" : "file",
+            description: "Fixture",
+            parameters: z.record(z.string(), z.unknown()),
+          }
+        : undefined,
+    ),
     has: vi.fn(),
     getAll: vi.fn(),
     getByCategory: vi.fn(),

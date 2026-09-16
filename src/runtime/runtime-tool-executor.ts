@@ -21,6 +21,8 @@ export interface RuntimeToolExecutorOptions {
 }
 
 export interface RuntimeToolExecutorInput {
+  /** Provider call ID for correlating parallel tool attempts. */
+  toolCallId?: string;
   /** Cancellation forwarded to the registry without changing tool authority. */
   signal?: AbortSignal;
   sessionId?: string;
@@ -52,8 +54,10 @@ export class RuntimeToolExecutor {
   async execute(input: RuntimeToolExecutorInput): Promise<RuntimeToolExecutionResult> {
     const startedAt = performance.now();
     const mode = input.mode ?? this.defaultMode;
-    const sessionContext =
-      this.eventProfile === "runtime-api" ? { sessionId: input.sessionId } : {};
+    const sessionContext = {
+      ...(this.eventProfile === "runtime-api" ? { sessionId: input.sessionId } : {}),
+      ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
+    };
     const allowedTools = input.allowedTools ? new Set(input.allowedTools) : undefined;
 
     if (allowedTools && !allowedTools.has(input.toolName)) {
@@ -169,6 +173,7 @@ export class RuntimeToolExecutor {
     const runtimeApi = this.eventProfile === "runtime-api";
     this.eventLog.record("tool.blocked", {
       ...(runtimeApi ? { sessionId: input.sessionId } : {}),
+      ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
       mode,
       tool: input.toolName,
       reason: decision.reason,

@@ -229,6 +229,8 @@ export interface RuntimeTurnRunner {
 }
 
 export interface RuntimeToolExecutionInput {
+  /** Provider call ID for correlating parallel tool attempts. */
+  toolCallId?: string;
   /** Cancellation forwarded to the registry without changing tool authority. */
   signal?: AbortSignal;
   sessionId?: string;

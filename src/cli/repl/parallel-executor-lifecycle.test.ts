@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ToolRegistry } from "../../tools/registry.js";
 import { ParallelToolExecutor } from "./parallel-executor.js";
 
 const calls = Array.from({ length: 6 }, (_, i) => ({ id: `${i}`, name: `tool_${i}`, input: {} }));
@@ -19,7 +18,7 @@ describe("parallel execution lifecycle", () => {
     });
     let finished = false;
     const pending = new ParallelToolExecutor()
-      .executeParallel(calls, { execute } as unknown as ToolRegistry)
+      .executeParallel(calls, (call) => execute(call.name))
       .then((result) => {
         finished = true;
         return result;
@@ -41,10 +40,10 @@ describe("parallel execution lifecycle", () => {
     const controller = new AbortController();
     const add = vi.spyOn(controller.signal, "addEventListener");
     const remove = vi.spyOn(controller.signal, "removeEventListener");
-    const execute = vi.fn(async () => ({ success: true, data: "ok", duration: 0 }));
+    const execute = vi.fn(async (_name: string) => ({ success: true, data: "ok", duration: 0 }));
     await new ParallelToolExecutor().executeParallel(
       calls.slice(0, 1),
-      { execute } as unknown as ToolRegistry,
+      (call) => execute(call.name),
       { signal: controller.signal },
     );
     expect(vi.getTimerCount()).toBe(0);

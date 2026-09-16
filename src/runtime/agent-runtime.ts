@@ -471,6 +471,7 @@ export class AgentRuntime {
       };
       this.eventLog.record("tool.blocked", {
         sessionId: input.sessionId,
+        ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
         mode: input.mode ?? "ask",
         tool: input.toolName,
         reason: decision.reason,

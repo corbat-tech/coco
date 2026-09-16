@@ -8,7 +8,8 @@ import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { LLMProvider, StreamChunk, ToolCall } from "../../providers/types.js";
-import { createEventLog } from "../../runtime/event-log.js";
+import { AgentRuntime } from "../../runtime/agent-runtime.js";
+import { z } from "zod";
 
 /**
  * Create async iterable from generator
@@ -65,8 +66,37 @@ function createToolStreamMock(
       })(),
     );
 }
-import type { ToolRegistry, ToolResult } from "../../tools/registry.js";
+import type {
+  ToolRegistry,
+  ToolResult,
+  ToolDefinition,
+  ToolCategory,
+} from "../../tools/registry.js";
 import type { ReplSession, ExecutedToolCall } from "./types.js";
+
+// Real policy metadata; execution stays mocked so loop fixtures cannot touch disk or network.
+function fixtureTool(name: string): ToolDefinition | undefined {
+  const categories: Record<string, ToolCategory> = {
+    read_file: "file",
+    write_file: "file",
+    bash_exec: "bash",
+    get_env: "config",
+    http_fetch: "web",
+    mcp_list_servers: "config",
+    mcp_atlassian_browse: "deploy",
+    mcp_atlassian_browse_issue: "deploy",
+  };
+  const category = categories[name];
+  return category
+    ? {
+        name,
+        category,
+        description: `Fixture ${name}`,
+        parameters: z.object({}).passthrough(),
+        execute: async () => ({}),
+      }
+    : undefined;
+}
 
 // Mock chalk to simplify output testing
 vi.mock("chalk", () => ({
@@ -130,9 +160,9 @@ describe("executeAgentTurn", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
@@ -160,9 +190,11 @@ describe("executeAgentTurn", () => {
         },
       },
       trustedTools: new Set<string>(),
-      runtime: {
-        eventLog: createEventLog(),
-      } as ReplSession["runtime"],
+      runtime: new AgentRuntime({
+        providerType: "anthropic",
+        model: "fixture-model",
+        toolRegistry: mockToolRegistry,
+      }),
     };
 
     // Setup default mocks
@@ -201,6 +233,7 @@ describe("executeAgentTurn", () => {
   });
 
   it("deduplicates repeated identical tool calls in the same streamed turn", async () => {
+    mockSession.trustedTools.add("get_env");
     const { executeAgentTurn } = await import("./agent-loop.js");
 
     let providerCalls = 0;
@@ -587,6 +620,17 @@ describe("executeAgentTurn", () => {
     expect(onToolEnd).toHaveBeenCalledWith(
       expect.objectContaining({ id: "tool-1", name: "read_file", result: expect.any(Object) }),
     );
+    const toolEvents = mockSession
+      .runtime!.eventLog.list()
+      .filter((event) => event.type === "tool.started" || event.type === "tool.completed");
+    expect(toolEvents.map((event) => event.type)).toEqual(["tool.started", "tool.completed"]);
+    for (const event of toolEvents) {
+      expect(event.data).toMatchObject({
+        sessionId: mockSession.id,
+        toolCallId: toolCall.id,
+        tool: toolCall.name,
+      });
+    }
   });
 
   it("should call onThinkingStart and onThinkingEnd callbacks", async () => {
@@ -729,11 +773,17 @@ describe("executeAgentTurn", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
+
+    mockSession.runtime = new AgentRuntime({
+      providerType: "anthropic",
+      model: "fixture-model",
+      toolRegistry: mockToolRegistry,
+    });
 
     const genericFetch: ToolCall = {
       id: "tool-1",
@@ -797,9 +847,10 @@ describe("executeAgentTurn", () => {
 
       // Should not prompt for confirmation
       expect(confirmToolExecutionWithFallback).not.toHaveBeenCalled();
+      expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
     });
 
-    it("should skip confirmation when skipConfirmation option is true", async () => {
+    it("should skip prompts without granting authority when skipConfirmation is true", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
       const { requiresConfirmation, confirmToolExecutionWithFallback } =
         await import("./confirmation.js");
@@ -832,6 +883,7 @@ describe("executeAgentTurn", () => {
       });
 
       expect(confirmToolExecutionWithFallback).not.toHaveBeenCalled();
+      expect(mockToolRegistry.execute).not.toHaveBeenCalled();
     });
 
     it("should prompt for confirmation for destructive tools", async () => {
@@ -1048,9 +1100,9 @@ describe("Error loop recovery: final LLM turn", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
@@ -1166,9 +1218,9 @@ describe("Safety net: placeholder injection for missing tool results", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
@@ -1381,9 +1433,9 @@ describe("max_tokens auto-continue", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
@@ -1642,9 +1694,9 @@ describe("iteration limit notice", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
@@ -1897,9 +1949,9 @@ describe("streaming text suppression during tool iterations", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
