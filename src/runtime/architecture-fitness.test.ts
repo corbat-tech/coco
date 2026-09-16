@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { parse } from "@typescript-eslint/typescript-estree";
 import { describe, expect, it } from "vitest";
+import ts from "typescript";
 
 const SRC_ROOT = join(process.cwd(), "src");
 
@@ -28,13 +29,113 @@ describe("architecture fitness", () => {
 
   it("keeps direct tool execution inside runtime tool execution boundaries", () => {
     const allowed = new Set([join(SRC_ROOT, "runtime", "runtime-tool-executor.ts")]);
-    const violations = listFiles(SRC_ROOT).filter((file) => {
-      if (!file.endsWith(".ts") || file.endsWith(".test.ts")) return false;
-      if (allowed.has(file)) return false;
-      return readFileSync(file, "utf-8").includes("toolRegistry.execute");
-    });
+    const configPath = join(process.cwd(), "tsconfig.json");
+    const config = ts.readConfigFile(configPath, ts.sys.readFile);
+    if (config.error)
+      throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, "\n"));
+    const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, process.cwd());
+    const program = ts.createProgram(parsed.fileNames, parsed.options);
+    const violations = registryDispatchReferences(
+      program,
+      join(SRC_ROOT, "tools", "registry.ts"),
+    ).filter(({ file }) => file.startsWith(SRC_ROOT) && !allowed.has(file));
+    expect(
+      violations.map(({ file, text }) => `${relative(process.cwd(), file)}: ${text}`).sort(),
+    ).toEqual([]);
+  });
+});
 
-    expect(violations.map((file) => relative(process.cwd(), file)).sort()).toEqual([]);
+/** Resolve the actual method symbol, rather than depending on a variable name. */
+function registryDispatchReferences(
+  program: ts.Program,
+  registryFile: string,
+): Array<{ file: string; text: string }> {
+  const checker = program.getTypeChecker();
+  const source = program.getSourceFile(registryFile);
+  if (!source) throw new Error(`Registry source not found: ${registryFile}`);
+  const registry = source.statements.find(
+    (node): node is ts.ClassDeclaration =>
+      ts.isClassDeclaration(node) && node.name?.text === "ToolRegistry",
+  );
+  const method = registry?.members.find(
+    (node): node is ts.MethodDeclaration =>
+      ts.isMethodDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "execute",
+  );
+  if (!method) throw new Error("ToolRegistry.execute declaration not found");
+  const references: Array<{ file: string; text: string }> = [];
+  for (const file of program.getSourceFiles()) {
+    if (file.isDeclarationFile || file.fileName.endsWith(".test.ts")) continue;
+    const visit = (node: ts.Node): void => {
+      let symbol: ts.Symbol | undefined;
+      if (ts.isPropertyAccessExpression(node)) {
+        symbol = checker.getSymbolAtLocation(node.name);
+      } else if (
+        ts.isElementAccessExpression(node) &&
+        ts.isStringLiteralLike(node.argumentExpression)
+      ) {
+        symbol = checker
+          .getTypeAtLocation(node.expression)
+          .getProperty(node.argumentExpression.text);
+      } else if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
+        const name = node.propertyName ?? node.name;
+        if (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) {
+          symbol = checker.getTypeAtLocation(node.parent).getProperty(name.text);
+        }
+      }
+      if (symbol?.declarations?.includes(method))
+        references.push({ file: file.fileName, text: node.getText(file) });
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+  }
+  return references;
+}
+
+describe("tool boundary detector", () => {
+  it("recognizes imported aliases, reassignment, indexed access and extracted methods without flagging other executors", () => {
+    const registry = "/fixture/registry.ts";
+    const consumer = "/fixture/consumer.ts";
+    const sources = new Map([
+      [registry, "export class ToolRegistry { execute() {} }"],
+      [
+        consumer,
+        `
+        import { ToolRegistry as Renamed } from "./registry.js";
+        const registry = new Renamed();
+        const alias = registry;
+        alias.execute();
+        registry["execute"]();
+        const { execute: run } = alias;
+        const extracted = alias.execute.bind(alias);
+        function invoke(other: Renamed) { other.execute(); }
+        class Other { execute() {} }
+        new Other().execute();
+        const unrelated = "toolRegistry.execute";
+      `,
+      ],
+    ]);
+    const options: ts.CompilerOptions = {
+      noLib: true,
+      types: [],
+      module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    };
+    const host = ts.createCompilerHost(options);
+    host.fileExists = (file) => sources.has(file);
+    host.readFile = (file) => sources.get(file);
+    host.directoryExists = (dir) => dir === "/fixture";
+    host.getSourceFile = (file, version) => {
+      const content = sources.get(file);
+      return content === undefined ? undefined : ts.createSourceFile(file, content, version, true);
+    };
+    const program = ts.createProgram([registry, consumer], options, host);
+    expect(registryDispatchReferences(program, registry).map(({ text }) => text)).toEqual([
+      "alias.execute",
+      'registry["execute"]',
+      "execute: run",
+      "alias.execute",
+      "other.execute",
+    ]);
   });
 });
 

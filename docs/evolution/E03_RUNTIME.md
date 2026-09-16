@@ -29,3 +29,11 @@ Cambio deliberado de permisos: skipConfirmation suprime preguntas, no concede au
 Pruebas de regresión con file tools y disco: no escribir sin consentimiento en ejecución no interactiva, no escribir en plan aun con confianza y no modificar archivo distinto mediante hook. Tres casos fallan contra HEAD anterior y pasan con el cambio. Tests del adaptador aportados por `/root/core_audit`: consentimiento exacto, snapshot, permisos, señal y eventos. Corpus anterior ahora declara confianza explícita en tools utilizadas, en vez de depender de omitir UI. 118 archivos / 2222 pruebas pasan, 15 omitidas, más 27 de arranque REPL. Typecheck/lint/formato y diff-check correctos. Revisor independiente `/root/baseline_review`: APPROVED, sin hallazgos materiales. Logs `runtime-repl-{integration,startup,permissions-before,permissions-after}.log` y `runtime-dispatch-tests.log`. Rollback por revert del incremento.
 
 Límites: no mide capacidad del modelo, ni acredita ejecución completa del CLI headless a partir de estas pruebas de loop. Propagación efectiva de cancelación a procesos sigue E07; veracidad de éxito agregado headless sigue E11. Política MCP/delegación y robustez de patrones bash siguen E04/E05; detector de alias pendiente de siguiente incremento. Sin publicación.
+
+## E03.e · DONE · 2026-09-16
+
+El test de frontera usa el checker de TypeScript ya instalado para resolver el símbolo ToolRegistry.execute; detecta acceso mediante alias, imports renombrados, parámetros tipados, acceso indexado literal y extracción/desestructuración del método. Distingue execute de otros objetos y texto sin código. No es un sandbox ni detecta evasiones dinámicas deliberadas mediante any/eval.
+
+Cuatro pruebas pasan en ~3,5 s. La prueba contra el antiguo ParallelToolExecutor comprueba los tres accesos `registry.execute` que la búsqueda textual omitía. Lint y diff-check correctos; revisor `/root/baseline_review`: APPROVED. Logs `runtime-boundary-detector{,-before}.log`. Rollback por revert; sin cambios de producción ni publicación.
+
+Observación de revisión: E03 aún no puede cerrarse. El adaptador REPL conservaba confirmaciones adicionales (p. ej. copy_file) que la política runtime no exigía. E03.f debe llevar esa decisión a la política común y comprobar la matriz por entrada. Autoridad delegada sigue abierta en E05.
