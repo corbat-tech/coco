@@ -142,6 +142,7 @@ describe("AnthropicProvider", () => {
         expect.objectContaining({
           system: "You are a helpful assistant.",
         }),
+        expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
       );
     });
 
@@ -164,6 +165,7 @@ describe("AnthropicProvider", () => {
             expect.objectContaining({ role: "user", content: "And 3+3?" }),
           ]),
         }),
+        expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
       );
     });
   });
@@ -199,6 +201,7 @@ describe("AnthropicProvider", () => {
             }),
           ]),
         }),
+        expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
       );
     });
 
@@ -297,6 +300,7 @@ describe("AnthropicProvider", () => {
         expect.objectContaining({
           model: "claude-opus-4-20250514",
         }),
+        expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
       );
     });
 
@@ -314,6 +318,7 @@ describe("AnthropicProvider", () => {
         expect.objectContaining({
           max_tokens: 4096,
         }),
+        expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
       );
     });
 
@@ -331,6 +336,7 @@ describe("AnthropicProvider", () => {
         expect.objectContaining({
           temperature: 0.7,
         }),
+        expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
       );
     });
   });
@@ -518,6 +524,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: { type: "auto" },
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -535,6 +542,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: { type: "any" },
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -552,6 +560,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: { type: "tool", name: "readFile" },
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 });

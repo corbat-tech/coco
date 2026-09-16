@@ -22,6 +22,7 @@ import type {
   ToolResultContent,
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import { getLogger } from "../utils/logger.js";
 import { mapToAnthropic, mapToAnthropicEffort } from "./thinking.js";
@@ -130,6 +131,7 @@ export class AnthropicProvider implements LLMProvider {
    */
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     return withRetry(
       async () => {
@@ -139,19 +141,22 @@ export class AnthropicProvider implements LLMProvider {
           const outputConfig = getAnthropicOutputConfig(options?.thinking, model);
           const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
 
-          const response = await this.client!.messages.create({
-            model,
-            max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
-            temperature: getAnthropicTemperature(
-              thinkingParam,
-              options?.temperature ?? this.config.temperature ?? 0,
-            ),
-            system: this.extractSystem(messages, options?.system),
-            messages: this.convertMessages(messages),
-            stop_sequences: options?.stopSequences,
-            ...(thinkingParam && { thinking: thinkingParam }),
-            ...(outputConfig && { output_config: outputConfig }),
-          });
+          const response = await this.client!.messages.create(
+            {
+              model,
+              max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
+              temperature: getAnthropicTemperature(
+                thinkingParam,
+                options?.temperature ?? this.config.temperature ?? 0,
+              ),
+              system: this.extractSystem(messages, options?.system),
+              messages: this.convertMessages(messages),
+              stop_sequences: options?.stopSequences,
+              ...(thinkingParam && { thinking: thinkingParam }),
+              ...(outputConfig && { output_config: outputConfig }),
+            },
+            this.getRequestOptions(options),
+          );
 
           return {
             id: response.id,
@@ -164,6 +169,7 @@ export class AnthropicProvider implements LLMProvider {
             model: response.model,
           };
         } catch (error) {
+          rethrowCancellation(error, options?.signal);
           throw this.handleError(error);
         }
       },
@@ -180,6 +186,7 @@ export class AnthropicProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     return withRetry(
       async () => {
@@ -189,22 +196,25 @@ export class AnthropicProvider implements LLMProvider {
           const outputConfig = getAnthropicOutputConfig(options?.thinking, model);
           const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
 
-          const response = await this.client!.messages.create({
-            model,
-            max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
-            temperature: getAnthropicTemperature(
-              thinkingParam,
-              options?.temperature ?? this.config.temperature ?? 0,
-            ),
-            system: this.extractSystem(messages, options?.system),
-            messages: this.convertMessages(messages),
-            tools: this.convertTools(options.tools),
-            tool_choice: options.toolChoice
-              ? this.convertToolChoice(options.toolChoice)
-              : undefined,
-            ...(thinkingParam && { thinking: thinkingParam }),
-            ...(outputConfig && { output_config: outputConfig }),
-          });
+          const response = await this.client!.messages.create(
+            {
+              model,
+              max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
+              temperature: getAnthropicTemperature(
+                thinkingParam,
+                options?.temperature ?? this.config.temperature ?? 0,
+              ),
+              system: this.extractSystem(messages, options?.system),
+              messages: this.convertMessages(messages),
+              tools: this.convertTools(options.tools),
+              tool_choice: options.toolChoice
+                ? this.convertToolChoice(options.toolChoice)
+                : undefined,
+              ...(thinkingParam && { thinking: thinkingParam }),
+              ...(outputConfig && { output_config: outputConfig }),
+            },
+            this.getRequestOptions(options),
+          );
 
           const toolCalls = this.extractToolCalls(response.content);
 
@@ -220,6 +230,7 @@ export class AnthropicProvider implements LLMProvider {
             toolCalls,
           };
         } catch (error) {
+          rethrowCancellation(error, options?.signal);
           throw this.handleError(error);
         }
       },
@@ -233,6 +244,7 @@ export class AnthropicProvider implements LLMProvider {
    */
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     let timeoutTriggered = false;
     try {
@@ -254,14 +266,14 @@ export class AnthropicProvider implements LLMProvider {
           ...(thinkingParam && { thinking: thinkingParam }),
           ...(outputConfig && { output_config: outputConfig }),
         },
-        { signal: options?.signal },
+        this.getRequestOptions(options),
       );
 
       // Activity-based timeout: abort the stream if no events for streamTimeout ms.
       // IMPORTANT: We use AbortController instead of throwing from setInterval,
       // because throw inside setInterval causes an unhandled exception that kills
       // the process instead of propagating to the async generator.
-      const streamTimeout = this.config.timeout ?? 120000;
+      const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
       const timeoutController = new AbortController();
 
@@ -282,12 +294,15 @@ export class AnthropicProvider implements LLMProvider {
         let streamStopReason: StreamChunk["stopReason"];
 
         for await (const event of stream) {
+          this.assertStreamActive(options, timeoutTriggered);
           lastActivityTime = Date.now();
 
           if (event.type === "content_block_delta") {
             const delta = event.delta as { type: string; text?: string };
             if (delta.type === "text_delta" && delta.text) {
+              this.assertStreamActive(options, timeoutTriggered);
               yield { type: "text", text: delta.text };
+              this.assertStreamActive(options, timeoutTriggered);
             }
           } else if (event.type === "message_delta") {
             const delta = event.delta as { stop_reason?: string };
@@ -296,8 +311,9 @@ export class AnthropicProvider implements LLMProvider {
             }
           }
         }
-
+        this.assertStreamActive(options, timeoutTriggered);
         yield { type: "done", stopReason: streamStopReason };
+        this.assertStreamActive(options, timeoutTriggered);
       } finally {
         clearInterval(timeoutInterval);
       }
@@ -307,9 +323,10 @@ export class AnthropicProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      rethrowCancellation(error, options?.signal);
       if (timeoutTriggered) {
         throw new Error(
-          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+          `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
         );
       }
       throw this.handleError(error);
@@ -324,6 +341,7 @@ export class AnthropicProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     let timeoutTriggered = false;
     try {
@@ -347,7 +365,7 @@ export class AnthropicProvider implements LLMProvider {
           ...(thinkingParam && { thinking: thinkingParam }),
           ...(outputConfig && { output_config: outputConfig }),
         },
-        { signal: options?.signal },
+        this.getRequestOptions(options),
       );
 
       // Track current tool call being built
@@ -356,7 +374,7 @@ export class AnthropicProvider implements LLMProvider {
 
       // Activity-based timeout: abort the stream if no events for streamTimeout ms.
       // Uses AbortController to safely break the for-await loop (see stream() comment).
-      const streamTimeout = this.config.timeout ?? 120000;
+      const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
       const timeoutController = new AbortController();
 
@@ -376,6 +394,7 @@ export class AnthropicProvider implements LLMProvider {
         let streamStopReason: StreamChunk["stopReason"];
 
         for await (const event of stream) {
+          this.assertStreamActive(options, timeoutTriggered);
           lastActivityTime = Date.now();
 
           if (event.type === "message_delta") {
@@ -403,20 +422,24 @@ export class AnthropicProvider implements LLMProvider {
                 } catch {
                   currentToolCall.input = {};
                 }
+                this.assertStreamActive(options, timeoutTriggered);
                 yield {
                   type: "tool_use_end",
                   toolCall: { ...currentToolCall } as ToolCall,
                 };
+                this.assertStreamActive(options, timeoutTriggered);
               }
               currentToolCall = {
                 id: contentBlock.id,
                 name: contentBlock.name,
               };
               currentToolInputJson = "";
+              this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_start",
                 toolCall: { ...currentToolCall },
               };
+              this.assertStreamActive(options, timeoutTriggered);
             }
           } else if (event.type === "content_block_delta") {
             const delta = event.delta as {
@@ -425,9 +448,12 @@ export class AnthropicProvider implements LLMProvider {
               partial_json?: string;
             };
             if (delta.type === "text_delta" && delta.text) {
+              this.assertStreamActive(options, timeoutTriggered);
               yield { type: "text", text: delta.text };
+              this.assertStreamActive(options, timeoutTriggered);
             } else if (delta.type === "input_json_delta" && delta.partial_json) {
               currentToolInputJson += delta.partial_json;
+              this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_delta",
                 toolCall: {
@@ -435,6 +461,7 @@ export class AnthropicProvider implements LLMProvider {
                 },
                 text: delta.partial_json,
               };
+              this.assertStreamActive(options, timeoutTriggered);
             }
           } else if (event.type === "content_block_stop") {
             if (currentToolCall) {
@@ -462,17 +489,20 @@ export class AnthropicProvider implements LLMProvider {
                   currentToolCall.input = {};
                 }
               }
+              this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_end",
                 toolCall: { ...currentToolCall } as ToolCall,
               };
+              this.assertStreamActive(options, timeoutTriggered);
               currentToolCall = null;
               currentToolInputJson = "";
             }
           }
         }
-
+        this.assertStreamActive(options, timeoutTriggered);
         yield { type: "done", stopReason: streamStopReason };
+        this.assertStreamActive(options, timeoutTriggered);
       } finally {
         clearInterval(timeoutInterval);
       }
@@ -481,9 +511,10 @@ export class AnthropicProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      rethrowCancellation(error, options?.signal);
       if (timeoutTriggered) {
         throw new Error(
-          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+          `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
         );
       }
       throw this.handleError(error);
@@ -570,6 +601,22 @@ export class AnthropicProvider implements LLMProvider {
   /**
    * Ensure client is initialized
    */
+  private assertStreamActive(options?: ChatOptions, timedOut = false): void {
+    options?.signal?.throwIfAborted();
+    if (timedOut)
+      throw new Error(
+        `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
+      );
+  }
+
+  private getRequestOptions(options?: ChatOptions) {
+    return {
+      signal: options?.signal,
+      timeout: options?.timeout ?? this.config.timeout ?? 120000,
+      maxRetries: 0,
+    };
+  }
+
   private ensureInitialized(): void {
     if (!this.client) {
       throw new ProviderError("Provider not initialized. Call initialize() first.", {

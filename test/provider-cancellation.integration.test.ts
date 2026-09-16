@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
+import { AnthropicProvider } from "../src/providers/anthropic.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
 
 function deferred() {
@@ -10,8 +11,8 @@ function deferred() {
   return { promise, resolve };
 }
 
-describe("OpenAI SDK cancellation against local HTTP", () => {
-  for (const model of ["gpt-4o", "gpt-5.2"]) {
+describe("Provider SDK cancellation against local HTTP", () => {
+  for (const model of ["gpt-4o", "gpt-5.2", "claude-sonnet-4-6"]) {
     it.each([false, true])(
       `aborts ${model} request (streaming=%s) without retrying`,
       async (streaming) => {
@@ -27,14 +28,46 @@ describe("OpenAI SDK cancellation against local HTTP", () => {
           received.resolve();
           if (streaming) {
             response.writeHead(200, { "Content-Type": "text/event-stream" });
-            const event =
-              model === "gpt-4o"
-                ? {
-                    id: "fixture",
-                    choices: [{ index: 0, delta: { content: "READY" }, finish_reason: null }],
-                  }
-                : { type: "response.output_text.delta", delta: "READY" };
-            response.write(`data: ${JSON.stringify(event)}\n\n`);
+            const events =
+              model === "claude-sonnet-4-6"
+                ? [
+                    {
+                      type: "message_start",
+                      message: {
+                        id: "fixture",
+                        type: "message",
+                        role: "assistant",
+                        model,
+                        content: [],
+                        stop_reason: null,
+                        stop_sequence: null,
+                        usage: { input_tokens: 1, output_tokens: 0 },
+                      },
+                    },
+                    {
+                      type: "content_block_start",
+                      index: 0,
+                      content_block: { type: "text", text: "" },
+                    },
+                    {
+                      type: "content_block_delta",
+                      index: 0,
+                      delta: { type: "text_delta", text: "READY" },
+                    },
+                  ]
+                : [
+                    model === "gpt-4o"
+                      ? {
+                          id: "fixture",
+                          choices: [{ index: 0, delta: { content: "READY" }, finish_reason: null }],
+                        }
+                      : { type: "response.output_text.delta", delta: "READY" },
+                  ];
+            for (const event of events) {
+              const eventName =
+                model === "claude-sonnet-4-6" && "type" in event ? `event: ${event.type}\n` : "";
+              response.write(`${eventName}data: ${JSON.stringify(event)}\n\n`);
+            }
           }
           // Leave headers or the SSE body pending until the client cancels real fetch.
         });
@@ -45,7 +78,8 @@ describe("OpenAI SDK cancellation against local HTTP", () => {
         const controller = new AbortController();
         let pending: Promise<unknown> | undefined;
         try {
-          const provider = new OpenAIProvider();
+          const provider =
+            model === "claude-sonnet-4-6" ? new AnthropicProvider() : new OpenAIProvider();
           await provider.initialize({
             apiKey: "local-fixture-key",
             model,
