@@ -1,5 +1,7 @@
 # Coco next.3: pendientes imprescindibles
 
+**Estado final:2.42.0-next.3 publicada y verificada en npm next.** Latest2.41.0 intacto; desarrollo de este bloque cerrado.
+
 Fecha:2026-09-17. Solicitud: seleccionar los siguientes arreglos imprescindibles, implementarlos y publicar; aplazar extras. Base publicada2.42.0-next.2. Destino2.42.0-next.3 en npm next; latest2.41.0 intacto. Sin migración, modelos nuevos ni ampliación del producto.
 
 ## Alcance y aceptación
@@ -19,7 +21,7 @@ Por incremento: implementación → pruebas significativas en copia hermética �
 - [x] Presupuesto de prueba de arquitectura:60s solo para resolución de símbolos del proyecto; detector/fixtures/aserciones intactos. Pruebas aisladas4 PASS (resolución2.94s), revisión independiente del padre aprobada. Global30s y cobertura sin cambios.
 - [x] Revisión independiente de incrementos; guardas conservan contratos y límites explícitos.
 - [x] Gate completo:362 archivos,7932 pruebas PASS/15 skip +27 REPL; tipos/lint/formato/build PASS. Cobertura70.63% statements/63.05% branches/76.08% functions/71.28% lines, pisos existentes intactos. Tarball26 archivos, instalación limpia sin scripts y smoke CLI/exports/archivo real PASS (provider fixture).
-- [ ] Publicación y verificación npm; release y handoff actualizado.
+- [x] Publicación next.3 verificada:integridad exacta, next=2.42.0-next.3/latest=2.41.0; instalación limpia desde registro y smoke PASS. GitHub prerelease creada y handoff actualizado.
 
 ## Pospuesto
 
@@ -51,3 +53,15 @@ Artefacto CI descargado como `npm-candidate-1` a `.dev/evolution/ci-candidate-2.
 - Operación: revisar autenticación de publicación CI para evitar confirmación manual de cada release, sin eludir la política2FA de npm.
 
 No se implementan esos extras en esta entrega. El resumen final de publicación se añadirá después de verificar npm y el paquete instalado.
+
+
+## Cierre definitivo — 2026-09-17
+
+**Publicado** @corbat-tech/coco@2.42.0-next.3 en next. `latest` permanece2.41.0. El propietario completó web2FA y `npm publish` terminó exit0. Comprobación desde registro con caché limpia: integridad idéntica a pack.json/tarball CI (SHA2565873acc3051086f1b3d619e2f67ae6a254b4f3ed4663648924d591337c85535d), instalación sin scripts y smoke CLI/exports/herramienta real de archivo PASS con provider fixture.
+
+- [Release y archivos](https://github.com/corbat-tech/coco/releases/tag/v2.42.0-next.3).
+- [Paquete npm](https://www.npmjs.com/package/@corbat-tech/coco/v/2.42.0-next.3).
+- Instalación: `npm install -g @corbat-tech/coco@2.42.0-next.3` (Node22+).
+- Evidencias locales: `.dev/evolution/e01-baseline/logs/next3-registry-install.log` y `next3-registry-smoke.log`; artefactos local/CI conservados en `.dev/evolution/` (ignorados por Git).
+
+Publicación realizada localmente con2FA sobre artefacto CI exacto; el workflow pasó todas las comprobaciones pero su publicación automática sigue condicionada a la política2FA. No mover tag ni republicar versión; reconciliar hash si se reintenta cualquier operación. Todos los incrementos autorizados de este bloque están completados. Extras anteriores pausados, sin automatizaciones ni agentes implementando en segundo plano. Esta candidata no certifica estable ni cierre del programa global/E15.

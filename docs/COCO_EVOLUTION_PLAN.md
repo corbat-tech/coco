@@ -1,6 +1,6 @@
 # Coco: evolución pragmática y entregas progresivas
 
-Fecha: 2026-09-16. Estado: **bloque acotado completado y next.2 publicada/verificada; resto del programa pausado**.
+Fecha: 2026-09-16. Estado: **imprescindibles next.3 completados y publicados/verificados; resto del programa pausado**.
 Base inspeccionada: `174fc4128bc190fe0cb0b581d2153b805c49f4af`, paquete `2.41.0`.
 
 Este es el plan vigente para esta evolución. Sustituye **la secuencia de ejecución**, no la evidencia, del plan de 39 pasos de la [auditoría del 16 de septiembre](../../corbat-coco-auditoria/2026-09-16/public/04-plan-de-progreso.md). La auditoría permanece como snapshot histórico fuera del repositorio; su enlace requiere el directorio hermano. Los IDs COCO y S remiten a ese snapshot. [MASTER_PLAN.md](MASTER_PLAN.md) y [CODEX_IMPROVEMENTS_PLAN.md](CODEX_IMPROVEMENTS_PLAN.md) son antecedentes, no listas adicionales que completar antes de publicar. Mandan [CLAUDE.md](../CLAUDE.md) y los ADR aceptados.
@@ -196,7 +196,7 @@ Los 14 resultados sustituyen el orden de los 39 pasos; no se finge haber reducid
 
 ## 9. Registro de progreso
 
-**Bloque activo autorizado:** [Imprescindibles next.3](evolution/ESSENTIALS_NEXT3.md): shell acotado/ownership, cancelación de coordinación y sprints, presupuesto CI; después publicar/verificar y pausar extras.
+**Último bloque cerrado:** [Imprescindibles next.3](evolution/ESSENTIALS_NEXT3.md): shell acotado/ownership, cancelación coordinación/sprints y presupuesto CI. Publicada2.42.0-next.3 en next, latest2.41.0 intacto;7932 pruebas +27 REPL, gate CI y smoke desde npm PASS. Release creada; publicación local con2FA del artefacto CI exacto. Extras priorizados y pausados.
 
 **Punto de continuación guardado:** [HANDOFF_2026-09-16.md](evolution/HANDOFF_2026-09-16.md). El usuario solicita cerrar lo realizado y publicar un candidato; el resto del programa queda pausado hasta que lo retome.
 
@@ -205,7 +205,7 @@ Cierre next.2 (2026-09-17): **publicada y verificada en npm next**, latest2.41.0
 | Bloque | Progreso verificado | Evidencia y límites |
 | --- | --- | --- |
 | E01 | Baseline hermético completado | [Resultados](evolution/E01_BASELINE.md); evaluación con modelo real pendiente, obligatoria para E13/E15. |
-| E02 | Infraestructura npm local DONE | [Release](evolution/E02_RELEASE.md); ejecución remota pendiente, VSIX bloqueado hasta E11. |
+| E02 | Infraestructura npm y gates local/CI verificados; candidatas next publicadas | [Release](evolution/E02_RELEASE.md), [next.3](evolution/ESSENTIALS_NEXT3.md); publicación automatizada requiere resolver política2FA, VSIX bloqueado hasta E11. |
 | E03–E05 | DONE para sus alcances | [Runtime](evolution/E03_RUNTIME.md), [paths](evolution/E04_PATHS.md), [autoridad](evolution/E05_AUTHORITY.md); undo contenido hasta E10. |
 | E06 | a–g completados; bloque IN_PROGRESS | [Contenciones](evolution/E06_CONTAINMENT.md); COCO-06 abierto hasta disponibilidad/aplicabilidad de mediciones en E09. |
 | E07.a–k3 | Incrementos de cancelación de procesos, reintentos, proveedores y OAuth completados | [Registro detallado](evolution/E07_CANCELLATION.md); cada entrada delimita alcance y comprobaciones. |
