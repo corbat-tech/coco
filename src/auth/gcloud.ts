@@ -10,12 +10,13 @@
  * ADC and otherwise point the user to manual setup.
  */
 
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * ADC token response
@@ -97,11 +98,21 @@ export async function hasADCCredentials(): Promise<boolean> {
  * Get access token from gcloud CLI
  * Uses: gcloud auth application-default print-access-token
  */
-export async function inspectADC(): Promise<ADCCheckResult> {
+export async function inspectADC(signal?: AbortSignal): Promise<ADCCheckResult> {
+  signal?.throwIfAborted();
   try {
-    const { stdout } = await execAsync(PRINT_ACCESS_TOKEN_COMMAND, {
-      timeout: 10000,
-    });
+    const options = { timeout: 10000, signal };
+    // Windows installations expose gcloud.cmd, which requires the command shell.
+    // This branch runs only a fixed command: no user input is interpolated.
+    const { stdout } =
+      process.platform === "win32"
+        ? await execAsync(PRINT_ACCESS_TOKEN_COMMAND, options)
+        : await execFileAsync(
+            "gcloud",
+            ["auth", "application-default", "print-access-token"],
+            options,
+          );
+    signal?.throwIfAborted();
 
     const accessToken = stdout.trim();
     if (!accessToken) {
@@ -124,6 +135,7 @@ export async function inspectADC(): Promise<ADCCheckResult> {
       },
     };
   } catch (error) {
+    signal?.throwIfAborted();
     const message = error instanceof Error ? error.message : String(error);
 
     if (message.includes("scope is required but not consented")) {
@@ -165,8 +177,8 @@ export async function inspectADC(): Promise<ADCCheckResult> {
  * Get access token from gcloud CLI
  * Uses: gcloud auth application-default print-access-token
  */
-export async function getADCAccessToken(): Promise<ADCToken | null> {
-  const result = await inspectADC();
+export async function getADCAccessToken(signal?: AbortSignal): Promise<ADCToken | null> {
+  const result = await inspectADC(signal);
   return result.token;
 }
 
@@ -265,14 +277,17 @@ let cachedToken: ADCToken | null = null;
  * Get cached or fresh ADC token
  * Refreshes automatically when expired
  */
-export async function getCachedADCToken(): Promise<ADCToken | null> {
+export async function getCachedADCToken(signal?: AbortSignal): Promise<ADCToken | null> {
+  signal?.throwIfAborted();
   // Check if cached token is still valid
   if (cachedToken && cachedToken.expiresAt && Date.now() < cachedToken.expiresAt) {
     return cachedToken;
   }
 
   // Get fresh token
-  cachedToken = await getADCAccessToken();
+  const token = await getADCAccessToken(signal);
+  signal?.throwIfAborted();
+  cachedToken = token;
   return cachedToken;
 }
 

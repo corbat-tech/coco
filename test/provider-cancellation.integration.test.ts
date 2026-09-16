@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import { AnthropicProvider } from "../src/providers/anthropic.js";
+import { VertexProvider } from "../src/providers/vertex.js";
 import { GeminiProvider } from "../src/providers/gemini.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
 
@@ -13,7 +14,13 @@ function deferred() {
 }
 
 describe("Provider SDK cancellation against local HTTP", () => {
-  for (const model of ["gpt-4o", "gpt-5.2", "claude-sonnet-4-6", "gemini-2.5-flash"]) {
+  for (const model of [
+    "gpt-4o",
+    "gpt-5.2",
+    "claude-sonnet-4-6",
+    "gemini-2.5-flash",
+    "vertex-gemini-2.5-flash",
+  ]) {
     it.each([false, true])(
       `aborts ${model} request (streaming=%s) without retrying`,
       async (streaming) => {
@@ -57,7 +64,7 @@ describe("Provider SDK cancellation against local HTTP", () => {
                     },
                   ]
                 : [
-                    model === "gemini-2.5-flash"
+                    model.includes("gemini-2.5-flash")
                       ? { candidates: [{ content: { role: "model", parts: [{ text: "READY" }] } }] }
                       : model === "gpt-4o"
                         ? {
@@ -86,12 +93,15 @@ describe("Provider SDK cancellation against local HTTP", () => {
           const provider =
             model === "claude-sonnet-4-6"
               ? new AnthropicProvider()
-              : model === "gemini-2.5-flash"
-                ? new GeminiProvider()
-                : new OpenAIProvider();
+              : model.startsWith("vertex-")
+                ? new VertexProvider()
+                : model === "gemini-2.5-flash"
+                  ? new GeminiProvider()
+                  : new OpenAIProvider();
           await provider.initialize({
             apiKey: "local-fixture-key",
-            model,
+            model: model.replace(/^vertex-/, ""),
+            project: "fixture-project",
             baseUrl: `http://127.0.0.1:${address.port}/v1`,
             timeout: 2000,
           });

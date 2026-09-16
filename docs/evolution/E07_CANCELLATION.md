@@ -73,3 +73,17 @@ Reintentos chat/tools pasan a Coco (default tres adicionales, override por llama
 66 casos de contrato independientes; SDK real HTTP loopback prueba aborto esperando headers/SSE, deadline con body pendiente, earlyreturn con desconexión y presupuesto externo sobre503 exactamente dos peticiones. Gate providers más integraciones:30 archivos/825 tests correctos; typecheck/lint/format correctos. Logs e07h2-providers/types/lint/format. Coordinador implementación e integración; /root/core_audit contratos; /root/file_fixture_update revisión estática favorable. Sin peticiones pagadas ni publicación; rollback por revert.
 
 Gate amplio tras E07.h2: 331 archivos / 7330 tests correctos y 15 omitidos; REPL separado 27 correctos; build correcto. Logs e07h2-main/repl/build. /root/baseline_review APPROVED; E07 sigue abierto para otros transportes, árboles, cuotas e integridad de streams.
+
+## E07.i · DONE · 2026-09-16
+
+Vertex usa scope por operación para señal, deadline total (autenticación/backoff/headers/body) y limpieza; cuatro rutas y sondeo isAvailable. Pasa señal hasta getCachedADCToken/inspectADC y fetch; no acepta tokens/JSON tardíos tras aborto. ADC ejecuta gcloud con timeout10s y AbortSignal: argv directo sin shell en POSIX; Windows conserva shell para gcloud.cmd con comando constante sin interpolación de usuario, y comprueba cancelación incluso en cachehit. Conservar timeout0 y contratos ADC anteriores. Inicialización ADC también queda acotada. No se afirma terminación verificada de árboles gcloud: señal enviada y rechazo no prueban salida de descendientes; esa comprobación pertenece al incremento de procesos.
+
+Streams comprueban aborto entre emisiones del mismo evento y al leer; finally cancela lector y libera lock en éxito/error/retorno. Parseo JSON separado de yield para no capturar excepciones de cancelación como errores de parseo. Sin cambiar catálogo ni deduplicación/truncamiento actual, pendientes del incremento de integridad.
+
+REST v1 generateContent/streamGenerateContent y SSE contrastados con [referencia oficial Google](https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/models/inference), consultada 2026-09-16 (redirige la antigua URL Vertex); fetch nativo Node22 sin SDK/retries ocultos. [Referencia oficial child_process](https://nodejs.org/api/child_process.html) confirma execFile con argv sin shell y soporte signal; SDK de modelos y credenciales del usuario no se usan en pruebas.
+
+48 casos de contrato Vertex y10ADC independientes; integraciones HTTP locales compartidas ahora incluyen Vertex para headers/body, deadline/earlyreturn con desconexión y presupuesto de retry503. Prueba de lifecycle renombrada provider-lifetime.integration.test.ts. Gate área providers/auth/onboarding e integraciones:33 archivos/917 tests correctos. Typecheck/lint/format correctos. Logs e07i-providers/types/lint/format. Coordinador implementación/integraciones; /root/core_audit contratos Vertex; /root/file_fixture_update contratos ADC. Sin publicación; rollback por revert.
+
+Revisión E07.i detectó regresión potencial gcloud.cmd/Windows y se corrigió con launcher fijo sin datos de usuario. Tres regresiones adicionales simulan Windows; no constituyen smoke real en ese SO. Gate final7 archivos/116 tests correctos; typecheck/lint/format correctos (e07i-final).
+
+/root/baseline_review APPROVED tras corrección; total13 casos ADC (10 iniciales y3Windows).

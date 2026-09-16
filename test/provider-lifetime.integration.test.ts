@@ -1,10 +1,16 @@
 import { createServer } from "node:http";
 import { expect, it } from "vitest";
+import { VertexProvider } from "../src/providers/vertex.js";
 import { GeminiProvider } from "../src/providers/gemini.js";
 
-it.each(["deadline", "return"])(
-  "Gemini closes a pending SSE body on %s",
-  async (mode) => {
+it.each([
+  ["gemini", "deadline"],
+  ["gemini", "return"],
+  ["vertex", "deadline"],
+  ["vertex", "return"],
+])(
+  "%s closes a pending SSE body on %s",
+  async (kind, mode) => {
     let disconnected!: () => void;
     const closed = new Promise<void>((resolve) => {
       disconnected = resolve;
@@ -25,8 +31,9 @@ it.each(["deadline", "return"])(
     const controller = new AbortController();
     let iterator: AsyncIterator<unknown> | undefined;
     try {
-      const provider = new GeminiProvider();
+      const provider = kind === "vertex" ? new VertexProvider() : new GeminiProvider();
       await provider.initialize({
+        project: "fixture-project",
         apiKey: "fixture-not-a-real-key",
         baseUrl: `http://127.0.0.1:${address.port}`,
       });
