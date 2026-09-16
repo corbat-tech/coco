@@ -70,7 +70,7 @@ describe("release gate process", () => {
     expect(result.stdout).toContain("All checks passed");
     const executed = await calls();
     expect(executed.map((call) => call.stage)).toEqual(stages);
-    expect(executed[3]?.args).toEqual(["run", "--maxWorkers=4"]);
+    expect(executed[3]?.args).toEqual(["run", "--coverage", "--maxWorkers=4"]);
     expect(executed[4]?.args).toEqual(["run", "--config", "vitest.repl.config.ts"]);
   });
 

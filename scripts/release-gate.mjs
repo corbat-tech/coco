@@ -10,7 +10,7 @@ const checks = [
   { name: "Typecheck", entry: "typescript/bin/tsc", args: ["--noEmit"] },
   { name: "Lint", entry: "oxlint/bin/oxlint", args: ["src", "test"] },
   { name: "Format", entry: "oxfmt/bin/oxfmt", args: ["--check", "src", "test"] },
-  { name: "Main Suite", entry: "vitest/vitest.mjs", args: ["run", "--maxWorkers=4"] },
+  { name: "Main Suite", entry: "vitest/vitest.mjs", args: ["run", "--coverage", "--maxWorkers=4"] },
   {
     name: "REPL Integration",
     entry: "vitest/vitest.mjs",

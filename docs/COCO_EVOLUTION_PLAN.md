@@ -1,6 +1,6 @@
 # Coco: evolución pragmática y entregas progresivas
 
-Fecha: 2026-09-16. Estado: **implementación en curso; E02 activo**.
+Fecha: 2026-09-16. Estado: **implementación en curso; E06.a activo**.
 Base inspeccionada: `174fc4128bc190fe0cb0b581d2153b805c49f4af`, paquete `2.41.0`.
 
 Este es el plan vigente para esta evolución. Sustituye **la secuencia de ejecución**, no la evidencia, del plan de 39 pasos de la [auditoría del 16 de septiembre](../../corbat-coco-auditoria/2026-09-16/public/04-plan-de-progreso.md). La auditoría permanece como snapshot histórico fuera del repositorio; su enlace requiere el directorio hermano. Los IDs COCO y S remiten a ese snapshot. [MASTER_PLAN.md](MASTER_PLAN.md) y [CODEX_IMPROVEMENTS_PLAN.md](CODEX_IMPROVEMENTS_PLAN.md) son antecedentes, no listas adicionales que completar antes de publicar. Mandan [CLAUDE.md](../CLAUDE.md) y los ADR aceptados.
@@ -72,7 +72,7 @@ Estados iniciales documentados: todos TODO. La ejecución actual y sus pruebas s
 | ID / estado | Cambio y dependencias | Aceptación mínima |
 | --- | --- | --- |
 | E01 / DONE | Baseline del checkout y 3–5 tareas pequeñas sobre el REPL **existente**. Sin depender del CLI build/resume clásico. | Entorno/commit/lockfile, checks reales, fallos previos y superficies soportadas registrados. Inventario P0/P1 por superficie con evidencia de corrección, contención o bloqueo de release; no basta marcar una función como legacy. Fixtures con bug, feature y fallo/recuperación; pruebas verifican resultado y efectos, no solo texto. Distinguir replay hermético de capacidad con modelo real. |
-| E02 / IN_PROGRESS | CI y puerta de publicación. Depende E01. Subpasos: suite REPL/e2e; checks por canal; paquete instalado; fallo de publicación. | Reparar script e2e o retirar su promesa hasta disponer de pruebas; REPL corre aparte; fallo de publish no se convierte en éxito; tarball instalado en directorio limpio ejecuta entrypoints y una tarea con provider fixture. Gate se prueba sin publicar. |
+| E02 / DONE | CI y puerta de publicación. Depende E01. Subpasos: suite REPL/e2e; checks por canal; paquete instalado; fallo de publicación. | Reparar script e2e o retirar su promesa hasta disponer de pruebas; REPL corre aparte; fallo de publish no se convierte en éxito; tarball instalado en directorio limpio ejecuta entrypoints y una tarea con provider fixture. Gate se prueba sin publicar. |
 
 Desde esta entrega se pueden preparar candidatos, pero no publicar como estable superficies con defectos graves conocidos sin contener. No esperar a terminar todo el programa para corregir el mecanismo de release.
 
@@ -83,7 +83,7 @@ Desde esta entrega se pueden preparar candidatos, pero no publicar como estable 
 | E03 / TODO | Caracterizar y unificar la frontera de tools. Depende E01. Compartir política/ejecución antes de extenderla. | Misma matriz de permisos desde REPL, headless, runtime y delegación; hooks, concurrencia de lecturas, confirmaciones y errores conservados. Detectar bypass con alias; sin doble ejecución ni doble aprobación. |
 | E04 / TODO | Rutas, COMPLETE, shell y undo. Depende E03. Separar integración de file tools, generación y shell/undo en subpasos. | Traversal, symlinks, padre symlink, sibling-prefix y rutas externas; validar acción antes de mutar. Composición/redirección no hereda permiso por primera palabra o sufijo help. Undo sin interpolación shell ni pérdida de cambios previos/staged/ajenos. |
 | E05 / TODO | Permisos MCP y autoridad delegada. Depende E03–E04. | Tools remotas desconocidas no se consideran lecturas seguras; modo plan no muta. Hijo recibe concesión acotada del padre, nunca `confirmed=true` universal; rol docs coherente y resultados estructurados, sin `[object Object]`. |
-| E06 / TODO | Contener promesas y superficies incompletas. Depende E01; puede adelantarse como parche. | Build/resume clásicos sin éxito simulado; mensajes y exit codes honestos. Starter loopback, límites de body y errores controlados; no soporte público anunciado. Quality gates no permiten éxito con medición ausente o crítico: corregir o deshabilitar explícitamente esa salida mientras E09 se completa. Ayuda no recomienda funciones retiradas. |
+| E06 / IN_PROGRESS | Contener promesas y superficies incompletas. Depende E01; puede adelantarse como parche. | Build/resume clásicos sin éxito simulado; mensajes y exit codes honestos. Starter loopback, límites de body y errores controlados; no soporte público anunciado. Quality gates no permiten éxito con medición ausente o crítico: corregir o deshabilitar explícitamente esa salida mientras E09 se completa. Ayuda no recomienda funciones retiradas. |
 | E07 / TODO | Cancelación, buffers y coherencia de streams. Depende E03. Subpasos independientes: señal; procesos/red; cuotas; stream final. | Abort llega a la tool/proceso/hijos y libera timers/listeners. Límites durante streaming y en disco, preview head/tail legible. Sin mezcla de proveedores tras primer chunk, retry de mutación incierta ni ejecución de tool call truncada; Ctrl+C tiene estado veraz. |
 
 **Release B:** una o varias versiones de corrección según alcance. Para una versión estable, cada P0/P1 revalidado en el artefacto/superficie publicada está resuelto o contenido de forma comprobable; deshabilitar una función exige actualizar ayuda y compatibilidad, no esconder el riesgo. No es obligatorio terminar todas las mejoras de UX ni recuperar flujos antiguos. E02 y la matriz de release de la sección 7 son obligatorios.
@@ -184,7 +184,7 @@ Los 14 resultados sustituyen el orden de los 39 pasos; no se finge haber reducid
 
 ## 9. Registro de progreso
 
-Paso activo: **E02.b**, gate de release. E02.a DONE; ver [registro](evolution/E02_RELEASE.md). E01 completado para baseline hermético; evaluación con modelo real pendiente, requisito de E13/E15; ver [resultados y limitaciones](evolution/E01_BASELINE.md). Después E02.a CI/gate. Commit de arranque y baseline: `df14586`. E06.a puede adelantarse para contener una promesa falsa, una vez caracterizada. Ningún paso de producto está DONE por haberse escrito este documento.
+Paso activo: **E06.a**, contención del CLI simulado. E02 infraestructura npm local DONE; ejecución remota pendiente y VSIX bloqueado hasta E11; ver [registro](evolution/E02_RELEASE.md). E01 completado para baseline hermético; evaluación con modelo real pendiente, requisito de E13/E15; ver [resultados y limitaciones](evolution/E01_BASELINE.md). Después E02.a CI/gate. Commit de arranque y baseline: `df14586`. E06.a puede adelantarse para contener una promesa falsa, una vez caracterizada. Ningún paso de producto está DONE por haberse escrito este documento.
 
 Copiar esta ficha al activar cada subpaso; conservar registros anteriores:
 
