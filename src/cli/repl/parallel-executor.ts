@@ -234,18 +234,29 @@ export class ParallelToolExecutor {
     // Wait for all to complete with a safety timeout
     // This prevents the flow from hanging indefinitely if a tool never resolves
     const TOOL_EXECUTION_TIMEOUT_MS = 300000; // 5 minutes max for all tools
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const clearSafetyTimeout = (): void => clearTimeout(timeoutId);
     const timeoutPromise = new Promise<never>((_, reject) => {
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         reject(new Error(`Tool execution timeout after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s`));
       }, TOOL_EXECUTION_TIMEOUT_MS);
       // Clean up timeout if signal is aborted
-      signal?.addEventListener("abort", () => {
-        clearTimeout(timeoutId);
-      });
+      signal?.addEventListener("abort", clearSafetyTimeout);
     });
 
+    // Completing a batch schedules more tasks. Promise.all snapshots its input,
+    // so drain every newly scheduled batch before declaring execution complete.
+    const drain = async (): Promise<void> => {
+      let awaitedCount = 0;
+      while (awaitedCount < processingPromises.length) {
+        const batch = processingPromises.slice(awaitedCount);
+        awaitedCount = processingPromises.length;
+        await Promise.all(batch);
+      }
+    };
+
     try {
-      await Promise.race([Promise.all(processingPromises), timeoutPromise]);
+      await Promise.race([drain(), timeoutPromise]);
     } catch (error) {
       // If timeout or other error, mark remaining tasks as failed
       for (const task of tasks) {
@@ -260,6 +271,9 @@ export class ParallelToolExecutor {
       if (isAbortError(error, signal)) {
         throw error;
       }
+    } finally {
+      clearSafetyTimeout();
+      signal?.removeEventListener("abort", clearSafetyTimeout);
     }
 
     // Collect executed results in order, filtering nulls

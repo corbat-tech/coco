@@ -15,3 +15,7 @@ E03 sigue IN_PROGRESS: REPL/headless aún ejecutan por un alias del registry; la
 Preparación de integración: el API/runtime acepta y transmite AbortSignal al registry. Una cancelación previa impide efectos reales, y cada ejecución concurrente conserva su propia señal. No afirma detener procesos en curso: ToolDefinition todavía no recibe contexto de ejecución; eso corresponde a E07.
 
 Regresión: las dos nuevas pruebas fallan antes de propagar la señal. Ajustado el spy de un consumidor a la llamada con opciones explícitas. Validación: 22 archivos / 227 tests pasan, typecheck y lint correctos. Revisor `/root/baseline_review`: APPROVED, sin hallazgos materiales. Sin publicación; rollback por revert. logs `runtime-signal-before.log` y `runtime-signal-after.log`.
+
+## E03.c · DONE · 2026-09-16
+
+Corregido retorno prematuro del coordinador paralelo: Promise.all solo esperaba la primera tanda aunque callbacks encolasen nuevas herramientas. Ahora drena las tandas añadidas, conserva orden y limpia timer/listener al salir. Dos regresiones fallan antes y pasan después. Siete archivos / 62 pruebas (scheduler, recuperación y e2e), typecheck/lint/diff-check correctos. Logs locales `parallel-lifecycle-{before,after}.log`. Revisor `/root/baseline_review`: APPROVED. Rollback por revert; sin publicación. Cancelación/timeout efectivo de procesos sigue pendiente de E07.
