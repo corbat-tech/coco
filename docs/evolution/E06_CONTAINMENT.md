@@ -15,3 +15,7 @@ Las cuatro demos HTTP usan helper local compartido: escucha 127.0.0.1, puerto va
 72 casos sobre los cuatro entrypoints reales con sockets y proveedor simulado, más 37 runtime: 109 correctos. Cuatro typechecks de apps, lint y format globales y de apps correctos. Antes: ocho casos de validación confirmedTools fallan contra handlers HEAD instrumentados solo con export del servidor y binding local para ejecutar la prueba sin exposición; no es evidencia previa del binding. Log `e06b-before-validation.log`. Después `e06b-after.log`, `e06b-types-*.log`. El mirror hermético necesitó restaurar enlaces workspace de apps hacia su paquete local (normalmente creados por pnpm install); sin red externa.
 
 Coordinador implementa; `/root/core_audit` escribe tests; revisión `/root/baseline_review` APPROVED. Sin cambio de proveedor/modelo ni afirmación de capacidad real. C05 auth/ownership permanece condicionado; soporte queued:true preexistente se corrige en E06.c. Sin publicación; rollback por revert.
+
+## E06.c · DONE · 2026-09-16
+
+Callback de escalación de soporte devuelve queued:false, ID vacío y propuesta explícitamente no enviada. README coincide; no hay cola ni envío real. Test captura el callback que el entrypoint instala en el preset: falla antes por queued:true; después 73 tests HTTP correctos, lint/format correctos. Logs `e06c-before.log`, `e06c-after.log`. Implementación y test coordinador; revisión `/root/baseline_review` APPROVED. Sin publicación; rollback por revert.

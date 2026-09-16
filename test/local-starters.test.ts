@@ -2,7 +2,12 @@ import { once } from "node:events";
 import { request, type Server } from "node:http";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { HumanEscalationInput, HumanEscalationOutput } from "../src/tools/profiles.js";
+
 const mocks = vi.hoisted(() => ({
+  supportEscalation: undefined as
+    | undefined
+    | ((input: HumanEscalationInput) => Promise<HumanEscalationOutput>),
   runtime: {
     snapshot: vi.fn(() => ({ tools: { names: ["fixture_read"] } })),
     eventLog: { list: vi.fn(() => []) },
@@ -17,7 +22,12 @@ vi.mock("@corbat-tech/coco/presets", () => {
     publicWebsiteAssistantPreset: preset,
     internalOpsAssistantPreset: preset,
     salesIntakeAssistantPreset: preset,
-    supportRagAssistantPreset: preset,
+    supportRagAssistantPreset: {
+      createRuntime: vi.fn(async (options) => {
+        mocks.supportEscalation = options.humanEscalation;
+        return mocks.runtime;
+      }),
+    },
   };
 });
 vi.mock("@corbat-tech/coco/runtime", () => ({
@@ -177,6 +187,22 @@ describe.each(apps)("%s real local HTTP entrypoint", (app, load) => {
     expect(mocks.runtime.runTurn).not.toHaveBeenCalled();
     await healthyChat();
   });
+
+  if (app === "support-rag-assistant") {
+    it("returns an unsent proposal without inventing a queue or escalation identifier", async () => {
+      expect(mocks.supportEscalation).toBeTypeOf("function");
+      const result = await mocks.supportEscalation!({
+        conversationId: "fixture-conversation",
+        summary: "Needs review",
+        priority: "urgent",
+        reason: "Customer asks for a person",
+      });
+      expect(result.queued).toBe(false);
+      expect(result.escalationId).toBe("");
+      expect(result.message).toContain("no escalation was sent or queued");
+      expect(result.message).toContain("fixture-conversation");
+    });
+  }
 
   it("survives a client abort during a partial JSON body", async () => {
     const accepted = once(server, "request");

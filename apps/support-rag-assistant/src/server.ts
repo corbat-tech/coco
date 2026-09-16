@@ -29,9 +29,9 @@ async function createSupportDraft(input: SupportDraftInput) {
 
 async function requestHumanEscalation(input: HumanEscalationInput) {
   return {
-    queued: true,
-    escalationId: `esc_${Date.now().toString(36)}`,
-    message: `Prepared ${input.priority} escalation for ${input.conversationId}: ${input.reason}`,
+    queued: false,
+    escalationId: "",
+    message: `Local demo only; no escalation was sent or queued. Proposed ${input.priority} escalation for ${input.conversationId}: ${input.reason}`,
   };
 }
 

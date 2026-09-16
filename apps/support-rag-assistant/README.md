@@ -51,3 +51,5 @@ Human escalation remains blocked unless the request passes:
 ```json
 { "confirmedTools": ["request_human_escalation"] }
 ```
+
+The escalation callback only returns a proposal: `queued: false` and an empty `escalationId`. Even with confirmation, this demo has no queue or delivery integration and does not contact a person.
