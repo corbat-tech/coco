@@ -1,12 +1,18 @@
 /**
  * MCP HTTP Transport Implementation
  *
- * Handles communication with MCP servers via HTTP/HTTPS with OAuth support.
+ * Handles communication with MCP servers via HTTP/HTTPS using configured or stored tokens.
  */
 
-import type { MCPTransport, JSONRPCRequest, JSONRPCResponse } from "../types.js";
+import type {
+  MCPTransport,
+  MCPOutboundMessage,
+  MCPTransportSendOptions,
+  JSONRPCResponse,
+} from "../types.js";
 import { MCPConnectionError, MCPTransportError } from "../errors.js";
-import { authenticateMcpOAuth, getStoredMcpOAuthToken } from "../oauth.js";
+import { getStoredMcpOAuthToken } from "../oauth.js";
+import { createRequestScope } from "../../utils/request-scope.js";
 
 /**
  * HTTP transport configuration
@@ -30,7 +36,7 @@ export interface HTTPTransportConfig {
   timeout?: number;
   /** Custom headers */
   headers?: Record<string, string>;
-  /** Retry attempts */
+  /** Retained for configuration compatibility; POST requests are never replayed. */
   retries?: number;
 }
 
@@ -47,9 +53,8 @@ export class HTTPTransport implements MCPTransport {
   private closeCallback: (() => void) | null = null;
   private connected = false;
   private abortController: AbortController | null = null;
-  private pendingRequests = new Map<string | number, AbortController>();
+  private pendingRequests = new Set<AbortController>();
   private oauthToken: string | undefined;
-  private oauthInFlight: Promise<string> | null = null;
   private sessionId: string | undefined;
   private protocolVersion = "2024-11-05";
 
@@ -124,113 +129,11 @@ export class HTTPTransport implements MCPTransport {
       return false;
     }
     // If bearer auth is configured and token is present, do not override with OAuth.
-    // If token is missing (e.g., env var not set), allow OAuth fallback.
+    // If token is missing (e.g., env var not set), allow loading stored OAuth credentials.
     if (this.config.auth?.type === "bearer") {
       return !this.getAuthToken();
     }
     return true;
-  }
-
-  private async ensureOAuthToken(
-    wwwAuthenticateHeader?: string | null,
-    options?: { forceRefresh?: boolean },
-  ): Promise<string> {
-    if (this.oauthToken && !options?.forceRefresh) {
-      return this.oauthToken;
-    }
-
-    if (this.oauthInFlight) {
-      return this.oauthInFlight;
-    }
-
-    const serverName = this.config.name ?? this.config.url;
-    if (options?.forceRefresh) {
-      this.oauthToken = undefined;
-    }
-    this.oauthInFlight = authenticateMcpOAuth({
-      serverName,
-      resourceUrl: this.config.url,
-      wwwAuthenticateHeader,
-      forceRefresh: options?.forceRefresh,
-    })
-      .then((token) => {
-        this.oauthToken = token;
-        return token;
-      })
-      .finally(() => {
-        this.oauthInFlight = null;
-      });
-
-    return this.oauthInFlight;
-  }
-
-  private async sendRequestWithOAuthRetry(
-    method: "GET" | "POST",
-    body?: string,
-    signal?: AbortSignal,
-  ): Promise<Response> {
-    const doFetch = async (): Promise<Response> =>
-      fetch(this.config.url, {
-        method,
-        headers: this.buildHeaders(method),
-        ...(body ? { body } : {}),
-        signal,
-      });
-
-    let response = await doFetch();
-    if (response.status !== 401 || !this.shouldAttemptOAuth()) {
-      // Some servers include OAuth challenge headers even on non-401 responses.
-      // If we don't have a token yet and challenge is present, bootstrap OAuth now.
-      if (
-        this.shouldAttemptOAuth() &&
-        !this.oauthToken &&
-        response.headers.get("www-authenticate")
-      ) {
-        await this.ensureOAuthToken(response.headers.get("www-authenticate"));
-        response = await doFetch();
-      }
-      return response;
-    }
-
-    await this.ensureOAuthToken(response.headers.get("www-authenticate"), { forceRefresh: true });
-    response = await doFetch();
-    return response;
-  }
-
-  private looksLikeAuthErrorMessage(message?: string): boolean {
-    if (!message) return false;
-    const msg = message.toLowerCase();
-    const hasStrongAuthSignal =
-      msg.includes("unauthorized") ||
-      msg.includes("unauthorised") ||
-      msg.includes("authentication") ||
-      msg.includes("oauth") ||
-      msg.includes("access token") ||
-      msg.includes("invalid_token") ||
-      msg.includes("invalid token") ||
-      msg.includes("token expired") ||
-      msg.includes("bearer") ||
-      msg.includes("not authenticated") ||
-      msg.includes("not logged") ||
-      msg.includes("login") ||
-      (msg.includes("generate") && msg.includes("token"));
-    const hasVendorHint =
-      msg.includes("gemini cli") ||
-      msg.includes("jira") ||
-      msg.includes("confluence") ||
-      msg.includes("atlassian");
-    const hasWeakAuthSignal =
-      msg.includes("authenticate") || msg.includes("token") || msg.includes("authorization");
-    return (
-      hasStrongAuthSignal ||
-      // Vendor-specific hints alone are not enough; require an auth-related token too.
-      (hasVendorHint && hasWeakAuthSignal)
-    );
-  }
-
-  private isJsonRpcAuthError(payload: JSONRPCResponse): boolean {
-    if (!payload.error) return false;
-    return this.looksLikeAuthErrorMessage(payload.error.message);
   }
 
   private captureResponseSession(response: Response): void {
@@ -240,12 +143,17 @@ export class HTTPTransport implements MCPTransport {
     }
   }
 
-  private async parseSseResponse(response: Response): Promise<void> {
+  private async parseSseResponse(response: Response, signal: AbortSignal): Promise<void> {
     if (!response.body) {
       throw new MCPTransportError("SSE response has no body");
     }
 
+    signal.throwIfAborted();
     const reader = response.body.getReader();
+    const onAbort = () => {
+      void reader.cancel(signal.reason).catch(() => {});
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
     const decoder = new TextDecoder();
     let buffer = "";
     let eventData = "";
@@ -256,6 +164,7 @@ export class HTTPTransport implements MCPTransport {
       eventData = "";
       if (!payload) return;
 
+      signal.throwIfAborted();
       const parsed = JSON.parse(payload) as JSONRPCResponse;
       if (
         parsed.result &&
@@ -269,30 +178,45 @@ export class HTTPTransport implements MCPTransport {
       this.messageCallback?.(parsed);
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        signal.throwIfAborted();
+        const { done, value } = await reader.read();
+        signal.throwIfAborted();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() ?? "";
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() ?? "";
 
-      for (const line of lines) {
-        if (line === "") {
-          flushEvent();
-          continue;
-        }
-        if (line.startsWith(":")) continue;
-        if (line.startsWith("data:")) {
-          eventData += (eventData ? "\n" : "") + line.slice(5).trimStart();
+        for (const line of lines) {
+          signal.throwIfAborted();
+          if (line === "") {
+            flushEvent();
+            continue;
+          }
+          if (line.startsWith(":")) continue;
+          if (line.startsWith("data:")) {
+            eventData += (eventData ? "\n" : "") + line.slice(5).trimStart();
+          }
         }
       }
-    }
 
-    if (buffer.length > 0 && buffer.startsWith("data:")) {
-      eventData += (eventData ? "\n" : "") + buffer.slice(5).trimStart();
+      signal.throwIfAborted();
+      if (buffer.length > 0 && buffer.startsWith("data:")) {
+        eventData += (eventData ? "\n" : "") + buffer.slice(5).trimStart();
+      }
+      flushEvent();
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      try {
+        await reader.cancel();
+      } catch {
+        // The transport may already have errored or cancelled this body.
+      } finally {
+        reader.releaseLock();
+      }
     }
-    flushEvent();
   }
 
   /**
@@ -334,121 +258,73 @@ export class HTTPTransport implements MCPTransport {
   /**
    * Send a message through the transport
    */
-  async send(message: JSONRPCRequest): Promise<void> {
+  async send(message: MCPOutboundMessage, options: MCPTransportSendOptions = {}): Promise<void> {
+    options.signal?.throwIfAborted();
     if (!this.connected) {
       throw new MCPTransportError("Transport not connected");
     }
 
-    const abortController = new AbortController();
-    this.pendingRequests.set(message.id, abortController);
-
-    let lastError: Error | undefined;
-
-    for (let attempt = 0; attempt < this.config.retries!; attempt++) {
-      try {
-        const timeoutId = setTimeout(() => {
-          abortController.abort();
-        }, this.config.timeout);
-
-        const response = await this.sendRequestWithOAuthRetry(
-          "POST",
-          JSON.stringify(message),
-          abortController.signal,
+    const controller = new AbortController();
+    const hostSignal = options.signal
+      ? AbortSignal.any([options.signal, controller.signal])
+      : controller.signal;
+    const scope = createRequestScope(hostSignal, this.config.timeout!);
+    this.pendingRequests.add(controller);
+    let response: Response | undefined;
+    try {
+      scope.signal.throwIfAborted();
+      // A failed POST may already have executed a mutating tool. Never replay it,
+      // including in response to authentication-shaped JSON-RPC error messages.
+      response = await fetch(this.config.url, {
+        method: "POST",
+        redirect: "error",
+        headers: this.buildHeaders("POST"),
+        body: JSON.stringify(message),
+        signal: scope.signal,
+      });
+      scope.signal.throwIfAborted();
+      this.captureResponseSession(response);
+      if (!response.ok) {
+        const guidance =
+          response.status === 401
+            ? "; configure a bearer/API-key token or use mcp-remote for OAuth authentication"
+            : "";
+        throw new MCPTransportError(
+          `HTTP error ${response.status}: ${response.statusText}${guidance}`,
         );
+      }
+      if (response.status === 202 || response.status === 204) return;
 
-        clearTimeout(timeoutId);
-        this.captureResponseSession(response);
-
-        if (!response.ok) {
-          throw new MCPTransportError(`HTTP error ${response.status}: ${response.statusText}`);
-        }
-
-        if (response.status === 202) {
-          return;
-        }
-
-        const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-        if (contentType.includes("text/event-stream")) {
-          await this.parseSseResponse(response);
-          return;
-        }
-
-        const data = (await response.json()) as JSONRPCResponse;
-        if (
-          data.result &&
-          typeof data.result === "object" &&
-          data.result !== null &&
-          "protocolVersion" in data.result &&
-          typeof (data.result as { protocolVersion?: unknown }).protocolVersion === "string"
-        ) {
-          this.protocolVersion = (data.result as { protocolVersion: string }).protocolVersion;
-        }
-
-        if (this.shouldAttemptOAuth() && this.isJsonRpcAuthError(data)) {
-          await this.ensureOAuthToken(response.headers.get("www-authenticate"), {
-            forceRefresh: true,
-          });
-
-          const retryResponse = await this.sendRequestWithOAuthRetry(
-            "POST",
-            JSON.stringify(message),
-            abortController.signal,
-          );
-
-          this.captureResponseSession(retryResponse);
-          if (!retryResponse.ok) {
-            throw new MCPTransportError(
-              `HTTP error ${retryResponse.status}: ${retryResponse.statusText}`,
-            );
-          }
-
-          if (retryResponse.status === 202) {
-            return;
-          }
-
-          const retryContentType = retryResponse.headers.get("content-type")?.toLowerCase() ?? "";
-          if (retryContentType.includes("text/event-stream")) {
-            await this.parseSseResponse(retryResponse);
-            return;
-          }
-
-          const retryData = (await retryResponse.json()) as JSONRPCResponse;
-          if (
-            retryData.result &&
-            typeof retryData.result === "object" &&
-            retryData.result !== null &&
-            "protocolVersion" in retryData.result &&
-            typeof (retryData.result as { protocolVersion?: unknown }).protocolVersion === "string"
-          ) {
-            this.protocolVersion = (
-              retryData.result as { protocolVersion: string }
-            ).protocolVersion;
-          }
-          this.messageCallback?.(retryData);
-          return;
-        }
-
-        this.messageCallback?.(data);
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (contentType.includes("text/event-stream")) {
+        await this.parseSseResponse(response, scope.signal);
+        scope.signal.throwIfAborted();
         return;
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        if (error instanceof MCPTransportError) {
-          this.reportError(error);
-          throw error; // Don't retry transport errors
-        }
-
-        // Wait before retry (exponential backoff)
-        if (attempt < this.config.retries! - 1) {
-          await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
-        }
+      }
+      const data = (await response.json()) as JSONRPCResponse;
+      scope.signal.throwIfAborted();
+      if (
+        data.result &&
+        typeof data.result === "object" &&
+        "protocolVersion" in data.result &&
+        typeof (data.result as { protocolVersion?: unknown }).protocolVersion === "string"
+      ) {
+        this.protocolVersion = (data.result as { protocolVersion: string }).protocolVersion;
+      }
+      this.messageCallback?.(data);
+    } catch (error) {
+      scope.signal.throwIfAborted();
+      if (error instanceof MCPTransportError) throw error;
+      throw new MCPTransportError(
+        `Request failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      this.pendingRequests.delete(controller);
+      scope.dispose();
+      if (response?.body && !response.body.locked) {
+        await response.body.cancel().catch(() => {});
       }
     }
-
-    this.pendingRequests.delete(message.id);
-    throw new MCPTransportError(
-      `Request failed after ${this.config.retries} attempts: ${lastError?.message}`,
-    );
   }
 
   /**
@@ -456,7 +332,7 @@ export class HTTPTransport implements MCPTransport {
    */
   async disconnect(): Promise<void> {
     // Abort all pending requests
-    for (const [, controller] of this.pendingRequests) {
+    for (const controller of this.pendingRequests) {
       controller.abort();
     }
     this.pendingRequests.clear();

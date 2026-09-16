@@ -2,7 +2,13 @@ import { getEventListeners } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MCPClientImpl } from "./client.js";
 import { wrapMCPTool } from "./tools.js";
-import type { JSONRPCRequest, JSONRPCResponse, MCPTransport } from "./types.js";
+import type {
+  JSONRPCRequest,
+  JSONRPCResponse,
+  MCPTransport,
+  MCPOutboundMessage,
+  MCPTransportSendOptions,
+} from "./types.js";
 
 const result = { content: [{ type: "text", text: "fixture" }] };
 async function fixture(timeout = 1000) {
@@ -10,8 +16,8 @@ async function fixture(timeout = 1000) {
   let error!: (failure: Error) => void;
   let close!: () => void;
   const requests: JSONRPCRequest[] = [];
-  const send = vi.fn(async (request: JSONRPCRequest) => {
-    if (request.method === "initialize") {
+  const send = vi.fn(async (request: MCPOutboundMessage, _options?: MCPTransportSendOptions) => {
+    if (request.method === "initialize" && "id" in request) {
       message({
         jsonrpc: "2.0",
         id: request.id!,
@@ -21,7 +27,7 @@ async function fixture(timeout = 1000) {
           serverInfo: { name: "fixture", version: "1" },
         },
       });
-    } else if (request.method === "tools/call") requests.push(request);
+    } else if (request.method === "tools/call" && "id" in request) requests.push(request);
   });
   const transport: MCPTransport = {
     connect: vi.fn().mockResolvedValue(undefined),
@@ -46,7 +52,7 @@ async function fixture(timeout = 1000) {
   });
   send.mockClear();
   const respond = (index = 0) => message({ jsonrpc: "2.0", id: requests[index]!.id!, result });
-  return { client, send, requests, respond, message, error, close };
+  return { client, transport, send, requests, respond, message, error, close };
 }
 function clean(signal: AbortSignal) {
   expect(getEventListeners(signal, "abort")).toHaveLength(0);
@@ -246,4 +252,103 @@ describe("MCP tool wrapper delegates lifetime to the real client", () => {
     expect(await outcome).toBe(controller.signal.reason);
     clean(controller.signal);
   });
+});
+
+describe("MCP transport cancellation and protocol notification", () => {
+  it.each(["abort", "deadline", "success", "RPC error"] as const)(
+    "%s closes its transport signal and sends cancellation only when needed",
+    async (ending) => {
+      const f = await fixture();
+      const controller = new AbortController();
+      const reason = new Error("fixture-sensitive-cancellation-detail");
+      const outcome = f.client
+        .callTool({ name: "fixture" }, { signal: controller.signal, timeout: 11 })
+        .then(
+          (value) => ({ ok: true as const, value }),
+          (error: unknown) => ({ ok: false as const, error }),
+        );
+      const transportSignal = f.send.mock.calls[0]?.[1]?.signal;
+      expect(transportSignal).toBeInstanceOf(AbortSignal);
+      expect(transportSignal).not.toBe(controller.signal);
+      expect(transportSignal?.aborted).toBe(false);
+      if (ending === "abort") controller.abort(reason);
+      if (ending === "deadline") await vi.advanceTimersByTimeAsync(11);
+      if (ending === "success") f.respond();
+      if (ending === "RPC error")
+        f.message({
+          jsonrpc: "2.0",
+          id: f.requests[0]!.id,
+          error: { code: -32603, message: "fixture RPC failure" },
+        });
+      const settled = await outcome;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled.ok).toBe(ending === "success");
+      if (ending === "abort" && !settled.ok) expect(settled.error).toBe(reason);
+      expect(transportSignal?.aborted).toBe(true);
+      const notifications = f.send.mock.calls.filter(
+        ([message]) => message.method === "notifications/cancelled",
+      );
+      if (ending === "abort" || ending === "deadline") {
+        expect(notifications).toHaveLength(1);
+        expect(notifications[0]?.[0]).toEqual({
+          jsonrpc: "2.0",
+          method: "notifications/cancelled",
+          params: { requestId: f.requests[0]!.id },
+        });
+        expect(JSON.stringify(notifications[0]?.[0])).not.toContain(reason.message);
+      } else expect(notifications).toHaveLength(0);
+      clean(controller.signal);
+    },
+  );
+
+  it("initialize deadline aborts transport without sending a cancellation notification", async () => {
+    const f = await fixture();
+    f.send.mockImplementation(async () => {});
+    const client = new MCPClientImpl(f.transport, 7);
+    const outcome = client
+      .initialize({
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "fixture", version: "1" },
+      })
+      .catch((error: unknown) => error);
+    const signal = f.send.mock.calls[0]?.[1]?.signal;
+    await vi.advanceTimersByTimeAsync(7);
+    expect(String(await outcome)).toMatch(/timeout|timed out/i);
+    expect(signal?.aborted).toBe(true);
+    expect(f.send.mock.calls.map(([message]) => message.method)).toEqual(["initialize"]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["throw", "reject"] as const)(
+    "notification send %s cannot change A's reason or reject B",
+    async (failureMode) => {
+      const f = await fixture();
+      const a = new AbortController();
+      const b = new AbortController();
+      const canceled = f.client
+        .callTool({ name: "a" }, { signal: a.signal })
+        .catch((error: unknown) => error);
+      let bSettled = false;
+      const pending = f.client.callTool({ name: "b" }, { signal: b.signal }).finally(() => {
+        bSettled = true;
+      });
+      const notifyFailure = new Error("fixture notification send failed");
+      if (failureMode === "throw")
+        f.send.mockImplementationOnce(() => {
+          throw notifyFailure;
+        });
+      else f.send.mockRejectedValueOnce(notifyFailure);
+      const reason = new Error("A original cancellation");
+      a.abort(reason);
+      expect(await canceled).toBe(reason);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bSettled).toBe(false);
+      f.respond(1);
+      await expect(pending).resolves.toEqual(result);
+      expect(await canceled).toBe(reason);
+      clean(a.signal);
+      clean(b.signal);
+    },
+  );
 });

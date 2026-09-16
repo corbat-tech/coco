@@ -311,199 +311,58 @@ describe("HTTPTransport", () => {
       );
     });
 
-    it("should retry on failure", async () => {
-      const response = { jsonrpc: "2.0", id: 1, result: { data: "test" } };
-
-      // Create new transport with retries
-      const retryTransport = new HTTPTransport({
-        url: "https://api.example.com/mcp",
-        retries: 2,
-      });
-
+    it("does not replay a POST after a network failure even when retries are configured", async () => {
+      const retryTransport = new HTTPTransport({ url: "https://api.example.com/mcp", retries: 3 });
       await retryTransport.connect();
-
       const messageCallback = vi.fn();
       retryTransport.onMessage(messageCallback);
-
-      // Mock retry: first fails, second succeeds
-      vi.mocked(fetch)
-        .mockRejectedValueOnce(new Error("Network error"))
-        .mockResolvedValueOnce(new Response(JSON.stringify(response), { status: 200 }));
-
-      await retryTransport.send({ jsonrpc: "2.0", id: 1, method: "test" });
-
-      expect(messageCallback).toHaveBeenCalledWith(response);
+      vi.mocked(fetch).mockRejectedValueOnce(new Error("Network error"));
+      await expect(
+        retryTransport.send({ jsonrpc: "2.0", id: 1, method: "tools/call" }),
+      ).rejects.toThrow();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(messageCallback).not.toHaveBeenCalled();
+      await retryTransport.disconnect();
     });
 
-    it("should perform oauth login on 401 during send and retry", async () => {
-      const messageCallback = vi.fn();
-      transport.onMessage(messageCallback);
+    it.each([undefined, "stale-token"])(
+      "401 does not start uncancellable OAuth or replay POST (cache %s)",
+      async (cached) => {
+        await transport.disconnect();
+        vi.mocked(getStoredMcpOAuthToken).mockResolvedValueOnce(cached);
+        transport = new HTTPTransport({ url: "https://mcp.example.com/v1/mcp" });
+        await transport.connect();
+        const callback = vi.fn();
+        transport.onMessage(callback);
+        vi.mocked(fetch).mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
+        await expect(
+          transport.send({ jsonrpc: "2.0", id: 1, method: "tools/call" }),
+        ).rejects.toThrow(/401|auth/i);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(authenticateMcpOAuth).not.toHaveBeenCalled();
+        expect(callback).not.toHaveBeenCalled();
+        if (cached)
+          expect(vi.mocked(fetch).mock.calls[0]?.[1]?.headers).toMatchObject({
+            Authorization: `Bearer ${cached}`,
+          });
+      },
+    );
 
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(
-          new Response("Unauthorized", {
-            status: 401,
-            statusText: "Unauthorized",
-            headers: {
-              "www-authenticate":
-                'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"',
-            },
-          }),
-        )
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
-            status: 200,
-          }),
-        );
-
-      await transport.send({ jsonrpc: "2.0", id: 1, method: "test" });
-
-      expect(authenticateMcpOAuth).toHaveBeenCalledTimes(1);
-      expect(messageCallback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 1, result: { ok: true } });
-      const secondHeaders = vi.mocked(fetch).mock.calls[1]?.[1]?.headers as Record<string, string>;
-      expect(secondHeaders.Authorization).toBe("Bearer oauth-token");
-    });
-
-    it("forces oauth refresh when a cached token is rejected with HTTP 401 invalid_token", async () => {
-      await transport.disconnect();
-      vi.mocked(getStoredMcpOAuthToken).mockResolvedValueOnce("stale-token");
-      vi.mocked(authenticateMcpOAuth).mockResolvedValueOnce("fresh-token");
-
-      transport = new HTTPTransport({
-        name: "atlassian",
-        url: "https://mcp.example.com/v1/mcp",
-        retries: 1,
-      });
-      await transport.connect();
-
-      const messageCallback = vi.fn();
-      transport.onMessage(messageCallback);
-
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(
-          new Response("Unauthorized", {
-            status: 401,
-            statusText: "Unauthorized",
-          }),
-        )
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
-            status: 200,
-          }),
-        );
-
-      await transport.send({ jsonrpc: "2.0", id: 1, method: "test" });
-
-      expect(authenticateMcpOAuth).toHaveBeenCalledWith(
-        expect.objectContaining({
-          serverName: "atlassian",
-          resourceUrl: "https://mcp.example.com/v1/mcp",
-          forceRefresh: true,
-        }),
+    it.each([
+      "Not authenticated. Please generate a token or login.",
+      "Atlassian Remote MCP is a Gemini CLI extension. Please authenticate first.",
+      "401 invalid_token",
+    ])("does not reinterpret application errors as replay permission: %s", async (message) => {
+      const callback = vi.fn();
+      transport.onMessage(callback);
+      const response = { jsonrpc: "2.0", id: 1, error: { code: -32001, message } };
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify(response), { status: 200 }),
       );
-      const postCalls = vi
-        .mocked(fetch)
-        .mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "POST");
-      const firstHeaders = postCalls[0]?.[1]?.headers as Record<string, string>;
-      const secondHeaders = postCalls[1]?.[1]?.headers as Record<string, string>;
-      expect(firstHeaders.Authorization).toBe("Bearer stale-token");
-      expect(secondHeaders.Authorization).toBe("Bearer fresh-token");
-      expect(messageCallback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 1, result: { ok: true } });
-    });
-
-    it("should trigger oauth when JSON-RPC error indicates auth is required", async () => {
-      const messageCallback = vi.fn();
-      transport.onMessage(messageCallback);
-
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: 1,
-              error: {
-                code: -32001,
-                message: "Not authenticated. Please generate a token or login.",
-              },
-            }),
-            { status: 200 },
-          ),
-        )
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
-            status: 200,
-          }),
-        );
-
       await transport.send({ jsonrpc: "2.0", id: 1, method: "initialize" });
-
-      expect(authenticateMcpOAuth).toHaveBeenCalledTimes(1);
-      expect(messageCallback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 1, result: { ok: true } });
-    });
-
-    it("should trigger oauth for Atlassian Gemini-CLI style auth hint", async () => {
-      const messageCallback = vi.fn();
-      transport.onMessage(messageCallback);
-
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: 1,
-              error: {
-                code: -32001,
-                message:
-                  "Atlassian Remote MCP is a Gemini CLI extension for Jira and Confluence. Please authenticate first.",
-              },
-            }),
-            { status: 200 },
-          ),
-        )
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
-            status: 200,
-          }),
-        );
-
-      await transport.send({ jsonrpc: "2.0", id: 1, method: "initialize" });
-
-      expect(authenticateMcpOAuth).toHaveBeenCalledTimes(1);
-      expect(messageCallback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 1, result: { ok: true } });
-    });
-
-    it("should trigger oauth for invalid_token JSON-RPC errors", async () => {
-      const messageCallback = vi.fn();
-      transport.onMessage(messageCallback);
-
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: 1,
-              error: {
-                code: -32001,
-                message: "401 invalid_token",
-              },
-            }),
-            { status: 200 },
-          ),
-        )
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } }), {
-            status: 200,
-          }),
-        );
-
-      await transport.send({ jsonrpc: "2.0", id: 1, method: "initialize" });
-
-      expect(authenticateMcpOAuth).toHaveBeenCalledWith(
-        expect.objectContaining({
-          forceRefresh: true,
-        }),
-      );
-      expect(messageCallback).toHaveBeenCalledWith({ jsonrpc: "2.0", id: 1, result: { ok: true } });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(authenticateMcpOAuth).not.toHaveBeenCalled();
+      expect(callback).toHaveBeenCalledWith(response);
     });
 
     it("should not trigger oauth for non-auth domain errors", async () => {

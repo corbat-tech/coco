@@ -7,7 +7,8 @@
 import { spawn, ChildProcess } from "node:child_process";
 import type {
   MCPTransport,
-  JSONRPCRequest,
+  MCPOutboundMessage,
+  MCPTransportSendOptions,
   JSONRPCResponse,
   StdioTransportConfig,
 } from "../types.js";
@@ -111,7 +112,8 @@ export class StdioTransport implements MCPTransport {
   /**
    * Send a message through the transport
    */
-  async send(message: JSONRPCRequest): Promise<void> {
+  async send(message: MCPOutboundMessage, options: MCPTransportSendOptions = {}): Promise<void> {
+    options.signal?.throwIfAborted();
     if (!this.connected || !this.process?.stdin) {
       throw new MCPTransportError("Transport not connected");
     }
@@ -119,22 +121,33 @@ export class StdioTransport implements MCPTransport {
     const line = JSON.stringify(message) + "\n";
 
     return new Promise((resolve, reject) => {
-      if (!this.process?.stdin) {
+      const stdin = this.process?.stdin;
+      if (!stdin) {
         reject(new MCPTransportError("stdin not available"));
         return;
       }
-
-      const stdin = this.process.stdin;
-      const canWrite = stdin.write(line, (error) => {
-        if (error) {
-          reject(new MCPTransportError(`Write error: ${error.message}`));
-        } else {
-          resolve();
-        }
-      });
-
-      if (!canWrite) {
-        stdin.once("drain", () => resolve());
+      let settled = false;
+      const finish = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        options.signal?.removeEventListener("abort", onAbort);
+        if (error !== undefined) reject(error);
+        else resolve();
+      };
+      const onAbort = () => finish(options.signal?.reason);
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      if (options.signal?.aborted) {
+        onAbort();
+        return;
+      }
+      try {
+        // The write callback acknowledges this chunk even under backpressure.
+        // A shared drain event cannot acknowledge a particular request.
+        stdin.write(line, (error) => {
+          finish(error ? new MCPTransportError(`Write error: ${error.message}`) : undefined);
+        });
+      } catch (error) {
+        finish(error);
       }
     });
   }

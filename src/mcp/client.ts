@@ -20,6 +20,7 @@ import type {
   JSONRPCRequest,
   JSONRPCResponse,
 } from "./types.js";
+import { createRequestScope } from "../utils/request-scope.js";
 import { MCPConnectionError, MCPTimeoutError } from "./errors.js";
 
 /**
@@ -113,6 +114,8 @@ export class MCPClientImpl implements MCPClient {
     const request: JSONRPCRequest = { jsonrpc: "2.0", id, method, params };
     return new Promise<T>((resolve, reject) => {
       let settled = false;
+      let dispatched = false;
+      const transportController = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
       const cleanup = () => {
         if (settled) return false;
@@ -123,18 +126,29 @@ export class MCPClientImpl implements MCPClient {
         return true;
       };
       const fail = (error: unknown) => {
-        if (cleanup()) reject(error);
+        if (cleanup()) {
+          transportController.abort(error);
+          reject(error);
+        }
       };
-      const onAbort = () => fail(signal?.reason);
+      const cancel = (reason: unknown) => {
+        if (settled) return;
+        fail(reason);
+        if (dispatched && method !== "initialize") this.notifyCancellation(id);
+      };
+      const onAbort = () => cancel(signal?.reason);
       this.pendingRequests.set(id, {
         resolve: (value) => {
-          if (cleanup()) resolve(value as T);
+          if (cleanup()) {
+            resolve(value as T);
+            transportController.abort();
+          }
         },
         reject: fail,
       });
       if (timeoutMs > 0) {
         timer = setTimeout(() => {
-          fail(new MCPTimeoutError(`Request '${method}' timed out after ${timeoutMs}ms`));
+          cancel(new MCPTimeoutError(`Request '${method}' timed out after ${timeoutMs}ms`));
         }, timeoutMs);
       }
       signal?.addEventListener("abort", onAbort, { once: true });
@@ -144,11 +158,31 @@ export class MCPClientImpl implements MCPClient {
       }
       try {
         // A transport may synchronously deliver a response or throw on dispatch.
-        Promise.resolve(this.transport.send(request)).catch(fail);
+        dispatched = true;
+        Promise.resolve(this.transport.send(request, { signal: transportController.signal })).catch(
+          fail,
+        );
       } catch (error) {
         fail(error);
       }
     });
+  }
+
+  /** Best effort only: cancellation cannot roll back remote side effects. */
+  private notifyCancellation(requestId: string | number): void {
+    const scope = createRequestScope(undefined, 1000);
+    void (async () => {
+      try {
+        await this.transport.send(
+          { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId } },
+          { signal: scope.signal },
+        );
+      } catch {
+        // The original request already has its outcome; notification failure is not global.
+      } finally {
+        scope.dispose();
+      }
+    })();
   }
 
   /**
@@ -166,7 +200,6 @@ export class MCPClientImpl implements MCPClient {
     // Send initialized notification
     await this.transport.send({
       jsonrpc: "2.0",
-      id: ++this.requestId,
       method: "notifications/initialized",
     });
 

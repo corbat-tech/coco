@@ -3,7 +3,14 @@
  * Implements bidirectional communication using SSE for receiving and HTTP POST for sending
  */
 
-import type { MCPTransport, JSONRPCRequest, JSONRPCResponse } from "../types.js";
+import type {
+  MCPTransport,
+  MCPOutboundMessage,
+  MCPTransportSendOptions,
+  JSONRPCResponse,
+} from "../types.js";
+import { createRequestScope } from "../../utils/request-scope.js";
+import { rethrowCancellation } from "../../utils/cancellation.js";
 import { MCPTransportError, MCPConnectionError } from "../errors.js";
 
 /**
@@ -14,6 +21,8 @@ export interface SSETransportConfig {
   url: string;
   /** Optional headers for authentication */
   headers?: Record<string, string>;
+  /** POST deadline in ms; zero disables it. */
+  timeout?: number;
   /** Reconnect delay in ms (default: 1000) */
   initialReconnectDelay?: number;
   /** Maximum reconnect delay in ms (default: 30000) */
@@ -26,6 +35,7 @@ export interface SSETransportConfig {
  * Default SSE config
  */
 const DEFAULT_CONFIG: Required<Omit<SSETransportConfig, "url" | "headers">> = {
+  timeout: 60000,
   initialReconnectDelay: 1000,
   maxReconnectDelay: 30000,
   maxReconnectAttempts: 10,
@@ -84,36 +94,40 @@ export class SSETransport implements MCPTransport {
   /**
    * Send a JSON-RPC message via HTTP POST
    */
-  async send(message: JSONRPCRequest): Promise<void> {
+  async send(message: MCPOutboundMessage, options: MCPTransportSendOptions = {}): Promise<void> {
+    options.signal?.throwIfAborted();
     if (!this.connected) {
       throw new MCPConnectionError("Not connected to SSE endpoint");
     }
 
-    // Use the message endpoint discovered during SSE connection
+    const scope = createRequestScope(options.signal, this.config.timeout);
+    const signal = this.abortController
+      ? AbortSignal.any([scope.signal, this.abortController.signal])
+      : scope.signal;
     const endpoint = this.messageEndpoint ?? `${this.config.url}/message`;
-
+    let response: Response | undefined;
     try {
-      const response = await fetch(endpoint, {
+      signal.throwIfAborted();
+      response = await fetch(endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...this.config.headers,
-        },
+        redirect: "error",
+        headers: { "Content-Type": "application/json", ...this.config.headers },
         body: JSON.stringify(message),
-        signal: this.abortController?.signal,
+        signal,
       });
-
+      signal.throwIfAborted();
       if (!response.ok) {
         throw new MCPTransportError(`HTTP POST failed: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
-      if ((error as Error).name === "AbortError") return;
-
+      rethrowCancellation(error, signal);
       if (error instanceof MCPTransportError) throw error;
-
       throw new MCPTransportError(
         `Failed to send message: ${error instanceof Error ? error.message : String(error)}`,
       );
+    } finally {
+      scope.dispose();
+      await response?.body?.cancel().catch(() => {});
     }
   }
 

@@ -139,3 +139,13 @@ Cliente MCP propio recibe signal/timeout por llamada; preabort evita envío y ti
 Esto cancela la espera local únicamente: transporte y notificación al servidor son E07.l2 y siguientes. [Especificación MCP cancellation](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation), consultada2026-09-16, permite que servidor ignore cancelación; no se promete rollback remoto. Coco no usa aquí SDK MCP sino su cliente propio.
 
 20 casos nuevos independientes y fixtures de contrato/permiso ajustados. Gate MCP15 archivos/248 tests correctos; typecheck/lint/format correctos. Logs e07l1-final/types/lint/format. Coordinador implementa; /root/core_audit contratos; /root/file_fixture_update APPROVED revisión estática. Sin publicación; rollback por revert.
+
+## E07.l2 · DONE · 2026-09-16
+
+Señal por solicitud hasta stdio/HTTP/SSE. Cliente aborta el transporte al finalizar; cancelación/deadline de solicitudes emitidas envía notifications/cancelled sinid y sin motivo sensible, con plazo1s; initialize nunca se notifica como cancelado. Inicialized también es notificación sinid. Fallos de notificación no cambian el resultado original ni otras solicitudes. Stdio espera callback de su escritura, limpia listener y evita drain compartido. No puede retirar bytes ya encolados ni acreditar terminación del trabajo remoto.
+
+HTTP tiene scope incluyendo JSON/SSE, registros limpiados y lector cancelado/liberado; error individual no rechaza otras solicitudes. SSE POST tiene señal independiente más señal de conexión, deadline y limpieza del body; aborto ya no devuelve éxito. No hay replay automático de POST ni heurísticas de autenticación sobre errores de aplicación. Revisión detectó replay por redirección307/308: redirect:error en ambos POST; pruebas reales307 confirman origen1/destino0. Configuración retries conservada por compatibilidad, sin repetir POST.
+
+Contención temporal explícita: HTTP conserva tokens almacenados/bearer/APIkey, pero no inicia OAuth sin cancelación dentro de send; recuperación interactiva se restablecerá en E07.l3 de forma acotada a initialize y HTTP401. Es un pendiente antes de cerrar E07, no una eliminación definitiva. Recepción SSE compartida, cuotas/frames y OAuth todavía requieren trabajo. Fuente protocolo y límites de cancelación descritos en E07.l1.
+
+Gate18 archivos/283 tests correctos; typecheck/lint/format correctos. Contratos independientes9stdio+13HTTP/SSE+7cliente; seis integraciones HTTP reales locales, incluida conexión reutilizable y notificación exacta. Logs e07l2-final/types/lint/format. Coordinador cliente/SSE/integraciones; /root/file_fixture_update HTTP; /root/core_audit contratos; /root/baseline_review APPROVED. Sin publicación ni cuentas externas; rollback por revert.
