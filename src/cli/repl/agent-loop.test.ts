@@ -63,7 +63,7 @@ function createToolStreamMock(
           yield { type: "tool_use_start", toolCall: { id: tc.id, name: tc.name } };
           yield { type: "tool_use_end", toolCall: tc };
         }
-        yield { type: "done" };
+        yield { type: "done", stopReason: "tool_use" };
       })(),
     );
 }
@@ -210,6 +210,128 @@ describe("executeAgentTurn", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  describe("tool batch integrity", () => {
+    const call: ToolCall = { id: "integrity-1", name: "read_file", input: {} };
+    const end = (toolCall: Partial<ToolCall>): StreamChunk => ({ type: "tool_use_end", toolCall });
+    const done: StreamChunk = { type: "done", stopReason: "tool_use" };
+    const cases: Array<[string, StreamChunk[]]> = [
+      ["missing terminal", [end(call)]],
+      ["terminal missing reason", [end(call), { type: "done" }]],
+      ["contradictory terminal", [end(call), { type: "done", stopReason: "end_turn" }]],
+      ["truncated terminal", [end(call), { type: "done", stopReason: "max_tokens" }]],
+      ["missing arguments", [end({ id: call.id, name: call.name }), done]],
+      ["missing identity", [end({ name: call.name, input: {} }), done]],
+      [
+        "invalid second input",
+        [
+          end(call),
+          end({ ...call, id: "second", input: [] as unknown as Record<string, unknown> }),
+          done,
+        ],
+      ],
+      [
+        "conflicting repeated identity",
+        [end(call), end({ ...call, input: { path: "secret-marker" } }), done],
+      ],
+      [
+        "changed name",
+        [{ type: "tool_use_start", toolCall: call }, end({ ...call, name: "write_file" }), done],
+      ],
+      [
+        "unclosed second call",
+        [
+          end(call),
+          { type: "tool_use_start", toolCall: { id: "second", name: "read_file" } },
+          done,
+        ],
+      ],
+      [
+        "delta ID never completed",
+        [
+          { type: "tool_use_start", toolCall: call },
+          { type: "tool_use_delta", toolCall: { id: "unknown" } },
+          end(call),
+          done,
+        ],
+      ],
+      [
+        "delta conflicting name",
+        [
+          { type: "tool_use_start", toolCall: call },
+          { type: "tool_use_delta", toolCall: { id: call.id, name: "write_file" } },
+          end(call),
+          done,
+        ],
+      ],
+      ["orphan delta", [{ type: "tool_use_delta", text: "{}" }]],
+      ["empty tool terminal", [done]],
+    ];
+    it.each(cases)("rejects %s without effects or replay", async (_name, chunks) => {
+      const { executeAgentTurn } = await import("./agent-loop.js");
+      mockSession.config.agent.recoveryV2 = true;
+      vi.mocked(mockProvider.streamWithTools).mockImplementation(() =>
+        toAsyncIterable(
+          (function* () {
+            yield* chunks;
+          })(),
+        ),
+      );
+      const result = await executeAgentTurn(mockSession, "Read", mockProvider, mockToolRegistry);
+      expect(result.error).toBeTruthy();
+      expect(result.error).not.toContain("secret-marker");
+      expect(result.quality?.hadError).toBe(true);
+      expect(result.toolCalls).toEqual([]);
+      expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+      expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(1);
+    });
+    it("accepts a name-only start then concrete delta and explicit empty arguments", async () => {
+      const { executeAgentTurn } = await import("./agent-loop.js");
+      vi.mocked(mockToolRegistry.execute).mockResolvedValue({
+        success: true,
+        data: "ok",
+        duration: 1,
+      });
+      vi.mocked(mockProvider.streamWithTools)
+        .mockImplementationOnce(() =>
+          toAsyncIterable(
+            (function* () {
+              yield { type: "tool_use_start", toolCall: { name: call.name } };
+              yield {
+                type: "tool_use_delta",
+                toolCall: { id: call.id, name: call.name },
+                text: "{}",
+              };
+              yield end(call);
+              yield end(call);
+              yield done;
+            })(),
+          ),
+        )
+        .mockImplementation(createTextStreamMock("Finished", "end_turn"));
+      await executeAgentTurn(mockSession, "Read", mockProvider, mockToolRegistry);
+      expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(mockToolRegistry.execute).mock.calls[0]?.[1]).toEqual({});
+    });
+    it("preserves cancellation of a provisional batch", async () => {
+      const { executeAgentTurn } = await import("./agent-loop.js");
+      const controller = new AbortController();
+      vi.mocked(mockProvider.streamWithTools).mockImplementation(() =>
+        toAsyncIterable(
+          (function* () {
+            yield end(call);
+            controller.abort(new Error("cancel fixture"));
+            yield done;
+          })(),
+        ),
+      );
+      const result = await executeAgentTurn(mockSession, "Read", mockProvider, mockToolRegistry, {
+        signal: controller.signal,
+      });
+      expect(result.aborted).toBe(true);
+      expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+    });
   });
 
   it("should process a simple message without tool calls", async () => {
@@ -1632,7 +1754,7 @@ describe("max_tokens auto-continue", () => {
     expect(result.aborted).toBe(false);
   });
 
-  it("should recover when stopReason is tool_use but no tool calls were reconstructed", async () => {
+  it("fails without replay when tool_use has no reconstructed calls", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
     let callCount = 0;
@@ -1654,8 +1776,10 @@ describe("max_tokens auto-continue", () => {
 
     const result = await executeAgentTurn(mockSession, "Hazlo", mockProvider, mockToolRegistry);
 
-    expect(callCount).toBeGreaterThanOrEqual(2);
-    expect(result.toolCalls.length).toBeGreaterThan(0);
+    expect(callCount).toBe(1);
+    expect(result.toolCalls).toEqual([]);
+    expect(result.error).toBeTruthy();
+    expect(mockToolRegistry.execute).not.toHaveBeenCalled();
     expect(result.aborted).toBe(false);
   });
 

@@ -12,6 +12,9 @@
  */
 
 import chalk from "chalk";
+import { isDeepStrictEqual } from "node:util";
+import { ResponseIntegrityError } from "../../providers/response-integrity.js";
+import { validateToolCallInput } from "../../providers/tool-call-normalizer.js";
 import { AgentRuntime } from "../../runtime/agent-runtime.js";
 import { createRuntimeToolDispatch } from "./runtime-tool-dispatch.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -562,11 +565,15 @@ export async function executeAgentTurn(
           {
             id: string;
             name: string;
-            input: Record<string, unknown>;
+            completed?: ToolCall;
             geminiThoughtSignature?: string;
           }
         > = new Map();
 
+        let sawDone = false;
+        let sawToolChunk = false;
+        const invalidBatch = () =>
+          new ResponseIntegrityError("Invalid or incomplete tool call batch", provider.name);
         try {
           for await (const chunk of provider.streamWithTools(messages, {
             tools,
@@ -578,6 +585,8 @@ export async function executeAgentTurn(
             if (options.signal?.aborted) {
               break;
             }
+
+            if (chunk.type.startsWith("tool_use_")) sawToolChunk = true;
 
             // Wrap each chunk processing in try/catch to prevent single bad chunk from stopping flow
             try {
@@ -603,46 +612,89 @@ export async function executeAgentTurn(
                   options.onThinkingEnd?.();
                   thinkingEnded = true;
                 }
-                const id = chunk.toolCall.id ?? `tool_${toolCallBuilders.size}`;
-                const toolName = chunk.toolCall.name ?? "";
-                toolCallBuilders.set(id, {
-                  id,
-                  name: toolName,
-                  input: {},
-                  geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
-                });
+                const id = chunk.toolCall.id;
+                const toolName = chunk.toolCall.name;
+                if (
+                  (id !== undefined && typeof id !== "string") ||
+                  (toolName !== undefined && typeof toolName !== "string")
+                )
+                  throw invalidBatch();
+                // Some providers announce a tool before its ID/name fragments arrive.
+                // Such starts are advisory; only concrete final calls can execute.
+                if (id) {
+                  const existing = toolCallBuilders.get(id);
+                  if (existing?.name && toolName && existing.name !== toolName)
+                    throw invalidBatch();
+                  if (existing && !existing.name && toolName) existing.name = toolName;
+                  if (!existing)
+                    toolCallBuilders.set(id, {
+                      id,
+                      name: toolName ?? "",
+                      geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
+                    });
+                }
                 // Notify that a tool is being prepared/parsed
                 if (toolName) {
                   options.onToolPreparing?.(toolName);
                 }
               }
 
+              // Deltas remain provisional, but explicit references cannot change identity.
+              if (chunk.type === "tool_use_delta" && chunk.toolCall) {
+                const { id, name } = chunk.toolCall;
+                if (typeof name !== "string" && name !== undefined) throw invalidBatch();
+                if (id !== undefined) {
+                  if (typeof id !== "string" || !id.trim()) throw invalidBatch();
+                  const builder = toolCallBuilders.get(id);
+                  if (builder) {
+                    if (builder.name && name && name !== builder.name) throw invalidBatch();
+                    if (!builder.name && name) builder.name = name;
+                  } else {
+                    // An ID can arrive after an advisory name-only start. Track it
+                    // provisionally; a complete end is still required for this ID.
+                    toolCallBuilders.set(id, { id, name: name ?? "" });
+                  }
+                }
+              }
+
               // Handle tool call end - finalize the tool call
               if (chunk.type === "tool_use_end" && chunk.toolCall) {
-                const id = chunk.toolCall.id ?? "";
+                const id = chunk.toolCall.id;
+                if (typeof id !== "string" || !id.trim()) throw invalidBatch();
                 const builder = toolCallBuilders.get(id);
-                if (builder) {
-                  const finalToolCall: ToolCall = {
-                    id: builder.id,
-                    name: chunk.toolCall.name ?? builder.name,
-                    input: chunk.toolCall.input ?? builder.input,
-                    geminiThoughtSignature:
-                      chunk.toolCall.geminiThoughtSignature ?? builder.geminiThoughtSignature,
-                  };
+                const name = chunk.toolCall.name ?? builder?.name;
+                if (
+                  typeof name !== "string" ||
+                  !name.trim() ||
+                  (builder?.name && name !== builder.name)
+                )
+                  throw invalidBatch();
+                const finalToolCall: ToolCall = {
+                  id,
+                  name,
+                  input: structuredClone(
+                    validateToolCallInput(chunk.toolCall.input, provider.name),
+                  ),
+                  geminiThoughtSignature:
+                    chunk.toolCall.geminiThoughtSignature ?? builder?.geminiThoughtSignature,
+                };
+                if (builder?.completed) {
+                  if (!isDeepStrictEqual(builder.completed, finalToolCall)) throw invalidBatch();
+                } else {
+                  toolCallBuilders.set(id, { id, name, completed: finalToolCall });
                   collectedToolCalls.push(finalToolCall);
-                } else if (chunk.toolCall.id && chunk.toolCall.name) {
-                  // Direct tool call without builder
-                  collectedToolCalls.push({
-                    id: chunk.toolCall.id,
-                    name: chunk.toolCall.name,
-                    input: chunk.toolCall.input ?? {},
-                    geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
-                  });
                 }
+              }
+              if (
+                (chunk.type === "tool_use_start" || chunk.type === "tool_use_end") &&
+                !chunk.toolCall
+              ) {
+                throw invalidBatch();
               }
 
               // Handle done
               if (chunk.type === "done") {
+                sawDone = true;
                 // Capture stopReason from the done chunk
                 if (chunk.stopReason) {
                   lastStopReason = chunk.stopReason;
@@ -655,6 +707,8 @@ export async function executeAgentTurn(
                 break;
               }
             } catch (chunkError) {
+              if (chunkError instanceof ResponseIntegrityError) throw chunkError;
+              if (chunk.type.startsWith("tool_use_")) throw invalidBatch();
               // Log chunk processing error but continue with next chunk
               // This prevents a single malformed chunk from stopping the entire flow
               const errorMsg =
@@ -663,8 +717,18 @@ export async function executeAgentTurn(
               // Continue to next chunk
             }
           }
+          if (!options.signal?.aborted && (sawToolChunk || lastStopReason === "tool_use")) {
+            if (
+              !sawDone ||
+              lastStopReason !== "tool_use" ||
+              collectedToolCalls.length === 0 ||
+              [...toolCallBuilders.values()].some((builder) => !builder.completed)
+            )
+              throw invalidBatch();
+          }
           break;
         } catch (streamError) {
+          if (streamError instanceof ResponseIntegrityError) throw streamError;
           const classification = classifyAgentLoopError(streamError, options.signal);
           if (classification.kind === "abort") {
             throw classification.original;
