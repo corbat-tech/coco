@@ -22,6 +22,7 @@ vi.mock("node:fs/promises", () => ({
     readFile: mockReadFile,
     readdir: mockReaddir,
     unlink: mockUnlink,
+    realpath: vi.fn(async (value: string) => value),
   },
 }));
 
@@ -916,7 +917,7 @@ describe("CompleteExecutor - saveFiles callback coverage", () => {
     });
 
     // Make unlink fail
-    mockUnlink.mockRejectedValue(new Error("File not found"));
+    mockUnlink.mockRejectedValue(Object.assign(new Error("File not found"), { code: "ENOENT" }));
 
     const executor = new CompleteExecutor();
     await executor.execute(createMockContext() as any);

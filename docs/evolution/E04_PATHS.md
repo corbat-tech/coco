@@ -45,3 +45,11 @@ Glob conserva su motor y recibe un adaptador filesystem que autoriza antes de en
 12 casos reales: siete escapes fallan antes y pasan después; un octavo fallo previo verifica que el adaptador instrumentado participa en el positivo con grant (no es una regresión funcional previa). Pruebas comprueban que ningún readdir alcanza destino externo sin permiso. Con consumidores: 5 archivos / 125 tests; typecheck/lint correctos. Logs `glob-scope-{before,after,unit}.log`. Tests por `/root/core_audit`; implementación coordinador; revisión `/root/baseline_review`: APPROVED sin hallazgos materiales. E04.d commit `0194ff4`.
 
 COMPLETE y shell/undo pendientes. Sin publicación; carreras externas no eliminadas. Rollback por revert.
+
+## E04.f · DONE · 2026-09-16
+
+COMPLETE valida schema de acciones/path/content y todos los destinos canónicos del lote antes de su primer efecto. Usa projectRoot explícito, sin grants ambientales ni excepciones home. Borrar conserva entrada de enlace, no crea directorios y solo ignora ENOENT. Los errores I/O se propagan; la prevalidación no promete una transacción.
+
+14 pruebas reales del writer por `/root/core_audit`, más cuatro integraciones del callback real del executor por coordinador (tres fallan contra executor anterior y pasan después; positivo conservado). Suite COMPLETE: 11 archivos / 269 tests correctos; typecheck/lint correctos. Logs `complete-scope-{before,after}.log`. Revisión `/root/baseline_review`: APPROVED sin hallazgos materiales. E04.e commit `aac443b`.
+
+Estado/checkpoints y recuperación siguen E10; shell/undo próximos. Sin publicación; rollback por revert.
