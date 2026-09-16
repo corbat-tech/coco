@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import type { ToolExecutionContext } from "./execution-context.js";
 import { getLogger } from "../utils/logger.js";
 import { humanizeError } from "../utils/error-humanizer.js";
 import { isCocoError } from "../utils/errors.js";
@@ -20,7 +21,7 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   provenance?: { kind: "mcp"; serverName: string; toolName: string };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   parameters: z.ZodType<TInput, any, any>;
-  execute: (params: TInput) => Promise<TOutput>;
+  execute: (params: TInput, context?: ToolExecutionContext) => Promise<TOutput>;
 }
 
 /**
@@ -75,6 +76,8 @@ export interface ProgressInfo {
  * Options for tool execution
  */
 export interface ExecuteOptions {
+  /** Trusted execution context, never parsed from model arguments. */
+  context?: ToolExecutionContext;
   /** Progress callback for long operations */
   onProgress?: ProgressCallback;
   /** Abort signal for cancellation */
@@ -159,8 +162,17 @@ export class ToolRegistry {
       };
     }
 
+    const signals = [options?.signal, options?.context?.signal].filter(
+      (signal): signal is AbortSignal => signal !== undefined,
+    );
+    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+    const context =
+      options?.context || signal
+        ? Object.freeze({ ...options?.context, ...(signal ? { signal } : {}) })
+        : undefined;
+
     // Check if already aborted
-    if (options?.signal?.aborted) {
+    if (signal?.aborted) {
       return {
         success: false,
         error: "Operation cancelled",
@@ -181,7 +193,9 @@ export class ToolRegistry {
 
       // Execute tool
       this.logger.debug(`Executing tool: ${name}`, { params: validatedParams });
-      const result = await tool.execute(validatedParams);
+      const result = context
+        ? await tool.execute(validatedParams, context)
+        : await tool.execute(validatedParams);
 
       const duration = performance.now() - startTime;
       this.logger.debug(`Tool '${name}' completed`, { duration: `${duration.toFixed(2)}ms` });
@@ -245,7 +259,7 @@ export class ToolRegistry {
         if (error.suggestion && !hasRecoveryHint && !errorMessage.includes(error.suggestion)) {
           errorMessage += `\nSuggestion: ${error.suggestion}`;
         }
-      } else if (isAbortError(error, options?.signal)) {
+      } else if (isAbortError(error, signal)) {
         // Provider abort errors (e.g., "Request was aborted") should be handled gracefully
         errorMessage = "Operation cancelled by user or provider";
       } else {

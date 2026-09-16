@@ -13,3 +13,9 @@ No hay ejecución remota real ni modificación de schemas/timeouts (E07/E08). Po
 AgentManager entrega objetos y arrays de tools al proveedor hijo como JSON; conserva strings y fallback Success para ausencia/null. Seis casos verifican el mensaje tool_result real del siguiente turno: dos fallan antes, cuatro conservan paridad. Suite de consumidores 4 archivos / 79 tests, y 45 tras extracción final del helper; typecheck/lint correctos. Logs `agent-results-{before,after,final}.log`. Coordinador implementa/tests; revisión `/root/baseline_review`: APPROVED sin hallazgos materiales. E05.a commit `0072d9a`.
 
 Autoridad parental pendiente. Sin publicación; rollback por revert.
+
+## E05.c · DONE · 2026-09-16
+
+Registry transporta un contexto host separado de argumentos del modelo, con callback de delegación y señal de cancelación. Copia y congela el contexto por llamada; combina señales de opciones/contexto y rechaza preabort. Sin contexto ni señal conserva la invocación de un argumento. No introduce estado global ni autoriza por JSON.
+
+Siete casos por `/root/core_audit`: seis fallan antes y uno conserva compatibilidad; después 19 archivos / 214 tests correctos, typecheck/lint correctos. Logs `e05c-before.log` y `e05c-after.log`. Implementación coordinador, revisión `/root/baseline_review`: APPROVED. La cancelación efectiva de procesos/red sigue E07; conexión de autoridad parental pendiente E05.d. Sin publicación; rollback por revert.
