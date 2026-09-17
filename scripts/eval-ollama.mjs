@@ -75,6 +75,26 @@ await fs.mkdir(output, { recursive: true });
 const metadata = JSON.parse(
   await fs.readFile(path.join(consumer, "node_modules/@corbat-tech/coco/package.json"), "utf8"),
 );
+const artifacts = {};
+for (const entry of ["@corbat-tech/coco", "@corbat-tech/coco/runtime", "@corbat-tech/coco/tools"])
+  artifacts[entry] = createHash("sha256")
+    .update(await fs.readFile(requireInstalled.resolve(entry)))
+    .digest("hex");
+await fs.writeFile(
+  path.join(output, "run.json"),
+  JSON.stringify(
+    {
+      version: metadata.version,
+      model,
+      digest: installedModel.digest,
+      artifacts,
+      corpus: fixturePath ?? "builtin-v2",
+      evaluatorRevision: 3,
+    },
+    null,
+    2,
+  ),
+);
 const results = [];
 for (const fixture of fixtures.filter((f) => !filter || filter === "all" || f.id === filter)) {
   const dir = path.join(output, fixture.id);

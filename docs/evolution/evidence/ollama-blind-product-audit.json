@@ -1,0 +1,108 @@
+{
+  "model": "qwen3.5:9b",
+  "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+  "inputSha256": "568441272bc840befd6c82b7e43edbccaea476ce9f16e623d1cb7c98bf9acb2c",
+  "scope": "Blind-to-development-history local model review of supplied public documents; no interactive product execution",
+  "seconds": 68.923364042,
+  "doneReason": "stop",
+  "usage": {
+    "inputTokens": 6835,
+    "outputTokens": 1360
+  },
+  "response": {
+    "verdict": "PREVIEW_WITH_RESTRICTIONS",
+    "strengths": [
+      {
+        "fact": "Coco provides a reusable agent runtime (`@corbat-tech/coco/runtime`) that decouples model orchestration, session state, and tool registration from the CLI.",
+        "inference": "This allows embedding the agent logic in custom backends (e.g., web assistants) without exposing dangerous tools like shell access or git writes by default.",
+        "commercial_claim": "Enables building future assistants and business automation without depending on the interactive CLI."
+      },
+      {
+        "fact": "The system supports a strict read-only tool policy when `/plan` is active (`agent.planModeStrict`), preventing drift into write-capable tools unless explicitly disabled.",
+        "inference": "This reduces the risk of accidental destructive changes during planning phases compared to agents that always have write access.",
+        "commercial_claim": "Reliability and safety through strict read-only allowlists."
+      },
+      {
+        "fact": "Coco includes built-in provider resilience (retry/circuit-breaker) and automatic recovery from common 'silent stop' cases (e.g., empty `max_tokens` turns).",
+        "inference": "The agent is more robust against transient API failures or malformed stream events than standard LLM wrappers.",
+        "commercial_claim": "Robust tool-call parsing and safer stream error handling."
+      },
+      {
+        "fact": "Quality analysis uses 12 distinct dimensions (Correctness, Security, Coverage, etc.) with explicit evidence states (`measured`, `unavailable`, `error`).",
+        "inference": "The system distinguishes between model self-review and measured tool-based evaluation, preventing hallucinated quality scores.",
+        "commercial_claim": "Explicit quality evidence prevents quality acceptance without measurements."
+      },
+      {
+        "fact": "Coco supports importing skills (`.agents/skills/`) from other agents (Claude Code, Codex, etc.) automatically.",
+        "inference": "Users can leverage existing prompt engineering or workflow definitions from competing tools without rewriting them.",
+        "commercial_claim": "Interop-friendly: skills and MCP configuration can reuse existing agent ecosystem conventions."
+      }
+    ],
+    "blockers": [
+      {
+        "fact": "Windows background launch and rollback of shell/remote effects remain unsupported.",
+        "inference": "Users on Windows must use WSL2 for full functionality; native Windows integration is incomplete.",
+        "commercial_claim": null
+      },
+      {
+        "fact": "Model-reported scores (e.g., from the LLM) are explicitly unverified and do not certify that every quality check passed.",
+        "inference": "Users cannot rely solely on the agent's internal confidence or model score for release gates; external measurement tools (`coco check`) are required.",
+        "commercial_claim": null
+      },
+      {
+        "fact": "The current version is a 2.42 preview targeting npm `next`.",
+        "inference": "APIs and behaviors may change before stable release; production use requires careful review of changes in the `next` branch.",
+        "commercial_claim": null
+      },
+      {
+        "fact": "Static security patterns are not a vulnerability scanner or penetration test.",
+        "inference": "The 'Security' dimension relies on heuristics and static analysis, not dynamic scanning; it cannot guarantee zero vulnerabilities.",
+        "commercial_claim": null
+      }
+    ],
+    "limitations": [
+      {
+        "fact": "Quality scores depend on project testability and model/tool quality.",
+        "inference": "Projects without existing tests or with poor structure may receive low 'Correctness' or 'Test Coverage' scores regardless of actual logic correctness.",
+        "commercial_claim": null
+      },
+      {
+        "fact": "Some advanced flows require external tooling (git, CI, MCP servers) to be installed/configured.",
+        "inference": "The agent cannot function fully in isolated environments lacking these dependencies.",
+        "commercial_claim": null
+      },
+      {
+        "fact": "No agent can guarantee zero regressions; Coco is designed to reduce risk with verification loops, not to remove it entirely.",
+        "inference": "Human review of diffs and test results remains mandatory.",
+        "commercial_claim": null
+      },
+      {
+        "fact": "The certified measurement path currently supports JavaScript/TypeScript source primarily; Java and React heuristics are available but do not override the certified contract for all dimensions.",
+        "inference": "Full 12-dimension scoring may not be available or certified for non-JS/TS projects.",
+        "commercial_claim": null
+      }
+    ],
+    "questions_before_client_use": [
+      {
+        "question": "Is the client prepared to run `coco check` in a separate CI step rather than relying on the REPL's `/quality` command for release gates?",
+        "rationale": "The documentation states that model scores are unverified and missing measurements prevent quality acceptance."
+      },
+      {
+        "question": "Does the client environment support WSL2 if they are on Windows, or do they require a Linux/Mac host?",
+        "rationale": "Native Windows background launch is unsupported."
+      },
+      {
+        "question": "Are the client's existing MCP servers and skills compatible with the `@corbat-tech/coco` runtime version being evaluated?",
+        "rationale": "Coco imports skills from other agents, but version mismatches could break tool registration."
+      },
+      {
+        "question": "Does the client have a strategy for handling 'unavailable' evidence states in their quality reports (e.g., failing builds vs. warning)?",
+        "rationale": "The system explicitly marks dimensions as `unavailable` if tools fail; this needs to be handled in CI logic."
+      },
+      {
+        "question": "Is the client aware that `@corbat-tech/coco@next` is a preview and differs from stable `latest`?",
+        "rationale": "The README warns that npm `next` targets 2.42 previews while `latest` is unchanged."
+      }
+    ]
+  }
+}
