@@ -15,7 +15,7 @@
 
 </div>
 
-> **2.42.0-next.3 is an incremental preview targeting npm `next`.** Stable `latest` is unchanged. Foreground shell output is bounded and POSIX process groups are owned; unowned background commands are unavailable. Coordinated sprints propagate cancellation and configured deadlines. Windows and `run_tests` retain direct-child cleanup limits. Aggregate quality certification remains unavailable; use trusted local repositories and review effects. See [progress and publication status](https://github.com/corbat-tech/coco/blob/codex/coco-evolution/docs/evolution/ESSENTIALS_NEXT3.md).
+> **2.42 previews target npm `next`; stable `latest` is unchanged.** Current work adds explicit quality evidence, session-owned POSIX background jobs and conservative file recovery. Missing measurements prevent quality acceptance. Windows background launch and rollback of shell/remote effects remain unsupported. Use trusted repositories and review changes. See [delivery progress and verification](https://github.com/corbat-tech/coco/blob/codex/coco-evolution/docs/evolution/REMAINING_DELIVERIES.md).
 
 **Coco is an open-source CLI coding agent and reusable agent runtime for real-world automation.**
 It plans work, edits files, runs tools/tests, and iterates until quality checks pass. Underneath the CLI, Coco exposes a runtime for building custom agents with providers, tools, permissions, sessions, events, and workflows.
@@ -44,11 +44,10 @@ That runtime boundary is intentionally practical: provider selection, model turn
 ## See Coco In Action
 
 ```bash
-coco "/plan add validation for the provider config parser"
-# Coco inspects the repo with read-only tools and returns a plan.
-
-coco "implement the plan and run the relevant tests"
-# Coco edits files, runs checks, reviews failures, and summarizes the diff.
+coco
+# In the interactive prompt:
+# /plan add validation for the provider config parser
+# After reviewing the plan, request implementation and the relevant tests.
 ```
 
 Typical final output includes changed files, checks run, risks, and next steps. For runtime embedding, see the web assistant and RAG examples below.
@@ -128,7 +127,8 @@ export ANTHROPIC_API_KEY="..."
 coco
 
 # Or run a direct task
-coco "Add JWT auth to this API with tests"
+coco
+# Then type your task into the interactive prompt.
 ```
 
 On first run, Coco guides provider/model setup.

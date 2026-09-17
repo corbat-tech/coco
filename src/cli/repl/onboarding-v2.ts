@@ -45,6 +45,7 @@ import { getLastUsedModel, saveProviderPreference } from "../../config/env.js";
  * Resultado del onboarding
  */
 export interface OnboardingResult {
+  authMethod?: "apikey" | "oauth" | "gcloud" | "none";
   type: ProviderType;
   model: string;
   apiKey: string;
@@ -1599,7 +1600,7 @@ async function testConnection(
 async function saveConfigurationInternal(
   result: OnboardingResult,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<boolean> {
   signal?.throwIfAborted();
   const provider = getProviderDefinition(result.type);
   const isGcloudADC = result.apiKey === "__gcloud_adc__";
@@ -1628,10 +1629,11 @@ async function saveConfigurationInternal(
       saveProviderPreference(result.type, result.model, {
         project: result.project,
         location: result.location,
+        authMethod: result.authMethod,
       }),
       signal,
     );
-    return;
+    return true;
   }
 
   // Copilot credentials are already saved by the device flow (copilot.json)
@@ -1640,7 +1642,7 @@ async function saveConfigurationInternal(
     await cancellationCheckpoint(saveProviderPreference("copilot", result.model), signal);
     p.log.success("✅ GitHub Copilot configured");
     p.log.message(chalk.dim("   Credentials stored in ~/.coco/tokens/copilot.json"));
-    return;
+    return true;
   }
 
   // API keys are user-level credentials — always saved globally in ~/.coco/.env
@@ -1671,7 +1673,7 @@ async function saveConfigurationInternal(
     signal,
   );
 
-  if (p.isCancel(saveOptions)) return;
+  if (p.isCancel(saveOptions)) return false;
 
   const envVarsToSave: Record<string, string> = {};
 
@@ -1721,9 +1723,11 @@ async function saveConfigurationInternal(
     saveProviderPreference(result.type, result.model, {
       project: result.project,
       location: result.location,
+      authMethod: result.authMethod,
     }),
     signal,
   );
+  return true;
 }
 
 /**
@@ -1893,7 +1897,10 @@ async function ensureConfiguredV2Internal(
   // Also handle legacy "codex" provider which always uses OAuth
   // NOTE: Copilot is excluded — it manages its own tokens via CopilotProvider.initialize()
   const preferredWantsOpenAIOAuth =
-    config.provider.type === "codex" || (config.provider.type === "openai" && hasOpenAIOAuthTokens);
+    config.provider.type === "codex" ||
+    (config.provider.type === "openai" &&
+      (config.provider.authMethod === "oauth" ||
+        (config.provider.authMethod === undefined && hasOpenAIOAuthTokens)));
 
   if (preferredWantsOpenAIOAuth) {
     // For OpenAI OAuth, check openai tokens (codex maps to openai internally)
@@ -1921,11 +1928,14 @@ async function ensureConfiguredV2Internal(
               provider: {
                 ...config.provider,
                 type: "openai" as ProviderType,
+                authMethod: "oauth" as const,
               },
             };
             // Save the migration
             await cancellationCheckpoint(
-              saveProviderPreference("openai", config.provider.model || "gpt-4o"),
+              saveProviderPreference("openai", config.provider.model || "gpt-4o", {
+                authMethod: "oauth",
+              }),
               signal,
             );
             return migratedConfig;
@@ -1948,9 +1958,10 @@ async function ensureConfiguredV2Internal(
   const preferredIsLocal =
     preferredProviderDef?.requiresApiKey === false && preferredProviderDef?.id !== "copilot";
   const preferredHasApiKey = preferredProviderDef
-    ? !!process.env[preferredProviderDef.envVar]
+    ? !preferredWantsOpenAIOAuth && !!process.env[preferredProviderDef.envVar]
     : false;
-  const preferredHasOpenAIOAuth = preferredProviderDef?.id === "openai" && hasOpenAIOAuthTokens;
+  const preferredHasOpenAIOAuth =
+    preferredProviderDef?.id === "openai" && preferredWantsOpenAIOAuth;
   const preferredHasCopilotCreds =
     preferredProviderDef?.id === "copilot" && isProviderConfigured("copilot");
   const preferredIsConfigured =
@@ -2014,6 +2025,13 @@ async function ensureConfiguredV2Internal(
     });
 
     for (const prov of configuredProviders) {
+      // Already checked using its selected authentication method. Do not silently
+      // retry this same provider using a different ambient credential.
+      if (
+        prov.id === config.provider.type ||
+        (prov.id === "openai" && config.provider.type === "codex")
+      )
+        continue;
       try {
         const rememberedModel = await cancellationCheckpoint(getLastUsedModel(prov.id), signal);
         const recommended = getRecommendedModel(prov.id);
@@ -2051,6 +2069,12 @@ async function ensureConfiguredV2Internal(
               ...config.provider,
               type: prov.id,
               model,
+              authMethod:
+                providerId === "codex"
+                  ? "oauth"
+                  : prov.requiresApiKey === false
+                    ? undefined
+                    : "apikey",
             },
           };
         }
@@ -2093,6 +2117,7 @@ async function ensureConfiguredV2Internal(
               ...config.provider,
               type: "openai",
               model,
+              authMethod: "oauth",
             },
           };
         }
@@ -2108,7 +2133,7 @@ async function ensureConfiguredV2Internal(
   if (!result) return null;
 
   // Save configuration
-  await cancellationCheckpoint(saveConfiguration(result, signal), signal);
+  if (!(await cancellationCheckpoint(saveConfiguration(result, signal), signal))) return null;
 
   return {
     ...config,
@@ -2116,6 +2141,7 @@ async function ensureConfiguredV2Internal(
       ...config.provider,
       type: result.type,
       model: result.model,
+      authMethod: result.authMethod,
     },
   };
 }
@@ -2145,7 +2171,7 @@ export async function setupOllamaProvider(
 export async function saveConfiguration(
   result: OnboardingResult,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<boolean> {
   return withInteractiveCancellation(signal, (ownedSignal) =>
     saveConfigurationInternal(result, ownedSignal),
   );

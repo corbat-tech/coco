@@ -25,10 +25,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const open = (fresh: boolean) => {
     if (opening) return opening;
     opening = openCocoTerminal(fresh, activation)
-      .catch(async (error: unknown) => {
-        await vscode.window.showErrorMessage(
-          error instanceof Error ? error.message : String(error),
-        );
+      .catch((error: unknown) => {
+        void vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         if (activation === generation) opening = undefined;
@@ -55,7 +53,7 @@ export function deactivate(): void {
 async function openCocoTerminal(fresh: boolean, activation: number): Promise<void> {
   if (!active || activation !== generation) return;
   if (!vscode.workspace.isTrusted) {
-    await vscode.window.showWarningMessage("Trust this workspace before running COCO.");
+    void vscode.window.showWarningMessage("Trust this workspace before running COCO.");
     return;
   }
   const folders = vscode.workspace.workspaceFolders ?? [];

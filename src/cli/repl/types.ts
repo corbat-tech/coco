@@ -2,7 +2,7 @@
  * REPL types for Corbat-Coco
  */
 
-import type { Message, ToolCall, StreamChunk } from "../../providers/types.js";
+import type { Message, ToolCall, StreamChunk, LLMProvider } from "../../providers/types.js";
 import type { ProviderType } from "../../providers/index.js";
 import type { ThinkingMode } from "../../providers/thinking.js";
 import type { AgentModeId } from "./modes.js";
@@ -44,6 +44,13 @@ export interface ReplSession {
   agentMode?: AgentModeId;
   /** Reusable runtime facade for provider/tools/permissions/observability */
   runtime?: AgentRuntime;
+  /** Validated live adapter passed from /provider to its host, never persisted. */
+  pendingProvider?: {
+    instance: LLMProvider;
+    internalType: ProviderType;
+    userFacingType: ProviderType;
+    model: string;
+  };
 }
 
 /**
@@ -51,6 +58,7 @@ export interface ReplSession {
  */
 export interface ReplConfig {
   provider: {
+    authMethod?: "apikey" | "oauth" | "gcloud" | "none";
     type: ProviderType;
     model: string;
     maxTokens: number;

@@ -10,6 +10,7 @@
  */
 
 import chalk from "chalk";
+import wrapAnsi from "wrap-ansi";
 import { diffLines, diffWords } from "diff";
 import type { StreamChunk } from "../../../providers/types.js";
 import type { ExecutedToolCall } from "../types.js";
@@ -914,70 +915,7 @@ function formatInlineMarkdown(text: string): string {
 
 function wrapText(text: string, maxWidth: number): string[] {
   if (maxWidth <= 0) return [text];
-  const plainText = stripAnsi(text);
-  if (plainText.length <= maxWidth) {
-    return [text];
-  }
-
-  // For ANSI-safe wrapping: operate on plain text to find break points,
-  // then slice the original string at corresponding positions.
-  const lines: string[] = [];
-  let remaining = text;
-
-  while (true) {
-    const plain = stripAnsi(remaining);
-    if (plain.length <= maxWidth) break;
-
-    // Find break point on plain text
-    let breakPoint = maxWidth;
-    const lastSpace = plain.lastIndexOf(" ", maxWidth);
-    // Only break at a word boundary if it keeps at least half the line width
-    if (lastSpace > maxWidth * 0.5) {
-      breakPoint = lastSpace;
-    }
-
-    // Map plain text position to position in ANSI string
-    // eslint-disable-next-line no-control-regex -- Intentional: must match literal ANSI escape sequences
-    const ansiRegex = /\x1b\[[0-9;]*m/g;
-    let match: RegExpExecArray | null;
-    const ansiPositions: Array<{ start: number; end: number }> = [];
-
-    ansiRegex.lastIndex = 0;
-    while ((match = ansiRegex.exec(remaining)) !== null) {
-      ansiPositions.push({ start: match.index, end: match.index + match[0].length });
-    }
-
-    let rawPos = 0;
-    let visualPos = 0;
-    let ansiIdx = 0;
-
-    while (visualPos < breakPoint && rawPos < remaining.length) {
-      // Skip any ANSI sequences at current position
-      while (ansiIdx < ansiPositions.length && ansiPositions[ansiIdx]!.start === rawPos) {
-        rawPos = ansiPositions[ansiIdx]!.end;
-        ansiIdx++;
-      }
-      if (rawPos >= remaining.length) break;
-      rawPos++;
-      visualPos++;
-    }
-
-    // Include any trailing ANSI sequences at the break point
-    while (ansiIdx < ansiPositions.length && ansiPositions[ansiIdx]!.start === rawPos) {
-      rawPos = ansiPositions[ansiIdx]!.end;
-      ansiIdx++;
-    }
-
-    // Reset ANSI color state at the break so active colors don't bleed into the next line
-    lines.push(remaining.slice(0, rawPos) + "\x1b[0m");
-    remaining = "\x1b[0m" + remaining.slice(rawPos).trimStart();
-  }
-
-  if (remaining) {
-    lines.push(remaining);
-  }
-
-  return lines.length > 0 ? lines : [text];
+  return wrapAnsi(text, maxWidth, { hard: true, trim: false }).split("\n");
 }
 
 function stripAnsi(str: string): string {

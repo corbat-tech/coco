@@ -882,6 +882,74 @@ describe("onboarding-v2", () => {
   });
 
   describe("ensureConfiguredV2", () => {
+    it("honors explicit API key selection despite saved OAuth credentials", async () => {
+      const def = makeProviderDef({ id: "openai", envVar: "OPENAI_API_KEY" });
+      mockedGetAllProviders.mockReturnValue([def]);
+      mockedIsOAuthConfigured.mockResolvedValue(true);
+      const previous = process.env["OPENAI_API_KEY"];
+      process.env["OPENAI_API_KEY"] = "test-key";
+      mockedCreateProvider.mockResolvedValue({
+        isAvailable: vi.fn().mockResolvedValue(true),
+      } as any);
+      const config = { provider: { type: "openai", model: "gpt-5", authMethod: "apikey" } } as any;
+      try {
+        expect(await ensureConfiguredV2(config)).toEqual(config);
+        expect(mockedCreateProvider).toHaveBeenCalledExactlyOnceWith("openai", { model: "gpt-5" });
+        expect(mockedGetOrRefreshOAuthToken).not.toHaveBeenCalled();
+      } finally {
+        if (previous === undefined) delete process.env["OPENAI_API_KEY"];
+        else process.env["OPENAI_API_KEY"] = previous;
+      }
+    });
+
+    it("does not retry an unavailable explicit API key through ambient OAuth", async () => {
+      const def = makeProviderDef({ id: "openai", envVar: "OPENAI_API_KEY" });
+      mockedGetAllProviders.mockReturnValue([def]);
+      mockedGetConfiguredProviders.mockReturnValue([]);
+      mockedIsOAuthConfigured.mockResolvedValue(true);
+      mockedSelect.mockResolvedValueOnce("exit");
+      const previous = process.env["OPENAI_API_KEY"];
+      process.env["OPENAI_API_KEY"] = "test-key";
+      mockedCreateProvider.mockResolvedValue({
+        isAvailable: vi.fn().mockResolvedValue(false),
+      } as any);
+      try {
+        expect(
+          await ensureConfiguredV2({
+            provider: { type: "openai", model: "gpt-5", authMethod: "apikey" },
+          } as any),
+        ).toBeNull();
+        expect(mockedCreateProvider).toHaveBeenCalledExactlyOnceWith("openai", { model: "gpt-5" });
+        expect(mockedGetOrRefreshOAuthToken).not.toHaveBeenCalled();
+      } finally {
+        if (previous === undefined) delete process.env["OPENAI_API_KEY"];
+        else process.env["OPENAI_API_KEY"] = previous;
+      }
+    });
+
+    it("does not activate a newly configured provider when storage selection is cancelled", async () => {
+      delete process.env["ANTHROPIC_API_KEY"];
+      const def = makeProviderDef();
+      mockedGetAllProviders.mockReturnValue([def]);
+      mockedGetConfiguredProviders.mockReturnValue([]);
+      mockedGetProviderDefinition.mockReturnValue(def);
+      mockedSupportsOAuth.mockReturnValue(false);
+      mockedSelect
+        .mockResolvedValueOnce("anthropic")
+        .mockResolvedValueOnce("claude-sonnet-4-20250514")
+        .mockResolvedValueOnce(Symbol.for("cancel") as any);
+      mockedIsCancel.mockImplementation((value) => typeof value === "symbol");
+      mockedPassword.mockResolvedValueOnce("sk-ant-test-key-1234567890");
+      mockedCreateProvider.mockResolvedValue({
+        isAvailable: vi.fn().mockResolvedValue(true),
+      } as any);
+      expect(
+        await ensureConfiguredV2({ provider: { type: "anthropic", model: "old" } } as any),
+      ).toBeNull();
+      expect(saveProviderPreference).not.toHaveBeenCalled();
+      expect(fs.writeFile).not.toHaveBeenCalled();
+    });
+
     it("uses OpenAI OAuth when preferred provider is openai with saved OAuth tokens", async () => {
       const openaiDef = makeProviderDef({
         id: "openai" as any,

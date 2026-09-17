@@ -12,6 +12,7 @@ import {
   getDefaultModel,
   getLastUsedProvider,
   getLastUsedModel,
+  getLastUsedAuthMethod,
   getLastUsedThinking,
   getWeakModel,
   getEditorModel,
@@ -324,6 +325,7 @@ export async function createDefaultReplConfig(): Promise<ReplConfig> {
   return {
     provider: {
       type: providerType,
+      authMethod: await getLastUsedAuthMethod(providerType),
       model,
       maxTokens: 8192,
       thinking: thinkingToStore,
@@ -372,13 +374,21 @@ export async function createSession(
   config?: Partial<ReplConfig>,
 ): Promise<ReplSession> {
   const defaultConfig = await createDefaultReplConfig();
+  const providerConfig = { ...defaultConfig.provider, ...config?.provider };
+  if (
+    config?.provider?.type &&
+    config.provider.type !== defaultConfig.provider.type &&
+    config.provider.authMethod === undefined
+  ) {
+    providerConfig.authMethod = await getLastUsedAuthMethod(config.provider.type);
+  }
   return {
     id: randomUUID(),
     startedAt: new Date(),
     messages: [],
     projectPath,
     config: {
-      provider: { ...defaultConfig.provider, ...config?.provider },
+      provider: providerConfig,
       ui: { ...defaultConfig.ui, ...config?.ui },
       agent: { ...defaultConfig.agent, ...config?.agent },
     },

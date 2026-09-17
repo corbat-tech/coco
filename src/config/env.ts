@@ -103,7 +103,12 @@ export type AuthMethod = "apikey" | "oauth" | "gcloud" | "none";
 /**
  * Get the internal provider ID (maps aliases to canonical IDs)
  */
-export function getInternalProviderId(provider: ProviderType): ProviderType {
+export function getInternalProviderId(
+  provider: ProviderType,
+  authMethod?: AuthMethod,
+): ProviderType {
+  if (provider === "openai" && authMethod !== undefined)
+    return authMethod === "oauth" ? "codex" : "openai";
   // Map openai to codex when using OAuth (ChatGPT subscription)
   // This ensures the correct provider is used for OAuth authentication
   if (provider === "openai") {
@@ -431,10 +436,21 @@ export async function saveThinkingPreference(
  * Save provider and model preference to global config
  * This is the single source of truth for user preferences
  */
+/** Explicit authentication preference; absent values preserve legacy detection. */
+export async function getLastUsedAuthMethod(
+  provider: ProviderType,
+): Promise<AuthMethod | undefined> {
+  try {
+    return (await loadConfig(CONFIG_PATHS.config)).providerAuthMethods?.[provider];
+  } catch {
+    return undefined;
+  }
+}
+
 export async function saveProviderPreference(
   provider: ProviderType,
   model?: string,
-  options?: { project?: string; location?: string },
+  options?: { project?: string; location?: string; authMethod?: AuthMethod },
 ): Promise<void> {
   // Load current global config
   let config: CocoConfig;
@@ -468,6 +484,9 @@ export async function saveProviderPreference(
       },
     };
   }
+
+  if (options?.authMethod !== undefined)
+    config.providerAuthMethods = { ...config.providerAuthMethods, [provider]: options.authMethod };
 
   // Update provider and model
   config.provider.type = provider;

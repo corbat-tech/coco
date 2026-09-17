@@ -258,6 +258,9 @@ export const CocoConfigSchema = z.object({
     temperature: 0,
     timeout: 120000,
   }),
+  providerAuthMethods: z
+    .record(z.string(), z.enum(["apikey", "oauth", "gcloud", "none"]))
+    .optional(),
   providerModels: z.record(z.string(), z.string()).optional(),
   providerThinking: z.record(z.string(), ThinkingModeSchema).optional(),
   quality: QualityConfigSchema.default({

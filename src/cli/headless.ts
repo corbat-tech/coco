@@ -1,3 +1,4 @@
+import { getInternalProviderId } from "../config/env.js";
 /**
  * Headless/CI mode for Coco
  *
@@ -110,7 +111,10 @@ export async function runHeadless(options: HeadlessOptions): Promise<HeadlessRes
     controller.signal.throwIfAborted();
     const session = await createSession(options.projectPath, options.config);
     await initializeSessionTrust(session);
-    const providerType = session.config.provider.type as ProviderType;
+    const providerType = getInternalProviderId(
+      session.config.provider.type as ProviderType,
+      session.config.provider.authMethod,
+    );
     const provider = await createProvider(providerType, {
       model: session.config.provider.model || undefined,
     });

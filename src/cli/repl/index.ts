@@ -1,3 +1,4 @@
+import { activateSessionProvider } from "./provider-transition.js";
 /**
  * REPL main entry point
  */
@@ -60,7 +61,7 @@ import * as p from "@clack/prompts";
 import path from "node:path";
 import { createIntentRecognizer, type Intent } from "./intent/index.js";
 import { ensureConfiguredV2 } from "./onboarding-v2.js";
-import { getDefaultModel, getInternalProviderId } from "../../config/env.js";
+import { getDefaultModel, getInternalProviderId, getLastUsedAuthMethod } from "../../config/env.js";
 import { loadAllowedPaths } from "../../tools/allowed-paths.js";
 import {
   shouldShowPermissionSuggestion,
@@ -123,7 +124,10 @@ export async function startRepl(
 
   // Initialize provider
   // Use internal provider ID (e.g., "codex" for "openai" with OAuth)
-  const internalProviderId = getInternalProviderId(session.config.provider.type);
+  const internalProviderId = getInternalProviderId(
+    session.config.provider.type,
+    session.config.provider.authMethod,
+  );
   const initialVertexProject =
     session.config.provider.project ??
     process.env["VERTEX_PROJECT"] ??
@@ -592,7 +596,8 @@ export async function startRepl(
         if (autoSwitchHistory.has(edge)) continue;
 
         try {
-          const nextInternalId = getInternalProviderId(candidate);
+          const nextAuthMethod = await getLastUsedAuthMethod(candidate);
+          const nextInternalId = getInternalProviderId(candidate, nextAuthMethod);
           const nextProvider = await createProvider(nextInternalId, {
             maxTokens: session.config.provider.maxTokens,
           });
@@ -604,6 +609,7 @@ export async function startRepl(
 
           provider = nextProvider;
           session.config.provider.type = candidate;
+          session.config.provider.authMethod = nextAuthMethod;
           session.config.provider.model = getDefaultModel(candidate);
           runtime.updateProvider(nextInternalId, session.config.provider.model, provider);
           session.runtime = runtime;
@@ -675,52 +681,29 @@ export async function startRepl(
       let agentMessage: string | MessageContent | null = null;
 
       if (input && isSlashCommand(input)) {
-        const prevProviderType = session.config.provider.type;
-        const prevProviderModel = session.config.provider.model;
+        const previousProviderConfig = { ...session.config.provider };
 
         const { command, args } = parseSlashCommand(input);
         const commandResult = await executeSlashCommand(command, args, session);
         if (commandResult.shouldExit) break;
 
-        // Re-initialize provider if /provider or /model changed it
         if (
-          session.config.provider.type !== prevProviderType ||
-          session.config.provider.model !== prevProviderModel
+          session.pendingProvider ||
+          session.config.provider.type !== previousProviderConfig.type ||
+          session.config.provider.model !== previousProviderConfig.model ||
+          session.config.provider.authMethod !== previousProviderConfig.authMethod
         ) {
           try {
-            const newInternalId = getInternalProviderId(session.config.provider.type);
-            provider = await createProvider(newInternalId, {
-              model: session.config.provider.model || undefined,
-              maxTokens: session.config.provider.maxTokens,
-              project:
-                session.config.provider.project ??
-                process.env["VERTEX_PROJECT"] ??
-                process.env["GOOGLE_CLOUD_PROJECT"] ??
-                process.env["GCLOUD_PROJECT"],
-              location:
-                session.config.provider.location ??
-                process.env["VERTEX_LOCATION"] ??
-                process.env["GOOGLE_CLOUD_LOCATION"],
-            });
-            runtime.updateProvider(
-              newInternalId,
-              session.config.provider.model || undefined,
-              provider,
-            );
-            session.runtime = runtime;
+            provider = await activateSessionProvider(session, previousProviderConfig, provider);
+            llmClassifier = createLLMClassifier(provider);
             initializeContextManager(session, provider);
           } catch (err) {
-            // Provider re-init failed — revert session config to previous values so
-            // session.config stays consistent with the active provider object
-            session.config.provider.type = prevProviderType;
-            session.config.provider.model = prevProviderModel;
             renderError(
               `Failed to switch provider: ${err instanceof Error ? err.message : String(err)}`,
             );
           }
         }
 
-        // If the skill returned a forkPrompt, inject it as the next agent message
         if (commandResult.forkPrompt) {
           agentMessage = commandResult.forkPrompt;
           // Don't skip the agent turn — let it process the forked skill instructions
