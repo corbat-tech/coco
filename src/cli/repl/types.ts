@@ -6,6 +6,7 @@ import type { Message, ToolCall, StreamChunk, LLMProvider } from "../../provider
 import type { ProviderType } from "../../providers/index.js";
 import type { ThinkingMode } from "../../providers/thinking.js";
 import type { AgentModeId } from "./modes.js";
+import type { CompactOptions, CompactionResult } from "./context/compactor.js";
 import type { ContextManager } from "./context/manager.js";
 import type { ProgressTracker } from "./progress/tracker.js";
 import type { MemoryContext } from "./memory/types.js";
@@ -26,6 +27,10 @@ export interface ReplSession {
   trustedTools: Set<string>;
   /** Context window manager for tracking token usage */
   contextManager?: ContextManager;
+  /** Host-bound compaction action; refreshed when the active provider changes. */
+  compactContext?: (
+    options?: Pick<CompactOptions, "signal" | "focusTopic">,
+  ) => Promise<CompactionResult | null>;
   /** Progress tracker for todo-like task tracking */
   progressTracker?: ProgressTracker;
   /** Memory context from COCO.md/CLAUDE.md files */

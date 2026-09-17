@@ -168,6 +168,28 @@ const KIMI_CAPABILITY: ThinkingCapability = {
   defaultMode: "off",
 };
 
+// Ollama's OpenAI-compatible endpoint uses reasoning_effort, including "none".
+// Keep custom/non-thinking models untouched. GPT-OSS cannot disable its trace.
+// https://docs.ollama.com/api/openai-compatibility
+// https://docs.ollama.com/capabilities/thinking
+function ollamaThinkingFamily(model: string): "toggle" | "effort" | undefined {
+  const name = model.toLowerCase().split("/").at(-1)?.split(":")[0] ?? "";
+  if (name === "gpt-oss") return "effort";
+  if (["qwen3", "qwen3.5", "deepseek-r1", "deepseek-v3.1"].includes(name)) return "toggle";
+  return undefined;
+}
+
+export function mapToOllamaEffort(
+  mode: ThinkingMode | undefined,
+  model: string,
+): "none" | "low" | "medium" | "high" | undefined {
+  const family = ollamaThinkingFamily(model);
+  if (!family || mode === undefined || mode === "auto" || typeof mode === "object")
+    return undefined;
+  if (mode === "off") return family === "toggle" ? "none" : undefined;
+  return mode;
+}
+
 /**
  * Returns the thinking capability for a given (provider, model) pair.
  * `provider` here is the provider type string from ProviderType.
@@ -181,6 +203,21 @@ export function getThinkingCapability(provider: string, model: string): Thinking
 
     case "openai":
       return isOpenAIReasoningModel(model) ? OPENAI_CAPABILITY : UNSUPPORTED;
+
+    case "ollama": {
+      const family = ollamaThinkingFamily(model);
+      return family
+        ? {
+            supported: true,
+            kinds: ["effort"],
+            levels:
+              family === "toggle"
+                ? ["off", "auto", "low", "medium", "high"]
+                : ["auto", "low", "medium", "high"],
+            defaultMode: "auto",
+          }
+        : UNSUPPORTED;
+    }
 
     case "kimi":
       return isKimiThinkingModel(model) ? KIMI_CAPABILITY : UNSUPPORTED;
@@ -199,7 +236,6 @@ export function getThinkingCapability(provider: string, model: string): Thinking
     case "huggingface":
     case "qwen":
     case "lmstudio":
-    case "ollama":
     case "codex":
       return UNSUPPORTED;
 

@@ -1365,14 +1365,20 @@ export async function startRepl(
               warned90 = false;
             } else {
               compactSpinner.clear();
+              if (compactionResult?.failureReason)
+                console.log(chalk.yellow(`  ⚠ ${compactionResult.failureReason}`));
             }
-          } catch {
-            compactSpinner.stop("⚠ Context compaction failed");
-            console.log(
-              chalk.yellow(
-                "  ⚠ Context compaction failed — context unchanged. Use /clear if needed.",
-              ),
-            );
+          } catch (error) {
+            if (isAbortError(error, compactAbort.signal)) {
+              compactSpinner.stop("Context compaction cancelled; history unchanged");
+            } else {
+              compactSpinner.stop("⚠ Context compaction failed");
+              console.log(
+                chalk.yellow(
+                  "  ⚠ Context compaction failed — context unchanged. Use /clear if needed.",
+                ),
+              );
+            }
           } finally {
             clearTimeout(compactTimeout);
             process.off("SIGINT", compactSigint);
@@ -1445,7 +1451,9 @@ export async function startRepl(
               console.log(chalk.green("   \u2713 Context compacted. Please retry your message."));
             } else {
               console.log(
-                chalk.yellow("   \u26A0 Could not compact context. Use /clear to start fresh."),
+                chalk.yellow(
+                  `   ⚠ ${compactionResult?.failureReason ?? "Could not compact context. Use /clear to start fresh."}`,
+                ),
               );
             }
           } catch {

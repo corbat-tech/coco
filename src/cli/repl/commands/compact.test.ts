@@ -112,6 +112,26 @@ describe("compactCommand", () => {
     });
   });
 
+  it("uses the host-bound compaction action and shows preservation reasons", async () => {
+    const { compactCommand } = await import("./compact.js");
+    mockSession.contextManager = {} as never;
+    mockSession.messages = Array.from({ length: 6 }, (_, index) => ({
+      role: index % 2 ? ("assistant" as const) : ("user" as const),
+      content: `Message ${index}`,
+    }));
+    mockSession.compactContext = vi.fn(async () => ({
+      messages: mockSession.messages,
+      originalTokens: 600,
+      compactedTokens: 600,
+      wasCompacted: false,
+      failureReason: "Original constraints exceed the budget; history retained",
+    }));
+    await compactCommand.execute(["focus", "on", "login"], mockSession);
+    expect(mockSession.compactContext).toHaveBeenCalledWith({ focusTopic: "login" });
+    expect(mockSession.messages).toHaveLength(6);
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("history retained"));
+  });
+
   describe("isCompactMode", () => {
     it("should return current compact mode state", async () => {
       const { isCompactMode, compactCommand } = await import("./compact.js");

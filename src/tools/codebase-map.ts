@@ -20,7 +20,7 @@ const DEFAULT_MAX_FILES = 200;
 /**
  * Supported languages and their extensions
  */
-const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
+export const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
   typescript: [".ts", ".tsx", ".mts", ".cts"],
   javascript: [".js", ".jsx", ".mjs", ".cjs"],
   python: [".py"],
@@ -32,7 +32,7 @@ const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
 /**
  * Default exclude patterns
  */
-const DEFAULT_EXCLUDES = [
+export const DEFAULT_EXCLUDES = [
   "**/node_modules/**",
   "**/.git/**",
   "**/dist/**",
@@ -714,7 +714,7 @@ Examples:
     });
 
     // Limit files
-    const limitedFiles = files.slice(0, maxFiles);
+    const limitedFiles = files.sort().slice(0, maxFiles ?? DEFAULT_MAX_FILES);
 
     // Process files
     const fileEntries: FileMapEntry[] = [];

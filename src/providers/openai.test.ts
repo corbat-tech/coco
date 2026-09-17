@@ -1358,3 +1358,100 @@ describe("availability cancellation", () => {
     await expect(provider.isAvailable({ signal: controller.signal })).rejects.toBe(reason);
   });
 });
+
+describe("Ollama reasoning request contract", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each(["chat", "chatWithTools", "stream", "streamWithTools"] as const)(
+    "%s disables Qwen thinking only when explicitly requested",
+    async (method) => {
+      const { OpenAIProvider } = await import("./openai.js");
+      const provider = new OpenAIProvider("ollama", "Ollama");
+      await provider.initialize({
+        apiKey: "local",
+        model: "qwen3.5:4b",
+        baseUrl: "http://localhost:11434/v1",
+      });
+      if (method.startsWith("stream")) {
+        mockCreate.mockResolvedValueOnce(
+          (async function* () {
+            yield { choices: [{ delta: { content: "OK" }, finish_reason: null }] };
+            yield { choices: [{ delta: {}, finish_reason: "stop" }] };
+          })(),
+        );
+      } else {
+        mockCreate.mockResolvedValueOnce({
+          id: "local",
+          model: "qwen3.5:4b",
+          choices: [{ finish_reason: "stop", message: { content: "OK", tool_calls: [] } }],
+          usage: { prompt_tokens: 1, completion_tokens: 2 },
+        });
+      }
+      const messages = [{ role: "user" as const, content: "Reply OK" }];
+      const options = {
+        thinking: "off" as const,
+        maxTokens: 128,
+        tools: [
+          {
+            name: "read_file",
+            description: "Read file",
+            input_schema: { type: "object" as const, properties: {} },
+          },
+        ],
+      };
+      if (method === "stream" || method === "streamWithTools") {
+        const chunks = [];
+        for await (const chunk of provider[method](messages, options)) chunks.push(chunk);
+        expect(chunks.some((chunk) => chunk.type === "text" && chunk.text === "OK")).toBe(true);
+      } else {
+        expect((await provider[method](messages, options)).content).toBe("OK");
+      }
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+      expect(mockCreate.mock.calls[0]?.[0]).toMatchObject({
+        model: "qwen3.5:4b",
+        reasoning_effort: "none",
+        max_tokens: 128,
+      });
+      expect(mockResponsesCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["ollama", "qwen3:8b", undefined, undefined],
+    ["ollama", "qwen3.5:9b", "auto", undefined],
+    ["ollama", "qwen3:8b", "high", "high"],
+    ["ollama", "deepseek-r1:8b", "off", "none"],
+    ["ollama", "gpt-oss:20b", "off", undefined],
+    ["ollama", "gpt-oss:20b", "low", "low"],
+    ["ollama", "qwen3-coder:30b", "off", undefined],
+    ["ollama", "custom-model", "off", undefined],
+    ["lmstudio", "qwen3.5:4b", "off", undefined],
+    ["openrouter", "qwen3:8b", "high", undefined],
+  ] as const)(
+    "preserves %s/%s thinking=%s compatibility",
+    async (id, model, thinking, expected) => {
+      const { OpenAIProvider } = await import("./openai.js");
+      const provider = new OpenAIProvider(id, id);
+      await provider.initialize({ apiKey: "test", model });
+      mockCreate.mockResolvedValueOnce({
+        id: "local",
+        model,
+        choices: [{ finish_reason: "stop", message: { content: "OK" } }],
+        usage: { prompt_tokens: 1, completion_tokens: 2 },
+      });
+      await provider.chat([{ role: "user", content: "Reply OK" }], { thinking });
+      expect(mockCreate.mock.calls[0]?.[0].reasoning_effort).toBe(expected);
+    },
+  );
+
+  it("advertises only supported Ollama controls and keeps automatic defaults", async () => {
+    const { getThinkingCapability, mapToOllamaEffort } = await import("./thinking.js");
+    expect(getThinkingCapability("ollama", "qwen3.5:4b")).toMatchObject({
+      supported: true,
+      defaultMode: "auto",
+    });
+    expect(getThinkingCapability("ollama", "gpt-oss:20b").levels).not.toContain("off");
+    expect(getThinkingCapability("ollama", "qwen3-coder:30b").supported).toBe(false);
+    expect(mapToOllamaEffort({ budget: 8000 }, "qwen3:8b")).toBeUndefined();
+  });
+});

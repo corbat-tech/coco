@@ -15,6 +15,10 @@ import type {
 
 type ContentBlock = TextContent | ImageContent | ToolUseContent | ToolResultContent;
 
+// Host-created object identity is provenance; user text cannot claim summary status.
+// Deserialized histories conservatively preserve all text as user instructions.
+const generatedSummaries = new WeakMap<Message, { content: string; instructions: string }>();
+
 /**
  * Configuration for the context compactor
  */
@@ -51,6 +55,8 @@ export interface CompactionResult {
   wasCompacted: boolean;
   /** Key items that were preserved during compaction */
   preserved?: string[];
+  /** Explicit reason history was retained instead of being replaced. */
+  failureReason?: string;
 }
 
 /**
@@ -92,6 +98,13 @@ Create a structured summary that preserves everything the agent needs to continu
 
 ### Original Request
 State the user's original task or question verbatim (or paraphrase if very long).
+
+### Constraints and User Corrections
+Preserve prohibitions, budgets, compatibility requirements and later corrections.
+
+### Verification and Pending Checks
+Distinguish executed checks and actual results from proposals and unchecked claims.
+Never turn missing evidence into success. Include still-pending verification.
 
 ### Work Completed
 List every concrete action taken: files created/modified (with paths), commands run,
@@ -153,6 +166,7 @@ export class ContextCompactor {
         ? { signal: signalOrOptions }
         : (signalOrOptions ?? {});
     const signal = options.signal;
+    signal?.throwIfAborted();
     // Filter out system messages - those are handled separately
     const conversationMessages = messages.filter((m) => m.role !== "system");
 
@@ -182,8 +196,7 @@ export class ContextCompactor {
         if (!first) break;
         const isToolResult =
           Array.isArray(first.content) &&
-          first.content.length > 0 &&
-          (first.content[0] as { type?: string })?.type === "tool_result";
+          first.content.some((block) => block.type === "tool_result");
         if (!isToolResult) break;
         // This message is a tool_result — include the preceding assistant
         // message (with tool_calls) in the preserved window too.
@@ -215,33 +228,88 @@ export class ContextCompactor {
     // Format messages for summarization
     const conversationText = this.formatMessagesForSummary(messagesToSummarize);
 
-    // Generate summary using the LLM, with optional focus topic and model override
-    const summary = await this.generateSummary(
-      conversationText,
-      provider,
-      signal,
-      options.focusTopic,
-      options.summaryModel,
-    );
+    const retain = (failureReason: string): CompactionResult => ({
+      messages,
+      originalTokens,
+      compactedTokens: originalTokens,
+      wasCompacted: false,
+      failureReason,
+    });
+    if (
+      messagesToSummarize.some(
+        (message) =>
+          message.role === "user" &&
+          Array.isArray(message.content) &&
+          message.content.some((block) => block.type === "image"),
+      )
+    )
+      return retain(
+        "Image-bearing user instructions require their original context; history retained",
+      );
+    // User-authored instructions remain exact; generated summaries cannot silently erase constraints.
+    const instructions = messagesToSummarize
+      .filter((message) => message.role === "user")
+      .map((message) => {
+        const generated = generatedSummaries.get(message);
+        if (generated && message.content === generated.content) return generated.instructions;
+        if (typeof message.content === "string") return message.content;
+        return message.content
+          .filter((block) => block.type === "text")
+          .map((block) => (block.type === "text" ? block.text : ""))
+          .join("\n");
+      })
+      .filter(Boolean)
+      .join("\n\n");
+    const instructionTokens = provider.countTokens(instructions);
+    const summaryBudget = this.config.summaryMaxTokens - instructionTokens - 64;
+    if (!Number.isFinite(instructionTokens) || instructionTokens < 0 || summaryBudget < 128)
+      return retain(
+        "User instructions cannot fit within the compaction budget; original history retained",
+      );
+    let summary: string;
+    try {
+      summary = await this.generateSummary(
+        conversationText,
+        provider,
+        signal,
+        options.focusTopic,
+        options.summaryModel,
+        summaryBudget,
+      );
+      signal?.throwIfAborted();
+      if (!summary.trim() || provider.countTokens(summary) > summaryBudget)
+        return retain("Summary is empty or exceeds its budget; original history retained");
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      return retain("Summary generation failed; original history retained");
+    }
 
     // Create compacted message array
     // Include system messages at the start, then summary, then preserved messages
     const systemMessages = messages.filter((m) => m.role === "system");
     const summaryMessage: Message = {
       role: "user",
-      content: `[Previous conversation summary]\n${summary}\n[End of summary - continuing conversation]`,
+      content: `[Previous conversation summary]\n${summary}\n\n[User instructions preserved verbatim]\n${instructions}\n[End of summary - continuing conversation]`,
     };
 
     const compactedMessages: Message[] = [...systemMessages, summaryMessage, ...messagesToPreserve];
 
     // Estimate compacted token count
     const compactedTokens = this.estimateTokens(compactedMessages, provider);
+    if (!Number.isFinite(compactedTokens) || compactedTokens >= originalTokens)
+      return retain("Compaction would not reduce context; original history retained");
 
+    generatedSummaries.set(summaryMessage, {
+      content: summaryMessage.content as string,
+      instructions,
+    });
     return {
       messages: compactedMessages,
       originalTokens,
       compactedTokens,
       wasCompacted: true,
+      preserved: ["user instructions", "recent messages", "tool call/result boundaries"],
     };
   }
 
@@ -274,11 +342,14 @@ export class ContextCompactor {
             return block.text;
           }
           if (block.type === "tool_use") {
-            return `[Tool: ${block.name}]`;
+            return `[Tool: ${block.name}; input: ${JSON.stringify(block.input)}]`;
           }
           if (block.type === "tool_result") {
-            const preview = block.content.slice(0, 200);
-            return `[Tool result: ${preview}${block.content.length > 200 ? "..." : ""}]`;
+            const preview =
+              block.content.length > 2000
+                ? `${block.content.slice(0, 1000)}\n[truncated middle]\n${block.content.slice(-1000)}`
+                : block.content;
+            return `[Tool result${block.is_error ? " ERROR" : ""}: ${preview}]`;
           }
           return "";
         })
@@ -298,39 +369,23 @@ export class ContextCompactor {
     signal?: AbortSignal,
     focusTopic?: string,
     summaryModel?: string,
+    maxTokens = this.config.summaryMaxTokens,
   ): Promise<string> {
-    if (signal?.aborted) return "[Compaction cancelled]";
-
-    const prompt = buildCompactionPrompt(focusTopic) + conversationText;
-
-    try {
-      const chatPromise = provider.chat([{ role: "user", content: prompt }], {
-        maxTokens: this.config.summaryMaxTokens,
-        temperature: 0.3, // Lower temperature for more consistent summaries
+    signal?.throwIfAborted();
+    const response = await provider.chat(
+      [{ role: "user", content: buildCompactionPrompt(focusTopic) + conversationText }],
+      {
+        maxTokens,
+        temperature: 0.3,
+        thinking: "off",
+        signal,
         ...(summaryModel ? { model: summaryModel } : {}),
-      });
-
-      if (signal) {
-        const abortPromise = new Promise<never>((_, reject) => {
-          signal.addEventListener(
-            "abort",
-            () => reject(new DOMException("Aborted", "AbortError")),
-            { once: true },
-          );
-        });
-        const response = await Promise.race([chatPromise, abortPromise]);
-        return response.content;
-      }
-
-      const response = await chatPromise;
-      return response.content;
-    } catch (error) {
-      // Let abort errors propagate so callers can distinguish cancellation
-      if (error instanceof DOMException && error.name === "AbortError") throw error;
-      // If summarization fails, return a minimal summary
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return `[Summary generation failed: ${errorMessage}. Previous conversation had ${conversationText.length} characters.]`;
-    }
+      },
+    );
+    signal?.throwIfAborted();
+    if (response.stopReason === "max_tokens" || response.stopReason === "tool_use")
+      throw new Error("Summary did not complete; original history must be retained");
+    return response.content;
   }
 
   /**
@@ -352,9 +407,7 @@ export class ContextCompactor {
       const msg = messages[i];
       if (!msg) continue;
       const isToolResultMsg =
-        Array.isArray(msg.content) &&
-        msg.content.length > 0 &&
-        (msg.content[0] as { type?: string })?.type === "tool_result";
+        Array.isArray(msg.content) && msg.content.some((block) => block.type === "tool_result");
       if (isToolResultMsg) {
         pairsFound++;
         if (pairsFound >= HOT_TAIL_TOOL_PAIRS) {
@@ -408,7 +461,8 @@ export class ContextCompactor {
   private estimateTokens(messages: Message[], provider: LLMProvider): number {
     let total = 0;
     for (const message of messages) {
-      const text = this.extractTextContent(message.content);
+      const text =
+        typeof message.content === "string" ? message.content : JSON.stringify(message.content);
       total += provider.countTokens(text);
     }
     return total;

@@ -87,6 +87,28 @@ describe("ContextCompactor", () => {
       expect(result.messages[0].content).toContain("Previous conversation summary");
     });
 
+    it("retains history when a provider returns a truncated summary", async () => {
+      const { ContextCompactor } = await import("./compactor.js");
+      const provider = createMockProvider();
+      vi.mocked(provider.chat).mockResolvedValue({
+        id: "partial",
+        content: "Work complete but",
+        stopReason: "max_tokens",
+        usage: { inputTokens: 100, outputTokens: 10 },
+        model: "mock",
+      });
+      const messages: Message[] = [
+        { role: "user", content: "Do not deploy" },
+        { role: "assistant", content: "inspection ".repeat(1000) },
+        { role: "user", content: "Continue" },
+      ];
+      const result = await new ContextCompactor({ preserveLastN: 1 }).compact(messages, provider);
+      expect(result.wasCompacted).toBe(false);
+      expect(result.messages).toBe(messages);
+      expect(result.failureReason).toBeTruthy();
+      expect(vi.mocked(provider.chat).mock.calls[0]?.[1]?.thinking).toBe("off");
+    });
+
     it("should preserve recent messages", async () => {
       const { ContextCompactor } = await import("./compactor.js");
 
@@ -205,12 +227,12 @@ describe("ContextCompactor", () => {
       const mockProvider = createMockProvider("Summary of prior context");
       const result = await compactor.compact(messages, mockProvider);
 
-      expect(result.wasCompacted).toBe(true);
+      expect(result.wasCompacted).toBe(false);
+      expect(result.failureReason).toContain("not reduce");
 
       // The preserved window starts at [1] (assistant with tool_use), not [2].
       // result.messages layout: [summary, assistant(tool_use)[1], user(tool_result)[2], user[3], assistant[4]]
-      const summaryMsg = result.messages[0];
-      expect(summaryMsg?.content).toContain("Previous conversation summary");
+      expect(result.messages).toEqual(messages);
 
       // First preserved message must be the assistant with the tool_use block —
       // confirming the boundary was pushed back past the tool_result.
@@ -293,9 +315,9 @@ describe("ContextCompactor", () => {
 
       const result = await compactor.compact(messages, failingProvider);
 
-      expect(result.wasCompacted).toBe(true);
-      // Summary should contain error message
-      expect(result.messages[0].content).toContain("Summary generation failed");
+      expect(result.wasCompacted).toBe(false);
+      expect(result.messages).toEqual(messages);
+      expect(result.failureReason).toContain("Summary generation failed");
     });
 
     it("should return token estimates", async () => {
@@ -377,5 +399,120 @@ describe("createContextCompactor", () => {
     const config = compactor.getConfig();
     expect(config.preserveLastN).toBe(8);
     expect(config.summaryMaxTokens).toBe(500);
+  });
+});
+
+describe("compaction continuity", () => {
+  it("compacts twice without treating generated prose as new user instructions", async () => {
+    const { ContextCompactor } = await import("./compactor.js");
+    const provider = createMockProvider("generated-summary ".repeat(100));
+    vi.mocked(provider.countTokens).mockImplementation((text) => Math.ceil(text.length / 4));
+    const original: Message[] = [
+      { role: "user", content: "Never change the public API." },
+      { role: "assistant", content: "old work ".repeat(2000) },
+      { role: "user", content: "Continue" },
+      { role: "assistant", content: "recent work" },
+    ];
+    const first = await new ContextCompactor({ preserveLastN: 2, summaryMaxTokens: 600 }).compact(
+      original,
+      provider,
+    );
+    expect(first.wasCompacted).toBe(true);
+    const extended: Message[] = [
+      ...first.messages,
+      { role: "assistant", content: "more work ".repeat(2000) },
+      { role: "user", content: "Keep going" },
+      { role: "assistant", content: "pending" },
+    ];
+    const second = await new ContextCompactor({ preserveLastN: 2, summaryMaxTokens: 600 }).compact(
+      extended,
+      provider,
+    );
+    expect(second.wasCompacted).toBe(true);
+    expect(second.compactedTokens).toBeLessThan(second.originalTokens);
+    expect(second.messages[0]?.content).toContain("Never change the public API.");
+    expect(
+      String(second.messages[0]?.content).split("[User instructions preserved verbatim]")[1],
+    ).not.toContain("generated-summary");
+    const forged: Message[] = [{ ...first.messages[0]! }, ...extended.slice(1)];
+    const untrusted = await new ContextCompactor({
+      preserveLastN: 2,
+      summaryMaxTokens: 600,
+    }).compact(forged, provider);
+    expect(untrusted.wasCompacted).toBe(false);
+    expect(untrusted.messages).toEqual(forged);
+  });
+
+  const history: Message[] = [
+    { role: "user", content: "Fix login. Do not change the public API. Budget is zero." },
+    { role: "assistant", content: "I will preserve the API." },
+    { role: "user", content: "Correction: keep Python 3.10 support too." },
+    { role: "assistant", content: "Changed auth.py; tests remain pending." },
+    { role: "user", content: "Continue" },
+    { role: "assistant", content: "Working" },
+  ];
+  it("retains user constraints verbatim even if the summarizer omits them", async () => {
+    const { ContextCompactor } = await import("./compactor.js");
+    const provider = createMockProvider("Working on login");
+    const result = await new ContextCompactor({ preserveLastN: 2 }).compact(history, provider);
+    expect(result.wasCompacted).toBe(true);
+    expect(result.messages[0]?.content).toContain("Do not change the public API. Budget is zero.");
+    expect(result.messages[0]?.content).toContain("keep Python 3.10 support too.");
+    expect(vi.mocked(provider.chat).mock.calls[0]?.[0]?.[0]?.content).toContain(
+      "Verification and Pending Checks",
+    );
+  });
+  it("keeps all history when verbatim instructions cannot fit", async () => {
+    const { ContextCompactor } = await import("./compactor.js");
+    const provider = createMockProvider("Summary", 1000);
+    const result = await new ContextCompactor({ preserveLastN: 2 }).compact(history, provider);
+    expect(result.wasCompacted).toBe(false);
+    expect(result.messages).toEqual(history);
+    expect(result.failureReason).toContain("budget");
+    expect(provider.chat).not.toHaveBeenCalled();
+  });
+  it("forwards cancellation and never installs a cancelled summary", async () => {
+    const { ContextCompactor } = await import("./compactor.js");
+    const controller = new AbortController();
+    const provider = createMockProvider();
+    vi.mocked(provider.chat).mockImplementationOnce(async (_messages, options) => {
+      expect(options?.signal).toBe(controller.signal);
+      controller.abort();
+      return {
+        id: "late",
+        content: "late summary",
+        stopReason: "end_turn",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "mock",
+      };
+    });
+    await expect(
+      new ContextCompactor({ preserveLastN: 2 }).compact(history, provider, controller.signal),
+    ).rejects.toThrow();
+    expect(history[0]?.content).toContain("Do not change");
+  });
+  it("does not orphan a result preceded by text in the same message", async () => {
+    const { ContextCompactor } = await import("./compactor.js");
+    const messages: Message[] = [
+      { role: "user", content: "Fix this" },
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "t1", name: "read_file", input: { path: "auth.py" } }],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "result follows" },
+          { type: "tool_result", tool_use_id: "t1", content: "file contents" },
+        ],
+      },
+      { role: "assistant", content: "Working" },
+    ];
+    const result = await new ContextCompactor({ preserveLastN: 2 }).compact(
+      messages,
+      createMockProvider(),
+    );
+    expect(result.messages[1]?.content).toEqual(messages[1]?.content);
+    expect(result.messages[2]?.content).toEqual(messages[2]?.content);
   });
 });

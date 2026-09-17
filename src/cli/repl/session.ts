@@ -1,3 +1,4 @@
+import { rethrowCancellation } from "../../utils/cancellation.js";
 /**
  * REPL session management
  */
@@ -914,6 +915,11 @@ export function initializeContextManager(session: ReplSession, provider: LLMProv
     compactionThreshold: tierCfg.compactionThreshold,
     reservedTokens: 4096,
   });
+  session.compactContext = (options = {}) =>
+    checkAndCompactContext(session, provider, options.signal, session.runtime?.toolRegistry, {
+      force: true,
+      focusTopic: options.focusTopic,
+    });
 }
 
 /**
@@ -962,7 +968,9 @@ export async function checkAndCompactContext(
   provider: LLMProvider,
   signal?: AbortSignal,
   toolRegistry?: ToolRegistry,
+  options: { force?: boolean; focusTopic?: string } = {},
 ): Promise<CompactionResult | null> {
+  signal?.throwIfAborted();
   if (!session.contextManager) {
     initializeContextManager(session, provider);
   }
@@ -971,7 +979,7 @@ export async function checkAndCompactContext(
   updateContextTokens(session, provider, toolRegistry);
 
   // Check if compaction needed
-  if (!session.contextManager!.shouldCompact()) {
+  if (!options.force && !session.contextManager!.shouldCompact()) {
     return null;
   }
 
@@ -988,11 +996,27 @@ export async function checkAndCompactContext(
       session.config.provider.editorModel ??
       getWeakModel() ??
       getEditorModel();
+    const history = JSON.stringify(session.messages);
+    const binding = session.compactContext;
     const result = await compactor.compact(session.messages, provider, {
       signal,
+      focusTopic: options.focusTopic,
       ...(summaryModel ? { summaryModel } : {}),
     });
 
+    signal?.throwIfAborted();
+    if (
+      result.wasCompacted &&
+      (history !== JSON.stringify(session.messages) || binding !== session.compactContext)
+    ) {
+      return {
+        ...result,
+        messages: session.messages,
+        wasCompacted: false,
+        failureReason:
+          "Conversation or provider changed during compaction; current history retained",
+      };
+    }
     if (result.wasCompacted) {
       // Update session messages with compacted version
       // Extract non-system messages from compacted result
@@ -1004,10 +1028,16 @@ export async function checkAndCompactContext(
     }
 
     return result;
-  } catch {
-    // Compaction failed - log but don't stop the flow
-    // Return null to indicate compaction was not performed
-    return null;
+  } catch (error) {
+    rethrowCancellation(error, signal);
+    const tokens = session.contextManager!.getUsedTokens();
+    return {
+      messages: session.messages,
+      originalTokens: tokens,
+      compactedTokens: tokens,
+      wasCompacted: false,
+      failureReason: "Compaction failed; original history retained",
+    };
   }
 }
 

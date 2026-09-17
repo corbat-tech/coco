@@ -60,18 +60,12 @@ export const compactCommand: SlashCommand = {
       return false;
     }
 
-    // Access compactor and provider from the context manager
-    const compactor = (session.contextManager as any)._compactor;
-    const provider = (session.contextManager as any)._provider;
-
-    if (!compactor || !provider) {
-      console.log(chalk.yellow("Compactor or provider not available.\n"));
+    if (session.messages.length <= 4) {
+      console.log(chalk.dim("Not enough messages to compact (need > 4).\n"));
       return false;
     }
-
-    const msgCount = session.messages.length;
-    if (msgCount <= 4) {
-      console.log(chalk.dim("Not enough messages to compact (need > 4).\n"));
+    if (!session.compactContext) {
+      console.log(chalk.yellow("Compaction is not bound to the active provider.\n"));
       return false;
     }
 
@@ -82,20 +76,14 @@ export const compactCommand: SlashCommand = {
     }
 
     try {
-      const result = await compactor.compact(session.messages, provider, {
+      const result = await session.compactContext({
         focusTopic,
       });
 
-      if (!result.wasCompacted) {
-        console.log(chalk.dim("Nothing to compact.\n"));
+      if (!result?.wasCompacted) {
+        console.log(chalk.dim(`${result?.failureReason ?? "Nothing to compact."}\n`));
         return false;
       }
-
-      // Replace session messages with compacted version
-      session.messages.length = 0;
-      // Skip system messages from compacted result (they're regenerated each turn)
-      const nonSystemMessages = result.messages.filter((m: any) => m.role !== "system");
-      session.messages.push(...nonSystemMessages);
 
       const saved = result.originalTokens - result.compactedTokens;
       const pct = Math.round((saved / result.originalTokens) * 100);

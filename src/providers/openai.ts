@@ -30,7 +30,12 @@ import {
   ResponsesToolCallAssembler,
   parseToolCallArguments,
 } from "./tool-call-normalizer.js";
-import { getThinkingCapability, mapToOpenAIEffort, mapToKimiExtraBody } from "./thinking.js";
+import {
+  getThinkingCapability,
+  mapToOpenAIEffort,
+  mapToKimiExtraBody,
+  mapToOllamaEffort,
+} from "./thinking.js";
 import type { ThinkingMode } from "./thinking.js";
 import { getTierConfig } from "./model-tier.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
@@ -290,7 +295,8 @@ export class OpenAIProvider implements LLMProvider {
     model: string,
     thinking: ThinkingMode | undefined,
     _hasTools: boolean,
-  ): "low" | "medium" | "high" | undefined {
+  ): "none" | "low" | "medium" | "high" | undefined {
+    if (this.id === "ollama") return mapToOllamaEffort(thinking, model);
     const capability = getThinkingCapability(this.id, model);
     if (!capability.supported || !capability.kinds.includes("effort")) {
       return undefined;
