@@ -339,7 +339,7 @@ describe("bashTools", () => {
     const { bashTools } = await import("./bash.js");
 
     expect(bashTools).toBeDefined();
-    expect(bashTools.length).toBe(4);
+    expect(bashTools.length).toBe(8);
     expect(bashTools.some((t) => t.name === "bash_exec")).toBe(true);
     expect(bashTools.some((t) => t.name === "bash_background")).toBe(true);
     expect(bashTools.some((t) => t.name === "command_exists")).toBe(true);
@@ -474,7 +474,7 @@ describe("bashExecTool description — LLM capability contract", () => {
 describe("bashBackgroundTool description — LLM capability contract", () => {
   it("truthfully advertises that background execution is unavailable", async () => {
     const { bashBackgroundTool } = await import("./bash.js");
-    expect(bashBackgroundTool.description).toMatch(/unavailable/i);
-    expect(bashBackgroundTool.description).toMatch(/owned lifecycle/i);
+    expect(bashBackgroundTool.description).toMatch(/session-owned/i);
+    expect(bashBackgroundTool.description).toMatch(/session closes/i);
   });
 });

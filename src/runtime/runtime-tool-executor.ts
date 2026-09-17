@@ -1,3 +1,4 @@
+import { BackgroundJobOwner } from "../tools/utils/background-jobs.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { evaluateRuntimeToolPolicy, type RuntimePolicy } from "./context.js";
 import { createEventLog } from "./event-log.js";
@@ -40,6 +41,28 @@ interface AuthorityCeiling {
 }
 
 export class RuntimeToolExecutor {
+  private readonly backgroundOwners = new Map<string, BackgroundJobOwner>();
+
+  /** Host-only opt-in: pair with closeSession on every session exit. */
+  enableBackgroundJobs(sessionId: string, projectRoot: string): void {
+    if (this.backgroundOwners.has(sessionId))
+      throw new Error("Background owner already configured");
+    this.backgroundOwners.set(sessionId, new BackgroundJobOwner(projectRoot));
+  }
+
+  async closeSession(sessionId: string): Promise<void> {
+    const owner = this.backgroundOwners.get(sessionId);
+    if (owner) await owner.close();
+    // Removing the capability also rejects late launches and releases retained output.
+    if (this.backgroundOwners.get(sessionId) === owner) this.backgroundOwners.delete(sessionId);
+  }
+
+  async close(): Promise<void> {
+    await Promise.all(
+      [...this.backgroundOwners.keys()].map((sessionId) => this.closeSession(sessionId)),
+    );
+  }
+
   private readonly toolRegistry: ToolRegistry;
   private readonly eventLog: EventLog;
   private readonly permissionPolicy: PermissionPolicy;
@@ -163,6 +186,7 @@ export class RuntimeToolExecutor {
     const result = await this.toolRegistry.execute(input.toolName, input.input, {
       signal: input.signal,
       context: {
+        backgroundJobs: input.sessionId ? this.backgroundOwners.get(input.sessionId) : undefined,
         executeDelegatedTool: (call) => {
           const signals = [input.signal, call.signal].filter(
             (signal): signal is AbortSignal => signal !== undefined,

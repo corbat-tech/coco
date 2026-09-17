@@ -30,8 +30,11 @@ const READ_ONLY_TOOL_NAMES = new Set([
   "list_memories",
   "list_checkpoints",
   "checkAgentCapability",
+  "background_list",
+  "background_status",
+  "background_read",
 ]);
-const WRITE_CAPABLE_TOOL_NAMES = new Set(["run_linter"]);
+const WRITE_CAPABLE_TOOL_NAMES = new Set(["run_linter", "background_cancel"]);
 const DESTRUCTIVE_TOOL_NAMES = new Set([
   "bash_exec",
   "bash_background",

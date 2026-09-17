@@ -458,6 +458,21 @@ export class AgentRuntime {
     }
   }
 
+  /** Enable session-owned background jobs only from a host with a close lifecycle. */
+  enableBackgroundJobs(sessionId: string, projectRoot: string): void {
+    assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "tool.execute");
+    if (!this.getSession(sessionId)) throw new Error(`Runtime session not found: ${sessionId}`);
+    this.toolExecutor.enableBackgroundJobs(sessionId, projectRoot);
+  }
+
+  async closeSession(sessionId: string): Promise<void> {
+    await this.toolExecutor.closeSession(sessionId);
+  }
+
+  async close(): Promise<void> {
+    await this.toolExecutor.close();
+  }
+
   async executeTool(input: RuntimeToolExecutionInput): Promise<RuntimeToolExecutionResult> {
     assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "tool.execute");
     const startedAt = performance.now();

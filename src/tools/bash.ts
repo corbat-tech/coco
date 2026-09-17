@@ -1,3 +1,4 @@
+import { backgroundTools } from "./background.js";
 /**
  * Bash/Shell tools for Corbat-Coco
  * Execute shell commands with safety controls
@@ -354,22 +355,34 @@ export const bashBackgroundTool: ToolDefinition<
   {
     pid: number;
     command: string;
+    jobId: string;
+    state: string;
   }
 > = defineTool({
   name: "bash_background",
   description:
-    "Unavailable: background commands require an owned lifecycle. Use bash_exec for bounded foreground commands.",
+    "Run a session-owned background command (POSIX only). Limited to two running jobs, 30 minutes and 16 MiB per output channel. Returns jobId for status/read/cancel; jobs end when the session closes. Only the two most recent retained completed jobs remain queryable; no jobs survive a restart.",
   category: "bash",
   parameters: z.object({
     command: z.string().describe("Command to execute"),
     cwd: z.string().optional().describe("Working directory"),
     env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
   }),
-  async execute() {
-    throw new ToolError(
-      "bash_background unavailable: no lifecycle owner; use bash_exec for bounded foreground commands",
-      { tool: "bash_background" },
-    );
+  async execute(input, context) {
+    if (!context?.backgroundJobs)
+      throw new ToolError("bash_background unavailable: no lifecycle owner", {
+        tool: "bash_background",
+      });
+    const shellPart = getShellCommandPart(input.command);
+    for (const { pattern, rule } of DANGEROUS_PATTERNS_FULL) {
+      if (pattern.test(input.command))
+        throw new ToolError(`Command blocked by safety rule: ${rule}`, { tool: "bash_background" });
+    }
+    for (const { pattern, rule } of DANGEROUS_PATTERNS_SHELL_ONLY) {
+      if (pattern.test(shellPart))
+        throw new ToolError(`Command blocked by safety rule: ${rule}`, { tool: "bash_background" });
+    }
+    return context.backgroundJobs.start(input, context.signal);
   },
 });
 
@@ -469,7 +482,13 @@ Examples:
 /**
  * All bash tools
  */
-export const bashTools = [bashExecTool, bashBackgroundTool, commandExistsTool, getEnvTool];
+export const bashTools = [
+  bashExecTool,
+  bashBackgroundTool,
+  commandExistsTool,
+  getEnvTool,
+  ...backgroundTools,
+];
 
 /**
  * Truncate output if too long
