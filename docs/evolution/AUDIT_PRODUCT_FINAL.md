@@ -1,6 +1,6 @@
 # Auditoría de producto: Coco como herramienta de un consultor
 
-Fecha: 17 de septiembre de 2026. Punto de comparación instalado: `@corbat-tech/coco` **2.42.0-next.7**. Las correcciones indicadas como candidatas pertenecen al árbol de trabajo posterior; este documento no acredita su publicación.
+Fecha: 17 de septiembre de 2026. Punto de comparación instalado: `@corbat-tech/coco` **2.42.0-next.7**. La revisión inicial se conserva a continuación. La adjudicación posterior corresponde al commit `34f4a7c`; este documento no acredita todavía su publicación como next.8 ni una promoción a estable.
 
 ## Dictamen
 
@@ -18,13 +18,13 @@ La calidad de las respuestas del modelo en tareas nuevas queda fuera de esta mue
 
 ## Evidencia observable del paquete instalado
 
-| Comprobación | Resultado |
-| --- | --- |
-| `coco --version` | `2.42.0-next.7` |
-| `coco --help` | CLI arranca; identifica honestamente `build` y `resume` de nivel superior como heredados no implementados. |
-| `coco chat --help` | Expone proveedor/modelo, ruta, `--print`, `--output` y `--runtime-runner` experimental. |
-| `coco skills --help` | Descubrimiento, instalación, creación, retirada y diagnóstico de skills accesibles. |
-| `coco mcp --help` | Alta, retirada, listado y activación/desactivación de servidores accesibles. |
+| Comprobación         | Resultado                                                                                                  |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `coco --version`     | `2.42.0-next.7`                                                                                            |
+| `coco --help`        | CLI arranca; identifica honestamente `build` y `resume` de nivel superior como heredados no implementados. |
+| `coco chat --help`   | Expone proveedor/modelo, ruta, `--print`, `--output` y `--runtime-runner` experimental.                    |
+| `coco skills --help` | Descubrimiento, instalación, creación, retirada y diagnóstico de skills accesibles.                        |
+| `coco mcp --help`    | Alta, retirada, listado y activación/desactivación de servidores accesibles.                               |
 
 Directorio consumidor: `/private/var/folders/xb/5fbp5s_90_bdnw9kwg9116sw0000gn/T/coco-next4-p2dh5yrl/consumer-next7-final`. Se usó el Node aislado de `../node-bin/node`. La ayuda confirma superficie y descubribilidad, no ejecución correcta de todas las capacidades anunciadas.
 
@@ -34,7 +34,7 @@ Directorio consumidor: `/private/var/folders/xb/5fbp5s_90_bdnw9kwg9116sw0000gn/T
 
 README decía que la ejecución iteraba hasta superar verificaciones. Quick Start mostraba un supuesto recorrido automático de cuatro fases, puntuaciones, cobertura y cero vulnerabilidades como resultado típico sin distinguir una ilustración de un resultado medido. El comando real `/quality` explica expresamente que los informes del modelo no están verificados (`src/cli/repl/commands/quality.ts`). Un consultor podía inferir una garantía que el producto no proporciona.
 
-**Corrección candidata:** README y Quick Start distinguen autorrevisión de herramientas de medición, eliminan el resultado numérico ilustrativo y explican que completar un turno no certifica aceptación. No se han eliminado los analizadores reales. La guía extensa `docs/guides/QUALITY.md` aún requiere una revisión editorial equivalente antes de considerarse una fuente homogénea: sus tablas de dimensiones deben distinguir medición, heurística y evidencia ausente.
+**Corrección candidata:** README y Quick Start distinguen autorrevisión de herramientas de medición, eliminan el resultado numérico ilustrativo y explican que completar un turno no certifica aceptación. No se han eliminado los analizadores reales. En la revisión inicial quedaba pendiente homogeneizar `docs/guides/QUALITY.md`. En `34f4a7c` se ha vuelto a leer la guía: distingue autorrevisión, revisión de cambios y evaluación con evidencia, identifica heurísticas y evidencia ausente, y aclara que detener una iteración no equivale a aceptar su resultado. Ese pendiente editorial queda resuelto en el candidato.
 
 ### P1 — Cancelar el guardado en setup podía anunciar éxito
 
@@ -72,7 +72,7 @@ La ayuda `--provider` enumera un subconjunto de proveedores y no muestra Ollama 
 - **Mejoras sustentadas en casos concretos:** el control explícito de thinking de Ollama se ha corregido a partir de un problema observado por el responsable de la entrega, no por una preferencia estética. Esta auditoría no repitió aquella inferencia.
 - **No hay certificado global de seguridad:** las pruebas cubren contratos definidos. Hooks, shell, MCP y repositorios de terceros siguen siendo superficies de ejecución que requieren una política adecuada al entorno.
 
-Se identificó además un mecanismo antiguo de checkpoint Git con restauración destructiva durante la revisión de entrega del responsable. La implementación candidata fue revisada posteriormente: reemplaza limpieza destructiva por captura no mutante y aplicación de un objeto Git ligado al proyecto/HEAD, con rechazo de árboles sucios y metadatos antiguos sin vínculo. Esta revisión detectó y reprodujo un defecto adicional: un renombrado podía sobrescribir un destino ignorado ajeno porque el filtro de adiciones omitía los renombrados. El responsable añadió `--no-renames` y una regresión con archivo centinela. **La corrección ha pasado la revisión de código; el gate final de su suite y la publicación aún deben acreditarse por separado.**
+Se identificó además un mecanismo antiguo de checkpoint Git con restauración destructiva durante la revisión de entrega del responsable. La implementación candidata fue revisada posteriormente: reemplaza limpieza destructiva por captura no mutante y aplicación de un objeto Git ligado al proyecto/HEAD, con rechazo de árboles sucios y metadatos antiguos sin vínculo. Esta revisión detectó y reprodujo un defecto adicional: un renombrado podía sobrescribir un destino ignorado ajeno porque el filtro de adiciones omitía los renombrados. El responsable añadió `--no-renames` y una regresión con archivo centinela. **La corrección ha pasado la revisión de código y la suite comunicada por su responsable: 23 pruebas, incluidas 17 con Git real. El gate del candidato exacto también está acreditado en el cierre inferior; la publicación permanece pendiente.**
 
 ## Revisión independiente adicional de pruebas de detección de stack
 
@@ -91,3 +91,26 @@ Con estas condiciones, la propuesta es suficientemente útil para probarla en tr
 ## Cierre de revisión adicional: evidencia de `review_code`
 
 Se revisó independientemente la corrección candidata de `src/tools/review.ts`: una referencia Git base inexistente y un linter solicitado pero no disponible ya no producen estado `approved`. La ausencia de diferencias verificadas sí sigue siendo distinguible de no poder obtener las diferencias. Las ocho pruebas propuestas usan Git real y simulan únicamente la frontera del linter para fallos y filtrado de líneas. Sin bloqueantes en esta revisión; la ejecución de ese gate corresponde al responsable de entrega.
+
+## Adjudicación del candidato final `34f4a7c`
+
+Esta actualización conserva los hallazgos originales y distingue su resolución en código de la entrega publicada. Se verificó localmente que HEAD corresponde a `34f4a7c` y se releyó la guía de calidad corregida. Los resultados agregados siguientes los aporta el responsable del gate exacto; el autor de esta auditoría no repitió esa ejecución completa.
+
+| Evidencia                                  | Estado del candidato                                                                                                                                     |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Suite principal                            | **8.310 pruebas PASS**                                                                                                                                   |
+| Suite REPL separada                        | **28 pruebas PASS**                                                                                                                                      |
+| Cobertura global                           | **80,01 % de sentencias; 80,73 % de líneas**                                                                                                             |
+| Instalación limpia del artefacto candidato | **PASS**, comunicada por el responsable                                                                                                                  |
+| Checkpoint Git heredado                    | Corrección revisada; captura y restauración ligadas a proyecto/HEAD/OID, protección de cambios ajenos y regresión de renombrado a destino ignorado       |
+| Permisos de `git_branch`                   | Revisión independiente: crear/borrar ramas requiere política de mutación; listar no concede permiso de escritura                                         |
+| `read_image`                               | Revisión independiente: efecto de red explícito, límite canónico del proyecto, rechazo de enlaces inseguros y propagación de cancelación a lectura y SDK |
+| Guía de calidad                            | Releída y corregida; ya no confunde autorrevisión con aceptación medida                                                                                  |
+| Publicación next.8                         | **Pendiente**: ejecución de Actions `35267933015`; falta confirmar publicación y consumo del paquete publicado                                           |
+| Casos reales reservados                    | **Pendientes**: falta adjuntar resultados, límites y fallos                                                                                              |
+
+Las pruebas de imagen simulan los SDK; no acreditan llamadas reales a proveedores ni un sandbox del sistema operativo. La clasificación de permisos y la protección de rutas reducen riesgos concretos, pero no convierten repositorios o herramientas externas en entornos seguros por sí mismos. La cobertura supera el umbral por un margen pequeño: sirve como evidencia del gate, no como medida de autonomía o calidad de las soluciones generadas.
+
+**No se identifica otro bloqueante de producto reproducido y abierto en el alcance revisado.** Los problemas de documentación, cancelación de setup, checkpoint y permisos descritos quedan resueltos en el candidato revisado. La heterogeneidad editorial menor y la enumeración incompleta de proveedores en ayuda siguen siendo mejoras posteriores; no impiden el piloto supervisado. Esta conclusión no demuestra ausencia de defectos fuera de la muestra.
+
+La recomendación permanece: **piloto supervisado en repositorios de confianza**. No se declara terminado el plan, publicada next.8 ni lista una versión estable: el cierre requiere comprobar el paquete publicado y adjudicar los casos reservados. Si estos muestran un fallo relevante, deberá registrarse y resolverse o limitarse expresamente el alcance antes de ampliar la recomendación.

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0-rc.1] - 2026-09-17
+
+Release candidate consolidating the next.5–next.8 reliability changes. No additional runtime changes after next.8. Stable promotion remains conditional on final evaluation and publication verification recorded in `docs/evolution/REMAINING_DELIVERIES.md`.
+
+## [2.42.0-next.8] - 2026-09-17
+
+### Fixed
+
+- Preserve original instructions and complete tool pairs during context compaction; retain history on cancellation, truncated summaries or concurrent session changes. Bound repository context selection and validate cache scope and schema.
+- Honor explicit reasoning-off for supported Ollama model families; retain existing models and defaults. Preserve thinking preferences and MCP environment values containing equals signs.
+- Replace destructive legacy Git checkpoint restoration with project/HEAD-bound snapshots and conservative restoration; reject unverifiable metadata and protect ignored files from rename collisions.
+- Require authorization for Git branch mutations and cloud image uploads; validate image paths and forward cancellation to vision SDKs.
+- Create skills using separate command arguments and validated names; report missing review evidence instead of approving it.
+
+### Validation and limits
+
+The exact candidate passed 8,310 main tests and 28 REPL tests, with 80.01% statements and 80.73% lines; both coverage thresholds are now enforced at 80%. Real local Ollama evaluation, independent agent reviews and documented limitations are recorded in `docs/evolution/`. No paid-provider live validation, operating-system sandbox guarantee or competitor benchmark is claimed.
+
+## [2.42.0-next.7] - 2026-09-17
+
+### Fixed
+
+- Bound headless input and produce consistent JSON failures; preserve UTF-8 input and Unicode terminal wrapping. Keep update checks from blocking the prompt.
+- Validate and reuse provider candidates before committing preferences, preserve explicit authentication choices, and stop cleanly when setup is cancelled.
+- Publish a separately verified VSIX with executable/argument separation, workspace trust and terminal lifecycle checks, including real Extension Host tests. Available as a GitHub asset; not published to Marketplace.
+
 ## [2.42.0-next.6] - 2026-09-17
 
 ### Added
