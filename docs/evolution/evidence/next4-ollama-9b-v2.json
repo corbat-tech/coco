@@ -1,0 +1,117 @@
+[
+  {
+    "id": "bug",
+    "version": "2.42.0-next.4",
+    "model": "qwen3.5:9b",
+    "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+    "calls": 4,
+    "seconds": 26.24979575,
+    "passed": true,
+    "verification": {
+      "status": 0,
+      "stderr": "",
+      "preservedUserFile": true
+    },
+    "before": "export const sum = values => values.slice(0,-1).reduce((a,b)=>a+b,0);\n",
+    "after": "export const sum = values => values.reduce((a,b)=>a+b,0);\n",
+    "sourceHash": "b4b3044dea1a66462020e8f89446dc8b8bb70843aff81a3bcf0fd3f6e426ca74",
+    "corpusRevision": 2,
+    "scope": "Installed runtime with six file/shell tools. Session case has two turns, not long-context stress. Synthetic tasks; not product-wide capability certification.",
+    "usage": {
+      "inputTokens": 9069,
+      "outputTokens": 577
+    }
+  },
+  {
+    "id": "feature",
+    "version": "2.42.0-next.4",
+    "model": "qwen3.5:9b",
+    "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+    "calls": 5,
+    "seconds": 29.990375334,
+    "passed": true,
+    "verification": {
+      "status": 0,
+      "stderr": "",
+      "preservedUserFile": true
+    },
+    "before": "export const slugify = text => text;\n",
+    "after": "export const slugify = text => {\n  // Trim whitespace from both ends\n  let result = text.trim();\n  \n  // Lowercase ASCII text\n  result = result.toLowerCase();\n  \n  // Replace consecutive spaces with a single hyphen\n  // First, replace multiple spaces with a single space\n  result = result.replace(/ +/g, ' ');\n  \n  // Then replace spaces with hyphens\n  result = result.replace(/ /g, '-');\n  \n  return result;\n};\n",
+    "sourceHash": "2ea848070b7df51e55d4da4111cf2b47e8039dcf544d8c6106d2b7bd21515345",
+    "corpusRevision": 2,
+    "scope": "Installed runtime with six file/shell tools. Session case has two turns, not long-context stress. Synthetic tasks; not product-wide capability certification.",
+    "usage": {
+      "inputTokens": 11696,
+      "outputTokens": 832
+    }
+  },
+  {
+    "id": "refactor",
+    "version": "2.42.0-next.4",
+    "model": "qwen3.5:9b",
+    "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+    "calls": 4,
+    "seconds": 21.889012708000003,
+    "passed": true,
+    "verification": {
+      "status": 0,
+      "stderr": "",
+      "preservedUserFile": true
+    },
+    "before": "export function summarize(xs){let total=0;for(const x of xs){total+=x.amount;}let count=0;for(const x of xs){count++;}return {total,count};}\n",
+    "after": "export function summarize(xs){let total=0, count=0;for(const x of xs){total+=x.amount;count++;}return {total,count};}\n",
+    "sourceHash": "fad7c75687a83355be10e1cf73bf548352eb2bb759eeee4908c297761ca7288f",
+    "corpusRevision": 2,
+    "scope": "Installed runtime with six file/shell tools. Session case has two turns, not long-context stress. Synthetic tasks; not product-wide capability certification.",
+    "usage": {
+      "inputTokens": 9222,
+      "outputTokens": 573
+    }
+  },
+  {
+    "id": "recovery",
+    "version": "2.42.0-next.4",
+    "model": "qwen3.5:9b",
+    "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+    "calls": 6,
+    "seconds": 27.042280457999993,
+    "passed": true,
+    "verification": {
+      "status": 0,
+      "stderr": "",
+      "preservedUserFile": true
+    },
+    "before": "export const isEven = n => n % 2 === 1;\n",
+    "after": "export const isEven = n => n % 2 === 0;\n",
+    "sourceHash": "bde69a82ffceeaa06eb231ab175b3a3df1a81c5a1fe83ccc189f9244c20b9d0b",
+    "corpusRevision": 2,
+    "scope": "Installed runtime with six file/shell tools. Session case has two turns, not long-context stress. Synthetic tasks; not product-wide capability certification.",
+    "usage": {
+      "inputTokens": 13880,
+      "outputTokens": 757
+    }
+  },
+  {
+    "id": "session",
+    "version": "2.42.0-next.4",
+    "model": "qwen3.5:9b",
+    "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+    "calls": 6,
+    "seconds": 37.462016667,
+    "passed": true,
+    "verification": {
+      "status": 0,
+      "stderr": "",
+      "preservedUserFile": true
+    },
+    "before": "export const greet = name => \"Hello \" + name;\n",
+    "after": "export const greet = name => \"Hello \" + (name?.trim() || \"friend\");\n",
+    "sourceHash": "d45d1bcded30d5510b8eec16792911fc553b3d1d09e6fb228440f6bd3ca2b79f",
+    "corpusRevision": 2,
+    "scope": "Installed runtime with six file/shell tools. Session case has two turns, not long-context stress. Synthetic tasks; not product-wide capability certification.",
+    "usage": {
+      "inputTokens": 14222,
+      "outputTokens": 1074
+    }
+  }
+]

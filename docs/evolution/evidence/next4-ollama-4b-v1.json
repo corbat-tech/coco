@@ -1,0 +1,117 @@
+[
+  {
+    "id": "bug",
+    "version": "2.42.0-next.4",
+    "model": "qwen3.5:4b",
+    "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+    "calls": 4,
+    "seconds": 22.745594625,
+    "passed": true,
+    "verification": {
+      "status": 0,
+      "stderr": "",
+      "preservedUserFile": true
+    },
+    "before": "export const sum = values => values.slice(0,-1).reduce((a,b)=>a+b,0);\n",
+    "after": "export const sum = values => values.reduce((a,b)=>a+b,0);\n",
+    "sourceHash": "b4b3044dea1a66462020e8f89446dc8b8bb70843aff81a3bcf0fd3f6e426ca74",
+    "corpusRevision": 1,
+    "scope": "Installed runtime with six file/shell tools. Session case has two turns, not long-context stress. Synthetic tasks; not product-wide capability certification.",
+    "usage": {
+      "inputTokens": 9079,
+      "outputTokens": 796
+    }
+  },
+  {
+    "id": "feature",
+    "version": "2.42.0-next.4",
+    "model": "qwen3.5:4b",
+    "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+    "calls": 4,
+    "seconds": 19.8085315,
+    "passed": true,
+    "verification": {
+      "status": 0,
+      "stderr": "",
+      "preservedUserFile": true
+    },
+    "before": "export const slugify = text => text;\n",
+    "after": "export const slugify = text => {\n  if (!text) return '';\n  // Trim whitespace\n  let result = text.trim();\n  // Lowercase ASCII text\n  result = result.toLowerCase();\n  // Replace consecutive spaces with a single hyphen\n  result = result.replace(/ +/g, '-');\n  return result;\n};\n",
+    "sourceHash": "03743ce657c0cffecbc18e3dec1a53b47d6fe33d1c27e8b33d100a06bd788644",
+    "corpusRevision": 1,
+    "scope": "Installed runtime with six file/shell tools. Session case has two turns, not long-context stress. Synthetic tasks; not product-wide capability certification.",
+    "usage": {
+      "inputTokens": 9290,
+      "outputTokens": 866
+    }
+  },
+  {
+    "id": "refactor",
+    "version": "2.42.0-next.4",
+    "model": "qwen3.5:4b",
+    "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+    "calls": 13,
+    "seconds": 45.657521417000005,
+    "passed": true,
+    "verification": {
+      "status": 0,
+      "stderr": "",
+      "preservedUserFile": true
+    },
+    "before": "export function summarize(xs){let total=0;for(const x of xs){total+=x.amount;}let count=0;for(const x of xs){count++;}return {total,count};}\n",
+    "after": "export function summarize(xs){let total=0;let count=0;for(const x of xs){total+=x.amount;count++;}return {total,count};}\n",
+    "sourceHash": "0c36d91c24fc3e11f43e3f73282e1cfa2136d46134574a14128fa3341354b58f",
+    "corpusRevision": 1,
+    "scope": "Installed runtime with six file/shell tools. Session case has two turns, not long-context stress. Synthetic tasks; not product-wide capability certification.",
+    "usage": {
+      "inputTokens": 52988,
+      "outputTokens": 1865
+    }
+  },
+  {
+    "id": "recovery",
+    "version": "2.42.0-next.4",
+    "model": "qwen3.5:4b",
+    "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+    "calls": 5,
+    "seconds": 18.92543029199999,
+    "passed": true,
+    "verification": {
+      "status": 0,
+      "stderr": "",
+      "preservedUserFile": true
+    },
+    "before": "export const isEven = n => n % 2 === 1;\n",
+    "after": "export const isEven = n => n % 2 === 0;\n",
+    "sourceHash": "bde69a82ffceeaa06eb231ab175b3a3df1a81c5a1fe83ccc189f9244c20b9d0b",
+    "corpusRevision": 1,
+    "scope": "Installed runtime with six file/shell tools. Session case has two turns, not long-context stress. Synthetic tasks; not product-wide capability certification.",
+    "usage": {
+      "inputTokens": 11589,
+      "outputTokens": 821
+    }
+  },
+  {
+    "id": "session",
+    "version": "2.42.0-next.4",
+    "model": "qwen3.5:4b",
+    "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+    "calls": 6,
+    "seconds": 25.096213959000014,
+    "passed": false,
+    "verification": {
+      "status": 1,
+      "stderr": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'Hello '\n- 'Hello friend'\n         ^\n\n    at file://<evaluation-root>/ollama-baseline4b/session/[eval1]:1:231\n    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:282:26)\n    at async ModuleLoader.executeModuleJob (node:internal/modules/esm/loader:278:20)\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: 'Hello ',\n  expected: 'Hello friend',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n",
+      "preservedUserFile": true
+    },
+    "before": "export const greet = name => \"Hello \" + name;\n",
+    "after": "export const greet = name => \"Hello \" + (name ? name.trim() : \"friend\");\n",
+    "sourceHash": "92784313261d0d38b9518c33243e6edfdfe43a74d9c8c551833a8bb94764bb84",
+    "corpusRevision": 1,
+    "scope": "Installed runtime with six file/shell tools. Session case has two turns, not long-context stress. Synthetic tasks; not product-wide capability certification.",
+    "usage": {
+      "inputTokens": 9810,
+      "outputTokens": 721
+    }
+  }
+]

@@ -1,8 +1,8 @@
 # Coco: evolución pragmática y entregas progresivas
 
-Fecha: 2026-09-16. Estado: **next.4 publicada/verificada en npm y GitHub; entrega cerrada**.
+Fecha: 2026-09-16. Estado: **next.4 publicada/verificada; cierre del programa en ejecución con Ollama local**.
 
-Progreso activo: [NEXT_DELIVERY_NEXT4.md](evolution/NEXT_DELIVERY_NEXT4.md).
+Progreso activo: [REMAINING_DELIVERIES.md](evolution/REMAINING_DELIVERIES.md). Última entrega cerrada: [NEXT_DELIVERY_NEXT4.md](evolution/NEXT_DELIVERY_NEXT4.md).
 Base inspeccionada: `174fc4128bc190fe0cb0b581d2153b805c49f4af`, paquete `2.41.0`.
 
 Este es el plan vigente para esta evolución. Sustituye **la secuencia de ejecución**, no la evidencia, del plan de 39 pasos de la [auditoría del 16 de septiembre](../../corbat-coco-auditoria/2026-09-16/public/04-plan-de-progreso.md). La auditoría permanece como snapshot histórico fuera del repositorio; su enlace requiere el directorio hermano. Los IDs COCO y S remiten a ese snapshot. [MASTER_PLAN.md](MASTER_PLAN.md) y [CODEX_IMPROVEMENTS_PLAN.md](CODEX_IMPROVEMENTS_PLAN.md) son antecedentes, no listas adicionales que completar antes de publicar. Mandan [CLAUDE.md](../CLAUDE.md) y los ADR aceptados.
@@ -94,7 +94,7 @@ Desde esta entrega se pueden preparar candidatos, pero no publicar como estable 
 
 | ID / estado | Cambio y dependencias | Aceptación mínima |
 | --- | --- | --- |
-| E08 / TODO | Schemas fieles en registry/proveedores/MCP. Depende E03. Puede adelantarse tras E03. | Payloads nested/union/record/default/constraints y descripciones contrastados con validación real. Evaluar primero conversión de Zod ya instalado; probar subconjunto aceptado por cada adaptador. No añadir otro framework de schemas. |
+| E08 / DONE | Schemas fieles en registry/proveedores/MCP. Depende E03. Puede adelantarse tras E03. | Payloads nested/union/record/default/constraints y descripciones contrastados con validación real. Evaluar primero conversión de Zod ya instalado; probar subconjunto aceptado por cada adaptador. No añadir otro framework de schemas. |
 | E09 / TODO | Calidad y aceptación del contenido final. Depende E01 y contención E06. | Una regla para todas las salidas; passed separado de converged. Medición real/error/no disponible, pesos efectivos; nunca score perfecto por dato ausente. Snapshot/hash del resultado coincide con tests/revisión; última iteración no añade una mejora sin verificar. Políticas distintas se explicitan sin rebajar CLAUDE. |
 | E10 / TODO | Sesión y recuperación conservadora. Depende E04/E07; integración de quality rollback después de E09. | Identidad de sesión estable; aislamiento por proyecto. Reusar CheckpointManager y conectar rewind/estado correcto; conflicto si cambió contenido desde snapshot, preservar staged/untracked/cambios ajenos. Resume no repite efectos completados. No prometer rollback universal de shell o MCP. |
 | E11 / TODO | Headless y extensión. Depende E02/E04; esquemas de respuesta coherentes con E08. | Entrada vacía, opción inválida y error producen contrato JSON y exit code correctos, sin ruido stdout. Extensión usa ejecutable/argv seguro, espacios/comillas/multiroot y binario ausente probados. VSIX tiene gate propio; no bloquea npm si no se publica ese canal. |
@@ -207,7 +207,7 @@ Cierre next.2 (2026-09-17): **publicada y verificada en npm next**, latest2.41.0
 | Bloque | Progreso verificado | Evidencia y límites |
 | --- | --- | --- |
 | E01 | Baseline hermético completado | [Resultados](evolution/E01_BASELINE.md); evaluación con modelo real pendiente, obligatoria para E13/E15. |
-| E02 | Infraestructura npm y gates local/CI verificados; candidatas next publicadas | [Release](evolution/E02_RELEASE.md), [next.3](evolution/ESSENTIALS_NEXT3.md); publicación automatizada requiere resolver política2FA, VSIX bloqueado hasta E11. |
+| E02 | Infraestructura npm y gates local/CI verificados; candidatas next publicadas | [Release](evolution/E02_RELEASE.md), [next.3](evolution/ESSENTIALS_NEXT3.md); publicación OIDC verificada en next.4; espera de escaneo corregida, VSIX bloqueado hasta E11. |
 | E03–E05 | DONE para sus alcances | [Runtime](evolution/E03_RUNTIME.md), [paths](evolution/E04_PATHS.md), [autoridad](evolution/E05_AUTHORITY.md); undo contenido hasta E10. |
 | E06 | a–g completados; bloque IN_PROGRESS | [Contenciones](evolution/E06_CONTAINMENT.md); COCO-06 abierto hasta disponibilidad/aplicabilidad de mediciones en E09. |
 | E07.a–k3 | Incrementos de cancelación de procesos, reintentos, proveedores y OAuth completados | [Registro detallado](evolution/E07_CANCELLATION.md); cada entrada delimita alcance y comprobaciones. |
@@ -216,7 +216,8 @@ Cierre next.2 (2026-09-17): **publicada y verificada en npm next**, latest2.41.0
 | E07.n1 | Argumentos estrictos sin reparación ni retry indebido | 988 tests de proveedores, estáticas y revisión independiente correctas. Terminal del stream se aborda en n2. |
 | E07.n2a | Terminales OpenAI con herramientas validados | Gate amplio7790 tests, REPL27, estáticas/build y revisión independiente correctos. |
 | E07.n2b | Terminales Anthropic con herramientas validados | 154 tests, estáticas y revisión independiente correctos. |
-| E08–E15 | Pendientes | Conservan dependencias y criterios de aceptación anteriores. |
+| E08 | DONE en next.4 | Zod nativo, MCP Ajv y adaptadores; evidencia en NEXT_DELIVERY_NEXT4.md. |
+| E09–E15 | Entregas restantes en ejecución | Secuencia y evidencia vigente en REMAINING_DELIVERIES.md; evaluación real con Ollama sin gasto API. |
 
 Los commits y las revisiones de cada incremento se conservan en Git y en el registro detallado de E07. Los bloqueos abiertos impiden publicar una release estable.
 
