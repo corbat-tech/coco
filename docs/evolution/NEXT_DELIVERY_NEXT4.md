@@ -99,3 +99,5 @@ npm Trusted Publisher: GitHub Actions, owner `corbat-tech`, repository `coco`, w
 - El primer intento sí presentó el paquete mediante OIDC; falló solo la comprobación prematura. El segundo reconoció la versión idéntica publicada, sin modificarla ni volver a subirla. Corrección preventiva `f348f37` queda disponible para futuras entregas.
 - Revisión independiente de cada bloque y revisión final sin bloqueantes. Sin inferencia pagada ni auditoría integral de producto: permanecen como siguientes entregas explícitas.
 - No quedan tareas de implementación/publicación de esta entrega. Mantener tag/artifact inmutables. Continuación futura: prioridades del apartado anterior, comenzando por evaluación real acotada y restauración fundamentada de calidad.
+
+- Cierre GitHub: intento 2 creó la prerelease pero falló temporalmente al subir adjuntos (`Error creating asset temp dir`). Intento 3 relanzó solo el job de GitHub y terminó **SUCCESS**. Los cuatro adjuntos están presentes: tarball, pack.json, registry-integrity.txt y SHA256SUMS. Workflow completo en verde. No se volvió a publicar npm.
