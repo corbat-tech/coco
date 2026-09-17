@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0-next.5] - 2026-09-17
+
+### Fixed
+
+- Restore `calculate_quality` as an explicit evidence report: measured, not applicable, unavailable and failed measurements remain distinct; incomplete evidence cannot authorize acceptance.
+- Bind tests, review and final acceptance to the same project content. Keep acceptance separate from convergence and preserve effective weights for applicable dimensions.
+- Generate fresh coverage in isolated report directories; fail closed on missing instrumentation, invalid linter output, unsupported source or interrupted analysis commands.
+
+### Validation and limits
+
+Real local Ollama baseline against next.4: qwen3.5:4b passed 4/5 synthetic tasks, qwen3.5:9b passed 5/5. These are a reference, not evidence of improvement in this release or general coding capability. Quality certification currently covers JavaScript/TypeScript; unsupported languages report unavailable. npm `next` only; background, recovery, VSIX, extended context evaluation and final audit remain separate deliveries.
+
 ## [2.42.0-next.4] - 2026-09-17
 
 ### Fixed
