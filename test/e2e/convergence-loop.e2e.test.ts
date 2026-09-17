@@ -32,8 +32,20 @@ import type { QualityEvaluation, QualityDimensions } from "../../src/quality/typ
 
 const { mockEvaluate } = vi.hoisted(() => ({ mockEvaluate: vi.fn() }));
 vi.mock("../../src/quality/evaluator.js", () => ({
-  QualityEvaluator: vi.fn(function () {
-    return { evaluate: mockEvaluate };
+  QualityEvaluator: vi.fn(function (projectPath: string) {
+    return {
+      evaluate: async (files: string[]) => {
+        const { createQualitySnapshot } = await import("../../src/quality/snapshot.js");
+        const result = await mockEvaluate(files);
+        return {
+          ...result,
+          passed: result.meetsMinimum,
+          complete: true,
+          snapshotValid: true,
+          snapshot: await createQualitySnapshot(projectPath),
+        };
+      },
+    };
   }),
 }));
 

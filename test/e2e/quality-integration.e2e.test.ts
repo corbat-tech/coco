@@ -324,7 +324,7 @@ export function processItems(items: any[]): any[] {
   });
 
   describe("Tool Integration", () => {
-    it("should report aggregate certification unavailable through calculateQualityTool", async () => {
+    it("should expose partial analyzer evidence without certifying incomplete quality", async () => {
       // Create simple source file
       await writeFile(
         join(testProjectPath, "src", "utils.ts"),
@@ -335,12 +335,15 @@ export function hello(name: string): string {
 `.trim(),
       );
 
-      await expect(
-        calculateQualityTool.execute({
-          cwd: testProjectPath,
-          files: [join(testProjectPath, "src", "utils.ts")],
-        }),
-      ).rejects.toThrow(/not evaluated; no acceptance certified/);
+      const result = await calculateQualityTool.execute({
+        cwd: testProjectPath,
+        files: [join(testProjectPath, "src", "utils.ts")],
+      });
+      expect(result.passed).toBe(false);
+      expect(result.complete).toBe(false);
+      expect(result.measurements?.security.state).toBe("measured");
+      expect(result.measurements?.testCoverage.score).toBeNull();
+      expect(result.snapshot?.hash).toMatch(/^[a-f0-9]{64}$/);
     }, 30000);
   });
 
