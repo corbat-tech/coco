@@ -64,3 +64,15 @@ npm Trusted Publisher: GitHub Actions, owner `corbat-tech`, repository `coco`, w
 
 - Candidato local instalado/verificado: CLI --version/--help, exports y runtime con herramienta real de archivos PASS (proveedor simulado). Integridad `sha512-+9je9E3NxjFbqZfiPje7A477xndRfZLTlXzdEjTHWyZ0+duLEemztf1LHWvqJ81+xx4R712KlnWbV2j5v2q7/w==`. Artefacto conservado en `.dev/evolution/candidate-2.42.0-next.4/`; logs en `.dev/evolution/next4-logs/` (ignorados por Git).
 - Código listo para etiquetar/publicar; pendiente confirmación de configuración del Trusted Publisher. El tarball que publique Actions debe superar de nuevo su gate y coincidir con la integridad registrada en npm.
+
+## Publicación OIDC y reconciliación
+
+- Usuario confirmó Trusted Publisher guardado con publicación directa habilitada.
+- Tag `v2.42.0-next.4` → `a277c49`; workflow https://github.com/corbat-tech/coco/actions/runs/35254601994 . Gate Linux, build, pack y smoke instalable PASS. Comando npm publish terminó con código 0; verificación inmediata de dist-tag falló. No se ha repetido la subida.
+- npm documenta escaneo previo a disponibilidad: https://github.com/orgs/community/discussions/203413 . Registro todavía E404 para next.4 mientras se reconcilia. No declarar publicada hasta comprobar disponibilidad, integridad y canal.
+- Artefacto CI descargado coincide byte por byte con local: SHA256 `47fa77c507d8fb0d7e57f48edce7603f15f79266201e5d0a4b7e86bff4ffce99`. Retenido en `.dev/evolution/ci-candidate-2.42.0-next.4/`.
+- Corrección acotada del script de publicación en curso: esperar visibilidad mediante lecturas (hasta 10 minutos), comprobar integridad y canal, sin republish automático. Tag y paquete permanecen inmutables.
+
+- A las 19:51 CEST, registro visible: `next=2.42.0-next.4`, `latest=2.41.0`; integridad exacta coincide con candidato CI/local. Publicación OIDC confirmada tras retraso de aproximadamente cuatro minutos por visibilidad.
+- Corrección del script de espera revisada por integrador; 28 tests de publicación PASS. No afecta al tarball next.4 ni mueve su tag. Queda en la rama para futuras publicaciones.
+- Relanzado únicamente el workflow fallido: reconocerá versión ya existente e idéntica, omitirá publicación y completará instalación/release GitHub.

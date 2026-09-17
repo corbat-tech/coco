@@ -34,6 +34,7 @@ describe("npm publication reconciliation", () => {
       .mockReturnValueOnce({ status: 1, stdout: '{"error":{"code":"E404"}}' })
       .mockReturnValueOnce({ status: 0, stdout: '"publisher"' })
       .mockReturnValueOnce({ status: 0, stdout: "" })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify(integrity) })
       .mockReturnValueOnce({ status: 0, stdout: '{"next":"2.42.0"}' });
     expect(await publishNpm(dir, "next", run)).toBe("published");
     expect(run.mock.calls[2]?.[0]).toEqual([
@@ -97,6 +98,7 @@ describe("npm publication reconciliation", () => {
       .fn()
       .mockReturnValueOnce({ status: 1, stdout: '{"error":{"code":"E404"}}' })
       .mockReturnValueOnce({ status: 0, stdout: "" })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify(integrity) })
       .mockReturnValueOnce({ status: 0, stdout: '{"next":"2.42.0"}' });
     expect(
       await publishNpm(dir, "next", run, {
@@ -108,7 +110,7 @@ describe("npm publication reconciliation", () => {
         },
       }),
     ).toBe("published");
-    expect(run.mock.calls.map(([args]) => args[0])).toEqual(["view", "publish", "view"]);
+    expect(run.mock.calls.map(([args]) => args[0])).toEqual(["view", "publish", "view", "view"]);
   });
   it.each([
     {},
@@ -144,5 +146,81 @@ describe("npm publication reconciliation", () => {
     const run = vi.fn();
     await expect(publishNpm(dir, "latest", run)).rejects.toThrow("Artifact changed");
     expect(run).not.toHaveBeenCalled();
+  });
+  function pollingClock() {
+    let time = 0;
+    const wait = vi.fn(async (ms: number) => {
+      time += ms;
+    });
+    return { visibilityTimeoutMs: 45000, pollIntervalMs: 15000, now: () => time, wait };
+  }
+  function acceptedSubmission() {
+    return vi
+      .fn()
+      .mockReturnValueOnce({ status: 1, stdout: '{"error":{"code":"E404"}}' })
+      .mockReturnValueOnce({ status: 0, stdout: '"publisher"' })
+      .mockReturnValueOnce({ status: 0, stdout: "" });
+  }
+  it("polls E404 and an old dist-tag after acknowledgement without resubmitting", async () => {
+    const clock = pollingClock();
+    const run = acceptedSubmission()
+      .mockReturnValueOnce({ status: 1, stdout: '{"error":{"code":"E404"}}' })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify(integrity) })
+      .mockReturnValueOnce({ status: 0, stdout: '{"next":"2.41.0"}' })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify(integrity) })
+      .mockReturnValueOnce({ status: 0, stdout: '{"next":"2.42.0"}' });
+    await expect(publishNpm(dir, "next", run, clock)).resolves.toBe("published");
+    expect(clock.wait.mock.calls).toEqual([[15000], [15000]]);
+    expect(run.mock.calls.filter(([args]) => args[0] === "publish")).toHaveLength(1);
+    expect(run.mock.calls.every(([args]) => ["view", "whoami", "publish"].includes(args[0]))).toBe(
+      true,
+    );
+    expect(run.mock.calls[3]?.[1]).toEqual({ timeout: 45000, killSignal: "SIGKILL" });
+    expect(run.mock.calls.at(-1)?.[1]).toEqual({ timeout: 15000, killSignal: "SIGKILL" });
+  });
+  it("stops polling immediately if visible integrity conflicts", async () => {
+    const clock = pollingClock();
+    const run = acceptedSubmission().mockReturnValue({ status: 0, stdout: '"conflict"' });
+    await expect(publishNpm(dir, "next", run, clock)).rejects.toThrow("different integrity");
+    expect(run).toHaveBeenCalledTimes(4);
+    expect(clock.wait).not.toHaveBeenCalled();
+  });
+  it("expires pending visibility without another publish or dist-tag mutation", async () => {
+    const clock = pollingClock();
+    const run = acceptedSubmission().mockReturnValue({
+      status: 1,
+      stdout: '{"error":{"code":"E404"}}',
+    });
+    await expect(publishNpm(dir, "next", run, clock)).rejects.toThrow(
+      "visibility deadline expired",
+    );
+    expect(clock.now()).toBe(45000);
+    expect(clock.wait).toHaveBeenCalledTimes(3);
+    expect(run).toHaveBeenCalledTimes(6);
+    expect(run.mock.calls.filter(([args]) => args[0] === "publish")).toHaveLength(1);
+  });
+  it.each([
+    { status: 1, stdout: '{"error":{"code":"E401","summary":"secret-value"}}' },
+    { status: 0, stdout: "secret-value" },
+    { status: 0, stdout: "{}" },
+    { status: null, signal: "SIGKILL", stderr: "secret-value" },
+  ])("stops unknown verification failures without exposing raw output: %j", async (result) => {
+    const clock = pollingClock();
+    const run = acceptedSubmission().mockReturnValue(result);
+    const error = await publishNpm(dir, "next", run, clock).catch((reason: Error) => reason);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).not.toContain("secret-value");
+    expect(run).toHaveBeenCalledTimes(4);
+    expect(clock.wait).not.toHaveBeenCalled();
+  });
+  it("rejects malformed channel data rather than treating it as delayed indexing", async () => {
+    const clock = pollingClock();
+    const run = acceptedSubmission()
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify(integrity) })
+      .mockReturnValueOnce({ status: 0, stdout: '{"next":{"token":"secret-value"}}' });
+    const error = await publishNpm(dir, "next", run, clock).catch((reason: Error) => reason);
+    expect(error.message).toContain("Channel state unknown");
+    expect(error.message).not.toContain("secret-value");
+    expect(clock.wait).not.toHaveBeenCalled();
   });
 });
