@@ -1,6 +1,6 @@
 # Entrega next.7 — CLI, terminal y VSIX
 
-Estado: implementación y revisión; publicación pendiente. La versión estable npm sigue en 2.41.0.
+Estado: publicada y verificada. La versión estable npm sigue en 2.41.0.
 
 ## Alcance implementado
 
@@ -19,7 +19,13 @@ Estado: implementación y revisión; publicación pendiente. La versión estable
 
 ## Pendientes de cierre
 
-- [ ] Revisión independiente final del renderer y cambio de autenticación.
-- [ ] Gate completo del commit exacto y clean install del tarball.
-- [ ] Publicación OIDC de next.7, integridad y canal npm.
-- [ ] VSIX empaquetado, inspección y gate Linux/Extension Host en Actions.
+- [x] Revisión independiente final del renderer y cambio de autenticación.
+- [x] Gate completo del commit exacto y clean install del tarball.
+- [x] Publicación OIDC de next.7, integridad y canal npm.
+- [x] VSIX empaquetado, inspección y gate Linux/Extension Host en Actions.
+
+## Publicación
+
+- npm next.7: commit b058631, 8.124 pruebas principales +28 REPL,15 omitidas. Cobertura74,65%statements/75,36%líneas. Clean install PASS. [Actions35264727188](https://github.com/corbat-tech/coco/actions/runs/35264727188) PASS.
+- npm `next=2.42.0-next.7`, `latest=2.41.0`; integridad publicada `sha512-rDSjqR3koUbt7DdZRGJA8UVGqUqrNUoNtZX4S3SVxOeU9oGBOc0ts/JYEf7pTlxHD2GhY/IckogVaNc7SblYoA==`. SHA256 GitHub `cf87ca93542683e2215d619a6d8e26d5a91e9e2ba109eb166c231113c6591b68`.
+- VSIX commit251ce3b: [Actions35264727106](https://github.com/corbat-tech/coco/actions/runs/35264727106) PASS, incluido Extension Host Linux. [Descarga](https://github.com/corbat-tech/coco/releases/download/vscode-v2.42.0/corbat-coco.vsix). SHA256publicado `16d2243676e4d9cad1812e9a0763470a90bb1f398de561207732820270b15449`. Bundle comprobado, nueve archivos, sin fixtures/maps.

@@ -23,6 +23,13 @@ Captura reversible limitada a `write_file`, `edit_file` y `delete_file`, archivo
 
 ## Cierre
 
-- [ ] Integración REPL con cierre excepcional.
-- [ ] Puerta completa del commit exacto y clean install.
+- [x] Integración REPL: 28 pruebas, incluido cierre excepcional.
+- [x] Puerta completa del commit `5c495c8`; clean install PASS; SHA256 `208e7543e6243c03570d895dc601b546ebc7f6dcd131ebef657d5271ecff63bc`.
 - [ ] Publicación OIDC, integridad npm/canal y assets GitHub.
+
+## Publicación verificada
+
+- Actions [35263217498](https://github.com/corbat-tech/coco/actions/runs/35263217498): PASS. npm `next=2.42.0-next.6`, `latest=2.41.0`.
+- Gate local del commit 5c495c8: 8.037 pruebas principales +28 REPL, 15 omitidas; statements71,09%, líneas71,75%.
+- Artefacto publicado SHA256 `2e47f9e917a4f7d783666a76298214dfa89c1a8f7c7694f445cc8ccfca9da1a8`; integridad npm `sha512-QjQHTkazfNhSXhWMXb3UboxOItdcnRAgC9HtWimN8HE/I9qAyDlQEQ8KxhAF0j/fq7fLo/R1EVwueyNYdbBEwg==`.
+- No es byte a byte idéntico al tarball macOS local: TypeScript ordena algunas uniones/declaraciones de forma distinta, cambiando el nombre hash de un chunk `.d.ts`. Los archivos de ejecución coinciden. Actions verifica e instala su propio tarball exacto; los cuatro artefactos están publicados. No atribuir al artefacto de Linux el hash local anterior.

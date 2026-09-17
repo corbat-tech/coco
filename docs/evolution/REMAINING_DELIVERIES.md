@@ -1,6 +1,6 @@
 # Cierre de mejora de Coco — entregas restantes
 
-Base publicada: 2.42.0-next.4. Presupuesto API adicional: **0 €**. Incluye background y VSIX. Última instrucción: usar Ollama para evaluación real y ejecutar el plan.
+Base inicial: 2.42.0-next.4; última entrega confirmada: **2.42.0-next.7 + VSIX 2.42.0**. Presupuesto API adicional: **0 €**. Incluye background y VSIX. Última instrucción: usar Ollama para evaluación real y ejecutar el plan.
 
 ## Cambio aprobado: evaluación local con Ollama
 
@@ -10,9 +10,9 @@ Cada caso: repositorio sintético aislado, máximo 10 minutos y 30 llamadas; reg
 
 ## Secuencia y aceptación
 
-- [ ] next.5 — mapa actualizado, corpus bug/feature/refactor/recuperación/sesión larga y referencia next.4; calidad medida/no aplicable/no disponible/error, aceptación distinta de convergencia y hash del contenido evaluado.
-- [ ] next.6 — background propiedad de sesión/proyecto, 2 trabajos, 30min, 16MiB/canal; consultar/leer/cancelar, cierre POSIX; Windows indisponible hasta prueba del árbol. Sesiones/checkpoints/rewind sin sobrescribir cambios ajenos ni repetir efectos.
-- [ ] next.7 + VSIX — JSON/headless coherente y stdin acotado; terminal no bloqueado por updates; extensión con ejecutable/argv seguro, multiroot, Workspace Trust y Extension Host real. VSIX GitHub; Marketplace solo con acceso ya configurado.
+- [x] next.5 — mapa actualizado, corpus bug/feature/refactor/recuperación/sesión de dos turnos y referencia next.4; calidad medida/no aplicable/no disponible/error, aceptación distinta de convergencia y hash del contenido evaluado.
+- [x] next.6 — background propiedad de sesión/proyecto, 2 trabajos, 30min, 16MiB/canal; consultar/leer/cancelar, cierre POSIX; Windows indisponible hasta prueba del árbol. Sesiones/checkpoints/rewind sin sobrescribir cambios ajenos ni repetir efectos.
+- [x] next.7 + VSIX — JSON/headless coherente y stdin acotado; terminal no bloqueado por updates; extensión con ejecutable/argv seguro, multiroot, Workspace Trust y Extension Host real. VSIX GitHub; Marketplace solo con acceso ya configurado.
 - [ ] next.8 — presupuesto de tokens/contexto e invalidación de caché; compactación preserva restricciones; cambios de prompts guiados por evaluación. Cobertura ≥80% líneas/statements sin nuevas exclusiones ni bajar otros umbrales.
 - [ ] rc.1 → estable 2.42.0 — tres revisores independientes (usuario, capacidad, ingeniería), primero sin historial interno; uso real de Ollama y casos reservados; corregir bloqueantes, máximo dos rondas por causa. Publicar estable solo con evidencia suficiente; si no, mantener RC y explicar bloqueo.
 
@@ -25,3 +25,9 @@ Criterio → implementación → pruebas en mirror/sandbox → revisión indepen
 - Inicio: checkout limpio en 422a295. Ollama operativo y modelos enumerados sin descargar. Subtareas calidad y background en implementación; integrador prepara corpus y referencia local. No se ha publicado una versión posterior a next.4.
 
 - Referencia Ollama ejecutada: next.4 + qwen3.5:4b 4/5; next.4 + qwen3.5:9b 5/5. Casos sintéticos; sesión inicial de dos turnos. Estrés prolongado y comparación repetida quedan en next.8. Evidencias persistidas en `evidence/`; detalle en `NEXT_DELIVERY_NEXT5.md`.
+
+- next.5 cerrada: 8.019 pruebas principales + 27 REPL, build/clean install, Actions OIDC e integridad npm PASS. next.6 verificada localmente y enviada a publicación; next.7 y next.8 en implementación/revisión. No se considera completado el objetivo global de cobertura.
+
+- next.6 publicada: gate8037+28 y Actions35263217498 PASS. next.7 en gate exacto. Ollama repetido: código20/20, éxito completo como máximo19/20 por agotamiento de iteraciones; evaluadorv3 ahora exige terminación sin herramientas pendientes. La prueba de compactación real detectó `thinking:off` ignorado en Ollama; se corrige el payload según documentación oficial antes de repetir.
+
+- next.7 y VSIX publicados y verificados. Próximo cierre documentado en `NEXT_DELIVERY_NEXT8.md`; evaluación local ya ha producido una corrección real de API/compactación. Corregir también checkpoints antiguos destructivos antes de estable.

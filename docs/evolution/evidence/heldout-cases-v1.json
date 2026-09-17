@@ -1,0 +1,21 @@
+[
+  {
+    "id": "heldout-order",
+    "source": "export const dedupe = values => [...new Set(values)];\n",
+    "prompt": "Implement dedupe(records) in main.mjs: deduplicate objects by id keeping the LAST record for each id, with the output ordered by the positions of those last occurrences. Do not mutate the input array or objects. Empty input returns []. Preserve the export; no dependencies. Read, edit and test.",
+    "check": "const a=Object.freeze({id:\"a\",v:1}),b=Object.freeze({id:\"b\",v:2}),c=Object.freeze({id:\"a\",v:3});const xs=Object.freeze([a,b,c]);assert.deepEqual(m.dedupe(xs),[b,c]);assert.deepEqual(m.dedupe([]),[]);assert.equal(m.dedupe(xs)[0],b);assert.deepEqual(m.dedupe([{id:0},{id:1},{id:0}]),[{id:1},{id:0}]);"
+  },
+  {
+    "id": "heldout-path",
+    "source": "export const isInside = (root, candidate) => candidate.startsWith(root);\n",
+    "prompt": "Fix isInside(root, candidate) in main.mjs for absolute POSIX paths: normalize dot segments, accept the root itself or descendants only, reject sibling paths with the same prefix and traversal out of root. No filesystem reads are required by this function, and do not follow symlinks. Preserve API; use Node built-ins only. Read, edit and test.",
+    "check": "assert.equal(m.isInside(\"/safe\",\"/safe/a\"),true);assert.equal(m.isInside(\"/safe\",\"/safe\"),true);assert.equal(m.isInside(\"/safe\",\"/safe-evil/a\"),false);assert.equal(m.isInside(\"/safe\",\"/safe/../secret\"),false);assert.equal(m.isInside(\"/safe/\",\"/safe/x/../a\"),true);assert.equal(m.isInside(\"/\",\"/tmp/a\"),true);"
+  },
+  {
+    "id": "heldout-correction",
+    "source": "export const total = items => items.reduce((sum,item)=>sum+item.amount,0);\n",
+    "prompt": "Read main.mjs and USER_NOTE.txt. We will update total later. Constraints: preserve the API, do not edit USER_NOTE.txt, no dependencies, no rounding. Do not edit yet; acknowledge the constraints.",
+    "followup": "Correction to the planned change: sum only entries with enabled === true, including amounts zero and negative. Missing enabled, false, and the string \"true\" must all be excluded. Preserve all previous constraints. Implement and test.",
+    "check": "assert.equal(m.total([{amount:4,enabled:true},{amount:-2,enabled:true},{amount:9,enabled:\"true\"},{amount:8},{amount:10,enabled:false},{amount:0,enabled:true}]),2);assert.equal(m.total([]),0);assert.equal(m.total([{amount:0.25,enabled:true},{amount:0.5,enabled:true}]),0.75);"
+  }
+]

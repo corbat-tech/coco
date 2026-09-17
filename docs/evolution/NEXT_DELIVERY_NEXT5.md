@@ -1,6 +1,6 @@
 # next.5 — evidencia de calidad y referencia Ollama
 
-Estado: implementación y revisión realizadas; puerta completa y publicación pendientes. Base: `2.42.0-next.4`.
+Estado: **publicado y verificado**. Commit `e367cc0`, tag `v2.42.0-next.5`. Base: `2.42.0-next.4`.
 
 ## Alcance
 
@@ -28,7 +28,9 @@ La revisión encontró y se corrigieron: ESLint con salida vacía y exit 1 trata
 
 ## Cierre pendiente
 
-- [ ] Typecheck, lint, formato, suite principal con cobertura, integración REPL y build del commit exacto.
-- [ ] Empaquetado y clean install del mismo artefacto.
-- [ ] Publicación Actions/OIDC, integridad, versión/canal npm y release GitHub.
-- [ ] Registrar SHA, pruebas y limitaciones; continuar next.6.
+- [x] Typecheck, lint, formato y build; 8.019 pruebas principales + 27 de integración REPL. Cobertura: 70,73% statements / 71,37% líneas; todavía por debajo del objetivo final del 80%.
+- [x] Empaquetado y clean install. SHA256 `74bac1f8f531c01e21acc1782cea1d4b2248e4afd23830b1471eda7fac985520`.
+- [x] Actions/OIDC PASS; npm `next=2.42.0-next.5`, `latest=2.41.0` al cierre; integridad idéntica y cuatro assets GitHub.
+- [x] SHA, pruebas y limitaciones registrados; next.6 en curso.
+
+Actions: https://github.com/corbat-tech/coco/actions/runs/35261863410 . Release: https://github.com/corbat-tech/coco/releases/tag/v2.42.0-next.5 .
