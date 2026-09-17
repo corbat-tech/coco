@@ -4,7 +4,9 @@
  * Corbat-Coco CLI Entry Point
  */
 
-import { Command } from "commander";
+import { Command, CommanderError } from "commander";
+import { requestsHeadlessJson } from "./headless-invocation.js";
+import { stripVTControlCharacters } from "node:util";
 import { installProxyDispatcher } from "../utils/proxy.js";
 import { VERSION } from "../version.js";
 
@@ -22,14 +24,22 @@ import { registerSkillsCommand } from "./commands/skills.js";
 import { registerCheckCommand } from "./commands/check.js";
 import { registerSwarmCommand } from "./commands/swarm.js";
 import { startRepl } from "./repl/index.js";
-import { runHeadless } from "./headless.js";
+import { runHeadless, headlessFailure, writeHeadlessResult } from "./headless.js";
 import { runOnboardingV2, saveConfiguration } from "./repl/onboarding-v2.js";
-import { checkForUpdatesInteractive } from "./repl/version-check.js";
+import { runWithDeferredUpdateNotice } from "./deferred-update.js";
 import { getLastUsedProvider } from "../config/env.js";
 import { formatError } from "../utils/errors.js";
 import type { ProviderType } from "../providers/index.js";
 
 const program = new Command();
+const headlessJson = requestsHeadlessJson(process.argv.slice(2));
+if (headlessJson) {
+  program.exitOverride();
+  program.configureOutput({
+    outputError: (message) =>
+      writeHeadlessResult(headlessFailure(stripVTControlCharacters(message).trim()), "json"),
+  });
+}
 
 program
   .name("coco")
@@ -90,6 +100,43 @@ program
       editorModel?: string;
       weakModel?: string;
     }) => {
+      // Headless preflight must not open an interactive setup wizard or lose JSON errors.
+      if (options.print !== undefined) {
+        const format = options.output === "json" ? "json" : "text";
+        try {
+          if (options.setup)
+            throw new Error("--setup cannot be combined with --print; run coco setup first");
+          if (options.output !== "text" && options.output !== "json")
+            throw new Error("Invalid output format; expected text or json");
+          const providerType = (options.provider as ProviderType) ?? (await getLastUsedProvider());
+          const result = await runHeadless({
+            task: typeof options.print === "string" ? options.print : undefined,
+            projectPath: options.path,
+            outputFormat: format,
+            useRuntimeRunner: options.runtimeRunner === true,
+            config: {
+              provider: {
+                type: providerType as "anthropic" | "openai",
+                model: options.model ?? "",
+                maxTokens: 8192,
+              },
+            },
+          });
+          process.exitCode = result.success
+            ? 0
+            : result.error === "Headless execution cancelled"
+              ? 130
+              : 1;
+        } catch (error) {
+          writeHeadlessResult(
+            headlessFailure(error instanceof Error ? error.message : String(error)),
+            format,
+          );
+          process.exitCode = 1;
+        }
+        return;
+      }
+
       // Run setup if requested
       if (options.setup) {
         const result = await runOnboardingV2();
@@ -103,41 +150,20 @@ program
       // Use last used provider from preferences (falls back to env/anthropic)
       const providerType = (options.provider as ProviderType) ?? (await getLastUsedProvider());
 
-      // Headless mode: -P or --print
-      if (options.print !== undefined) {
-        const task = typeof options.print === "string" ? options.print : undefined;
-        const result = await runHeadless({
-          task,
+      await runWithDeferredUpdateNotice(() =>
+        startRepl({
           projectPath: options.path,
-          outputFormat: options.output === "json" ? "json" : "text",
-          useRuntimeRunner: options.runtimeRunner === true,
           config: {
             provider: {
               type: providerType as "anthropic" | "openai",
               model: options.model ?? "",
               maxTokens: 8192,
+              editorModel: options.editorModel,
+              weakModel: options.weakModel,
             },
           },
-        });
-        process.exit(result.success ? 0 : 1);
-        return;
-      }
-
-      // Check for updates before opening the REPL
-      await checkForUpdatesInteractive();
-
-      await startRepl({
-        projectPath: options.path,
-        config: {
-          provider: {
-            type: providerType as "anthropic" | "openai",
-            model: options.model ?? "",
-            maxTokens: 8192,
-            editorModel: options.editorModel,
-            weakModel: options.weakModel,
-          },
-        },
-      });
+        }),
+      );
     },
   );
 
@@ -147,6 +173,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
+  if (headlessJson && error instanceof CommanderError) {
+    process.exitCode = error.exitCode;
+    return;
+  }
   console.error(formatError(error));
   process.exit(1);
 });

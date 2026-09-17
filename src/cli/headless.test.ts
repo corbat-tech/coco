@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+vi.mock("./headless-stdin.js", () => ({ readHeadlessStdin: vi.fn(async () => "") }));
 
 // Mock dependencies
 vi.mock("./repl/session.js", () => ({
@@ -170,5 +172,77 @@ describe("runHeadless", () => {
       usage: { inputTokens: 11, outputTokens: 7 },
     });
     expect(executeAgentTurn).not.toHaveBeenCalled();
+  });
+});
+
+describe("headless result contract", () => {
+  let output: string;
+  let diagnostics: string;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    output = "";
+    diagnostics = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += chunk.toString();
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      diagnostics += chunk.toString();
+      return true;
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  const options = { projectPath: "/test", outputFormat: "json" as const, task: "fix code" };
+  it("prints exactly one JSON failure for a missing task", async () => {
+    const result = await runHeadless({ ...options, task: "   " });
+    expect(JSON.parse(output)).toEqual(result);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No task");
+  });
+  it("prints JSON for setup and stdin failures", async () => {
+    const { createSession } = await import("./repl/session.js");
+    vi.mocked(createSession).mockRejectedValueOnce(new Error("configuration unavailable"));
+    const result = await runHeadless(options);
+    expect(JSON.parse(output)).toEqual(result);
+    expect(result.error).toBe("configuration unavailable");
+  });
+  it("routes incidental stdout diagnostics away from the JSON result", async () => {
+    const { executeAgentTurn } = await import("./repl/agent-loop.js");
+    vi.mocked(executeAgentTurn).mockImplementationOnce(async () => {
+      console.log("tool diagnostic");
+      process.stdout.write("\u001b[31mtool progress\u001b[0m");
+      return {
+        content: "done",
+        toolCalls: [],
+        usage: { inputTokens: 1, outputTokens: 1 },
+        aborted: false,
+      };
+    });
+    const result = await runHeadless(options);
+    expect(JSON.parse(output)).toEqual(result);
+    expect(output).not.toContain("tool diagnostic");
+    expect(diagnostics).toContain("tool progress");
+  });
+  it("closes the runtime after context setup fails", async () => {
+    const { AgentRuntime } = await import("../runtime/index.js");
+    const { initializeContextManager } = await import("./repl/session.js");
+    const close = vi.spyOn(AgentRuntime.prototype, "close");
+    vi.mocked(initializeContextManager).mockRejectedValueOnce(new Error("context failed"));
+    const result = await runHeadless(options);
+    expect(result.success).toBe(false);
+    expect(close).toHaveBeenCalledOnce();
+    expect(JSON.parse(output)).toEqual(result);
+  });
+  it("handles host cancellation and restores signal listeners", async () => {
+    const beforeInt = process.listenerCount("SIGINT");
+    const beforeTerm = process.listenerCount("SIGTERM");
+    const result = await runHeadless({ ...options, signal: AbortSignal.abort() });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("cancelled");
+    expect(process.listenerCount("SIGINT")).toBe(beforeInt);
+    expect(process.listenerCount("SIGTERM")).toBe(beforeTerm);
+    expect(JSON.parse(output)).toEqual(result);
   });
 });

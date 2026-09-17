@@ -19,7 +19,7 @@ import { setAgentProvider, setAgentToolRegistry } from "../agents/provider-bridg
 import { createAgentRuntime, createToolCallingRuntimeTurnRunner } from "../runtime/index.js";
 import { createFullToolRegistry } from "../tools/index.js";
 import { loadAllowedPaths } from "../tools/allowed-paths.js";
-import { registerGlobalCleanup } from "../utils/subprocess-registry.js";
+import { readHeadlessStdin } from "./headless-stdin.js";
 import type { ReplConfig } from "./repl/types.js";
 import type { ProviderType } from "../providers/index.js";
 import path from "node:path";
@@ -41,6 +41,8 @@ export interface HeadlessOptions {
    * runner instead of the legacy REPL loop.
    */
   useRuntimeRunner?: boolean;
+  /** Optional host cancellation; CLI signals are handled for this invocation only. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -59,88 +61,61 @@ export interface HeadlessResult {
   error?: string;
 }
 
-/**
- * Read task from stdin (for piped input)
- */
-async function readStdin(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    // 5 seconds to allow slow pipe producers (e.g., large git diff) to start writing
-    const timeout = setTimeout(() => {
-      resolve("");
-    }, 5000);
-
-    process.stdin.on("data", (chunk) => {
-      clearTimeout(timeout);
-      chunks.push(Buffer.from(chunk));
-    });
-
-    process.stdin.on("end", () => {
-      clearTimeout(timeout);
-      resolve(Buffer.concat(chunks).toString("utf-8").trim());
-    });
-
-    process.stdin.on("error", (err) => {
-      clearTimeout(timeout);
-      reject(err);
-    });
-
-    // If stdin is a TTY (not piped), resolve immediately
-    if (process.stdin.isTTY) {
-      clearTimeout(timeout);
-      resolve("");
-    }
-  });
+/** Existing JSON result shape, shared by execution and CLI preflight errors. */
+export function headlessFailure(message: string): HeadlessResult {
+  return {
+    success: false,
+    output: "",
+    toolsExecuted: 0,
+    usage: { inputTokens: 0, outputTokens: 0 },
+    error: message,
+  };
 }
 
-/**
- * Run Coco in headless mode
- *
- * @param options - Headless execution options
- * @returns Execution result
- */
+export function writeHeadlessResult(
+  result: HeadlessResult,
+  format: "text" | "json",
+  write = process.stdout.write.bind(process.stdout),
+): void {
+  if (format === "json") write(JSON.stringify(result, null, 2) + "\n");
+  else if (!result.success)
+    process.stderr.write(`Error: ${result.error ?? "Headless execution failed"}\n`);
+}
+
+let ownsOutput = false;
+/** Run one CLI-owned invocation; diagnostics are routed away from the result stream. */
 export async function runHeadless(options: HeadlessOptions): Promise<HeadlessResult> {
-  registerGlobalCleanup();
-
-  // Unix composability: combine piped stdin content with task argument
-  // Patterns:
-  //   coco -P "task"                  → task = "task"
-  //   echo "task" | coco -P           → task = "task" (from stdin)
-  //   git diff | coco -P "review"     → task = "review\n\n<stdin content>"
-  const stdinContent = await readStdin();
-  let task = options.task ?? "";
-
-  if (task && stdinContent) {
-    // Both task and piped content: combine them
-    task = `${task}\n\n<piped-input>\n${stdinContent}\n</piped-input>`;
-  } else if (!task && stdinContent) {
-    // Only piped content: use as task
-    task = stdinContent;
-  }
-
-  if (!task) {
-    return {
-      success: false,
-      output: "",
-      toolsExecuted: 0,
-      usage: { inputTokens: 0, outputTokens: 0 },
-      error: "No task provided. Pass a task as argument or pipe via stdin.",
-    };
-  }
-
+  if (ownsOutput)
+    throw new Error("Concurrent headless output is unsupported; use separate processes");
+  ownsOutput = true;
+  const originalWrite = process.stdout.write;
+  const writeOutput = originalWrite.bind(process.stdout);
+  process.stdout.write = process.stderr.write.bind(process.stderr);
+  const controller = new AbortController();
+  const cancel = () => controller.abort(new Error("Headless execution cancelled"));
+  process.once("SIGINT", cancel);
+  process.once("SIGTERM", cancel);
+  options.signal?.addEventListener("abort", cancel, { once: true });
+  if (options.signal?.aborted) cancel();
+  let runtime: Awaited<ReturnType<typeof createAgentRuntime>> | undefined;
+  let result: HeadlessResult = headlessFailure("Headless execution did not complete");
   try {
-    // Create session
+    if (options.outputFormat !== "text" && options.outputFormat !== "json")
+      throw new Error("Invalid output format; expected text or json");
+    const stdinContent = await readHeadlessStdin(process.stdin, { signal: controller.signal });
+    let task = options.task?.trim() ?? "";
+    if (task && stdinContent) task += `\n\n<piped-input>\n${stdinContent}\n</piped-input>`;
+    else if (stdinContent) task = stdinContent;
+    if (!task) throw new Error("No task provided. Pass a task as argument or pipe via stdin.");
+    controller.signal.throwIfAborted();
     const session = await createSession(options.projectPath, options.config);
     await initializeSessionTrust(session);
-
-    // Create provider
     const providerType = session.config.provider.type as ProviderType;
     const provider = await createProvider(providerType, {
       model: session.config.provider.model || undefined,
     });
-
-    // Create reusable runtime facade and tool registry.
-    const runtime = await createAgentRuntime({
+    controller.signal.throwIfAborted();
+    runtime = await createAgentRuntime({
       providerType,
       model: session.config.provider.model || undefined,
       provider,
@@ -151,90 +126,73 @@ export async function runHeadless(options: HeadlessOptions): Promise<HeadlessRes
       legacyAgentBridge: { setAgentProvider, setAgentToolRegistry },
     });
     session.runtime = runtime;
-    const toolRegistry = runtime.toolRegistry;
-
-    // Load allowed paths
     await loadAllowedPaths(options.projectPath);
-
-    // Initialize context manager
     await initializeContextManager(session, provider);
-
+    controller.signal.throwIfAborted();
     if (options.useRuntimeRunner) {
       const runtimeSession = runtime.createSession({
         id: session.id,
         mode: "build",
         instructions: session.config.agent.systemPrompt || undefined,
-        metadata: {
-          surface: "cli",
-          product: "coco-code",
-          execution: "headless-runtime-runner",
-        },
+        metadata: { surface: "cli", product: "coco-code", execution: "headless-runtime-runner" },
       });
-      const result = await runtime.runTurn({
+      const turn = await runtime.runTurn({
         sessionId: runtimeSession.id,
         content: task,
+        options: { signal: controller.signal },
         metadata: { surface: "cli", product: "coco-code" },
       });
-      const events = runtime.eventLog.list();
-      const headlessResult: HeadlessResult = {
+      result = {
         success: true,
-        output: result.content,
-        toolsExecuted: events.filter((event) => event.type === "tool.completed").length,
-        usage: result.usage,
+        output: turn.content,
+        toolsExecuted: runtime.eventLog.list().filter((event) => event.type === "tool.completed")
+          .length,
+        usage: turn.usage,
       };
-
-      if (options.outputFormat === "json") {
-        process.stdout.write(JSON.stringify(headlessResult, null, 2) + "\n");
-      } else {
-        process.stdout.write(result.content + "\n");
-      }
-
-      return headlessResult;
-    }
-
-    // Execute agent turn
-    const result = await executeAgentTurn(session, task, provider, toolRegistry, {
-      skipConfirmation: true, // No interactive confirmations in headless mode
-      onStream: (chunk) => {
-        // In text mode, stream output to stdout in real-time
-        if (options.outputFormat === "text" && chunk.type === "text" && chunk.text) {
-          process.stdout.write(chunk.text);
-        }
-      },
-    });
-
-    const headlessResult: HeadlessResult = {
-      success: !result.aborted,
-      output: result.content,
-      toolsExecuted: result.toolCalls.length,
-      usage: result.usage,
-    };
-
-    // Output based on format
-    if (options.outputFormat === "json") {
-      process.stdout.write(JSON.stringify(headlessResult, null, 2) + "\n");
-    } else if (options.outputFormat === "text") {
-      // Text was already streamed, just add a newline
-      process.stdout.write("\n");
-    }
-
-    return headlessResult;
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    const headlessResult: HeadlessResult = {
-      success: false,
-      output: "",
-      toolsExecuted: 0,
-      usage: { inputTokens: 0, outputTokens: 0 },
-      error: errorMsg,
-    };
-
-    if (options.outputFormat === "json") {
-      process.stdout.write(JSON.stringify(headlessResult, null, 2) + "\n");
+      if (options.outputFormat === "text") writeOutput(turn.content + "\n");
     } else {
-      process.stderr.write(`Error: ${errorMsg}\n`);
+      let streamed = false;
+      const turn = await executeAgentTurn(session, task, provider, runtime.toolRegistry, {
+        skipConfirmation: true,
+        signal: controller.signal,
+        onStream: (chunk) => {
+          if (options.outputFormat === "text" && chunk.type === "text" && chunk.text) {
+            streamed = true;
+            writeOutput(chunk.text);
+          }
+        },
+      });
+      result = {
+        success: !turn.aborted,
+        output: turn.content,
+        toolsExecuted: turn.toolCalls.length,
+        usage: turn.usage,
+        ...(turn.aborted ? { error: "Headless execution cancelled" } : {}),
+      };
+      if (options.outputFormat === "text" && !turn.aborted)
+        writeOutput((streamed ? "" : turn.content) + "\n");
     }
-
-    return headlessResult;
+    controller.signal.throwIfAborted();
+  } catch (error) {
+    result = headlessFailure(
+      controller.signal.aborted
+        ? "Headless execution cancelled"
+        : error instanceof Error
+          ? error.message
+          : String(error),
+    );
+  } finally {
+    try {
+      await runtime?.close();
+    } catch {
+      result = headlessFailure("Headless runtime cleanup failed");
+    }
+    process.off("SIGINT", cancel);
+    process.off("SIGTERM", cancel);
+    options.signal?.removeEventListener("abort", cancel);
+    process.stdout.write = originalWrite;
+    ownsOutput = false;
   }
+  writeHeadlessResult(result, options.outputFormat, writeOutput);
+  return result;
 }
