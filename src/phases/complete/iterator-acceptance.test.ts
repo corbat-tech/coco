@@ -31,6 +31,10 @@ vi.mock("./reviewer.js", () => ({
     };
   }),
 }));
+vi.mock("../../quality/snapshot.js", () => ({
+  createQualitySnapshot: vi.fn(async () => ({ hash: "fixture-source", files: {} })),
+  isQualitySnapshotCurrent: vi.fn(async () => true),
+}));
 vi.mock("../../quality/evaluator.js", () => ({
   QualityEvaluator: vi.fn(function () {
     return { evaluate: mocks.evaluate };
@@ -71,6 +75,10 @@ function tests(): TestExecutionResult {
 function evaluation(): QualityEvaluation {
   return {
     scores: scores(),
+    passed: true,
+    complete: true,
+    snapshotValid: true,
+    snapshot: { hash: "fixture-source", files: {} },
     meetsMinimum: true,
     meetsTarget: true,
     converged: false,

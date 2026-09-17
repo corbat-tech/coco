@@ -179,10 +179,30 @@ export const DEFAULT_QUALITY_THRESHOLDS: QualityThresholds = {
   minIterations: 2,
 };
 
+/** Evidence for one analyzer; unavailable data never carries a measured score. */
+export interface QualityMeasurement {
+  state: "measured" | "not_applicable" | "unavailable" | "error";
+  score: number | null;
+  reason: string;
+  evidence: string[];
+  effectiveWeight: number;
+}
+
+export interface QualitySnapshot {
+  hash: string;
+  files: Record<string, string>;
+}
+
 /**
  * Quality evaluation result
  */
 export interface QualityEvaluation {
+  /** Optional for backwards-compatible readers of historical reports. */
+  measurements?: Record<keyof QualityDimensions, QualityMeasurement>;
+  snapshot?: QualitySnapshot;
+  snapshotValid?: boolean;
+  passed?: boolean;
+  complete?: boolean;
   scores: QualityScores;
   meetsMinimum: boolean;
   /**
@@ -192,13 +212,7 @@ export interface QualityEvaluation {
    * but it also enforces the testCoverage target threshold.
    */
   meetsTarget: boolean;
-  /**
-   * Whether quality is stable at or above the target overall score.
-   * Used by the convergence loop to decide whether further iterations are needed.
-   * In a single-shot evaluation this checks only the overall score threshold;
-   * in an iterative context it can additionally require stability across iterations
-   * (score delta below convergenceThreshold).
-   */
+  /** Stability requires multiple evaluations; a single evaluation never establishes it. */
   converged: boolean;
   issues: QualityIssue[];
   suggestions: QualitySuggestion[];

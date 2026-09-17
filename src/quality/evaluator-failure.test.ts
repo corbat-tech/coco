@@ -20,7 +20,7 @@ const analyzers = vi.hoisted(() => ({
 }));
 vi.mock("./analyzers/coverage.js", () => ({
   CoverageAnalyzer: vi.fn(function () {
-    return { analyze: analyzers.testCoverage };
+    return { analyze: analyzers.testCoverage, analyzeFresh: analyzers.testCoverage };
   }),
 }));
 vi.mock("./analyzers/security.js", () => ({
@@ -88,7 +88,16 @@ describe("QualityEvaluator fails closed on incomplete analysis", () => {
     await fs.writeFile(source, "export const fixture = 1;\n");
     for (const analyzer of Object.values(analyzers))
       analyzer.mockReset().mockResolvedValue({ score: 100 });
-    analyzers.testCoverage.mockResolvedValue({ lines: { percentage: 100 } });
+    analyzers.testCoverage.mockResolvedValue({ lines: { total: 10, percentage: 100 } });
+    analyzers.correctness.mockResolvedValue({
+      score: 100,
+      testsTotal: 5,
+      testsFailed: 0,
+      buildSuccess: true,
+      buildAvailable: true,
+    });
+    analyzers.style.mockResolvedValue({ score: 100, linterUsed: "fixture" });
+    analyzers.testQuality.mockResolvedValue({ score: 100, totalTests: 5 });
     analyzers.security.mockResolvedValue({ score: 100, vulnerabilities: [] });
     analyzers.complexity.mockResolvedValue({ score: 100, files: [] });
     analyzers.duplication.mockResolvedValue({
@@ -104,17 +113,20 @@ describe("QualityEvaluator fails closed on incomplete analysis", () => {
   });
 
   it.each(Object.keys(analyzers) as Array<keyof typeof analyzers>)(
-    "rejects %s failure without fabricating a score or exposing the analyzer secret",
+    "reports %s failure without fabricating a score or exposing the analyzer secret",
     async (dimension) => {
       analyzers[dimension].mockRejectedValue(
         new Error("PRIVATE_ANALYZER_SECRET fixture-token-123"),
       );
-      const outcome = new QualityEvaluator(project).evaluate([source]);
-      await expect(outcome).rejects.toThrow("Quality evaluation incomplete");
-      await expect(outcome).rejects.toThrow(dimension);
-      await outcome.catch((error: Error) => {
-        expect(error.message).not.toMatch(/PRIVATE_ANALYZER_SECRET|fixture-token-123/);
+      const outcome = await new QualityEvaluator(project).evaluate([source]);
+      expect(outcome.complete).toBe(false);
+      expect(outcome.passed).toBe(false);
+      expect(outcome.measurements?.[dimension]).toMatchObject({
+        state: "error",
+        score: null,
+        effectiveWeight: 0,
       });
+      expect(JSON.stringify(outcome)).not.toMatch(/PRIVATE_ANALYZER_SECRET|fixture-token-123/);
       for (const analyzer of Object.values(analyzers)) expect(analyzer).toHaveBeenCalledTimes(1);
     },
   );
@@ -142,7 +154,7 @@ describe("QualityEvaluator fails closed on incomplete analysis", () => {
     for (const analyzer of Object.values(analyzers)) expect(analyzer).toHaveBeenCalledTimes(1);
   });
 
-  it("drains a slow analyzer before rejecting another analyzer's failure", async () => {
+  it("drains a slow analyzer before reporting another analyzer's failure", async () => {
     let started!: () => void;
     let release!: () => void;
     let completed = false;
@@ -177,10 +189,10 @@ describe("QualityEvaluator fails closed on incomplete analysis", () => {
     const outcome = await pending;
     expect(settledBeforeDrain).toBe(false);
     expect(completed).toBe(true);
-    expect(outcome.value).toBeUndefined();
-    expect(outcome.error?.message).toContain("Quality evaluation incomplete");
-    expect(outcome.error?.message).toContain("duplication");
-    expect(outcome.error?.message).not.toContain("PRIVATE_ANALYZER_SECRET");
+    expect(outcome.error).toBeUndefined();
+    expect(outcome.value?.passed).toBe(false);
+    expect(outcome.value?.measurements?.duplication.state).toBe("error");
+    expect(JSON.stringify(outcome.value)).not.toContain("PRIVATE_ANALYZER_SECRET");
   });
 
   it("rejects unreadable source input instead of analyzing an empty replacement", async () => {

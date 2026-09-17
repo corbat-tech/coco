@@ -3,11 +3,11 @@
  * Integrates with c8/nyc to measure actual coverage (not estimates)
  */
 
-import { execa } from "execa";
-import { readFile, access } from "node:fs/promises";
+import { runQualityCommand as execa } from "../command.js";
+import { readFile, access, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { constants } from "node:fs";
-import { trackSubprocess } from "../../utils/subprocess-registry.js";
 
 /**
  * Coverage metrics for a single metric type (lines, branches, etc.)
@@ -257,6 +257,13 @@ export class CoverageAnalyzer {
     return await this.runWithCoverage(framework, coverageTool);
   }
 
+  /** Certification must generate a fresh report, never reuse historical coverage. */
+  async analyzeFresh(): Promise<CoverageMetrics> {
+    const framework = await detectTestFramework(this.projectPath);
+    if (!framework || framework === "maven" || framework === "gradle") return this.zeroCoverage();
+    return this.runWithCoverage(framework, await detectCoverageTool(this.projectPath), true);
+  }
+
   /** Return empty coverage metrics (graceful fallback) */
   private zeroCoverage(): CoverageMetrics {
     const zero = { total: 0, covered: 0, skipped: 0, percentage: 0 };
@@ -317,12 +324,22 @@ export class CoverageAnalyzer {
   private async runWithCoverage(
     framework: TestFramework,
     coverageTool: "c8" | "nyc" | null,
+    requireFresh = false,
   ): Promise<CoverageMetrics> {
     if (framework === null) {
       throw new Error("Framework is null");
     }
 
     const commands = this.buildCoverageCommand(framework, coverageTool);
+    const reportDirectory = requireFresh
+      ? await mkdtemp(join(tmpdir(), "coco-quality-coverage-"))
+      : join(this.projectPath, "coverage");
+    if (requireFresh) {
+      if (framework === "vitest")
+        commands.args.push(`--coverage.reportsDirectory=${reportDirectory}`);
+      else if (framework === "jest") commands.args.push(`--coverageDirectory=${reportDirectory}`);
+      else commands.args.splice(2, 0, `--report-dir=${reportDirectory}`);
+    }
 
     try {
       // Run tests with coverage
@@ -332,16 +349,15 @@ export class CoverageAnalyzer {
         timeout: 120000, // 2 minutes
         cleanup: true, // kill process tree on parent exit
       });
-      trackSubprocess(proc);
       const result = await proc;
 
       // Check if tests failed
-      if (result.exitCode !== 0 && !result.stdout.includes("coverage")) {
+      if (result.exitCode !== 0) {
         throw new Error(`Tests failed: ${result.stderr || result.stdout}`);
       }
 
       // Read coverage report
-      const reportPath = join(this.projectPath, "coverage", "coverage-summary.json");
+      const reportPath = join(reportDirectory, "coverage-summary.json");
       const report = JSON.parse(await readFile(reportPath, "utf-8")) as CoverageSummaryReport;
 
       return parseCoverageSummary(report);
@@ -349,6 +365,8 @@ export class CoverageAnalyzer {
       throw new Error(
         `Coverage analysis failed: ${error instanceof Error ? error.message : String(error)}`,
       );
+    } finally {
+      if (requireFresh) await rm(reportDirectory, { recursive: true, force: true });
     }
   }
 
@@ -363,25 +381,25 @@ export class CoverageAnalyzer {
       case "vitest":
         return {
           command: "npx",
-          args: ["vitest", "run", "--coverage"],
+          args: ["--no-install", "vitest", "run", "--coverage", "--coverage.reporter=json-summary"],
         };
 
       case "jest":
         return {
           command: "npx",
-          args: ["jest", "--coverage", "--coverageReporters=json-summary"],
+          args: ["--no-install", "jest", "--coverage", "--coverageReporters=json-summary"],
         };
 
       case "mocha":
         if (coverageTool === "c8") {
           return {
             command: "npx",
-            args: ["c8", "--reporter=json-summary", "mocha"],
+            args: ["--no-install", "c8", "--reporter=json-summary", "mocha"],
           };
         } else if (coverageTool === "nyc") {
           return {
             command: "npx",
-            args: ["nyc", "--reporter=json-summary", "mocha"],
+            args: ["--no-install", "nyc", "--reporter=json-summary", "mocha"],
           };
         }
         throw new Error("Mocha requires c8 or nyc for coverage");

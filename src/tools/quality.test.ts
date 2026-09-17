@@ -182,30 +182,33 @@ describe("analyzeComplexityTool", () => {
   });
 });
 
-describe("calculateQualityTool containment", () => {
-  it("preserves an explicit failure without score through the registry", async () => {
-    const { ToolRegistry } = await import("./registry.js");
+describe("calculateQualityTool evidence", () => {
+  it("returns explicit incomplete evidence without certifying acceptance", async () => {
+    const { QualityEvaluator } = await import("../quality/evaluator.js");
     const { calculateQualityTool } = await import("./quality.js");
-    const registry = new ToolRegistry();
-    registry.register(calculateQualityTool);
-    const result = await registry.execute("calculate_quality", {});
-    expect(result.success).toBe(false);
-    expect(result.data).toBeUndefined();
-    expect(result.error).toContain("not evaluated; no acceptance certified");
+    const evaluation = {
+      scores: { overall: 70, dimensions: {}, evaluatedAt: new Date(), evaluationDurationMs: 1 },
+      complete: false,
+      passed: false,
+      meetsMinimum: false,
+      meetsTarget: false,
+      converged: false,
+      measurements: { style: { state: "unavailable", score: null } },
+      issues: [],
+      suggestions: [],
+    };
+    const spy = vi
+      .spyOn(QualityEvaluator.prototype, "evaluate")
+      .mockResolvedValue(evaluation as never);
+    try {
+      const result = await calculateQualityTool.execute({ cwd: "/test" });
+      expect(result.overall).toBe(70);
+      expect(result.passed).toBe(false);
+      expect(result.measurements?.style.state).toBe("unavailable");
+    } finally {
+      spy.mockRestore();
+    }
   });
-  it.each([{}, { cwd: "/test" }, { cwd: "/nonexistent", useSnyk: true, files: ["x.ts"] }])(
-    "does not certify quality or invoke analyzers for %j",
-    async (input) => {
-      vi.clearAllMocks();
-      const { calculateQualityTool } = await import("./quality.js");
-      const { execa } = await import("execa");
-      await expect(calculateQualityTool.execute(input)).rejects.toThrow(
-        /not evaluated; no acceptance certified/,
-      );
-      expect(execa).not.toHaveBeenCalled();
-      expect(mockReadFile).not.toHaveBeenCalled();
-    },
-  );
 });
 
 describe("qualityTools", () => {

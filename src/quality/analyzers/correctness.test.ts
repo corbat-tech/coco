@@ -313,12 +313,7 @@ describe("CorrectnessAnalyzer", () => {
       const bv = getMockedBuildVerifier();
       bv.verifyTypes.mockResolvedValue({ success: true, errors: [] });
 
-      const result = await analyzer.analyze();
-
-      // execa error -> tests parse to all zeros -> total = 0 -> build passes
-      expect(result.score).toBe(30);
-      expect(result.testsTotal).toBe(0);
-      expect(result.buildSuccess).toBe(true);
+      await expect(analyzer.analyze()).rejects.toThrow("Correctness test execution failed");
     });
 
     it("should handle build verifier throwing an error gracefully", async () => {

@@ -7,6 +7,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { QualityEvaluation } from "../../quality/types.js";
 
 const { mockEvaluate } = vi.hoisted(() => ({ mockEvaluate: vi.fn() }));
+vi.mock("../../quality/snapshot.js", () => ({
+  createQualitySnapshot: vi.fn(async () => ({ hash: "fixture-source", files: {} })),
+  isQualitySnapshotCurrent: vi.fn(async () => true),
+}));
 vi.mock("../../quality/evaluator.js", () => ({
   QualityEvaluator: vi.fn().mockImplementation(function () {
     return { evaluate: mockEvaluate };
@@ -35,6 +39,10 @@ function measuredQuality(score: number, security = 100): QualityEvaluation {
       evaluatedAt: new Date(0),
       evaluationDurationMs: 1,
     },
+    passed: score >= 85 && security === 100,
+    complete: true,
+    snapshotValid: true,
+    snapshot: { hash: "fixture-source", files: {} },
     meetsMinimum: score >= 85 && security === 100,
     meetsTarget: score >= 95 && security === 100,
     converged: false,

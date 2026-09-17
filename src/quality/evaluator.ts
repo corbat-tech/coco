@@ -14,14 +14,20 @@ import { DocumentationAnalyzer } from "./analyzers/documentation.js";
 import { StyleAnalyzer } from "./analyzers/style.js";
 import { ReadabilityAnalyzer } from "./analyzers/readability.js";
 import { MaintainabilityAnalyzer } from "./analyzers/maintainability.js";
-import type { QualityScores, QualityDimensions, QualityEvaluation } from "./types.js";
-import { DEFAULT_QUALITY_WEIGHTS } from "./types.js";
+import type {
+  QualityScores,
+  QualityDimensions,
+  QualityEvaluation,
+  QualityMeasurement,
+} from "./types.js";
 import { loadProjectConfig } from "../config/project-config.js";
 import { resolvedWeights, resolvedThresholds } from "./quality-bridge.js";
-import { readFile } from "node:fs/promises";
+import { createQualitySnapshot } from "./snapshot.js";
+import { parse } from "@typescript-eslint/typescript-estree";
+import { resolve, relative, isAbsolute } from "node:path";
+import { readFile, realpath } from "node:fs/promises";
 import { glob } from "glob";
 import { type DimensionRegistry } from "./dimension-registry.js";
-import { detectProjectLanguage } from "./language-detector.js";
 import { registerJavaAnalyzers } from "./analyzers/java/index.js";
 import { registerReactAnalyzers } from "./analyzers/react/index.js";
 import { createDefaultRegistry } from "./dimension-registry.js";
@@ -47,7 +53,7 @@ export class QualityEvaluator {
   constructor(
     private projectPath: string,
     useSnyk: boolean = false,
-    private registry?: DimensionRegistry,
+    _registry?: DimensionRegistry,
   ) {
     this.coverageAnalyzer = new CoverageAnalyzer(projectPath);
     this.securityScanner = new CompositeSecurityScanner(projectPath, useSnyk);
@@ -69,265 +75,258 @@ export class QualityEvaluator {
    */
   async evaluate(files?: string[]): Promise<QualityEvaluation> {
     const startTime = performance.now();
-
-    // Get target files
-    const targetFiles = files ?? (await this.findSourceFiles());
-
-    // Read file contents for security scanner
+    const snapshot = await createQualitySnapshot(this.projectPath);
+    const root = await realpath(this.projectPath);
+    const targetFiles = await Promise.all(
+      (files ?? (await this.findSourceFiles())).map(async (file) =>
+        realpath(resolve(this.projectPath, file)).catch(() => {
+          throw new Error("Quality evaluation incomplete: source read failed");
+        }),
+      ),
+    );
+    if (
+      targetFiles.some((file) => {
+        const path = relative(root, file);
+        return (
+          path === ".." || path.startsWith("../") || path.startsWith("..\\") || isAbsolute(path)
+        );
+      })
+    )
+      throw new Error("Quality evaluation incomplete: source outside project");
+    if (targetFiles.some((file) => !(relative(root, file).replaceAll("\\", "/") in snapshot.files)))
+      throw new Error(
+        "Quality evaluation incomplete: selected source is outside snapshot coverage",
+      );
     const fileContents = await Promise.all(
-      targetFiles.map(async (file) => ({
-        path: file,
-        content: await readFile(file, "utf-8").catch(() => {
+      targetFiles.map(async (path) => ({
+        path,
+        content: await readFile(path, "utf8").catch(() => {
           throw new Error("Quality evaluation incomplete: source read failed");
         }),
       })),
     );
-
-    // Drain all started work before surfacing an error; never return fallback scores.
-    const measure = <T>(dimension: string, task: Promise<T>): Promise<T> =>
-      task.catch(() => {
-        throw new Error(`Quality evaluation incomplete: ${dimension} analysis failed`);
-      });
-    const measurements = [
-      measure("testCoverage", this.coverageAnalyzer.analyze()),
-      measure("security", this.securityScanner.scan(fileContents)),
-      measure("complexity", this.complexityAnalyzer.analyze(targetFiles)),
-      measure("duplication", this.duplicationAnalyzer.analyze(targetFiles)),
-      measure("correctness", this.correctnessAnalyzer.analyze()),
-      measure("completeness", this.completenessAnalyzer.analyze(targetFiles)),
-      measure("robustness", this.robustnessAnalyzer.analyze(targetFiles)),
-      measure("testQuality", this.testQualityAnalyzer.analyze()),
-      measure("documentation", this.documentationAnalyzer.analyze(targetFiles)),
-      measure("style", this.styleAnalyzer.analyze()),
-      measure("readability", this.readabilityAnalyzer.analyze(targetFiles)),
-      measure("maintainability", this.maintainabilityAnalyzer.analyze(targetFiles)),
-    ] as const;
-    await Promise.allSettled(measurements);
-    const [
-      coverageResult,
-      securityResult,
-      complexityResult,
-      duplicationResult,
-      correctnessResult,
-      completenessResult,
-      robustnessResult,
-      testQualityResult,
-      documentationResult,
-      styleResult,
-      readabilityResult,
-      maintainabilityResult,
-    ] = await Promise.all(measurements);
-
-    // Calculate dimensions from completed analyzers. Applicability is handled separately.
-    const dimensions: QualityDimensions = {
-      testCoverage: coverageResult?.lines.percentage ?? 0,
-      security: securityResult.score,
-      complexity: complexityResult.score,
-      duplication: Math.max(0, 100 - duplicationResult.percentage),
-      style: styleResult.score,
-      readability: readabilityResult.score,
-      maintainability: maintainabilityResult.score,
-      correctness: correctnessResult.score,
-      completeness: completenessResult.score,
-      robustness: robustnessResult.score,
-      testQuality: testQualityResult.score,
-      documentation: documentationResult.score,
-    };
-
-    // Apply language-specific registry overrides (Java, React, etc.)
-    // Registry analyzer scores take precedence over the generic baseline for detected language.
-    // TODO: Skip baseline analyzers for dimensions covered by registry to avoid double execution.
-    //       When registry.hasAnalyzers(language) is true, the 12 built-in analyzers above and
-    //       the registry analyzers both run — the registry result overwrites the evaluator result
-    //       (last-write-wins), making the first run wasted. Skipping the per-dimension calls for
-    //       registry-covered languages would halve analysis time for TypeScript/Java/React projects.
-    if (this.registry) {
-      const { language } = detectProjectLanguage(targetFiles);
-      const registryResults = await this.registry.analyze({
-        projectPath: this.projectPath,
-        files: targetFiles,
-        language,
-      });
-      for (const { dimensionId, result } of registryResults) {
-        if (dimensionId in dimensions) {
-          (dimensions as unknown as Record<string, number>)[dimensionId] = result.score;
-        }
+    let parseFailure = false;
+    for (const file of fileContents) {
+      try {
+        parse(file.content, { jsx: /\.[jt]sx$/.test(file.path) });
+      } catch {
+        parseFailure = true;
       }
     }
-
-    // Calculate overall weighted score using project config weights (or defaults)
-    let projectConfig = null;
-    try {
-      projectConfig = await loadProjectConfig(this.projectPath);
-    } catch {
-      // Use defaults if config cannot be loaded (invalid JSON, permission error, etc.)
-    }
+    const projectConfig = await loadProjectConfig(this.projectPath);
     const weights = resolvedWeights(projectConfig);
-    const overall = Object.entries(dimensions).reduce((sum, [key, value]) => {
-      const weight = weights[key as keyof typeof DEFAULT_QUALITY_WEIGHTS] ?? 0;
-      return sum + value * weight;
-    }, 0);
-
+    const thresholds = resolvedThresholds(projectConfig);
+    const dimensions = Object.fromEntries(
+      Object.keys(weights).map((key) => [key, 0]),
+    ) as unknown as QualityDimensions;
+    const measurements = {} as Record<keyof QualityDimensions, QualityMeasurement>;
+    const issues: QualityEvaluation["issues"] = [];
+    const supported =
+      targetFiles.length > 0 && targetFiles.every((file) => /\.[cm]?[jt]sx?$/.test(file));
+    const measure = async <T>(
+      dimension: keyof QualityDimensions,
+      run: () => Promise<T>,
+      score: (result: T) => number | null,
+      reason: string,
+      missingState: "unavailable" | "not_applicable" = "unavailable",
+    ): Promise<void> => {
+      const measurement: QualityMeasurement = {
+        state: "unavailable",
+        score: null,
+        reason,
+        evidence: [],
+        effectiveWeight: 0,
+      };
+      measurements[dimension] = measurement;
+      if (!supported) {
+        measurement.reason =
+          "No supported JavaScript/TypeScript source files; language-specific certification unavailable";
+        return;
+      }
+      try {
+        if (
+          parseFailure &&
+          !["testCoverage", "correctness", "style", "security"].includes(dimension)
+        )
+          throw new Error("Source parsing failed; static measurement incomplete");
+        const result = await run();
+        const value = score(result);
+        measurement.evidence = [JSON.stringify(result)];
+        if (value === null) {
+          measurement.state = missingState;
+          return;
+        }
+        if (!Number.isFinite(value) || value < 0 || value > 100)
+          throw new Error("Invalid analyzer score");
+        measurement.state = "measured";
+        measurement.score = value;
+        measurement.evidence = [JSON.stringify(result)];
+        dimensions[dimension] = value;
+      } catch {
+        measurement.state = "error";
+        measurement.reason = `${dimension} analysis failed; no measurement available`;
+      }
+    };
+    // Baseline heuristics are explicitly scoped; registry overrides are not certification evidence.
+    // Run command-backed checks sequentially to avoid concurrent test/report writers.
+    await measure(
+      "testCoverage",
+      () => this.coverageAnalyzer.analyzeFresh(),
+      (r) => (r.lines.total > 0 ? r.lines.percentage : null),
+      "Fresh line coverage; unavailable when no instrumented lines were measured",
+    );
+    await measure(
+      "correctness",
+      () => this.correctnessAnalyzer.analyze(true),
+      (r) => {
+        if (r.testsFailed > 0 || (!r.buildSuccess && r.buildAvailable !== false))
+          issues.push({ dimension: "correctness", severity: "critical", message: r.details });
+        return r.testsTotal > 0 && r.buildAvailable !== false ? r.score : null;
+      },
+      "Executed tests and TypeScript verification; unavailable without parsed tests or tsconfig.json",
+    );
+    await measure(
+      "style",
+      () => this.styleAnalyzer.analyze(),
+      (r) => (r.linterUsed ? r.score : null),
+      "Configured linter output; unavailable without a configured linter",
+    );
+    await Promise.all([
+      measure(
+        "security",
+        () => this.securityScanner.scan(fileContents),
+        (r) => {
+          for (const vuln of r.vulnerabilities)
+            issues.push({
+              dimension: "security",
+              severity: vuln.severity === "critical" ? "critical" : "major",
+              message: `${vuln.type}: ${vuln.description}`,
+              file: vuln.location.file,
+              line: vuln.location.line,
+            });
+          return r.score;
+        },
+        "Pattern scan of selected source; not a guarantee of absence of vulnerabilities or dependency audit unless Snyk requested",
+      ),
+      measure(
+        "complexity",
+        () => this.complexityAnalyzer.analyze(targetFiles),
+        (r) => (r.totalFunctions === 0 ? null : r.score),
+        "Static cyclomatic complexity; not applicable when parsed source has no functions",
+        "not_applicable",
+      ),
+      measure(
+        "duplication",
+        () => this.duplicationAnalyzer.analyze(targetFiles),
+        (r) => {
+          if (r.percentage > 5)
+            issues.push({
+              dimension: "duplication",
+              severity: "minor",
+              message: `${r.percentage.toFixed(1)}% code duplication detected`,
+            });
+          return Math.max(0, 100 - r.percentage);
+        },
+        "Static duplicated-line heuristic",
+      ),
+      measure(
+        "completeness",
+        () => this.completenessAnalyzer.analyze(targetFiles),
+        (r) => r.score,
+        "Static structural completeness heuristic; does not verify user requirements",
+      ),
+      measure(
+        "robustness",
+        () => this.robustnessAnalyzer.analyze(targetFiles),
+        (r) => r.score,
+        "Static defensive-code heuristic; does not prove runtime robustness",
+      ),
+      measure(
+        "testQuality",
+        async () => {
+          const testFiles = await glob("**/*.{test,spec}.{ts,tsx,js,jsx}", {
+            cwd: this.projectPath,
+            absolute: true,
+            ignore: ["**/node_modules/**", "**/dist/**", "**/build/**"],
+          });
+          for (const file of testFiles)
+            parse(await readFile(file, "utf8"), { jsx: /\.[jt]sx$/.test(file) });
+          return this.testQualityAnalyzer.analyze(testFiles);
+        },
+        (r) => (r.totalTests > 0 ? r.score : null),
+        "Static assertion-quality heuristic; unavailable without tests",
+      ),
+      measure(
+        "documentation",
+        () => this.documentationAnalyzer.analyze(targetFiles),
+        (r) => r.score,
+        "Documentation presence and coverage heuristic",
+      ),
+      measure(
+        "readability",
+        () => this.readabilityAnalyzer.analyze(targetFiles),
+        (r) => r.score,
+        "Static readability heuristic",
+      ),
+      measure(
+        "maintainability",
+        () => this.maintainabilityAnalyzer.analyze(targetFiles),
+        (r) => r.score,
+        "Static maintainability heuristic",
+      ),
+    ]);
+    const after = await createQualitySnapshot(this.projectPath);
+    const snapshotValid = after.hash === snapshot.hash;
+    const complete = Object.values(measurements).every(
+      (m) => m.state === "measured" || m.state === "not_applicable",
+    );
+    const measuredWeight = Object.entries(measurements).reduce(
+      (sum, [key, m]) =>
+        sum + (m.state === "measured" ? weights[key as keyof QualityDimensions] : 0),
+      0,
+    );
+    let overall = 0;
+    for (const [key, m] of Object.entries(measurements)) {
+      m.effectiveWeight =
+        m.state === "measured" && measuredWeight > 0
+          ? weights[key as keyof QualityDimensions] / measuredWeight
+          : 0;
+      overall += (m.score ?? 0) * m.effectiveWeight;
+    }
+    // An incomplete report has a useful partial score but cannot authorize acceptance.
     const scores: QualityScores = {
       overall: Math.round(overall),
       dimensions,
       evaluatedAt: new Date(),
       evaluationDurationMs: performance.now() - startTime,
     };
-
-    // Generate issues and suggestions
-    const issues = this.generateIssues(
-      securityResult.vulnerabilities,
-      complexityResult,
-      duplicationResult,
-      correctnessResult,
-      styleResult,
-      documentationResult,
-    );
-    const suggestions = this.generateSuggestions(dimensions);
-
-    // Check thresholds using resolved project config thresholds (not hardcoded defaults)
-    const thresholds = resolvedThresholds(projectConfig);
-
     const meetsMinimum =
-      scores.overall >= thresholds.minimum.overall &&
-      dimensions.testCoverage >= thresholds.minimum.testCoverage &&
-      dimensions.security >= thresholds.minimum.security;
-
-    // meetsTarget: UI signal — overall AND testCoverage both reach the target threshold.
+      complete &&
+      snapshotValid &&
+      scores.overall >= Math.max(85, thresholds.minimum.overall) &&
+      dimensions.testCoverage >= Math.max(80, thresholds.minimum.testCoverage) &&
+      dimensions.security >= 100 &&
+      !issues.some((issue) => issue.severity === "critical");
     const meetsTarget =
+      meetsMinimum &&
       scores.overall >= thresholds.target.overall &&
       dimensions.testCoverage >= thresholds.target.testCoverage;
-
-    // converged: convergence-loop signal — overall score is at or above the target threshold.
-    // In an iterative context the loop additionally checks score delta stability between runs.
-    const converged = scores.overall >= thresholds.target.overall;
-
+    const converged = false;
     return {
       scores,
+      measurements,
+      snapshot,
+      snapshotValid,
+      complete,
+      passed: meetsMinimum,
       meetsMinimum,
       meetsTarget,
       converged,
       issues,
-      suggestions,
+      suggestions: this.generateSuggestions(dimensions).filter(
+        (item) => measurements[item.dimension].state === "measured",
+      ),
     };
-  }
-
-  /**
-   * Generate quality issues from analyzer results
-   */
-  private generateIssues(
-    securityVulns: Array<{
-      severity: string;
-      type: string;
-      location: { file: string; line?: number };
-      description: string;
-    }>,
-    complexityResult: {
-      score: number;
-      files: Array<{
-        file: string;
-        functions: Array<{ name: string; complexity: number; line: number }>;
-      }>;
-    },
-    duplicationResult: { percentage: number; duplicateLines?: number; totalLines?: number },
-    correctnessResult: { score: number; testsFailed?: number; buildSuccess?: boolean },
-    styleResult: { score: number; errors?: number; warnings?: number },
-    documentationResult: { score: number; jsdocCoverage?: number },
-  ): Array<{
-    dimension: keyof QualityDimensions;
-    severity: "critical" | "major" | "minor";
-    message: string;
-    file?: string;
-    line?: number;
-    suggestion?: string;
-  }> {
-    const issues: Array<{
-      dimension: keyof QualityDimensions;
-      severity: "critical" | "major" | "minor";
-      message: string;
-      file?: string;
-      line?: number;
-      suggestion?: string;
-    }> = [];
-
-    // Security issues
-    for (const vuln of securityVulns) {
-      issues.push({
-        dimension: "security",
-        severity:
-          vuln.severity === "critical" ? "critical" : vuln.severity === "high" ? "major" : "minor",
-        message: `${vuln.type}: ${vuln.description}`,
-        file: vuln.location.file,
-        line: vuln.location.line,
-      });
-    }
-
-    // Complexity issues
-    for (const file of complexityResult.files) {
-      for (const fn of file.functions) {
-        if (fn.complexity > 10) {
-          issues.push({
-            dimension: "complexity",
-            severity: "major",
-            message: `Function '${fn.name}' has high complexity (${fn.complexity})`,
-            file: file.file,
-            line: fn.line,
-            suggestion: "Refactor into smaller functions or reduce branching",
-          });
-        }
-      }
-    }
-
-    // Duplication issues
-    if (duplicationResult.percentage > 5) {
-      issues.push({
-        dimension: "duplication",
-        severity: "minor",
-        message: `${duplicationResult.percentage.toFixed(1)}% code duplication detected`,
-        suggestion: "Extract common code into reusable functions or modules",
-      });
-    }
-
-    // Correctness issues
-    if (correctnessResult.testsFailed != null && correctnessResult.testsFailed > 0) {
-      issues.push({
-        dimension: "correctness",
-        severity: "critical",
-        message: `${correctnessResult.testsFailed} tests failing`,
-        suggestion: "Fix failing tests to improve correctness score",
-      });
-    }
-    if (correctnessResult.buildSuccess === false) {
-      issues.push({
-        dimension: "correctness",
-        severity: "critical",
-        message: "Build/type check failed",
-        suggestion: "Fix type errors to pass build verification",
-      });
-    }
-
-    // Style issues
-    if (styleResult.errors != null && styleResult.errors > 0) {
-      issues.push({
-        dimension: "style",
-        severity: "minor",
-        message: `${styleResult.errors} linting errors found`,
-        suggestion: "Run linter with --fix to auto-correct style issues",
-      });
-    }
-
-    // Documentation issues
-    if (documentationResult.jsdocCoverage !== undefined && documentationResult.jsdocCoverage < 50) {
-      issues.push({
-        dimension: "documentation",
-        severity: "minor",
-        message: `Low JSDoc coverage: ${documentationResult.jsdocCoverage?.toFixed(1) ?? 0}%`,
-        suggestion: "Add JSDoc comments to exported functions and classes",
-      });
-    }
-
-    return issues;
   }
 
   /**
@@ -443,7 +442,7 @@ export class QualityEvaluator {
       });
     }
 
-    return glob("**/*.{ts,js,tsx,jsx}", {
+    return glob("**/*.{ts,js,tsx,jsx,mts,cts,mjs,cjs}", {
       cwd: this.projectPath,
       absolute: true,
       ignore: ["**/node_modules/**", "**/*.test.*", "**/*.spec.*", "**/dist/**", "**/build/**"],
@@ -461,11 +460,10 @@ export function createQualityEvaluator(projectPath: string, useSnyk?: boolean): 
 }
 
 /**
- * Create a quality evaluator pre-configured with language-specific analyzers.
- * Automatically registers Java and React analyzers in the DimensionRegistry.
- * Use this instead of createQualityEvaluator() for multi-language projects.
- * @note Currently runs baseline analyzers AND registry analyzers for each dimension.
- * Registry results take precedence. Performance optimization (skip baseline when registry covers all dims) is tracked as a TODO.
+ * Compatibility factory retaining language registry construction for existing callers.
+ * Certification currently uses only the evidence-backed JavaScript/TypeScript baseline.
+ * Registry heuristics do not override certified measurements; unsupported languages
+ * receive explicit unavailable states until their evidence adapters are verified.
  */
 export function createQualityEvaluatorWithRegistry(
   projectPath: string,

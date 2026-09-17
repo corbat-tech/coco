@@ -3,6 +3,7 @@
  * Verifies that generated code builds successfully
  */
 
+import { runQualityCommand } from "../command.js";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import * as fs from "node:fs/promises";
@@ -185,6 +186,33 @@ export class BuildVerifier {
         stderr: execError.stderr || execError.message || "",
       };
     }
+  }
+
+  /** Strict type verification used for certification, with owned command lifecycle. */
+  async verifyTypesForQuality(): Promise<BuildResult> {
+    const startedAt = Date.now();
+    if (!(await this.fileExists(path.join(this.projectPath, "tsconfig.json")))) {
+      return {
+        success: false,
+        errors: [],
+        warnings: [],
+        duration: 0,
+        stdout: "No tsconfig.json found",
+        stderr: "",
+      };
+    }
+    const result = await runQualityCommand("npx", ["--no-install", "tsc", "--noEmit"], {
+      cwd: this.projectPath,
+      timeout: 60000,
+    });
+    return {
+      success: result.exitCode === 0,
+      errors: this.parseTypeScriptErrors(result.stdout + result.stderr),
+      warnings: this.parseTypeScriptWarnings(result.stdout + result.stderr),
+      duration: Date.now() - startedAt,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
   }
 
   /**

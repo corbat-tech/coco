@@ -3,7 +3,7 @@
  * Pattern-based detection + optional Snyk integration
  */
 
-import { execa } from "execa";
+import { runQualityCommand as execa } from "../command.js";
 
 /**
  * Security vulnerability severity levels
@@ -349,7 +349,11 @@ export class SnykSecurityScanner {
         reject: false,
       });
 
+      if (result.exitCode !== 0 && result.exitCode !== 1)
+        throw new Error("Snyk did not complete a scan");
       const report = JSON.parse(result.stdout || result.stderr) as SnykReport;
+      if (!Array.isArray(report.vulnerabilities))
+        throw new Error("Snyk report lacks vulnerability results");
       const vulnerabilities = this.parseSnykReport(report);
       const scanDuration = performance.now() - startTime;
 
@@ -417,11 +421,7 @@ export class CompositeSecurityScanner {
     // Try Snyk scan (optional)
     let snykResult: SecurityResult | null = null;
     if (this.snykScanner) {
-      try {
-        snykResult = await this.snykScanner.scan();
-      } catch {
-        // Snyk not available, continue with pattern results only
-      }
+      snykResult = await this.snykScanner.scan();
     }
 
     // Combine results

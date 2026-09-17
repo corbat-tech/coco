@@ -9,7 +9,9 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
-import type { QualityScores } from "../quality/types.js";
+import { withQualitySignal } from "../quality/command.js";
+import { QualityEvaluator } from "../quality/evaluator.js";
+import type { QualityScores, QualityEvaluation } from "../quality/types.js";
 
 /**
  * Lint result interface
@@ -543,14 +545,14 @@ function analyzeFileComplexity(content: string, file: string): FileComplexity {
   };
 }
 
-/** Aggregate certification is unavailable until analyzer applicability is verified (E09). */
+/** Evidence-backed aggregate report; incomplete measurements never certify acceptance. */
 export const calculateQualityTool: ToolDefinition<
   { cwd?: string; files?: string[]; useSnyk?: boolean },
-  QualityScores
+  QualityScores & QualityEvaluation
 > = defineTool({
   name: "calculate_quality",
   description:
-    "Aggregate quality evaluation is temporarily unavailable. This tool cannot certify acceptance. Use run_tests, run_linter and analyze_complexity for individual results with their stated limits.",
+    "Evaluate quality with per-dimension evidence, availability and source hashes. Only passed=true certifies the stated quality policy; partial scores and convergence alone never certify acceptance.",
   category: "quality",
   parameters: z.object({
     cwd: z.string().optional().describe("Project directory"),
@@ -561,11 +563,12 @@ export const calculateQualityTool: ToolDefinition<
       .default(false)
       .describe("Use Snyk for enhanced security scanning"),
   }),
-  async execute() {
-    throw new ToolError(
-      "Aggregate quality evaluation unavailable: not evaluated; no acceptance certified. Use run_tests, run_linter and analyze_complexity for partial results. Restoration requires E09 analyzer applicability validation.",
-      { tool: "calculate_quality" },
+  async execute({ cwd, files, useSnyk }, context) {
+    const evaluation = await withQualitySignal(context?.signal, () =>
+      new QualityEvaluator(cwd ?? process.cwd(), useSnyk).evaluate(files),
     );
+    context?.signal?.throwIfAborted();
+    return { ...evaluation.scores, ...evaluation };
   },
 });
 
