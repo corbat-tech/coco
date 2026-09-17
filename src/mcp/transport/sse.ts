@@ -13,6 +13,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createRequestScope } from "../../utils/request-scope.js";
 import { rethrowCancellation } from "../../utils/cancellation.js";
 import { MCPTransportError, MCPConnectionError } from "../errors.js";
+import { boundedEventLines, MCPMessageLimitError } from "./limits.js";
 
 /**
  * SSE transport configuration
@@ -294,7 +295,7 @@ export class SSETransport implements MCPTransport {
           } catch (error) {
             if (signal.aborted) break;
             this.errorHandler?.(error instanceof Error ? error : new Error(String(error)));
-            if (error instanceof SSEEndpointError) break;
+            if (error instanceof SSEEndpointError || error instanceof MCPMessageLimitError) break;
           } finally {
             stream.dispose();
             stream = undefined;
@@ -342,55 +343,51 @@ export class SSETransport implements MCPTransport {
       void cancelReader();
     };
     signal.addEventListener("abort", onAbort, { once: true });
-    const decoder = new TextDecoder();
-    let buffer = "";
     let eventType = "";
     let eventData = "";
     let eventId = "";
+    const lines = boundedEventLines((line) => {
+      signal.throwIfAborted();
+
+      if (line === "") {
+        if (eventData) this.handleEvent(eventType, eventData, eventId);
+        signal.throwIfAborted();
+        eventType = "";
+        eventData = "";
+        eventId = "";
+        return;
+      }
+      if (line.startsWith(":")) return;
+      const colon = line.indexOf(":");
+      if (colon === -1) return;
+      const field = line.slice(0, colon);
+      const value = line.slice(colon + 1).replace(/^ /, "");
+      switch (field) {
+        case "event":
+          eventType = value;
+          break;
+        case "data":
+          eventData += (eventData ? "\n" : "") + value;
+          break;
+        case "id":
+          eventId = value;
+          break;
+        case "retry": {
+          const ms = Number(value);
+          if (/^\d+$/.test(value) && Number.isSafeInteger(ms) && ms <= 2147483647) {
+            this.config.initialReconnectDelay = Math.min(ms, this.config.maxReconnectDelay);
+          }
+          break;
+        }
+      }
+    });
     try {
       while (true) {
         signal.throwIfAborted();
         const { done, value } = await reader.read();
         signal.throwIfAborted();
         if (done) return;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const rawLine of lines) {
-          signal.throwIfAborted();
-          const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-          if (line === "") {
-            if (eventData) this.handleEvent(eventType, eventData, eventId);
-            signal.throwIfAborted();
-            eventType = "";
-            eventData = "";
-            eventId = "";
-            continue;
-          }
-          if (line.startsWith(":")) continue;
-          const colon = line.indexOf(":");
-          if (colon === -1) continue;
-          const field = line.slice(0, colon);
-          const value = line.slice(colon + 1).replace(/^ /, "");
-          switch (field) {
-            case "event":
-              eventType = value;
-              break;
-            case "data":
-              eventData += (eventData ? "\n" : "") + value;
-              break;
-            case "id":
-              eventId = value;
-              break;
-            case "retry": {
-              const ms = Number(value);
-              if (/^\d+$/.test(value) && Number.isSafeInteger(ms) && ms <= 2147483647) {
-                this.config.initialReconnectDelay = Math.min(ms, this.config.maxReconnectDelay);
-              }
-              break;
-            }
-          }
-        }
+        lines.push(value);
       }
     } finally {
       signal.removeEventListener("abort", onAbort);

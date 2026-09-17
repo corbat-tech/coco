@@ -17,15 +17,15 @@ const request: JSONRPCRequest = {
 const responseData = { jsonrpc: "2.0", id: 1, result: { fixture: true } };
 const kinds = ["HTTP", "SSE"] as const;
 const disposals: Array<() => Promise<void>> = [];
-function success(kind: (typeof kinds)[number]) {
-  return {
-    ok: true,
+function success(kind: (typeof kinds)[number], data: unknown = responseData) {
+  const response = new Response(JSON.stringify(data), {
     status: kind === "HTTP" ? 200 : 202,
-    headers: new Headers({ "content-type": "application/json" }),
-    json: vi.fn<() => Promise<unknown>>().mockResolvedValue(responseData),
-    body: { cancel: vi.fn().mockResolvedValue(undefined) },
-  };
+    headers: { "content-type": "application/json" },
+  });
+  vi.spyOn(response.body!, "cancel");
+  return response;
 }
+
 async function fixture(kind: (typeof kinds)[number], timeout?: number) {
   let connectionSignal: AbortSignal | undefined;
   let finishRead: (() => void) | undefined;
@@ -103,7 +103,7 @@ describe("MCP HTTP/SSE send cancellation", () => {
     const owned = mocks.fetch.mock.calls[0]?.[1].signal as AbortSignal;
     expect(owned).not.toBe(controller.signal);
     expect(owned.aborted).toBe(true);
-    expect(response.body.cancel).toHaveBeenCalled();
+    expect(response.body!.cancel).toHaveBeenCalled();
     expect(f.error).not.toHaveBeenCalled();
     expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
     expect(vi.getTimerCount()).toBe(0);
@@ -188,21 +188,18 @@ describe("MCP HTTP/SSE send cancellation", () => {
   it("HTTP deadline remains active while JSON body is pending", async () => {
     const f = await fixture("HTTP", 13);
     let signal!: AbortSignal;
-    const response = success("HTTP");
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ cancel });
+    const response = new Response(body, { headers: { "content-type": "application/json" } });
     mocks.fetch.mockImplementation(async (_url: string, options: RequestInit) => {
       signal = options.signal as AbortSignal;
-      response.json.mockImplementation(
-        () =>
-          new Promise((_resolve, reject) =>
-            signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
-          ),
-      );
       return response;
     });
     const outcome = f.transport.send(request).catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(13);
     expect(await outcome).toBe(signal.reason);
-    expect(response.body.cancel).toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(body.locked).toBe(false);
     expect(f.message).not.toHaveBeenCalled();
     expect(f.error).not.toHaveBeenCalled();
     expect(mocks.fetch).toHaveBeenCalledOnce();
@@ -260,13 +257,12 @@ describe("MCP HTTP/SSE send cancellation", () => {
 
   it("HTTP JSON-RPC auth hints are delivered once without replay or login", async () => {
     const f = await fixture("HTTP");
-    const response = success("HTTP");
     const rpcError = {
       jsonrpc: "2.0",
       id: 1,
       error: { code: -32001, message: "Unauthorized: authentication required" },
     };
-    response.json.mockResolvedValue(rpcError);
+    const response = success("HTTP", rpcError);
     mocks.fetch.mockResolvedValue(response);
     await f.transport.send(request);
     expect(mocks.fetch).toHaveBeenCalledOnce();

@@ -13,6 +13,7 @@ import type {
 import { MCPConnectionError, MCPTransportError } from "../errors.js";
 import { authenticateMcpOAuth, getStoredMcpOAuthToken } from "../oauth.js";
 import { createRequestScope } from "../../utils/request-scope.js";
+import { boundedEventLines, MCPMessageLimitError, readBoundedJson } from "./limits.js";
 
 /**
  * HTTP transport configuration
@@ -159,8 +160,6 @@ export class HTTPTransport implements MCPTransport {
       void cancelReader();
     };
     signal.addEventListener("abort", onAbort, { once: true });
-    const decoder = new TextDecoder();
-    let buffer = "";
     let eventData = "";
 
     const flushEvent = (): void => {
@@ -183,34 +182,24 @@ export class HTTPTransport implements MCPTransport {
       this.messageCallback?.(parsed);
     };
 
+    const lines = boundedEventLines((line) => {
+      signal.throwIfAborted();
+      if (line === "") {
+        flushEvent();
+      } else if (line.startsWith("data:")) {
+        eventData += (eventData ? "\n" : "") + line.slice(5).replace(/^ /, "");
+      }
+    });
     try {
       while (true) {
         signal.throwIfAborted();
         const { done, value } = await reader.read();
         signal.throwIfAborted();
         if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split(/\r?\n/);
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          signal.throwIfAborted();
-          if (line === "") {
-            flushEvent();
-            continue;
-          }
-          if (line.startsWith(":")) continue;
-          if (line.startsWith("data:")) {
-            eventData += (eventData ? "\n" : "") + line.slice(5).trimStart();
-          }
-        }
+        lines.push(value);
       }
-
+      lines.finish();
       signal.throwIfAborted();
-      if (buffer.length > 0 && buffer.startsWith("data:")) {
-        eventData += (eventData ? "\n" : "") + buffer.slice(5).trimStart();
-      }
       flushEvent();
     } finally {
       signal.removeEventListener("abort", onAbort);
@@ -361,7 +350,7 @@ export class HTTPTransport implements MCPTransport {
         scope.signal.throwIfAborted();
         return;
       }
-      const data = (await response.json()) as JSONRPCResponse;
+      const data = (await readBoundedJson(response, scope.signal)) as JSONRPCResponse;
       scope.signal.throwIfAborted();
       if (
         data.result &&
@@ -373,6 +362,14 @@ export class HTTPTransport implements MCPTransport {
       }
       this.messageCallback?.(data);
     } catch (error) {
+      if (error instanceof MCPMessageLimitError) {
+        this.connected = false;
+        this.reportError(error);
+        // Do not await our own send while disconnect drains all owned requests.
+        for (const pending of this.pendingRequests) pending.abort(error);
+        void this.disconnect();
+        throw error;
+      }
       // Auth owns cancellation normalization and must retain credential-save failures.
       if (authenticating) throw error;
       scope.signal.throwIfAborted();

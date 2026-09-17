@@ -1,6 +1,8 @@
 # Coco: evolución pragmática y entregas progresivas
 
-Fecha: 2026-09-16. Estado: **imprescindibles next.3 completados y publicados/verificados; resto del programa pausado**.
+Fecha: 2026-09-16. Estado: **next.3 publicada/verificada; siguiente entrega en implementación**.
+
+Progreso activo: [NEXT_DELIVERY_NEXT4.md](evolution/NEXT_DELIVERY_NEXT4.md).
 Base inspeccionada: `174fc4128bc190fe0cb0b581d2153b805c49f4af`, paquete `2.41.0`.
 
 Este es el plan vigente para esta evolución. Sustituye **la secuencia de ejecución**, no la evidencia, del plan de 39 pasos de la [auditoría del 16 de septiembre](../../corbat-coco-auditoria/2026-09-16/public/04-plan-de-progreso.md). La auditoría permanece como snapshot histórico fuera del repositorio; su enlace requiere el directorio hermano. Los IDs COCO y S remiten a ese snapshot. [MASTER_PLAN.md](MASTER_PLAN.md) y [CODEX_IMPROVEMENTS_PLAN.md](CODEX_IMPROVEMENTS_PLAN.md) son antecedentes, no listas adicionales que completar antes de publicar. Mandan [CLAUDE.md](../CLAUDE.md) y los ADR aceptados.

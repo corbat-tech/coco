@@ -13,6 +13,7 @@ import type {
   StdioTransportConfig,
 } from "../types.js";
 import { MCPConnectionError, MCPTransportError } from "../errors.js";
+import { BoundedLines } from "./limits.js";
 
 /**
  * Stdio transport for MCP communication
@@ -33,7 +34,7 @@ export class StdioTransport implements MCPTransport {
   private messageCallback: ((message: JSONRPCResponse) => void) | null = null;
   private errorCallback: ((error: Error) => void) | null = null;
   private closeCallback: (() => void) | null = null;
-  private buffer = "";
+  private lines = this.createLines();
   private connected = false;
 
   constructor(private readonly config: StdioTransportConfig) {}
@@ -65,7 +66,7 @@ export class StdioTransport implements MCPTransport {
     const owner: OwnedChild = { child, closed: false, closing: false, settled, resolveClose };
     this.ownedChild = owner;
     this.process = child;
-    this.buffer = "";
+    this.lines = this.createLines();
     return new Promise<void>((resolve, reject) => {
       let ready = false;
       const onSpawn = () => {
@@ -82,7 +83,7 @@ export class StdioTransport implements MCPTransport {
         else this.errorCallback?.(new MCPTransportError(`Process error: ${error.message}`));
       };
       const onData = (data: Buffer) => {
-        if (!owner.closed) this.handleData(data);
+        if (!owner.closed && !owner.closing) this.handleData(data);
       };
       const onStderr = (data: Buffer) => {
         console.debug(`[MCP Server stderr]: ${data.toString()}`);
@@ -110,7 +111,7 @@ export class StdioTransport implements MCPTransport {
           this.connected = false;
           this.process = null;
           this.ownedChild = null;
-          this.buffer = "";
+          this.lines = this.createLines();
         }
         if (!ready) reject(new MCPConnectionError("Process closed before connection was ready"));
         owner.resolveClose();
@@ -130,23 +131,28 @@ export class StdioTransport implements MCPTransport {
    * Handle incoming data from stdout
    */
   private handleData(data: Buffer): void {
-    this.buffer += data.toString();
-
-    // Process complete lines (JSON-RPC messages are line-delimited)
-    const lines = this.buffer.split("\n");
-    this.buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      try {
-        const message = JSON.parse(trimmed) as JSONRPCResponse;
-        this.messageCallback?.(message);
-      } catch {
-        this.errorCallback?.(new MCPTransportError(`Invalid JSON: ${trimmed}`));
-      }
+    try {
+      this.lines.push(data);
+    } catch (error) {
+      this.connected = false;
+      this.errorCallback?.(error instanceof Error ? error : new MCPTransportError(String(error)));
+      void this.disconnect();
     }
+  }
+
+  private createLines(): BoundedLines {
+    return new BoundedLines((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      let message: JSONRPCResponse;
+      try {
+        message = JSON.parse(trimmed) as JSONRPCResponse;
+      } catch {
+        this.errorCallback?.(new MCPTransportError("Invalid JSON in MCP stdio frame"));
+        return;
+      }
+      this.messageCallback?.(message);
+    });
   }
 
   /**
