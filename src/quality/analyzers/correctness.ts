@@ -42,6 +42,23 @@ export interface CorrectnessResult {
   details: string;
 }
 
+/** Reject malformed reporter counts before they can become a passing rate. */
+function validateCounts(
+  counts: { passed: number; failed: number; skipped: number },
+  reportedTotal?: unknown,
+): typeof counts {
+  const values = [counts.passed, counts.failed, counts.skipped];
+  const total = values.reduce((sum, value) => sum + value, 0);
+  if (
+    !values.every((value) => Number.isSafeInteger(value) && value >= 0) ||
+    !Number.isSafeInteger(total) ||
+    (reportedTotal !== undefined &&
+      (!Number.isSafeInteger(reportedTotal) || reportedTotal !== total))
+  )
+    throw new Error("Invalid or inconsistent test counts");
+  return counts;
+}
+
 /**
  * Parse vitest JSON reporter output
  */
@@ -61,11 +78,14 @@ function parseVitestOutput(stdout: string): { passed: number; failed: number; sk
   // Try JSON format
   try {
     const json = JSON.parse(stdout);
-    return {
-      passed: json.numPassedTests ?? 0,
-      failed: json.numFailedTests ?? 0,
-      skipped: json.numPendingTests ?? 0,
-    };
+    return validateCounts(
+      {
+        passed: json.numPassedTests ?? 0,
+        failed: json.numFailedTests ?? 0,
+        skipped: (json.numPendingTests ?? 0) + (json.numTodoTests ?? 0),
+      },
+      json.numTotalTests,
+    );
   } catch {
     // Fallback: no parseable output
   }
@@ -79,11 +99,14 @@ function parseVitestOutput(stdout: string): { passed: number; failed: number; sk
 function parseJestOutput(stdout: string): { passed: number; failed: number; skipped: number } {
   try {
     const json = JSON.parse(stdout);
-    return {
-      passed: json.numPassedTests ?? 0,
-      failed: json.numFailedTests ?? 0,
-      skipped: json.numPendingTests ?? 0,
-    };
+    return validateCounts(
+      {
+        passed: json.numPassedTests ?? 0,
+        failed: json.numFailedTests ?? 0,
+        skipped: (json.numPendingTests ?? 0) + (json.numTodoTests ?? 0),
+      },
+      json.numTotalTests,
+    );
   } catch {
     // Try text format: "Tests:  42 passed, 3 failed, 2 skipped, 47 total"
     const match = stdout.match(
@@ -264,7 +287,7 @@ export class CorrectnessAnalyzer {
             return { passed: 0, failed: 0, skipped: 0 };
         }
       };
-      const parsed = parseResults();
+      const parsed = validateCounts(parseResults());
       if (result.exitCode !== 0 && !(result.exitCode === 1 && parsed.failed > 0))
         throw new Error("Test process failed");
       return parsed;
