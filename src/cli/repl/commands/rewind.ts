@@ -1,3 +1,5 @@
+import { getCheckpointManager } from "../checkpoints/manager.js";
+import { markInterruptedToolCalls } from "./resume.js";
 /**
  * /rewind command - Restore files and/or conversation from a checkpoint
  *
@@ -79,116 +81,32 @@ function getCheckpointLabel(checkpoint: Checkpoint): string {
 }
 
 // =============================================================================
-// Mock Checkpoint Manager (placeholder until real implementation)
+// Persistent checkpoint manager
 // =============================================================================
 
-/**
- * Placeholder checkpoint storage
- * In production, this would be managed by a proper CheckpointManager
- */
-interface CheckpointStore {
-  checkpoints: Checkpoint[];
-}
-
-/**
- * Get checkpoint store from session or create empty one
- */
-function getCheckpointStore(session: ReplSession): CheckpointStore {
-  const sessionWithStore = session as ReplSession & { checkpointStore?: CheckpointStore };
-  if (!sessionWithStore.checkpointStore) {
-    sessionWithStore.checkpointStore = { checkpoints: [] };
-  }
-  return sessionWithStore.checkpointStore;
-}
-
-/**
- * Get a specific checkpoint by ID
- */
 async function getCheckpoint(
   session: ReplSession,
   checkpointId: string,
 ): Promise<Checkpoint | null> {
-  const store = getCheckpointStore(session);
-  return store.checkpoints.find((cp) => cp.id === checkpointId) ?? null;
+  return (
+    (await getCheckpointManager().getCheckpoints(session.id)).find(
+      (checkpoint) => checkpoint.id === checkpointId,
+    ) ?? null
+  );
 }
 
-/**
- * Restore files from a checkpoint
- */
-async function restoreFiles(
-  checkpoint: Checkpoint,
-  excludeFiles?: string[],
-): Promise<{ restored: string[]; failed: Array<{ path: string; error: string }> }> {
-  const fs = await import("node:fs/promises");
-  const restored: string[] = [];
-  const failed: Array<{ path: string; error: string }> = [];
-
-  for (const fileCheckpoint of checkpoint.files) {
-    if (excludeFiles?.includes(fileCheckpoint.filePath)) {
-      continue;
-    }
-
-    try {
-      await fs.writeFile(fileCheckpoint.filePath, fileCheckpoint.originalContent, "utf-8");
-      restored.push(fileCheckpoint.filePath);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      failed.push({ path: fileCheckpoint.filePath, error: message });
-    }
-  }
-
-  return { restored, failed };
-}
-
-/**
- * Restore conversation from a checkpoint
- */
-function restoreConversation(
-  session: ReplSession,
-  checkpoint: Checkpoint,
-): { success: boolean; messageCount: number } {
-  if (!checkpoint.conversation) {
-    return { success: false, messageCount: session.messages.length };
-  }
-
-  // Replace session messages with checkpoint messages
-  session.messages = [...checkpoint.conversation.messages];
-
-  return { success: true, messageCount: checkpoint.conversation.messageCount };
-}
-
-/**
- * Perform a rewind operation
- */
 async function performRewind(session: ReplSession, options: RewindOptions): Promise<RewindResult> {
-  const checkpoint = await getCheckpoint(session, options.checkpointId);
-
-  if (!checkpoint) {
-    throw new Error(`Checkpoint not found: ${options.checkpointId}`);
+  if (!(await getCheckpoint(session, options.checkpointId)))
+    throw new Error("Checkpoint not found in this session");
+  const result = await getCheckpointManager().rewind({
+    ...options,
+    sessionId: session.id,
+    projectPath: session.projectPath,
+  });
+  if (result.conversationRestored && result.checkpoint.conversation) {
+    session.messages = markInterruptedToolCalls(result.checkpoint.conversation.messages);
+    result.messagesAfterRestore = session.messages.length;
   }
-
-  const result: RewindResult = {
-    checkpoint,
-    filesRestored: [],
-    filesFailed: [],
-    conversationRestored: false,
-    messagesAfterRestore: session.messages.length,
-  };
-
-  // Restore files if requested
-  if (options.restoreFiles && checkpoint.files.length > 0) {
-    const { restored, failed } = await restoreFiles(checkpoint, options.excludeFiles);
-    result.filesRestored = restored;
-    result.filesFailed = failed;
-  }
-
-  // Restore conversation if requested
-  if (options.restoreConversation && checkpoint.conversation) {
-    const { success, messageCount } = restoreConversation(session, checkpoint);
-    result.conversationRestored = success;
-    result.messagesAfterRestore = messageCount;
-  }
-
   return result;
 }
 
@@ -294,8 +212,7 @@ function displayRewindResult(result: RewindResult): void {
  * Run interactive checkpoint selection
  */
 async function runInteractiveMode(session: ReplSession): Promise<boolean> {
-  const store = getCheckpointStore(session);
-  const checkpoints = store.checkpoints.slice().reverse(); // Most recent first
+  const checkpoints = (await getCheckpointManager().getCheckpoints(session.id)).reverse();
 
   displayCheckpointList(checkpoints);
 

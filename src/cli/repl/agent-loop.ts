@@ -1,3 +1,4 @@
+import { withFileCheckpoints } from "./checkpoints/capture.js";
 /**
  * Agentic loop for REPL
  * Handles tool calling iterations until task completion
@@ -1047,7 +1048,11 @@ export async function executeAgentTurn(
       const executor = new ParallelToolExecutor();
       const parallelResult = await executor.executeParallel(
         confirmedTools,
-        createRuntimeToolDispatch(runtime, session.id, mode, approvedTools),
+        withFileCheckpoints(
+          createRuntimeToolDispatch(runtime, session.id, mode, approvedTools),
+          session.id,
+          session.projectPath,
+        ),
         {
           maxConcurrency: 5,
           onToolStart: (toolCall, _index, _total) => {

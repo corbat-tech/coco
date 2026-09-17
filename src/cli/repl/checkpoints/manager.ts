@@ -1,3 +1,4 @@
+import { restoreCheckpointFiles } from "./safe-restore.js";
 /**
  * Checkpoint Manager for Corbat-Coco
  *
@@ -75,6 +76,7 @@ interface SessionIndex {
  * Stored checkpoint data (JSON file format).
  */
 interface StoredCheckpoint {
+  version?: 2;
   id: string;
   sessionId: string;
   type: CheckpointType;
@@ -89,6 +91,8 @@ interface StoredCheckpoint {
  * Stored file checkpoint format.
  */
 interface StoredFileCheckpoint {
+  originalExists?: boolean;
+  newExists?: boolean;
   id: string;
   filePath: string;
   contentHash: string;
@@ -348,17 +352,24 @@ export class CheckpointManager {
   /**
    * Load content by hash.
    */
-  private async loadContent(sessionId: string, hash: string): Promise<string | null> {
+  private async loadContent(
+    sessionId: string,
+    hash: string,
+    verify = false,
+  ): Promise<string | null> {
+    if (!(verify ? /^[a-f0-9]{64}$/ : /^[a-zA-Z0-9_-]+$/).test(hash)) return null;
     // Check cache first
     const cacheKey = `${sessionId}:${hash}`;
     if (this.contentCache.has(cacheKey)) {
-      return this.contentCache.get(cacheKey)!;
+      const cached = this.contentCache.get(cacheKey)!;
+      return verify && hashContent(cached) !== hash ? null : cached;
     }
 
     // Load from disk
     const contentPath = this.getContentPath(sessionId, hash);
     try {
       const content = await fs.readFile(contentPath, "utf-8");
+      if (verify && hashContent(content) !== hash) return null;
       // Cache for future use
       this.contentCache.set(cacheKey, content);
       return content;
@@ -402,16 +413,19 @@ export class CheckpointManager {
     // Read current content (empty if file doesn't exist)
     // Note: _sessionId is kept for API consistency but not used in this method
     let originalContent = "";
+    let originalExists = true;
     try {
       originalContent = await fs.readFile(filePath, "utf-8");
-    } catch {
-      // File doesn't exist, use empty content
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      originalExists = false;
     }
 
     const checkpoint: FileCheckpoint = {
       id: generateId("file"),
       filePath: path.resolve(filePath),
       originalContent,
+      originalExists,
       createdAt: new Date(),
       triggeredBy,
       toolCallId,
@@ -435,6 +449,7 @@ export class CheckpointManager {
     return {
       ...checkpoint,
       newContent,
+      newExists: true,
     };
   }
 
@@ -571,6 +586,8 @@ export class CheckpointManager {
         filePath: file.filePath,
         contentHash,
         newContentHash,
+        originalExists: file.originalExists,
+        newExists: file.newExists,
         createdAt: file.createdAt.toISOString(),
         triggeredBy: file.triggeredBy,
         toolCallId: file.toolCallId,
@@ -580,6 +597,7 @@ export class CheckpointManager {
 
     // Create stored checkpoint
     const stored: StoredCheckpoint = {
+      version: 2,
       id: checkpoint.id,
       sessionId,
       type: checkpoint.type,
@@ -619,19 +637,32 @@ export class CheckpointManager {
     if (!stored) {
       return null;
     }
+    if (stored.version !== undefined && stored.version !== 2)
+      throw new Error("Unsupported checkpoint version");
+    if (stored.sessionId !== sessionId || stored.id !== checkpointId)
+      throw new Error("Checkpoint identity mismatch");
 
     // Load file contents
     const files: FileCheckpoint[] = [];
     for (const storedFile of stored.files) {
-      const originalContent = await this.loadContent(sessionId, storedFile.contentHash);
+      const originalContent = await this.loadContent(
+        sessionId,
+        storedFile.contentHash,
+        stored.version === 2,
+      );
       if (originalContent === null) {
-        // Content missing, skip this file
-        continue;
+        throw new Error("Checkpoint content is missing; restoration unavailable");
       }
 
       let newContent: string | undefined;
       if (storedFile.newContentHash) {
-        newContent = (await this.loadContent(sessionId, storedFile.newContentHash)) ?? undefined;
+        const loaded = await this.loadContent(
+          sessionId,
+          storedFile.newContentHash,
+          stored.version === 2,
+        );
+        if (loaded === null) throw new Error("Checkpoint postimage is missing or corrupt");
+        newContent = loaded;
       }
 
       files.push({
@@ -639,6 +670,8 @@ export class CheckpointManager {
         filePath: storedFile.filePath,
         originalContent,
         newContent,
+        originalExists: stored.version === 2 ? storedFile.originalExists : undefined,
+        newExists: stored.version === 2 ? storedFile.newExists : undefined,
         createdAt: new Date(storedFile.createdAt),
         triggeredBy: storedFile.triggeredBy,
         toolCallId: storedFile.toolCallId,
@@ -821,29 +854,18 @@ export class CheckpointManager {
       messagesAfterRestore: 0,
     };
 
-    // Restore files
+    if (!options.sessionId || checkpoint.sessionId !== options.sessionId || !options.projectPath) {
+      throw new Error("Checkpoint restoration requires matching session and project authority");
+    }
     if (restoreFiles && checkpoint.files.length > 0) {
-      const excludeSet = new Set(excludeFiles ?? []);
-
-      for (const file of checkpoint.files) {
-        if (excludeSet.has(file.filePath)) {
-          continue;
-        }
-
-        try {
-          // Ensure parent directory exists
-          await ensureDir(path.dirname(file.filePath));
-
-          // Write the original content back
-          await fs.writeFile(file.filePath, file.originalContent, "utf-8");
-          result.filesRestored.push(file.filePath);
-        } catch (error) {
-          result.filesFailed.push({
-            path: file.filePath,
-            error: error instanceof Error ? error.message : "Unknown error occurred",
-          });
-        }
-      }
+      const excluded = new Set(excludeFiles ?? []);
+      const restoration = await restoreCheckpointFiles(
+        checkpoint.files.filter((file) => !excluded.has(file.filePath)),
+        options.projectPath,
+      );
+      result.filesRestored = restoration.restored;
+      result.filesFailed = restoration.failed;
+      if (restoration.failed.length) return result;
     }
 
     // Restore conversation (caller handles message restoration)

@@ -205,503 +205,554 @@ export async function startRepl(
     legacyAgentBridge: { setAgentProvider, setAgentToolRegistry },
   });
   session.runtime = runtime;
-  const toolRegistry = runtime.toolRegistry;
-
-  // Initialize unified skill registry (discover skills across all scopes)
+  runtime.createSession({ id: session.id, mode: session.planMode ? "plan" : "build" });
+  runtime.enableBackgroundJobs(session.id, projectPath);
+  const cleanupRepl: Array<() => void | Promise<void>> = [() => runtime.close()];
   try {
-    const { createUnifiedSkillRegistry } = await import("../../skills/index.js");
-    const { getBuiltinSkillsForDiscovery } = await import("./skills/index.js");
-    const { loadConfig: loadCocoConfig } = await import("../../config/loader.js");
-    session.skillRegistry = createUnifiedSkillRegistry();
-    // Wire skills config from CocoConfig if available
+    const toolRegistry = runtime.toolRegistry;
+
+    // Initialize unified skill registry (discover skills across all scopes)
     try {
-      const cocoConfig = await loadCocoConfig();
-      if (cocoConfig.skills) {
-        session.skillRegistry.setConfig(cocoConfig.skills);
-      }
-    } catch {
-      // Config not available — use defaults (all enabled, no overrides)
-    }
-    await session.skillRegistry.discoverAndRegister(projectPath, getBuiltinSkillsForDiscovery());
-  } catch (skillError) {
-    // Skills initialization failed (e.g. corrupt SKILL.md) — continue without skills
-    const logger = (await import("../../utils/logger.js")).getLogger();
-    logger.warn(
-      `[Skills] Failed to initialize skills: ${skillError instanceof Error ? skillError.message : String(skillError)}`,
-    );
-  }
-
-  // Initialize MCP servers (non-fatal — REPL starts even if MCP fails)
-  let mcpManager: MCPServerManager | null = null;
-  let configuredMcpServers: MCPServerConfig[] = [];
-  const registeredMcpServers = new Set<string>();
-  const logger = (await import("../../utils/logger.js")).getLogger();
-  try {
-    const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
-    const { MCPRegistryImpl } = await import("../../mcp/registry.js");
-    const { registerMCPTools } = await import("../../mcp/tools.js");
-
-    const mcpRegistry = new MCPRegistryImpl();
-    await mcpRegistry.load();
-    const registryServers = mcpRegistry.listEnabledServers();
-
-    // Also load project-level .mcp.json (standard cross-agent format — Claude Code, Cursor, Windsurf)
-    const { loadProjectMCPFile, loadMCPServersFromCOCOConfig, mergeMCPConfigs } =
-      await import("../../mcp/config-loader.js");
-    const projectServers = await loadProjectMCPFile(projectPath);
-    const cocoConfigServers = await loadMCPServersFromCOCOConfig();
-    const enabledServers = mergeMCPConfigs(
-      registryServers,
-      cocoConfigServers.filter((s) => s.enabled !== false),
-      projectServers.filter((s) => s.enabled !== false),
-    );
-    configuredMcpServers = enabledServers;
-
-    if (enabledServers.length > 0) {
-      mcpManager = getMCPServerManager();
-      let connections: Map<string, ServerConnection>;
+      const { createUnifiedSkillRegistry } = await import("../../skills/index.js");
+      const { getBuiltinSkillsForDiscovery } = await import("./skills/index.js");
+      const { loadConfig: loadCocoConfig } = await import("../../config/loader.js");
+      session.skillRegistry = createUnifiedSkillRegistry();
+      // Wire skills config from CocoConfig if available
       try {
-        connections = await mcpManager.startAll(enabledServers);
-      } catch (startError) {
-        logger.warn(
-          `[MCP] Failed to start servers: ${startError instanceof Error ? startError.message : String(startError)}`,
-        );
-        try {
-          await mcpManager.stopAll();
-        } catch {
-          // Ignore errors during partial-start cleanup
+        const cocoConfig = await loadCocoConfig();
+        if (cocoConfig.skills) {
+          session.skillRegistry.setConfig(cocoConfig.skills);
         }
-        mcpManager = null;
-        connections = new Map();
+      } catch {
+        // Config not available — use defaults (all enabled, no overrides)
       }
-
-      // Register tools from each successfully connected server
-      for (const connection of connections.values()) {
-        try {
-          const wrapped = await registerMCPTools(toolRegistry, connection.name, connection.client);
-          registeredMcpServers.add(connection.name);
-          if (wrapped.length === 0) {
-            logger.warn(
-              `[MCP] Server '${connection.name}' connected but exposed 0 tools (check server auth/scopes).`,
-            );
-          }
-        } catch (toolError) {
-          logger.warn(
-            `[MCP] Failed to register tools for server '${connection.name}': ${toolError instanceof Error ? toolError.message : String(toolError)}`,
-          );
-        }
-      }
-
-      const activeCount = connections.size;
-      if (activeCount > 0) {
-        logger.info(`[MCP] ${activeCount} MCP server(s) active`);
-      }
-
-      const failedServers = enabledServers
-        .map((s) => s.name)
-        .filter((name) => !connections.has(name));
-      if (failedServers.length > 0) {
-        p.log.warn(
-          `MCP startup check: ${failedServers.length} server(s) failed to connect: ${failedServers.join(", ")}`,
-        );
-        p.log.message(chalk.dim("Run /mcp health <name> to inspect details."));
-      }
-    }
-  } catch (mcpError) {
-    logger.warn(
-      `[MCP] Initialization failed: ${mcpError instanceof Error ? mcpError.message : String(mcpError)}`,
-    );
-  }
-
-  async function ensureRequestedMcpConnections(message: string): Promise<void> {
-    if (configuredMcpServers.length === 0) return;
-    if (!mcpManager) {
-      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
-      mcpManager = getMCPServerManager();
-    }
-
-    const normalizedMessage = message.toLowerCase();
-    const explicitlyRequestsMcp =
-      /\bmcp\b/.test(normalizedMessage) ||
-      /\b(use|using|usa|usar|utiliza|utilizar)\b.{0,24}\bmcp\b/.test(normalizedMessage);
-
-    const matchingServers = configuredMcpServers.filter((server) => {
-      if (mcpManager?.getConnection(server.name)) return false;
-      if (explicitlyRequestsMcp) return true;
-
-      const loweredName = server.name.toLowerCase();
-      if (normalizedMessage.includes(loweredName)) return true;
-      if (loweredName.includes("atlassian")) {
-        return /\b(atlassian|jira|confluence)\b/.test(normalizedMessage);
-      }
-      return false;
-    });
-
-    for (const server of matchingServers) {
-      try {
-        const existingConnection = mcpManager.getConnection(server.name);
-        if (existingConnection?.healthy === false) {
-          await mcpManager.stopServer(server.name);
-        }
-
-        const connection = await mcpManager.startServer(server);
-        if (!registeredMcpServers.has(connection.name)) {
-          await (
-            await import("../../mcp/tools.js")
-          ).registerMCPTools(toolRegistry, connection.name, connection.client);
-          registeredMcpServers.add(connection.name);
-        }
-      } catch (error) {
-        logger.warn(
-          `[MCP] On-demand connect failed for '${server.name}': ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
-  }
-
-  function extractMessageText(content: string | MessageContent): string {
-    if (typeof content === "string") return content;
-    return content
-      .filter((block): block is TextContent => block.type === "text")
-      .map((block) => block.text)
-      .join(" ");
-  }
-
-  // Load lifecycle hooks from .coco/hooks.json (non-fatal — REPL starts even if hooks fail)
-  let hookRegistry: HookRegistryInterface | undefined;
-  let hookExecutor: HookExecutor | undefined;
-  try {
-    const hooksConfigPath = `${projectPath}/.coco/hooks.json`;
-    const { createHookRegistry, createHookExecutor } = await import("./hooks/index.js");
-    const registry = createHookRegistry();
-    await registry.loadFromFile(hooksConfigPath);
-    if (registry.size > 0) {
-      hookRegistry = registry;
-      hookExecutor = createHookExecutor();
-      logger.info(`[Hooks] Loaded ${registry.size} hook(s) from ${hooksConfigPath}`);
-    }
-  } catch (hookError) {
-    // File not found is expected (no hooks configured) — only warn on unexpected errors
-    const msg = hookError instanceof Error ? hookError.message : String(hookError);
-    if (!msg.includes("ENOENT")) {
-      logger.warn(`[Hooks] Failed to load hooks: ${msg}`);
-    }
-  }
-
-  // Create input handler
-  const inputHandler = createInputHandler(session);
-
-  // Initialize concurrent input capture, feedback system, and input echo
-  const { createConcurrentCapture } = await import("./input/concurrent-capture-v2.js");
-  const { createFeedbackSystem } = await import("./feedback/feedback-system.js");
-  const { createInputEcho } = await import("./input/input-echo.js");
-  const concurrentCapture = createConcurrentCapture();
-  let currentSpinnerMessage = "";
-  // activeSpinner is declared per-turn; feedbackSystem needs a getter
-  let turnActiveSpinner: Spinner | null = null;
-  const feedbackSystem = createFeedbackSystem(() => turnActiveSpinner);
-  const inputEcho = createInputEcho(
-    () => turnActiveSpinner,
-    () => currentSpinnerMessage,
-  );
-
-  // Pending interruption context from previous turn (injected into next message)
-  let pendingInterruptionContext = "";
-  // Human-readable summary of the modification (for display only, not sent to LLM)
-  let pendingModificationPreview = "";
-  // Messages queued during concurrent capture for auto-submission as next turn
-  let pendingQueuedMessages: string[] = [];
-
-  // Track auto-activated skill IDs so we only deactivate those (not manual ones)
-  const autoActivatedIds = new Set<string>();
-
-  // Initialize intent recognizer
-  const intentRecognizer = createIntentRecognizer();
-
-  // Fetch git context (concurrent — no added latency since provider init already awaited)
-  let gitContext: GitContext | null = await getGitContext(projectPath);
-
-  // Print welcome
-  await printWelcome(session, gitContext, mcpManager);
-
-  // Ensure terminal state is restored on exit (bracketed paste, raw mode, etc.)
-  const cleanupTerminal = () => {
-    process.stdout.write("\x1b[?2004l"); // Disable bracketed paste
-    if (process.stdin.isTTY && process.stdin.isRaw) {
-      process.stdin.setRawMode(false);
-    }
-  };
-  process.once("exit", cleanupTerminal);
-  const sigtermHandler = () => {
-    // Don't call cleanupTerminal() here — the "exit" listener handles it
-    const cleanup = mcpManager ? mcpManager.stopAll() : Promise.resolve();
-    cleanup.catch(() => {}).finally(() => process.exit(0));
-  };
-  process.once("SIGTERM", sigtermHandler);
-
-  // Install process-level safety net: prevents uncaught exceptions / unhandled
-  // rejections from crashing the Coco process. The REPL loop continues after logging.
-  installProcessSafetyNet();
-
-  // Track whether the 75%/90% context warnings have been shown (reset after compaction)
-  let warned75 = false;
-  let warned90 = false;
-
-  // Consecutive error recovery counter.
-  // Incremented on each catch-block recovery attempt; reset to 0 on any
-  // successful agent turn. After MAX_CONSECUTIVE_ERRORS the REPL gives up
-  // and shows the error to the user instead of re-queuing.
-  let consecutiveErrors = 0;
-  const AUTO_SWITCH_THRESHOLD = 2;
-  const autoSwitchHistory = new Set<string>();
-  const enableAutoSwitchProvider = session.config.agent?.enableAutoSwitchProvider === true;
-
-  const buildReplayMessage = (message: string | MessageContent): string | null => {
-    if (typeof message === "string") {
-      const trimmed = message.trim();
-      return trimmed.length > 0 ? message : null;
-    }
-
-    const textParts: string[] = [];
-    let imageCount = 0;
-    for (const block of message) {
-      if (block.type === "text" && typeof block.text === "string" && block.text.trim().length > 0) {
-        textParts.push(block.text.trim());
-      } else if (block.type === "image") {
-        imageCount++;
-      }
-    }
-
-    const text = textParts.join("\n\n").trim();
-    if (text.length > 0) {
-      if (imageCount > 0) {
-        return (
-          `${text}\n\n` +
-          `[System: The original request included ${imageCount} image(s). ` +
-          `Use the image context already provided in this conversation.]`
-        );
-      }
-      return text;
-    }
-
-    if (imageCount > 0) {
-      return (
-        `[System: Retry the previous image-based user request (${imageCount} image(s)). ` +
-        `Use the existing image context in the conversation and do not repeat the same failed action.]`
+      await session.skillRegistry.discoverAndRegister(projectPath, getBuiltinSkillsForDiscovery());
+    } catch (skillError) {
+      // Skills initialization failed (e.g. corrupt SKILL.md) — continue without skills
+      const logger = (await import("../../utils/logger.js")).getLogger();
+      logger.warn(
+        `[Skills] Failed to initialize skills: ${skillError instanceof Error ? skillError.message : String(skillError)}`,
       );
     }
 
-    return null;
-  };
+    // Initialize MCP servers (non-fatal — REPL starts even if MCP fails)
+    let mcpManager: MCPServerManager | null = null;
+    cleanupRepl.push(async () => {
+      await mcpManager?.stopAll();
+    });
+    let configuredMcpServers: MCPServerConfig[] = [];
+    const registeredMcpServers = new Set<string>();
+    const logger = (await import("../../utils/logger.js")).getLogger();
+    try {
+      const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
+      const { MCPRegistryImpl } = await import("../../mcp/registry.js");
+      const { registerMCPTools } = await import("../../mcp/tools.js");
 
-  const showRecoveryAlternatives = (): void => {
-    console.log(chalk.yellow("   Choose how to continue:"));
-    console.log(chalk.dim("   1. /provider  → switch provider"));
-    console.log(chalk.dim("   2. /model     → switch model"));
-    console.log(chalk.dim("   3. Retry with a narrower scope/task"));
-    console.log(chalk.dim("   4. If needed, share constraints so Coco can adapt strategy"));
-    if (!enableAutoSwitchProvider) {
-      console.log(chalk.dim("   5. (Optional) enable `agent.enableAutoSwitchProvider` in config"));
+      const mcpRegistry = new MCPRegistryImpl();
+      await mcpRegistry.load();
+      const registryServers = mcpRegistry.listEnabledServers();
+
+      // Also load project-level .mcp.json (standard cross-agent format — Claude Code, Cursor, Windsurf)
+      const { loadProjectMCPFile, loadMCPServersFromCOCOConfig, mergeMCPConfigs } =
+        await import("../../mcp/config-loader.js");
+      const projectServers = await loadProjectMCPFile(projectPath);
+      const cocoConfigServers = await loadMCPServersFromCOCOConfig();
+      const enabledServers = mergeMCPConfigs(
+        registryServers,
+        cocoConfigServers.filter((s) => s.enabled !== false),
+        projectServers.filter((s) => s.enabled !== false),
+      );
+      configuredMcpServers = enabledServers;
+
+      if (enabledServers.length > 0) {
+        mcpManager = getMCPServerManager();
+        let connections: Map<string, ServerConnection>;
+        try {
+          connections = await mcpManager.startAll(enabledServers);
+        } catch (startError) {
+          logger.warn(
+            `[MCP] Failed to start servers: ${startError instanceof Error ? startError.message : String(startError)}`,
+          );
+          try {
+            await mcpManager.stopAll();
+          } catch {
+            // Ignore errors during partial-start cleanup
+          }
+          mcpManager = null;
+          connections = new Map();
+        }
+
+        // Register tools from each successfully connected server
+        for (const connection of connections.values()) {
+          try {
+            const wrapped = await registerMCPTools(
+              toolRegistry,
+              connection.name,
+              connection.client,
+            );
+            registeredMcpServers.add(connection.name);
+            if (wrapped.length === 0) {
+              logger.warn(
+                `[MCP] Server '${connection.name}' connected but exposed 0 tools (check server auth/scopes).`,
+              );
+            }
+          } catch (toolError) {
+            logger.warn(
+              `[MCP] Failed to register tools for server '${connection.name}': ${toolError instanceof Error ? toolError.message : String(toolError)}`,
+            );
+          }
+        }
+
+        const activeCount = connections.size;
+        if (activeCount > 0) {
+          logger.info(`[MCP] ${activeCount} MCP server(s) active`);
+        }
+
+        const failedServers = enabledServers
+          .map((s) => s.name)
+          .filter((name) => !connections.has(name));
+        if (failedServers.length > 0) {
+          p.log.warn(
+            `MCP startup check: ${failedServers.length} server(s) failed to connect: ${failedServers.join(", ")}`,
+          );
+          p.log.message(chalk.dim("Run /mcp health <name> to inspect details."));
+        }
+      }
+    } catch (mcpError) {
+      logger.warn(
+        `[MCP] Initialization failed: ${mcpError instanceof Error ? mcpError.message : String(mcpError)}`,
+      );
     }
-  };
 
-  const getAutoSwitchCandidates = (current: ProviderType): ProviderType[] => {
-    const ordered: ProviderType[] = [];
-    const push = (p: ProviderType): void => {
-      if (p !== current && !ordered.includes(p)) ordered.push(p);
+    async function ensureRequestedMcpConnections(message: string): Promise<void> {
+      if (configuredMcpServers.length === 0) return;
+      if (!mcpManager) {
+        const { getMCPServerManager } = await import("../../mcp/lifecycle.js");
+        mcpManager = getMCPServerManager();
+      }
+
+      const normalizedMessage = message.toLowerCase();
+      const explicitlyRequestsMcp =
+        /\bmcp\b/.test(normalizedMessage) ||
+        /\b(use|using|usa|usar|utiliza|utilizar)\b.{0,24}\bmcp\b/.test(normalizedMessage);
+
+      const matchingServers = configuredMcpServers.filter((server) => {
+        if (mcpManager?.getConnection(server.name)) return false;
+        if (explicitlyRequestsMcp) return true;
+
+        const loweredName = server.name.toLowerCase();
+        if (normalizedMessage.includes(loweredName)) return true;
+        if (loweredName.includes("atlassian")) {
+          return /\b(atlassian|jira|confluence)\b/.test(normalizedMessage);
+        }
+        return false;
+      });
+
+      for (const server of matchingServers) {
+        try {
+          const existingConnection = mcpManager.getConnection(server.name);
+          if (existingConnection?.healthy === false) {
+            await mcpManager.stopServer(server.name);
+          }
+
+          const connection = await mcpManager.startServer(server);
+          if (!registeredMcpServers.has(connection.name)) {
+            await (
+              await import("../../mcp/tools.js")
+            ).registerMCPTools(toolRegistry, connection.name, connection.client);
+            registeredMcpServers.add(connection.name);
+          }
+        } catch (error) {
+          logger.warn(
+            `[MCP] On-demand connect failed for '${server.name}': ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    }
+
+    function extractMessageText(content: string | MessageContent): string {
+      if (typeof content === "string") return content;
+      return content
+        .filter((block): block is TextContent => block.type === "text")
+        .map((block) => block.text)
+        .join(" ");
+    }
+
+    // Load lifecycle hooks from .coco/hooks.json (non-fatal — REPL starts even if hooks fail)
+    let hookRegistry: HookRegistryInterface | undefined;
+    let hookExecutor: HookExecutor | undefined;
+    try {
+      const hooksConfigPath = `${projectPath}/.coco/hooks.json`;
+      const { createHookRegistry, createHookExecutor } = await import("./hooks/index.js");
+      const registry = createHookRegistry();
+      await registry.loadFromFile(hooksConfigPath);
+      if (registry.size > 0) {
+        hookRegistry = registry;
+        hookExecutor = createHookExecutor();
+        logger.info(`[Hooks] Loaded ${registry.size} hook(s) from ${hooksConfigPath}`);
+      }
+    } catch (hookError) {
+      // File not found is expected (no hooks configured) — only warn on unexpected errors
+      const msg = hookError instanceof Error ? hookError.message : String(hookError);
+      if (!msg.includes("ENOENT")) {
+        logger.warn(`[Hooks] Failed to load hooks: ${msg}`);
+      }
+    }
+
+    // Create input handler
+    const inputHandler = createInputHandler(session);
+    cleanupRepl.push(() => inputHandler.close());
+
+    // Initialize concurrent input capture, feedback system, and input echo
+    const { createConcurrentCapture } = await import("./input/concurrent-capture-v2.js");
+    const { createFeedbackSystem } = await import("./feedback/feedback-system.js");
+    const { createInputEcho } = await import("./input/input-echo.js");
+    const concurrentCapture = createConcurrentCapture();
+    let currentSpinnerMessage = "";
+    // activeSpinner is declared per-turn; feedbackSystem needs a getter
+    let turnActiveSpinner: Spinner | null = null;
+    const feedbackSystem = createFeedbackSystem(() => turnActiveSpinner);
+    cleanupRepl.push(() => feedbackSystem.dispose());
+    const inputEcho = createInputEcho(
+      () => turnActiveSpinner,
+      () => currentSpinnerMessage,
+    );
+
+    // Pending interruption context from previous turn (injected into next message)
+    let pendingInterruptionContext = "";
+    // Human-readable summary of the modification (for display only, not sent to LLM)
+    let pendingModificationPreview = "";
+    // Messages queued during concurrent capture for auto-submission as next turn
+    let pendingQueuedMessages: string[] = [];
+
+    // Track auto-activated skill IDs so we only deactivate those (not manual ones)
+    const autoActivatedIds = new Set<string>();
+
+    // Initialize intent recognizer
+    const intentRecognizer = createIntentRecognizer();
+
+    // Fetch git context (concurrent — no added latency since provider init already awaited)
+    let gitContext: GitContext | null = await getGitContext(projectPath);
+
+    // Print welcome
+    await printWelcome(session, gitContext, mcpManager);
+
+    // Ensure terminal state is restored on exit (bracketed paste, raw mode, etc.)
+    const cleanupTerminal = () => {
+      process.stdout.write("\x1b[?2004l"); // Disable bracketed paste
+      if (process.stdin.isTTY && process.stdin.isRaw) {
+        process.stdin.setRawMode(false);
+      }
+    };
+    process.once("exit", cleanupTerminal);
+    const sigtermHandler = () => {
+      // Don't call cleanupTerminal() here — the "exit" listener handles it
+      const cleanup = Promise.allSettled([runtime.close(), mcpManager?.stopAll()]);
+      cleanup.catch(() => {}).finally(() => process.exit(0));
+    };
+    process.once("SIGTERM", sigtermHandler);
+    cleanupRepl.push(() => {
+      process.off("SIGTERM", sigtermHandler);
+      process.off("exit", cleanupTerminal);
+      cleanupTerminal();
+    });
+
+    // Install process-level safety net: prevents uncaught exceptions / unhandled
+    // rejections from crashing the Coco process. The REPL loop continues after logging.
+    installProcessSafetyNet();
+
+    // Track whether the 75%/90% context warnings have been shown (reset after compaction)
+    let warned75 = false;
+    let warned90 = false;
+
+    // Consecutive error recovery counter.
+    // Incremented on each catch-block recovery attempt; reset to 0 on any
+    // successful agent turn. After MAX_CONSECUTIVE_ERRORS the REPL gives up
+    // and shows the error to the user instead of re-queuing.
+    let consecutiveErrors = 0;
+    const AUTO_SWITCH_THRESHOLD = 2;
+    const autoSwitchHistory = new Set<string>();
+    const enableAutoSwitchProvider = session.config.agent?.enableAutoSwitchProvider === true;
+
+    const buildReplayMessage = (message: string | MessageContent): string | null => {
+      if (typeof message === "string") {
+        const trimmed = message.trim();
+        return trimmed.length > 0 ? message : null;
+      }
+
+      const textParts: string[] = [];
+      let imageCount = 0;
+      for (const block of message) {
+        if (
+          block.type === "text" &&
+          typeof block.text === "string" &&
+          block.text.trim().length > 0
+        ) {
+          textParts.push(block.text.trim());
+        } else if (block.type === "image") {
+          imageCount++;
+        }
+      }
+
+      const text = textParts.join("\n\n").trim();
+      if (text.length > 0) {
+        if (imageCount > 0) {
+          return (
+            `${text}\n\n` +
+            `[System: The original request included ${imageCount} image(s). ` +
+            `Use the image context already provided in this conversation.]`
+          );
+        }
+        return text;
+      }
+
+      if (imageCount > 0) {
+        return (
+          `[System: Retry the previous image-based user request (${imageCount} image(s)). ` +
+          `Use the existing image context in the conversation and do not repeat the same failed action.]`
+        );
+      }
+
+      return null;
     };
 
-    // First, try closely-related providers.
-    if (current === "openai") {
-      push("codex");
-      push("kimi");
-      push("openrouter");
-    } else if (current === "codex") {
-      push("openai");
-      push("openrouter");
-      push("anthropic");
-    } else if (current === "anthropic") {
-      push("openai");
-      push("codex");
-      push("gemini");
-    } else if (current === "gemini") {
-      push("openai");
-      push("codex");
-      push("anthropic");
-    } else if (current === "kimi") {
-      push("openai");
-      push("codex");
-      push("openrouter");
-    }
-
-    // Then, generic fallback order.
-    const genericOrder: ProviderType[] = [
-      "codex",
-      "openai",
-      "anthropic",
-      "gemini",
-      "kimi",
-      "openrouter",
-      "deepseek",
-      "groq",
-      "mistral",
-      "together",
-      "qwen",
-      "lmstudio",
-      "ollama",
-    ];
-    for (const p of genericOrder) push(p);
-    return ordered;
-  };
-
-  const attemptAutoProviderSwitch = async (
-    reason: string,
-    originalMessage: string | null,
-  ): Promise<boolean> => {
-    if (!originalMessage) return false;
-
-    const currentType = session.config.provider.type;
-    const candidates = getAutoSwitchCandidates(currentType);
-
-    for (const candidate of candidates) {
-      const edge = `${currentType}->${candidate}`;
-      if (autoSwitchHistory.has(edge)) continue;
-
-      try {
-        const nextInternalId = getInternalProviderId(candidate);
-        const nextProvider = await createProvider(nextInternalId, {
-          maxTokens: session.config.provider.maxTokens,
-        });
-        const ok = await nextProvider.isAvailable();
-        if (!ok) {
-          autoSwitchHistory.add(edge);
-          continue;
-        }
-
-        provider = nextProvider;
-        session.config.provider.type = candidate;
-        session.config.provider.model = getDefaultModel(candidate);
-        runtime.updateProvider(nextInternalId, session.config.provider.model, provider);
-        session.runtime = runtime;
-        initializeContextManager(session, provider);
-        llmClassifier = createLLMClassifier(provider);
-        autoSwitchHistory.add(edge);
-
+    const showRecoveryAlternatives = (): void => {
+      console.log(chalk.yellow("   Choose how to continue:"));
+      console.log(chalk.dim("   1. /provider  → switch provider"));
+      console.log(chalk.dim("   2. /model     → switch model"));
+      console.log(chalk.dim("   3. Retry with a narrower scope/task"));
+      console.log(chalk.dim("   4. If needed, share constraints so Coco can adapt strategy"));
+      if (!enableAutoSwitchProvider) {
         console.log(
-          chalk.cyan(
-            `   ↺ Auto-switched provider: ${currentType} → ${candidate} (${reason.slice(0, 80)})`,
-          ),
+          chalk.dim("   5. (Optional) enable `agent.enableAutoSwitchProvider` in config"),
         );
-        return true;
-      } catch {
-        autoSwitchHistory.add(edge);
       }
-    }
+    };
 
-    return false;
-  };
+    const getAutoSwitchCandidates = (current: ProviderType): ProviderType[] => {
+      const ordered: ProviderType[] = [];
+      const push = (p: ProviderType): void => {
+        if (p !== current && !ordered.includes(p)) ordered.push(p);
+      };
 
-  // Main loop
-  while (true) {
-    // Auto-submit queued messages from concurrent capture (skip prompt)
-    let autoInput: string | null = null;
-    if (pendingQueuedMessages.length > 0) {
-      autoInput = pendingQueuedMessages.join("\n");
-      pendingQueuedMessages = [];
-
-      // Show contextual feedback: Modify re-send vs Queue auto-submit
-      // NOTE: trailing console.log() is intentional — it acts as a buffer line
-      // so the Ora spinner (which clears the line above it) doesn't erase the preview.
-      if (pendingInterruptionContext) {
-        const modPreview =
-          pendingModificationPreview.length > 70
-            ? pendingModificationPreview.slice(0, 67) + "\u2026"
-            : pendingModificationPreview;
-        console.log(
-          chalk.yellow(`\n\u26A1 Re-sending with modification: `) + chalk.dim(modPreview),
-        );
-        console.log();
-      } else {
-        const preview = autoInput.length > 70 ? autoInput.slice(0, 67) + "\u2026" : autoInput;
-        console.log(chalk.cyan(`\n\uD83D\uDCCB Auto-sending queued message:`));
-        console.log(chalk.dim(`  ${preview}`));
-        console.log();
+      // First, try closely-related providers.
+      if (current === "openai") {
+        push("codex");
+        push("kimi");
+        push("openrouter");
+      } else if (current === "codex") {
+        push("openai");
+        push("openrouter");
+        push("anthropic");
+      } else if (current === "anthropic") {
+        push("openai");
+        push("codex");
+        push("gemini");
+      } else if (current === "gemini") {
+        push("openai");
+        push("codex");
+        push("anthropic");
+      } else if (current === "kimi") {
+        push("openai");
+        push("codex");
+        push("openrouter");
       }
-    }
 
-    const input = autoInput ?? (await inputHandler.prompt());
+      // Then, generic fallback order.
+      const genericOrder: ProviderType[] = [
+        "codex",
+        "openai",
+        "anthropic",
+        "gemini",
+        "kimi",
+        "openrouter",
+        "deepseek",
+        "groq",
+        "mistral",
+        "together",
+        "qwen",
+        "lmstudio",
+        "ollama",
+      ];
+      for (const p of genericOrder) push(p);
+      return ordered;
+    };
 
-    // Handle EOF (Ctrl+D) -- but not if Ctrl+V set a pending image
-    if (input === null && !hasPendingImage()) {
-      console.log(chalk.dim("\nGoodbye!"));
-      break;
-    }
+    const attemptAutoProviderSwitch = async (
+      reason: string,
+      originalMessage: string | null,
+    ): Promise<boolean> => {
+      if (!originalMessage) return false;
 
-    // Skip empty input -- but not if Ctrl+V set a pending image
-    if (!input && !hasPendingImage()) continue;
+      const currentType = session.config.provider.type;
+      const candidates = getAutoSwitchCandidates(currentType);
 
-    // Handle bare exit keywords (without the leading slash)
-    // Users often type "exit" or "quit" instead of "/exit" — treat them the same.
-    if (input && ["exit", "quit", "q"].includes(input.trim().toLowerCase())) {
-      console.log(chalk.dim("\nGoodbye!"));
-      break;
-    }
+      for (const candidate of candidates) {
+        const edge = `${currentType}->${candidate}`;
+        if (autoSwitchHistory.has(edge)) continue;
 
-    // Handle slash commands
-    let agentMessage: string | MessageContent | null = null;
-
-    if (input && isSlashCommand(input)) {
-      const prevProviderType = session.config.provider.type;
-      const prevProviderModel = session.config.provider.model;
-
-      const { command, args } = parseSlashCommand(input);
-      const commandResult = await executeSlashCommand(command, args, session);
-      if (commandResult.shouldExit) break;
-
-      // Re-initialize provider if /provider or /model changed it
-      if (
-        session.config.provider.type !== prevProviderType ||
-        session.config.provider.model !== prevProviderModel
-      ) {
         try {
-          const newInternalId = getInternalProviderId(session.config.provider.type);
-          provider = await createProvider(newInternalId, {
-            model: session.config.provider.model || undefined,
+          const nextInternalId = getInternalProviderId(candidate);
+          const nextProvider = await createProvider(nextInternalId, {
             maxTokens: session.config.provider.maxTokens,
-            project:
-              session.config.provider.project ??
-              process.env["VERTEX_PROJECT"] ??
-              process.env["GOOGLE_CLOUD_PROJECT"] ??
-              process.env["GCLOUD_PROJECT"],
-            location:
-              session.config.provider.location ??
-              process.env["VERTEX_LOCATION"] ??
-              process.env["GOOGLE_CLOUD_LOCATION"],
           });
-          runtime.updateProvider(
-            newInternalId,
-            session.config.provider.model || undefined,
-            provider,
-          );
+          const ok = await nextProvider.isAvailable();
+          if (!ok) {
+            autoSwitchHistory.add(edge);
+            continue;
+          }
+
+          provider = nextProvider;
+          session.config.provider.type = candidate;
+          session.config.provider.model = getDefaultModel(candidate);
+          runtime.updateProvider(nextInternalId, session.config.provider.model, provider);
           session.runtime = runtime;
           initializeContextManager(session, provider);
-        } catch (err) {
-          // Provider re-init failed — revert session config to previous values so
-          // session.config stays consistent with the active provider object
-          session.config.provider.type = prevProviderType;
-          session.config.provider.model = prevProviderModel;
-          renderError(
-            `Failed to switch provider: ${err instanceof Error ? err.message : String(err)}`,
+          llmClassifier = createLLMClassifier(provider);
+          autoSwitchHistory.add(edge);
+
+          console.log(
+            chalk.cyan(
+              `   ↺ Auto-switched provider: ${currentType} → ${candidate} (${reason.slice(0, 80)})`,
+            ),
           );
+          return true;
+        } catch {
+          autoSwitchHistory.add(edge);
         }
       }
 
-      // If the skill returned a forkPrompt, inject it as the next agent message
-      if (commandResult.forkPrompt) {
-        agentMessage = commandResult.forkPrompt;
-        // Don't skip the agent turn — let it process the forked skill instructions
-      } else if (hasPendingImage()) {
-        // Check if slash command queued a multimodal message (e.g., /image)
+      return false;
+    };
+
+    // Main loop
+    while (true) {
+      // Auto-submit queued messages from concurrent capture (skip prompt)
+      let autoInput: string | null = null;
+      if (pendingQueuedMessages.length > 0) {
+        autoInput = pendingQueuedMessages.join("\n");
+        pendingQueuedMessages = [];
+
+        // Show contextual feedback: Modify re-send vs Queue auto-submit
+        // NOTE: trailing console.log() is intentional — it acts as a buffer line
+        // so the Ora spinner (which clears the line above it) doesn't erase the preview.
+        if (pendingInterruptionContext) {
+          const modPreview =
+            pendingModificationPreview.length > 70
+              ? pendingModificationPreview.slice(0, 67) + "\u2026"
+              : pendingModificationPreview;
+          console.log(
+            chalk.yellow(`\n\u26A1 Re-sending with modification: `) + chalk.dim(modPreview),
+          );
+          console.log();
+        } else {
+          const preview = autoInput.length > 70 ? autoInput.slice(0, 67) + "\u2026" : autoInput;
+          console.log(chalk.cyan(`\n\uD83D\uDCCB Auto-sending queued message:`));
+          console.log(chalk.dim(`  ${preview}`));
+          console.log();
+        }
+      }
+
+      const input = autoInput ?? (await inputHandler.prompt());
+
+      // Handle EOF (Ctrl+D) -- but not if Ctrl+V set a pending image
+      if (input === null && !hasPendingImage()) {
+        console.log(chalk.dim("\nGoodbye!"));
+        break;
+      }
+
+      // Skip empty input -- but not if Ctrl+V set a pending image
+      if (!input && !hasPendingImage()) continue;
+
+      // Handle bare exit keywords (without the leading slash)
+      // Users often type "exit" or "quit" instead of "/exit" — treat them the same.
+      if (input && ["exit", "quit", "q"].includes(input.trim().toLowerCase())) {
+        console.log(chalk.dim("\nGoodbye!"));
+        break;
+      }
+
+      // Handle slash commands
+      let agentMessage: string | MessageContent | null = null;
+
+      if (input && isSlashCommand(input)) {
+        const prevProviderType = session.config.provider.type;
+        const prevProviderModel = session.config.provider.model;
+
+        const { command, args } = parseSlashCommand(input);
+        const commandResult = await executeSlashCommand(command, args, session);
+        if (commandResult.shouldExit) break;
+
+        // Re-initialize provider if /provider or /model changed it
+        if (
+          session.config.provider.type !== prevProviderType ||
+          session.config.provider.model !== prevProviderModel
+        ) {
+          try {
+            const newInternalId = getInternalProviderId(session.config.provider.type);
+            provider = await createProvider(newInternalId, {
+              model: session.config.provider.model || undefined,
+              maxTokens: session.config.provider.maxTokens,
+              project:
+                session.config.provider.project ??
+                process.env["VERTEX_PROJECT"] ??
+                process.env["GOOGLE_CLOUD_PROJECT"] ??
+                process.env["GCLOUD_PROJECT"],
+              location:
+                session.config.provider.location ??
+                process.env["VERTEX_LOCATION"] ??
+                process.env["GOOGLE_CLOUD_LOCATION"],
+            });
+            runtime.updateProvider(
+              newInternalId,
+              session.config.provider.model || undefined,
+              provider,
+            );
+            session.runtime = runtime;
+            initializeContextManager(session, provider);
+          } catch (err) {
+            // Provider re-init failed — revert session config to previous values so
+            // session.config stays consistent with the active provider object
+            session.config.provider.type = prevProviderType;
+            session.config.provider.model = prevProviderModel;
+            renderError(
+              `Failed to switch provider: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+
+        // If the skill returned a forkPrompt, inject it as the next agent message
+        if (commandResult.forkPrompt) {
+          agentMessage = commandResult.forkPrompt;
+          // Don't skip the agent turn — let it process the forked skill instructions
+        } else if (hasPendingImage()) {
+          // Check if slash command queued a multimodal message (e.g., /image)
+          const images = consumePendingImages();
+          // Combine user input text with image prompts
+          const imagePrompts = images.map((img) => img.prompt).join("\n");
+          const userText = input?.trim() || "";
+          const combinedText = userText ? `${userText}\n\n${imagePrompts}`.trim() : imagePrompts;
+          agentMessage = [
+            ...images.map(
+              (img) =>
+                ({
+                  type: "image",
+                  source: { type: "base64", media_type: img.media_type, data: img.data },
+                }) as ImageContent,
+            ),
+            {
+              type: "text",
+              text: combinedText,
+            } as TextContent,
+          ];
+          // Fall through to agent turn execution below
+        } else {
+          continue;
+        }
+      }
+
+      // Check if Ctrl+V set a pending image (outside slash command flow)
+      // This must run before intent recognition to avoid passing empty/null input
+      if (agentMessage === null && hasPendingImage()) {
         const images = consumePendingImages();
         // Combine user input text with image prompts
         const imagePrompts = images.map((img) => img.prompt).join("\n");
@@ -720,527 +771,773 @@ export async function startRepl(
             text: combinedText,
           } as TextContent,
         ];
-        // Fall through to agent turn execution below
-      } else {
-        continue;
-      }
-    }
-
-    // Check if Ctrl+V set a pending image (outside slash command flow)
-    // This must run before intent recognition to avoid passing empty/null input
-    if (agentMessage === null && hasPendingImage()) {
-      const images = consumePendingImages();
-      // Combine user input text with image prompts
-      const imagePrompts = images.map((img) => img.prompt).join("\n");
-      const userText = input?.trim() || "";
-      const combinedText = userText ? `${userText}\n\n${imagePrompts}`.trim() : imagePrompts;
-      agentMessage = [
-        ...images.map(
-          (img) =>
-            ({
-              type: "image",
-              source: { type: "base64", media_type: img.media_type, data: img.data },
-            }) as ImageContent,
-        ),
-        {
-          type: "text",
-          text: combinedText,
-        } as TextContent,
-      ];
-    }
-
-    // Detect intent from natural language (skip for image-only messages and when disabled)
-    if (agentMessage === null && input && isIntentRecognitionEnabled()) {
-      const intent = await intentRecognizer.recognize(input);
-
-      // If intent is not chat and has good confidence, offer to execute as command
-      if (intent.type !== "chat" && intent.confidence >= 0.6) {
-        const shouldExecute = await handleIntentConfirmation(intent, intentRecognizer);
-        if (shouldExecute) {
-          const { command, args } = intentRecognizer.intentToCommand(intent)!;
-          const intentResult = await executeSlashCommand(command, args, session);
-          if (intentResult.shouldExit) break;
-          if (intentResult.forkPrompt) {
-            agentMessage = intentResult.forkPrompt;
-            // Fall through to agent turn to process forked skill instructions
-          } else {
-            continue;
-          }
-        }
-        // If user chose not to execute, fall through to normal chat
-      }
-    }
-
-    // Use agentMessage if set by /image or Ctrl+V, otherwise use the raw text input
-    if (agentMessage === null) {
-      agentMessage = input ?? "";
-    }
-
-    // Save the original user message before any context injection.
-    // Used to re-send the task when user modifies during execution.
-    const originalUserMessage = typeof agentMessage === "string" ? agentMessage : null;
-    const replayUserMessage = buildReplayMessage(agentMessage);
-
-    // Auto-activate relevant skills based on user message
-    if (
-      session.skillRegistry &&
-      session.skillRegistry.config.autoActivate !== false &&
-      typeof agentMessage === "string" &&
-      agentMessage.length > 0
-    ) {
-      const matches = session.skillRegistry.findRelevantSkills(agentMessage, 3, 0.4);
-      const mdMatches = matches.filter((m) => m.skill.kind === "markdown");
-
-      if (mdMatches.length > 0) {
-        // Only deactivate previously auto-activated skills, preserve manual ones
-        for (const id of autoActivatedIds) {
-          session.skillRegistry.deactivateSkill(id);
-        }
-        autoActivatedIds.clear();
-        const activated: string[] = [];
-        for (const match of mdMatches) {
-          const ok = await session.skillRegistry.activateSkill(match.skill.id);
-          if (ok) {
-            activated.push(match.skill.name);
-            autoActivatedIds.add(match.skill.id);
-          }
-        }
-        if (activated.length > 0) {
-          renderInfo(`Skills: ${activated.join(", ")}`);
-        }
-      }
-    }
-
-    // Inject any pending interruption context from the previous turn
-    if (pendingInterruptionContext && typeof agentMessage === "string") {
-      agentMessage = agentMessage + pendingInterruptionContext;
-      pendingInterruptionContext = "";
-      pendingModificationPreview = "";
-    }
-
-    // Execute agent turn
-    // Single spinner for all states - avoids concurrent spinner issues
-    let activeSpinner: Spinner | null = null;
-    turnActiveSpinner = null;
-
-    // Helper to safely clear spinner - defined outside try for access in catch
-    // NOTE: Does NOT clear the echo buffer — the echo will re-attach to the
-    // next spinner via refresh(). Only explicit inputEcho.clear() resets the buffer
-    // (used on Enter, SIGINT, errors).
-    const clearSpinner = () => {
-      if (activeSpinner) {
-        activeSpinner.clear();
-        activeSpinner = null;
-        turnActiveSpinner = null;
-      }
-    };
-
-    // Helper to set spinner message (creates if needed)
-    // Merges base message + echo into a single spinner.update() to avoid
-    // double-render flickering (one update instead of two).
-    const setSpinner = (message: string) => {
-      currentSpinnerMessage = message;
-      feedbackSystem.updateSpinnerMessage(message);
-      if (activeSpinner) {
-        // Let inputEcho handle the single merged update (base + echo in one call)
-        inputEcho.refreshWith(message);
-      } else {
-        activeSpinner = createSpinner(message);
-        activeSpinner.start();
-        turnActiveSpinner = activeSpinner;
-        inputEcho.refreshWith(message);
-      }
-    };
-
-    // Thinking progress feedback - evolving messages while LLM processes
-    let thinkingInterval: NodeJS.Timeout | null = null;
-    let thinkingStartTime: number | null = null;
-
-    const clearThinkingInterval = () => {
-      if (thinkingInterval) {
-        clearInterval(thinkingInterval);
-        thinkingInterval = null;
-      }
-      thinkingStartTime = null;
-    };
-
-    // Create abort controller for Ctrl+C cancellation (outside try for catch access)
-    const abortController = new AbortController();
-    let wasAborted = false;
-
-    const sigintHandler = () => {
-      wasAborted = true;
-      abortController.abort();
-      inputEcho.clear();
-      concurrentCapture.stop();
-      feedbackSystem.reset();
-      clearThinkingInterval();
-      clearSpinner();
-      renderInfo("\nOperation cancelled");
-    };
-
-    // Declared outside try so finally block can access it for restoration
-    let originalSystemPrompt: string | undefined;
-
-    // Snapshot session message length before the turn starts.
-    // Used in the catch block to roll back any partial messages written by
-    // executeAgentTurn before it threw, keeping session.messages consistent.
-    const preCallMessageLength = session.messages.length;
-
-    try {
-      // Show contextual hint for first feature-like prompt when quality loop is off
-      if (
-        typeof agentMessage === "string" &&
-        !isQualityLoop() &&
-        !wasHintShown() &&
-        looksLikeFeatureRequest(agentMessage)
-      ) {
-        markHintShown();
-        console.log(formatQualityLoopHint());
       }
 
-      console.log(); // Blank line before response
+      // Detect intent from natural language (skip for image-only messages and when disabled)
+      if (agentMessage === null && input && isIntentRecognitionEnabled()) {
+        const intent = await intentRecognizer.recognize(input);
 
-      // If quality loop is active, route through the coco-fix-iterate skill (if available)
-      // or fall back to text protocol injection
-      let cocoForkPrompt: string | undefined;
-
-      if (isQualityLoop()) {
-        const skillId = "coco-fix-iterate";
-        const skillAvailable = session.skillRegistry?.has(skillId);
-
-        if (skillAvailable && typeof agentMessage === "string") {
-          // Integrated mode: route through the real quality-loop skill
-          const skillResult = await session.skillRegistry!.execute(skillId, agentMessage, {
-            cwd: session.projectPath,
-            session,
-            config: session.config,
-          });
-          if (skillResult.shouldFork && skillResult.output) {
-            cocoForkPrompt = skillResult.output;
-          }
-        } else {
-          // Fallback: text protocol injection (when skill not discovered)
-          originalSystemPrompt = session.config.agent.systemPrompt;
-          session.config.agent.systemPrompt =
-            originalSystemPrompt + "\n" + getQualityLoopSystemPrompt();
-        }
-      }
-
-      // Use skill-prepared prompt if available, otherwise use original message
-      const effectiveMessage = cocoForkPrompt ?? agentMessage;
-
-      // Pause normal input handler and start concurrent capture
-      // This allows the user to type messages during agent execution
-      inputHandler.pause();
-
-      // Track actioned interruptions and queued messages for this turn
-      const turnActionedInterruptions: ActionedInterruption[] = [];
-      const turnQueuedMessages: string[] = [];
-      // Track steering messages that are injected mid-turn without aborting
-      const turnSteeringMessages: string[] = [];
-      // Track pending LLM classification promises so we can await them after agent completes
-      const pendingClassifications: Promise<void>[] = [];
-      // Track async LLM error-explanation promises (fire-and-forget, printed as hints)
-      const pendingExplanations: Array<Promise<string | null>> = [];
-
-      concurrentCapture.reset();
-      inputEcho.reset();
-      concurrentCapture.start(
-        (msg) => {
-          // Step 1: Clear echo line (user pressed Enter, buffer is now empty)
-          inputEcho.clear();
-
-          const preview = msg.text.length > 60 ? msg.text.slice(0, 57) + "\u2026" : msg.text;
-          console.log(chalk.dim(`  \u2026 Classifying: ${preview}`));
-
-          // Step 2: Launch LLM classification (async, tracked for later await)
-          const classificationPromise = (async () => {
-            const classification = await llmClassifier.classify(msg, originalUserMessage);
-            const action = classification.action;
-            const sourceHint = classification.source === "keywords" ? chalk.dim(" (fast)") : "";
-
-            // Step 3: Execute the classified action
-            switch (action) {
-              case InterruptionAction.Abort:
-                wasAborted = true;
-                abortController.abort();
-                console.log(chalk.red(`  \u23F9 Aborting\u2026`) + sourceHint);
-                break;
-
-              case InterruptionAction.Modify:
-                turnActionedInterruptions.push({
-                  text: msg.text,
-                  type: InterruptionType.Modify,
-                  confidence: classification.source === "llm" ? 0.95 : 0.7,
-                  timestamp: msg.timestamp,
-                  action: InterruptionAction.Modify,
-                });
-                // Abort current execution so the task restarts with modification
-                wasAborted = true;
-                abortController.abort();
-                console.log(chalk.yellow(`  \u26A1 Modifying: `) + chalk.dim(preview) + sourceHint);
-                break;
-
-              case InterruptionAction.Steer:
-                turnSteeringMessages.push(msg.text);
-                console.log(
-                  chalk.magenta(`  \uD83C\uDFAF Steering: `) + chalk.dim(preview) + sourceHint,
-                );
-                break;
-
-              case InterruptionAction.Queue:
-                turnQueuedMessages.push(msg.text);
-                console.log(
-                  chalk.cyan(`  \uD83D\uDCCB Queued: `) + chalk.dim(preview) + sourceHint,
-                );
-                break;
-            }
-          })();
-
-          pendingClassifications.push(classificationPromise);
-        },
-        (buffer) => inputEcho.render(buffer),
-      );
-
-      process.once("SIGINT", sigintHandler);
-
-      // Track if we've cleared the spinner for this turn's streaming phase
-      let streamStarted = false;
-      // Track LLM call count and last tool category for contextual spinner messages
-      let llmCallCount = 0;
-      let lastToolGroup: string | null = null;
-
-      await ensureRequestedMcpConnections(extractMessageText(effectiveMessage));
-
-      const result = await executeAgentTurn(session, effectiveMessage, provider, toolRegistry, {
-        onStream: (chunk) => {
-          // Clear any lingering spinner on first text chunk to avoid overlap
-          if (!streamStarted) {
-            streamStarted = true;
-            clearSpinner();
-          }
-          renderStreamChunk(chunk);
-        },
-        onToolStart: (tc, index, total) => {
-          // Update spinner with descriptive message about what tool is doing
-          const desc = getToolRunningDescription(
-            tc.name,
-            (tc.input ?? {}) as Record<string, unknown>,
-          );
-          const msg = total > 1 ? `${desc} [${index}/${total}]` : desc;
-          setSpinner(msg);
-        },
-        onToolEnd: (result) => {
-          // For tools taking >3s, show a "Done" checkmark so the user
-          // gets clear feedback that the operation completed successfully.
-          // For very fast tools, just clear the spinner silently.
-          const elapsed =
-            activeSpinner && typeof activeSpinner.getElapsed === "function"
-              ? activeSpinner.getElapsed()
-              : 0;
-          if (elapsed >= 3) {
-            // Show completion with elapsed time — any non-trivial operation.
-            // Clear echo first so the placeholder line isn't baked into the permanent log.
-            inputEcho.clear();
-            activeSpinner?.stop();
-            activeSpinner = null;
-            turnActiveSpinner = null;
-          } else {
-            clearSpinner();
-          }
-          renderToolStart(result.name, result.input);
-          renderToolEnd(result);
-          // Track tool category for contextual thinking spinner messages
-          lastToolGroup = getToolGroup(result.name);
-          // Fire async LLM explanation for errors that look technically opaque
-          if (
-            !result.result.success &&
-            result.result.error &&
-            looksLikeTechnicalJargon(result.result.error)
-          ) {
-            pendingExplanations.push(humanizeWithLLM(result.result.error, result.name, provider));
-          }
-          // Show waiting spinner while LLM processes the result
-          // In quality loop mode, add hint that quality checks may follow
-          if (isQualityLoop() && llmCallCount > 0) {
-            setSpinner(`Processing results (iter. ${llmCallCount})...`);
-          } else if (isQualityLoop()) {
-            setSpinner("Processing results & checking quality...");
-          } else {
-            setSpinner("Processing...");
-          }
-        },
-        onToolSkipped: (tc, reason) => {
-          clearSpinner();
-          console.log(chalk.yellow(`\u2298 Skipped ${tc.name}: ${reason}`));
-        },
-        onThinkingStart: () => {
-          llmCallCount++;
-          // Build contextual initial message using iteration count + last tool context
-          const iterPrefix = isQualityLoop() && llmCallCount > 1 ? `Iter. ${llmCallCount} · ` : "";
-          const afterText = lastToolGroup ? `after ${lastToolGroup} · ` : "";
-          setSpinner(`${iterPrefix}${afterText}Thinking...`);
-          thinkingStartTime = Date.now();
-          thinkingInterval = setInterval(() => {
-            if (!thinkingStartTime) return;
-            const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
-            if (elapsed < 4) return;
-
-            // Show quality loop feedback if active, with iteration context
-            const prefix = isQualityLoop() && llmCallCount > 1 ? `Iter. ${llmCallCount} · ` : "";
-            if (isQualityLoop()) {
-              if (elapsed < 8) setSpinner(`${prefix}Analyzing results...`);
-              else if (elapsed < 15) setSpinner(`${prefix}Running quality checks...`);
-              else if (elapsed < 25) setSpinner(`${prefix}Iterating for quality...`);
-              else if (elapsed < 40) setSpinner(`${prefix}Verifying implementation...`);
-              else setSpinner(`${prefix}Still working... (${elapsed}s)`);
+        // If intent is not chat and has good confidence, offer to execute as command
+        if (intent.type !== "chat" && intent.confidence >= 0.6) {
+          const shouldExecute = await handleIntentConfirmation(intent, intentRecognizer);
+          if (shouldExecute) {
+            const { command, args } = intentRecognizer.intentToCommand(intent)!;
+            const intentResult = await executeSlashCommand(command, args, session);
+            if (intentResult.shouldExit) break;
+            if (intentResult.forkPrompt) {
+              agentMessage = intentResult.forkPrompt;
+              // Fall through to agent turn to process forked skill instructions
             } else {
-              if (elapsed < 8) setSpinner("Analyzing request...");
-              else if (elapsed < 12) setSpinner("Planning approach...");
-              else if (elapsed < 16) setSpinner("Preparing tools...");
-              else setSpinner(`Still working... (${elapsed}s)`);
+              continue;
             }
-          }, 2000);
-        },
-        onThinkingEnd: () => {
-          clearThinkingInterval();
-          // If the LLM took >2s to think, leave a visible ✓ checkmark so the
-          // user can see how long each reasoning step took.
-          const thinkingElapsed = activeSpinner?.getElapsed() ?? 0;
-          if (thinkingElapsed >= 2) {
-            // Clear echo first so the placeholder line isn't baked into the permanent log.
-            inputEcho.clear();
-            activeSpinner?.stop();
-            activeSpinner = null;
-            turnActiveSpinner = null;
-          } else {
-            clearSpinner();
           }
-        },
-        onToolPreparing: (toolName) => {
-          setSpinner(getToolPreparingDescription(toolName));
-        },
-        onBeforeConfirmation: () => {
-          // Clear spinner/echo and suspend concurrent capture before confirmation dialog
-          inputEcho.suspend();
-          clearSpinner();
-          concurrentCapture.suspend();
-        },
-        onAfterConfirmation: () => {
-          // Resume concurrent capture and echo after confirmation dialog
-          concurrentCapture.resumeCapture();
-          inputEcho.resume();
-        },
-        signal: abortController.signal,
-        // Mid-task steering: drain any accumulated steering messages between iterations
-        onSteeringCheck: () => {
-          const messages = turnSteeringMessages.splice(0, turnSteeringMessages.length);
-          return messages;
-        },
-        // Wire lifecycle hooks (PreToolUse/PostToolUse) if configured in .coco/hooks.json
-        hookRegistry,
-        hookExecutor,
-      });
-
-      // Remove SIGINT handler and clean up thinking interval after agent turn
-      clearThinkingInterval();
-      clearSpinner();
-      inputEcho.clear();
-      process.off("SIGINT", sigintHandler);
-
-      // Stop concurrent capture and wait for any pending LLM classifications
-      const remainingMessages = concurrentCapture.stop();
-      feedbackSystem.reset();
-
-      // Wait for all pending classification promises to settle before processing results.
-      // This ensures LLM responses that arrive after the agent finishes are still processed.
-      if (pendingClassifications.length > 0) {
-        await Promise.allSettled(pendingClassifications);
+          // If user chose not to execute, fall through to normal chat
+        }
       }
 
-      // Any messages still in the queue (captured after last selector or never processed)
-      // are added to the next turn queue
-      for (const msg of remainingMessages) {
-        turnQueuedMessages.push(msg.text);
+      // Use agentMessage if set by /image or Ctrl+V, otherwise use the raw text input
+      if (agentMessage === null) {
+        agentMessage = input ?? "";
       }
 
-      // Process actioned interruptions (Modify → abort + re-send task with modification context)
-      // Session was rolled back by agent-loop on abort — it's clean.
-      // We inject completed tool results directly into the context string so the
-      // agent can reuse prior work without relying on session message history.
-      if (turnActionedInterruptions.length > 0) {
-        const modParts = turnActionedInterruptions.map((i) => i.text).join("\n- ");
-        const toolSummary = summarizeToolResults(result.toolCalls);
-        const ctx = [
-          "\n\n## The user interrupted and modified the task:",
-          `- ${modParts}`,
-          toolSummary,
-          `Apply the user's modification to the original task: "${replayUserMessage || ""}"`,
-        ].join("\n");
-        pendingInterruptionContext = ctx;
-        pendingModificationPreview = modParts;
+      // Save the original user message before any context injection.
+      // Used to re-send the task when user modifies during execution.
+      const originalUserMessage = typeof agentMessage === "string" ? agentMessage : null;
+      const replayUserMessage = buildReplayMessage(agentMessage);
 
-        // Re-send the original task so the agent retries with the modification applied.
-        if (replayUserMessage) {
-          pendingQueuedMessages = [replayUserMessage, ...turnQueuedMessages];
+      // Auto-activate relevant skills based on user message
+      if (
+        session.skillRegistry &&
+        session.skillRegistry.config.autoActivate !== false &&
+        typeof agentMessage === "string" &&
+        agentMessage.length > 0
+      ) {
+        const matches = session.skillRegistry.findRelevantSkills(agentMessage, 3, 0.4);
+        const mdMatches = matches.filter((m) => m.skill.kind === "markdown");
+
+        if (mdMatches.length > 0) {
+          // Only deactivate previously auto-activated skills, preserve manual ones
+          for (const id of autoActivatedIds) {
+            session.skillRegistry.deactivateSkill(id);
+          }
+          autoActivatedIds.clear();
+          const activated: string[] = [];
+          for (const match of mdMatches) {
+            const ok = await session.skillRegistry.activateSkill(match.skill.id);
+            if (ok) {
+              activated.push(match.skill.name);
+              autoActivatedIds.add(match.skill.id);
+            }
+          }
+          if (activated.length > 0) {
+            renderInfo(`Skills: ${activated.join(", ")}`);
+          }
+        }
+      }
+
+      // Inject any pending interruption context from the previous turn
+      if (pendingInterruptionContext && typeof agentMessage === "string") {
+        agentMessage = agentMessage + pendingInterruptionContext;
+        pendingInterruptionContext = "";
+        pendingModificationPreview = "";
+      }
+
+      // Execute agent turn
+      // Single spinner for all states - avoids concurrent spinner issues
+      let activeSpinner: Spinner | null = null;
+      turnActiveSpinner = null;
+
+      // Helper to safely clear spinner - defined outside try for access in catch
+      // NOTE: Does NOT clear the echo buffer — the echo will re-attach to the
+      // next spinner via refresh(). Only explicit inputEcho.clear() resets the buffer
+      // (used on Enter, SIGINT, errors).
+      const clearSpinner = () => {
+        if (activeSpinner) {
+          activeSpinner.clear();
+          activeSpinner = null;
+          turnActiveSpinner = null;
+        }
+      };
+
+      // Helper to set spinner message (creates if needed)
+      // Merges base message + echo into a single spinner.update() to avoid
+      // double-render flickering (one update instead of two).
+      const setSpinner = (message: string) => {
+        currentSpinnerMessage = message;
+        feedbackSystem.updateSpinnerMessage(message);
+        if (activeSpinner) {
+          // Let inputEcho handle the single merged update (base + echo in one call)
+          inputEcho.refreshWith(message);
         } else {
-          pendingQueuedMessages = turnQueuedMessages;
+          activeSpinner = createSpinner(message);
+          activeSpinner.start();
+          turnActiveSpinner = activeSpinner;
+          inputEcho.refreshWith(message);
         }
-      } else if (turnQueuedMessages.length > 0) {
-        // No modifications, just queued messages for next turn
-        pendingQueuedMessages = turnQueuedMessages;
-        console.log(
-          chalk.cyan(`  \uD83D\uDCCB ${turnQueuedMessages.length} message(s) queued for next turn`),
+      };
+
+      // Thinking progress feedback - evolving messages while LLM processes
+      let thinkingInterval: NodeJS.Timeout | null = null;
+      let thinkingStartTime: number | null = null;
+
+      const clearThinkingInterval = () => {
+        if (thinkingInterval) {
+          clearInterval(thinkingInterval);
+          thinkingInterval = null;
+        }
+        thinkingStartTime = null;
+      };
+
+      // Create abort controller for Ctrl+C cancellation (outside try for catch access)
+      const abortController = new AbortController();
+      let wasAborted = false;
+
+      const sigintHandler = () => {
+        wasAborted = true;
+        abortController.abort();
+        inputEcho.clear();
+        concurrentCapture.stop();
+        feedbackSystem.reset();
+        clearThinkingInterval();
+        clearSpinner();
+        renderInfo("\nOperation cancelled");
+      };
+
+      // Declared outside try so finally block can access it for restoration
+      let originalSystemPrompt: string | undefined;
+
+      // Snapshot session message length before the turn starts.
+      // Used in the catch block to roll back any partial messages written by
+      // executeAgentTurn before it threw, keeping session.messages consistent.
+      const preCallMessageLength = session.messages.length;
+
+      try {
+        // Show contextual hint for first feature-like prompt when quality loop is off
+        if (
+          typeof agentMessage === "string" &&
+          !isQualityLoop() &&
+          !wasHintShown() &&
+          looksLikeFeatureRequest(agentMessage)
+        ) {
+          markHintShown();
+          console.log(formatQualityLoopHint());
+        }
+
+        console.log(); // Blank line before response
+
+        // If quality loop is active, route through the coco-fix-iterate skill (if available)
+        // or fall back to text protocol injection
+        let cocoForkPrompt: string | undefined;
+
+        if (isQualityLoop()) {
+          const skillId = "coco-fix-iterate";
+          const skillAvailable = session.skillRegistry?.has(skillId);
+
+          if (skillAvailable && typeof agentMessage === "string") {
+            // Integrated mode: route through the real quality-loop skill
+            const skillResult = await session.skillRegistry!.execute(skillId, agentMessage, {
+              cwd: session.projectPath,
+              session,
+              config: session.config,
+            });
+            if (skillResult.shouldFork && skillResult.output) {
+              cocoForkPrompt = skillResult.output;
+            }
+          } else {
+            // Fallback: text protocol injection (when skill not discovered)
+            originalSystemPrompt = session.config.agent.systemPrompt;
+            session.config.agent.systemPrompt =
+              originalSystemPrompt + "\n" + getQualityLoopSystemPrompt();
+          }
+        }
+
+        // Use skill-prepared prompt if available, otherwise use original message
+        const effectiveMessage = cocoForkPrompt ?? agentMessage;
+
+        // Pause normal input handler and start concurrent capture
+        // This allows the user to type messages during agent execution
+        inputHandler.pause();
+
+        // Track actioned interruptions and queued messages for this turn
+        const turnActionedInterruptions: ActionedInterruption[] = [];
+        const turnQueuedMessages: string[] = [];
+        // Track steering messages that are injected mid-turn without aborting
+        const turnSteeringMessages: string[] = [];
+        // Track pending LLM classification promises so we can await them after agent completes
+        const pendingClassifications: Promise<void>[] = [];
+        // Track async LLM error-explanation promises (fire-and-forget, printed as hints)
+        const pendingExplanations: Array<Promise<string | null>> = [];
+
+        concurrentCapture.reset();
+        inputEcho.reset();
+        concurrentCapture.start(
+          (msg) => {
+            // Step 1: Clear echo line (user pressed Enter, buffer is now empty)
+            inputEcho.clear();
+
+            const preview = msg.text.length > 60 ? msg.text.slice(0, 57) + "\u2026" : msg.text;
+            console.log(chalk.dim(`  \u2026 Classifying: ${preview}`));
+
+            // Step 2: Launch LLM classification (async, tracked for later await)
+            const classificationPromise = (async () => {
+              const classification = await llmClassifier.classify(msg, originalUserMessage);
+              const action = classification.action;
+              const sourceHint = classification.source === "keywords" ? chalk.dim(" (fast)") : "";
+
+              // Step 3: Execute the classified action
+              switch (action) {
+                case InterruptionAction.Abort:
+                  wasAborted = true;
+                  abortController.abort();
+                  console.log(chalk.red(`  \u23F9 Aborting\u2026`) + sourceHint);
+                  break;
+
+                case InterruptionAction.Modify:
+                  turnActionedInterruptions.push({
+                    text: msg.text,
+                    type: InterruptionType.Modify,
+                    confidence: classification.source === "llm" ? 0.95 : 0.7,
+                    timestamp: msg.timestamp,
+                    action: InterruptionAction.Modify,
+                  });
+                  // Abort current execution so the task restarts with modification
+                  wasAborted = true;
+                  abortController.abort();
+                  console.log(
+                    chalk.yellow(`  \u26A1 Modifying: `) + chalk.dim(preview) + sourceHint,
+                  );
+                  break;
+
+                case InterruptionAction.Steer:
+                  turnSteeringMessages.push(msg.text);
+                  console.log(
+                    chalk.magenta(`  \uD83C\uDFAF Steering: `) + chalk.dim(preview) + sourceHint,
+                  );
+                  break;
+
+                case InterruptionAction.Queue:
+                  turnQueuedMessages.push(msg.text);
+                  console.log(
+                    chalk.cyan(`  \uD83D\uDCCB Queued: `) + chalk.dim(preview) + sourceHint,
+                  );
+                  break;
+              }
+            })();
+
+            pendingClassifications.push(classificationPromise);
+          },
+          (buffer) => inputEcho.render(buffer),
         );
-      }
 
-      // Show abort summary if cancelled, preserving partial content
-      if (wasAborted || result.aborted) {
-        // Show partial content if any was captured before abort
-        if (result.partialContent) {
-          console.log(chalk.dim("\n[Partial response before cancellation]:"));
-          console.log(result.partialContent);
+        process.once("SIGINT", sigintHandler);
+
+        // Track if we've cleared the spinner for this turn's streaming phase
+        let streamStarted = false;
+        // Track LLM call count and last tool category for contextual spinner messages
+        let llmCallCount = 0;
+        let lastToolGroup: string | null = null;
+
+        await ensureRequestedMcpConnections(extractMessageText(effectiveMessage));
+
+        const result = await executeAgentTurn(session, effectiveMessage, provider, toolRegistry, {
+          onStream: (chunk) => {
+            // Clear any lingering spinner on first text chunk to avoid overlap
+            if (!streamStarted) {
+              streamStarted = true;
+              clearSpinner();
+            }
+            renderStreamChunk(chunk);
+          },
+          onToolStart: (tc, index, total) => {
+            // Update spinner with descriptive message about what tool is doing
+            const desc = getToolRunningDescription(
+              tc.name,
+              (tc.input ?? {}) as Record<string, unknown>,
+            );
+            const msg = total > 1 ? `${desc} [${index}/${total}]` : desc;
+            setSpinner(msg);
+          },
+          onToolEnd: (result) => {
+            // For tools taking >3s, show a "Done" checkmark so the user
+            // gets clear feedback that the operation completed successfully.
+            // For very fast tools, just clear the spinner silently.
+            const elapsed =
+              activeSpinner && typeof activeSpinner.getElapsed === "function"
+                ? activeSpinner.getElapsed()
+                : 0;
+            if (elapsed >= 3) {
+              // Show completion with elapsed time — any non-trivial operation.
+              // Clear echo first so the placeholder line isn't baked into the permanent log.
+              inputEcho.clear();
+              activeSpinner?.stop();
+              activeSpinner = null;
+              turnActiveSpinner = null;
+            } else {
+              clearSpinner();
+            }
+            renderToolStart(result.name, result.input);
+            renderToolEnd(result);
+            // Track tool category for contextual thinking spinner messages
+            lastToolGroup = getToolGroup(result.name);
+            // Fire async LLM explanation for errors that look technically opaque
+            if (
+              !result.result.success &&
+              result.result.error &&
+              looksLikeTechnicalJargon(result.result.error)
+            ) {
+              pendingExplanations.push(humanizeWithLLM(result.result.error, result.name, provider));
+            }
+            // Show waiting spinner while LLM processes the result
+            // In quality loop mode, add hint that quality checks may follow
+            if (isQualityLoop() && llmCallCount > 0) {
+              setSpinner(`Processing results (iter. ${llmCallCount})...`);
+            } else if (isQualityLoop()) {
+              setSpinner("Processing results & checking quality...");
+            } else {
+              setSpinner("Processing...");
+            }
+          },
+          onToolSkipped: (tc, reason) => {
+            clearSpinner();
+            console.log(chalk.yellow(`\u2298 Skipped ${tc.name}: ${reason}`));
+          },
+          onThinkingStart: () => {
+            llmCallCount++;
+            // Build contextual initial message using iteration count + last tool context
+            const iterPrefix =
+              isQualityLoop() && llmCallCount > 1 ? `Iter. ${llmCallCount} · ` : "";
+            const afterText = lastToolGroup ? `after ${lastToolGroup} · ` : "";
+            setSpinner(`${iterPrefix}${afterText}Thinking...`);
+            thinkingStartTime = Date.now();
+            thinkingInterval = setInterval(() => {
+              if (!thinkingStartTime) return;
+              const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
+              if (elapsed < 4) return;
+
+              // Show quality loop feedback if active, with iteration context
+              const prefix = isQualityLoop() && llmCallCount > 1 ? `Iter. ${llmCallCount} · ` : "";
+              if (isQualityLoop()) {
+                if (elapsed < 8) setSpinner(`${prefix}Analyzing results...`);
+                else if (elapsed < 15) setSpinner(`${prefix}Running quality checks...`);
+                else if (elapsed < 25) setSpinner(`${prefix}Iterating for quality...`);
+                else if (elapsed < 40) setSpinner(`${prefix}Verifying implementation...`);
+                else setSpinner(`${prefix}Still working... (${elapsed}s)`);
+              } else {
+                if (elapsed < 8) setSpinner("Analyzing request...");
+                else if (elapsed < 12) setSpinner("Planning approach...");
+                else if (elapsed < 16) setSpinner("Preparing tools...");
+                else setSpinner(`Still working... (${elapsed}s)`);
+              }
+            }, 2000);
+          },
+          onThinkingEnd: () => {
+            clearThinkingInterval();
+            // If the LLM took >2s to think, leave a visible ✓ checkmark so the
+            // user can see how long each reasoning step took.
+            const thinkingElapsed = activeSpinner?.getElapsed() ?? 0;
+            if (thinkingElapsed >= 2) {
+              // Clear echo first so the placeholder line isn't baked into the permanent log.
+              inputEcho.clear();
+              activeSpinner?.stop();
+              activeSpinner = null;
+              turnActiveSpinner = null;
+            } else {
+              clearSpinner();
+            }
+          },
+          onToolPreparing: (toolName) => {
+            setSpinner(getToolPreparingDescription(toolName));
+          },
+          onBeforeConfirmation: () => {
+            // Clear spinner/echo and suspend concurrent capture before confirmation dialog
+            inputEcho.suspend();
+            clearSpinner();
+            concurrentCapture.suspend();
+          },
+          onAfterConfirmation: () => {
+            // Resume concurrent capture and echo after confirmation dialog
+            concurrentCapture.resumeCapture();
+            inputEcho.resume();
+          },
+          signal: abortController.signal,
+          // Mid-task steering: drain any accumulated steering messages between iterations
+          onSteeringCheck: () => {
+            const messages = turnSteeringMessages.splice(0, turnSteeringMessages.length);
+            return messages;
+          },
+          // Wire lifecycle hooks (PreToolUse/PostToolUse) if configured in .coco/hooks.json
+          hookRegistry,
+          hookExecutor,
+        });
+
+        // Remove SIGINT handler and clean up thinking interval after agent turn
+        clearThinkingInterval();
+        clearSpinner();
+        inputEcho.clear();
+        process.off("SIGINT", sigintHandler);
+
+        // Stop concurrent capture and wait for any pending LLM classifications
+        const remainingMessages = concurrentCapture.stop();
+        feedbackSystem.reset();
+
+        // Wait for all pending classification promises to settle before processing results.
+        // This ensures LLM responses that arrive after the agent finishes are still processed.
+        if (pendingClassifications.length > 0) {
+          await Promise.allSettled(pendingClassifications);
         }
 
-        const summary = formatAbortSummary(result.toolCalls);
-        if (summary) {
-          console.log(summary);
+        // Any messages still in the queue (captured after last selector or never processed)
+        // are added to the next turn queue
+        for (const msg of remainingMessages) {
+          turnQueuedMessages.push(msg.text);
         }
 
-        // Still track partial token usage
-        if (result.usage.inputTokens > 0 || result.usage.outputTokens > 0) {
-          addTokenUsage(result.usage.inputTokens, result.usage.outputTokens);
-          renderUsageStats(
-            result.usage.inputTokens,
-            result.usage.outputTokens,
-            result.toolCalls.length,
+        // Process actioned interruptions (Modify → abort + re-send task with modification context)
+        // Session was rolled back by agent-loop on abort — it's clean.
+        // We inject completed tool results directly into the context string so the
+        // agent can reuse prior work without relying on session message history.
+        if (turnActionedInterruptions.length > 0) {
+          const modParts = turnActionedInterruptions.map((i) => i.text).join("\n- ");
+          const toolSummary = summarizeToolResults(result.toolCalls);
+          const ctx = [
+            "\n\n## The user interrupted and modified the task:",
+            `- ${modParts}`,
+            toolSummary,
+            `Apply the user's modification to the original task: "${replayUserMessage || ""}"`,
+          ].join("\n");
+          pendingInterruptionContext = ctx;
+          pendingModificationPreview = modParts;
+
+          // Re-send the original task so the agent retries with the modification applied.
+          if (replayUserMessage) {
+            pendingQueuedMessages = [replayUserMessage, ...turnQueuedMessages];
+          } else {
+            pendingQueuedMessages = turnQueuedMessages;
+          }
+        } else if (turnQueuedMessages.length > 0) {
+          // No modifications, just queued messages for next turn
+          pendingQueuedMessages = turnQueuedMessages;
+          console.log(
+            chalk.cyan(
+              `  \uD83D\uDCCB ${turnQueuedMessages.length} message(s) queued for next turn`,
+            ),
           );
         }
 
-        if (result.toolCalls.length > 0) {
-          console.log(chalk.dim("   Type your request again to resume where you left off."));
+        // Show abort summary if cancelled, preserving partial content
+        if (wasAborted || result.aborted) {
+          // Show partial content if any was captured before abort
+          if (result.partialContent) {
+            console.log(chalk.dim("\n[Partial response before cancellation]:"));
+            console.log(result.partialContent);
+          }
+
+          const summary = formatAbortSummary(result.toolCalls);
+          if (summary) {
+            console.log(summary);
+          }
+
+          // Still track partial token usage
+          if (result.usage.inputTokens > 0 || result.usage.outputTokens > 0) {
+            addTokenUsage(result.usage.inputTokens, result.usage.outputTokens);
+            renderUsageStats(
+              result.usage.inputTokens,
+              result.usage.outputTokens,
+              result.toolCalls.length,
+            );
+          }
+
+          if (result.toolCalls.length > 0) {
+            console.log(chalk.dim("   Type your request again to resume where you left off."));
+          }
+          console.log();
+          continue;
         }
-        console.log();
-        continue;
-      }
 
-      // ── Streaming error returned by agent-loop ────────────────────────────
-      // agent-loop catches streaming errors and returns a result with `error`
-      // set instead of throwing. We need to handle this explicitly so the LLM
-      // recovery path fires (re-queue with error context) rather than treating
-      // the error as a successful turn.
-      if (result.error) {
-        // Roll back any partial messages agent-loop added before the error
-        session.messages.length = preCallMessageLength;
+        // ── Streaming error returned by agent-loop ────────────────────────────
+        // agent-loop catches streaming errors and returns a result with `error`
+        // set instead of throwing. We need to handle this explicitly so the LLM
+        // recovery path fires (re-queue with error context) rather than treating
+        // the error as a successful turn.
+        if (result.error) {
+          // Roll back any partial messages agent-loop added before the error
+          session.messages.length = preCallMessageLength;
 
+          if (
+            replayUserMessage !== null &&
+            consecutiveErrors < MAX_CONSECUTIVE_ERRORS &&
+            !isNonRetryableProviderError(new Error(result.error))
+          ) {
+            consecutiveErrors++;
+            const humanized = humanizeProviderError(new Error(result.error));
+            renderError(humanized);
+            let switched = false;
+            if (enableAutoSwitchProvider && consecutiveErrors >= AUTO_SWITCH_THRESHOLD) {
+              switched = await attemptAutoProviderSwitch(humanized, replayUserMessage);
+            } else if (!enableAutoSwitchProvider && consecutiveErrors >= AUTO_SWITCH_THRESHOLD) {
+              console.log(
+                chalk.dim(
+                  "   Tip: repeated provider errors detected. Use /provider, or enable `agent.enableAutoSwitchProvider`.",
+                ),
+              );
+            }
+            console.log(
+              chalk.dim(
+                `   ↻ Retrying automatically (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})…`,
+              ),
+            );
+            const recoveryPrefix =
+              (switched
+                ? `[System: Provider auto-switched to "${session.config.provider.type}" after repeated failures. Adapt your strategy to this provider and continue.]\n\n`
+                : "") +
+              `[System: The previous attempt failed with: "${humanized}". ` +
+              `Please try a different approach, tool, or method to complete the task. ` +
+              `Do NOT repeat the exact same action that caused the error.]\n\n`;
+            pendingQueuedMessages = [recoveryPrefix + replayUserMessage];
+          } else {
+            renderError(result.error);
+            console.log(chalk.dim("   Automatic recovery stopped for this turn."));
+            showRecoveryAlternatives();
+            consecutiveErrors = 0;
+          }
+          console.log();
+          continue;
+        }
+
+        console.log(); // Blank line after response
+
+        // Print any LLM-powered error hints that resolved during the agent turn.
+        // We race against a short timeout so we never block output here.
+        if (pendingExplanations.length > 0) {
+          const settled = await Promise.race([
+            Promise.allSettled(pendingExplanations),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+          ]);
+          if (settled) {
+            for (const r of settled) {
+              if (r.status === "fulfilled" && r.value) {
+                console.log(chalk.dim(`   \u{1F4A1} ${r.value}`));
+              }
+            }
+          }
+        }
+
+        // Parse and display quality report if quality loop produced one
+        if (isQualityLoop() && result.content) {
+          const qualityResult = parseQualityLoopReport(result.content);
+          if (qualityResult) {
+            console.log(formatQualityResult(qualityResult));
+          }
+        }
+
+        // Track token usage for /cost command
+        addTokenUsage(result.usage.inputTokens, result.usage.outputTokens);
+
+        // Show usage stats
+        renderUsageStats(
+          result.usage.inputTokens,
+          result.usage.outputTokens,
+          result.toolCalls.length,
+        );
+
+        // Fire-and-forget: refresh git context without blocking the loop
+        getGitContext(session.projectPath)
+          .then((ctx) => {
+            if (ctx) gitContext = ctx;
+          })
+          .catch(() => {});
+
+        // Compact context if needed — do this before rendering the status bar so the
+        // bar always shows the post-compaction percentage (never a stale pre-compaction value).
+        const usageBefore = getContextUsagePercent(session);
+        let usageForDisplay = usageBefore;
+        try {
+          const compactAbort = new AbortController();
+          const compactTimeout = setTimeout(() => compactAbort.abort(), 30_000);
+          const compactSigint = () => compactAbort.abort();
+          process.once("SIGINT", compactSigint);
+
+          const compactSpinner = createSpinner("Compacting context");
+          compactSpinner.start();
+
+          try {
+            const compactionResult = await checkAndCompactContext(
+              session,
+              provider,
+              compactAbort.signal,
+              toolRegistry,
+            );
+            if (compactionResult?.wasCompacted) {
+              usageForDisplay = getContextUsagePercent(session);
+              compactSpinner.stop(
+                `Context compacted (${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%)`,
+              );
+              // Persistent compact notice — stays in scroll history
+              console.log(
+                chalk.dim(
+                  `  ⟳ Context compacted · ${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%`,
+                ),
+              );
+              warned75 = false;
+              warned90 = false;
+            } else {
+              compactSpinner.clear();
+            }
+          } catch {
+            compactSpinner.stop("⚠ Context compaction failed");
+            console.log(
+              chalk.yellow(
+                "  ⚠ Context compaction failed — context unchanged. Use /clear if needed.",
+              ),
+            );
+          } finally {
+            clearTimeout(compactTimeout);
+            process.off("SIGINT", compactSigint);
+          }
+        } catch {
+          console.log(
+            chalk.yellow(
+              "  ⚠ Context compaction failed — context unchanged. Use /clear if needed.",
+            ),
+          );
+        }
+
+        // Render status bar with post-compaction context usage
+        renderStatusBar(session.projectPath, session.config, gitContext, usageForDisplay);
+
+        // Context usage warnings
+        if (usageForDisplay >= 90 && !warned90) {
+          warned90 = true;
+          console.log(
+            chalk.red(
+              "  ✗ Context critical (" +
+                usageForDisplay.toFixed(0) +
+                "%) — use /clear to start fresh",
+            ),
+          );
+        } else if (usageForDisplay >= 75 && !warned75) {
+          warned75 = true;
+          console.log(
+            chalk.yellow(
+              "  ⚠  Context at " +
+                usageForDisplay.toFixed(0) +
+                "% — use /clear to start fresh or /compact to summarize",
+            ),
+          );
+        }
+
+        console.log(); // Extra spacing
+
+        // Successful turn — reset the consecutive error recovery counter
+        consecutiveErrors = 0;
+      } catch (error) {
+        // Always clear spinner, thinking interval, capture, echo on error
+        clearThinkingInterval();
+        inputEcho.clear();
+        clearSpinner();
+        concurrentCapture.stop();
+        feedbackSystem.reset();
+        process.off("SIGINT", sigintHandler);
+
+        // ── Abort: silent continuation ───────────────────────────────────────
+        // Covers DOM AbortError, Anthropic/OpenAI APIUserAbortError, message
+        // fallback, and any error that occurred after the signal was already set.
+        if (isAbortError(error, abortController.signal)) {
+          continue;
+        }
+
+        const errorMsg = error instanceof Error ? error.message : String(error);
+
+        // ── Context overflow (Anthropic / Copilot) ───────────────────────────
+        if (errorMsg.includes("prompt token count") && errorMsg.includes("exceeds the limit")) {
+          renderError("Context window full — compacting conversation history...");
+          try {
+            const compactionResult = await checkAndCompactContext(
+              session,
+              provider,
+              undefined,
+              toolRegistry,
+            );
+            if (compactionResult?.wasCompacted) {
+              console.log(chalk.green("   \u2713 Context compacted. Please retry your message."));
+            } else {
+              console.log(
+                chalk.yellow("   \u26A0 Could not compact context. Use /clear to start fresh."),
+              );
+            }
+          } catch {
+            console.log(
+              chalk.yellow("   \u26A0 Context compaction failed. Use /clear to start fresh."),
+            );
+          }
+          continue;
+        }
+
+        // ── LM Studio context length error ───────────────────────────────────
+        if (errorMsg.includes("context length") || errorMsg.includes("tokens to keep")) {
+          renderError(errorMsg);
+          console.log();
+          console.log(chalk.yellow("   \u{1F4A1} This is a context length error."));
+          console.log(chalk.yellow("   The model's context window is too small for Coco.\n"));
+          console.log(chalk.white("   To fix this in LM Studio:"));
+          console.log(chalk.dim("   1. Click on the model name in the top bar"));
+          console.log(chalk.dim("   2. Find 'Context Length' setting"));
+          console.log(chalk.dim("   3. Increase it (recommended: 16384 or higher)"));
+          console.log(chalk.dim("   4. Click 'Reload Model'\n"));
+          continue;
+        }
+
+        // ── Timeout ───────────────────────────────────────────────────────────
+        if (
+          errorMsg.includes("timeout") ||
+          errorMsg.includes("Timeout") ||
+          errorMsg.includes("ETIMEDOUT") ||
+          errorMsg.includes("ECONNRESET")
+        ) {
+          renderError("Request timed out");
+          console.log(
+            chalk.dim("   The model took too long to respond. Try again or use a faster model."),
+          );
+          continue;
+        }
+
+        // ── Non-retryable provider errors (quota, auth, billing) ───────────────
+        // These errors won't be fixed by retrying - show immediately to user
+        const userFacingError = getUserFacingProviderError(error);
+        if (userFacingError) {
+          consecutiveErrors = 0;
+          session.messages.length = preCallMessageLength;
+          renderError(userFacingError);
+          console.log();
+          console.log(chalk.yellow("   📋 Suggestions:"));
+          console.log(chalk.dim("   • Check your subscription status and billing"));
+          console.log(chalk.dim("   • Try a different provider: /provider"));
+          console.log(chalk.dim("   • Switch to a different model: /model"));
+          if (!enableAutoSwitchProvider) {
+            console.log(
+              chalk.dim("   • Optional: enable `agent.enableAutoSwitchProvider` for auto-failover"),
+            );
+          }
+          showRecoveryAlternatives();
+          console.log();
+          continue;
+        }
+
+        // ── LLM recovery path ─────────────────────────────────────────────────
+        // If there is an original user message to replay and we still have
+        // recovery budget, roll back any partial session state and re-queue the
+        // message with error context so the LLM can try a different approach.
         if (
           replayUserMessage !== null &&
           consecutiveErrors < MAX_CONSECUTIVE_ERRORS &&
-          !isNonRetryableProviderError(new Error(result.error))
+          !isNonRetryableProviderError(error)
         ) {
           consecutiveErrors++;
-          const humanized = humanizeProviderError(new Error(result.error));
+
+          // Roll back any partial messages written before the throw
+          session.messages.length = preCallMessageLength;
+
+          const humanized = humanizeProviderError(error);
           renderError(humanized);
           let switched = false;
           if (enableAutoSwitchProvider && consecutiveErrors >= AUTO_SWITCH_THRESHOLD) {
@@ -1257,330 +1554,52 @@ export async function startRepl(
               `   ↻ Retrying automatically (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})…`,
             ),
           );
+
+          // Re-queue the original message with error context prepended so the
+          // LLM knows what failed and can attempt a different approach.
           const recoveryPrefix =
             (switched
               ? `[System: Provider auto-switched to "${session.config.provider.type}" after repeated failures. Adapt your strategy to this provider and continue.]\n\n`
               : "") +
-            `[System: The previous attempt failed with: "${humanized}". ` +
+            `[System: The previous attempt failed with the following error: "${humanized}". ` +
             `Please try a different approach, tool, or method to complete the task. ` +
             `Do NOT repeat the exact same action that caused the error.]\n\n`;
           pendingQueuedMessages = [recoveryPrefix + replayUserMessage];
-        } else {
-          renderError(result.error);
-          console.log(chalk.dim("   Automatic recovery stopped for this turn."));
-          showRecoveryAlternatives();
+          continue;
+        }
+
+        // ── Recovery budget exhausted ─────────────────────────────────────────
+        // Roll back partial state, show the final error, and return to prompt.
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
           consecutiveErrors = 0;
+          session.messages.length = preCallMessageLength;
+          renderError(errorMsg);
+          console.log(chalk.dim("   Recovery exhausted after multiple attempts."));
+          showRecoveryAlternatives();
+          continue;
         }
-        console.log();
-        continue;
-      }
 
-      console.log(); // Blank line after response
-
-      // Print any LLM-powered error hints that resolved during the agent turn.
-      // We race against a short timeout so we never block output here.
-      if (pendingExplanations.length > 0) {
-        const settled = await Promise.race([
-          Promise.allSettled(pendingExplanations),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
-        ]);
-        if (settled) {
-          for (const r of settled) {
-            if (r.status === "fulfilled" && r.value) {
-              console.log(chalk.dim(`   \u{1F4A1} ${r.value}`));
-            }
-          }
-        }
-      }
-
-      // Parse and display quality report if quality loop produced one
-      if (isQualityLoop() && result.content) {
-        const qualityResult = parseQualityLoopReport(result.content);
-        if (qualityResult) {
-          console.log(formatQualityResult(qualityResult));
-        }
-      }
-
-      // Track token usage for /cost command
-      addTokenUsage(result.usage.inputTokens, result.usage.outputTokens);
-
-      // Show usage stats
-      renderUsageStats(
-        result.usage.inputTokens,
-        result.usage.outputTokens,
-        result.toolCalls.length,
-      );
-
-      // Fire-and-forget: refresh git context without blocking the loop
-      getGitContext(session.projectPath)
-        .then((ctx) => {
-          if (ctx) gitContext = ctx;
-        })
-        .catch(() => {});
-
-      // Compact context if needed — do this before rendering the status bar so the
-      // bar always shows the post-compaction percentage (never a stale pre-compaction value).
-      const usageBefore = getContextUsagePercent(session);
-      let usageForDisplay = usageBefore;
-      try {
-        const compactAbort = new AbortController();
-        const compactTimeout = setTimeout(() => compactAbort.abort(), 30_000);
-        const compactSigint = () => compactAbort.abort();
-        process.once("SIGINT", compactSigint);
-
-        const compactSpinner = createSpinner("Compacting context");
-        compactSpinner.start();
-
-        try {
-          const compactionResult = await checkAndCompactContext(
-            session,
-            provider,
-            compactAbort.signal,
-            toolRegistry,
-          );
-          if (compactionResult?.wasCompacted) {
-            usageForDisplay = getContextUsagePercent(session);
-            compactSpinner.stop(
-              `Context compacted (${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%)`,
-            );
-            // Persistent compact notice — stays in scroll history
-            console.log(
-              chalk.dim(
-                `  ⟳ Context compacted · ${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%`,
-              ),
-            );
-            warned75 = false;
-            warned90 = false;
-          } else {
-            compactSpinner.clear();
-          }
-        } catch {
-          compactSpinner.stop("⚠ Context compaction failed");
-          console.log(
-            chalk.yellow(
-              "  ⚠ Context compaction failed — context unchanged. Use /clear if needed.",
-            ),
-          );
-        } finally {
-          clearTimeout(compactTimeout);
-          process.off("SIGINT", compactSigint);
-        }
-      } catch {
-        console.log(
-          chalk.yellow("  ⚠ Context compaction failed — context unchanged. Use /clear if needed."),
-        );
-      }
-
-      // Render status bar with post-compaction context usage
-      renderStatusBar(session.projectPath, session.config, gitContext, usageForDisplay);
-
-      // Context usage warnings
-      if (usageForDisplay >= 90 && !warned90) {
-        warned90 = true;
-        console.log(
-          chalk.red(
-            "  ✗ Context critical (" +
-              usageForDisplay.toFixed(0) +
-              "%) — use /clear to start fresh",
-          ),
-        );
-      } else if (usageForDisplay >= 75 && !warned75) {
-        warned75 = true;
-        console.log(
-          chalk.yellow(
-            "  ⚠  Context at " +
-              usageForDisplay.toFixed(0) +
-              "% — use /clear to start fresh or /compact to summarize",
-          ),
-        );
-      }
-
-      console.log(); // Extra spacing
-
-      // Successful turn — reset the consecutive error recovery counter
-      consecutiveErrors = 0;
-    } catch (error) {
-      // Always clear spinner, thinking interval, capture, echo on error
-      clearThinkingInterval();
-      inputEcho.clear();
-      clearSpinner();
-      concurrentCapture.stop();
-      feedbackSystem.reset();
-      process.off("SIGINT", sigintHandler);
-
-      // ── Abort: silent continuation ───────────────────────────────────────
-      // Covers DOM AbortError, Anthropic/OpenAI APIUserAbortError, message
-      // fallback, and any error that occurred after the signal was already set.
-      if (isAbortError(error, abortController.signal)) {
-        continue;
-      }
-
-      const errorMsg = error instanceof Error ? error.message : String(error);
-
-      // ── Context overflow (Anthropic / Copilot) ───────────────────────────
-      if (errorMsg.includes("prompt token count") && errorMsg.includes("exceeds the limit")) {
-        renderError("Context window full — compacting conversation history...");
-        try {
-          const compactionResult = await checkAndCompactContext(
-            session,
-            provider,
-            undefined,
-            toolRegistry,
-          );
-          if (compactionResult?.wasCompacted) {
-            console.log(chalk.green("   \u2713 Context compacted. Please retry your message."));
-          } else {
-            console.log(
-              chalk.yellow("   \u26A0 Could not compact context. Use /clear to start fresh."),
-            );
-          }
-        } catch {
-          console.log(
-            chalk.yellow("   \u26A0 Context compaction failed. Use /clear to start fresh."),
-          );
-        }
-        continue;
-      }
-
-      // ── LM Studio context length error ───────────────────────────────────
-      if (errorMsg.includes("context length") || errorMsg.includes("tokens to keep")) {
-        renderError(errorMsg);
-        console.log();
-        console.log(chalk.yellow("   \u{1F4A1} This is a context length error."));
-        console.log(chalk.yellow("   The model's context window is too small for Coco.\n"));
-        console.log(chalk.white("   To fix this in LM Studio:"));
-        console.log(chalk.dim("   1. Click on the model name in the top bar"));
-        console.log(chalk.dim("   2. Find 'Context Length' setting"));
-        console.log(chalk.dim("   3. Increase it (recommended: 16384 or higher)"));
-        console.log(chalk.dim("   4. Click 'Reload Model'\n"));
-        continue;
-      }
-
-      // ── Timeout ───────────────────────────────────────────────────────────
-      if (
-        errorMsg.includes("timeout") ||
-        errorMsg.includes("Timeout") ||
-        errorMsg.includes("ETIMEDOUT") ||
-        errorMsg.includes("ECONNRESET")
-      ) {
-        renderError("Request timed out");
-        console.log(
-          chalk.dim("   The model took too long to respond. Try again or use a faster model."),
-        );
-        continue;
-      }
-
-      // ── Non-retryable provider errors (quota, auth, billing) ───────────────
-      // These errors won't be fixed by retrying - show immediately to user
-      const userFacingError = getUserFacingProviderError(error);
-      if (userFacingError) {
+        // ── Fallback ──────────────────────────────────────────────────────────
+        // Non-retryable error with no user-facing message and budget not yet
+        // exhausted (e.g. 400 "unsupported parameter"). Roll back partial state
+        // and return to prompt without retrying.
+        session.messages.length = preCallMessageLength;
         consecutiveErrors = 0;
-        session.messages.length = preCallMessageLength;
-        renderError(userFacingError);
-        console.log();
-        console.log(chalk.yellow("   📋 Suggestions:"));
-        console.log(chalk.dim("   • Check your subscription status and billing"));
-        console.log(chalk.dim("   • Try a different provider: /provider"));
-        console.log(chalk.dim("   • Switch to a different model: /model"));
-        if (!enableAutoSwitchProvider) {
-          console.log(
-            chalk.dim("   • Optional: enable `agent.enableAutoSwitchProvider` for auto-failover"),
-          );
-        }
-        showRecoveryAlternatives();
-        console.log();
-        continue;
-      }
-
-      // ── LLM recovery path ─────────────────────────────────────────────────
-      // If there is an original user message to replay and we still have
-      // recovery budget, roll back any partial session state and re-queue the
-      // message with error context so the LLM can try a different approach.
-      if (
-        replayUserMessage !== null &&
-        consecutiveErrors < MAX_CONSECUTIVE_ERRORS &&
-        !isNonRetryableProviderError(error)
-      ) {
-        consecutiveErrors++;
-
-        // Roll back any partial messages written before the throw
-        session.messages.length = preCallMessageLength;
-
-        const humanized = humanizeProviderError(error);
-        renderError(humanized);
-        let switched = false;
-        if (enableAutoSwitchProvider && consecutiveErrors >= AUTO_SWITCH_THRESHOLD) {
-          switched = await attemptAutoProviderSwitch(humanized, replayUserMessage);
-        } else if (!enableAutoSwitchProvider && consecutiveErrors >= AUTO_SWITCH_THRESHOLD) {
-          console.log(
-            chalk.dim(
-              "   Tip: repeated provider errors detected. Use /provider, or enable `agent.enableAutoSwitchProvider`.",
-            ),
-          );
-        }
-        console.log(
-          chalk.dim(
-            `   ↻ Retrying automatically (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})…`,
-          ),
-        );
-
-        // Re-queue the original message with error context prepended so the
-        // LLM knows what failed and can attempt a different approach.
-        const recoveryPrefix =
-          (switched
-            ? `[System: Provider auto-switched to "${session.config.provider.type}" after repeated failures. Adapt your strategy to this provider and continue.]\n\n`
-            : "") +
-          `[System: The previous attempt failed with the following error: "${humanized}". ` +
-          `Please try a different approach, tool, or method to complete the task. ` +
-          `Do NOT repeat the exact same action that caused the error.]\n\n`;
-        pendingQueuedMessages = [recoveryPrefix + replayUserMessage];
-        continue;
-      }
-
-      // ── Recovery budget exhausted ─────────────────────────────────────────
-      // Roll back partial state, show the final error, and return to prompt.
-      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-        consecutiveErrors = 0;
-        session.messages.length = preCallMessageLength;
         renderError(errorMsg);
-        console.log(chalk.dim("   Recovery exhausted after multiple attempts."));
         showRecoveryAlternatives();
-        continue;
-      }
-
-      // ── Fallback ──────────────────────────────────────────────────────────
-      // Non-retryable error with no user-facing message and budget not yet
-      // exhausted (e.g. 400 "unsupported parameter"). Roll back partial state
-      // and return to prompt without retrying.
-      session.messages.length = preCallMessageLength;
-      consecutiveErrors = 0;
-      renderError(errorMsg);
-      showRecoveryAlternatives();
-    } finally {
-      // Always clean up spinner and resume input handler after agent turn
-      clearSpinner();
-      inputHandler.resume();
-      // Quality loop: always restore original system prompt after every turn
-      if (originalSystemPrompt !== undefined) {
-        session.config.agent.systemPrompt = originalSystemPrompt;
+      } finally {
+        // Always clean up spinner and resume input handler after agent turn
+        clearSpinner();
+        inputHandler.resume();
+        // Quality loop: always restore original system prompt after every turn
+        if (originalSystemPrompt !== undefined) {
+          session.config.agent.systemPrompt = originalSystemPrompt;
+        }
       }
     }
+  } finally {
+    await Promise.allSettled(cleanupRepl.map(async (cleanup) => cleanup()));
   }
-
-  inputHandler.close();
-  feedbackSystem.dispose();
-
-  // Graceful MCP shutdown: await here so async cleanup completes before the
-  // process exits normally. The fire-and-forget on "exit" stays as a fallback.
-  if (mcpManager) {
-    await mcpManager.stopAll().catch(() => {
-      // Ignore errors during shutdown
-    });
-  }
-
-  // Clean up SIGTERM listener to prevent listener leak on repeated startRepl calls.
-  // process.once removes it automatically if SIGTERM fires; we remove it here on normal exit.
-  process.off("SIGTERM", sigtermHandler);
 }
 
 /**

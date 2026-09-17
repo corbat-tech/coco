@@ -14,6 +14,7 @@ const mockFs = {
   unlink: vi.fn(),
   readdir: vi.fn(),
   rm: vi.fn(),
+  realpath: vi.fn(async (value: string) => value),
 };
 
 vi.mock("node:fs/promises", () => ({
@@ -25,6 +26,7 @@ vi.mock("node:fs/promises", () => ({
   unlink: mockFs.unlink,
   readdir: mockFs.readdir,
   rm: mockFs.rm,
+  realpath: mockFs.realpath,
 }));
 
 // Mock crypto
@@ -353,7 +355,7 @@ describe("manager.ts", () => {
     });
 
     it("should handle non-existing file with empty content", async () => {
-      mockFs.readFile.mockRejectedValueOnce(new Error("ENOENT"));
+      mockFs.readFile.mockRejectedValueOnce(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
 
       const { createCheckpointManager } = await import("./manager.js");
       const manager = createCheckpointManager();
@@ -721,164 +723,14 @@ describe("manager.ts", () => {
   });
 
   describe("rewind()", () => {
-    it("should restore file content", async () => {
-      const storedCheckpoint = {
-        id: "ckpt_1",
-        sessionId: "session_1",
-        type: "file",
-        createdAt: new Date().toISOString(),
-        automatic: true,
-        files: [
-          {
-            id: "file_1",
-            filePath: "/path/to/file.ts",
-            contentHash: "hash123",
-            createdAt: new Date().toISOString(),
-            triggeredBy: "edit_file",
-            size: 20,
-          },
-        ],
-      };
-
-      mockFs.readdir.mockResolvedValue([{ name: "session_1", isDirectory: () => true }]);
-      mockFs.readFile.mockImplementation((filePath: string) => {
-        if (filePath.endsWith("ckpt_1.json")) {
-          return Promise.resolve(JSON.stringify(storedCheckpoint));
-        }
-        if (filePath.includes("hash123.txt")) {
-          return Promise.resolve("original content here");
-        }
-        return Promise.reject(new Error("ENOENT"));
-      });
-
-      const { createCheckpointManager } = await import("./manager.js");
-      const manager = createCheckpointManager();
-
-      const result = await manager.rewind({
-        checkpointId: "ckpt_1",
-        restoreFiles: true,
-        restoreConversation: false,
-      });
-
-      expect(result.filesRestored).toContain("/path/to/file.ts");
-      expect(mockFs.writeFile).toHaveBeenCalledWith(
-        "/path/to/file.ts",
-        "original content here",
-        "utf-8",
-      );
-    });
-
-    it("should handle multiple files", async () => {
-      const storedCheckpoint = {
-        id: "ckpt_1",
-        sessionId: "session_1",
-        type: "file",
-        createdAt: new Date().toISOString(),
-        automatic: true,
-        files: [
-          {
-            id: "file_1",
-            filePath: "/path/file1.ts",
-            contentHash: "hash1",
-            createdAt: new Date().toISOString(),
-            triggeredBy: "edit_file",
-            size: 10,
-          },
-          {
-            id: "file_2",
-            filePath: "/path/file2.ts",
-            contentHash: "hash2",
-            createdAt: new Date().toISOString(),
-            triggeredBy: "edit_file",
-            size: 10,
-          },
-        ],
-      };
-
-      mockFs.readdir.mockResolvedValue([{ name: "session_1", isDirectory: () => true }]);
-      mockFs.readFile.mockImplementation((filePath: string) => {
-        if (filePath.endsWith("ckpt_1.json")) {
-          return Promise.resolve(JSON.stringify(storedCheckpoint));
-        }
-        if (filePath.includes("hash1.txt")) {
-          return Promise.resolve("content 1");
-        }
-        if (filePath.includes("hash2.txt")) {
-          return Promise.resolve("content 2");
-        }
-        return Promise.reject(new Error("ENOENT"));
-      });
-
-      const { createCheckpointManager } = await import("./manager.js");
-      const manager = createCheckpointManager();
-
-      const result = await manager.rewind({
-        checkpointId: "ckpt_1",
-        restoreFiles: true,
-        restoreConversation: false,
-      });
-
-      expect(result.filesRestored).toHaveLength(2);
-      expect(result.filesRestored).toContain("/path/file1.ts");
-      expect(result.filesRestored).toContain("/path/file2.ts");
-    });
-
-    it("should respect restoreFiles flag", async () => {
-      const storedCheckpoint = {
-        id: "ckpt_1",
-        sessionId: "session_1",
-        type: "file",
-        createdAt: new Date().toISOString(),
-        automatic: true,
-        files: [
-          {
-            id: "file_1",
-            filePath: "/path/file.ts",
-            contentHash: "hash1",
-            createdAt: new Date().toISOString(),
-            triggeredBy: "edit_file",
-            size: 10,
-          },
-        ],
-      };
-
-      mockFs.readdir.mockResolvedValue([{ name: "session_1", isDirectory: () => true }]);
-      mockFs.readFile.mockImplementation((filePath: string) => {
-        if (filePath.endsWith("ckpt_1.json")) {
-          return Promise.resolve(JSON.stringify(storedCheckpoint));
-        }
-        if (filePath.includes("hash1.txt")) {
-          return Promise.resolve("content");
-        }
-        return Promise.reject(new Error("ENOENT"));
-      });
-
-      const { createCheckpointManager } = await import("./manager.js");
-      const manager = createCheckpointManager();
-
-      // Don't restore files
-      const result = await manager.rewind({
-        checkpointId: "ckpt_1",
-        restoreFiles: false,
-        restoreConversation: false,
-      });
-
-      expect(result.filesRestored).toHaveLength(0);
-      expect(mockFs.writeFile).not.toHaveBeenCalledWith(
-        "/path/file.ts",
-        expect.anything(),
-        expect.anything(),
-      );
-    });
-
-    it("should respect restoreConversation flag", async () => {
-      const storedCheckpoint = {
+    function stored(files: unknown[] = []) {
+      return {
         id: "ckpt_1",
         sessionId: "session_1",
         type: "combined",
         createdAt: new Date().toISOString(),
         automatic: true,
-        files: [],
+        files,
         conversation: {
           id: "conv_1",
           sessionId: "session_1",
@@ -887,137 +739,80 @@ describe("manager.ts", () => {
           createdAt: new Date().toISOString(),
         },
       };
-
+    }
+    it("requires host session and project authority", async () => {
       mockFs.readdir.mockResolvedValue([{ name: "session_1", isDirectory: () => true }]);
-      mockFs.readFile.mockResolvedValue(JSON.stringify(storedCheckpoint));
-
+      mockFs.readFile.mockResolvedValue(JSON.stringify(stored()));
       const { createCheckpointManager } = await import("./manager.js");
       const manager = createCheckpointManager();
-
-      const result = await manager.rewind({
+      await expect(
+        manager.rewind({ checkpointId: "ckpt_1", restoreFiles: true, restoreConversation: true }),
+      ).rejects.toThrow(/authority/);
+      await expect(
+        manager.rewind({
+          checkpointId: "ckpt_1",
+          restoreFiles: true,
+          restoreConversation: true,
+          sessionId: "foreign",
+          projectPath: "/path",
+        }),
+      ).rejects.toThrow(/authority/);
+      expect(mockFs.writeFile).not.toHaveBeenCalled();
+    });
+    it("restores conversation only within a matching session", async () => {
+      mockFs.readdir.mockResolvedValue([{ name: "session_1", isDirectory: () => true }]);
+      mockFs.readFile.mockResolvedValue(JSON.stringify(stored()));
+      const { createCheckpointManager } = await import("./manager.js");
+      const result = await createCheckpointManager().rewind({
         checkpointId: "ckpt_1",
         restoreFiles: false,
         restoreConversation: true,
+        sessionId: "session_1",
+        projectPath: "/path",
       });
-
       expect(result.conversationRestored).toBe(true);
       expect(result.messagesAfterRestore).toBe(1);
     });
-
-    it("should respect excludeFiles option", async () => {
-      const storedCheckpoint = {
-        id: "ckpt_1",
-        sessionId: "session_1",
-        type: "file",
-        createdAt: new Date().toISOString(),
-        automatic: true,
-        files: [
-          {
-            id: "file_1",
-            filePath: "/path/file1.ts",
-            contentHash: "hash1",
-            createdAt: new Date().toISOString(),
-            triggeredBy: "edit_file",
-            size: 10,
-          },
-          {
-            id: "file_2",
-            filePath: "/path/file2.ts",
-            contentHash: "hash2",
-            createdAt: new Date().toISOString(),
-            triggeredBy: "edit_file",
-            size: 10,
-          },
-        ],
-      };
-
+    it("keeps legacy file checkpoints readable but refuses unsafe restoration", async () => {
+      const checkpoint = stored([
+        {
+          id: "file_1",
+          filePath: "/path/file.ts",
+          contentHash: "hash",
+          createdAt: new Date().toISOString(),
+          triggeredBy: "edit_file",
+          size: 6,
+        },
+      ]);
       mockFs.readdir.mockResolvedValue([{ name: "session_1", isDirectory: () => true }]);
-      mockFs.readFile.mockImplementation((filePath: string) => {
-        if (filePath.endsWith("ckpt_1.json")) {
-          return Promise.resolve(JSON.stringify(storedCheckpoint));
-        }
-        if (filePath.includes("hash1.txt")) {
-          return Promise.resolve("content 1");
-        }
-        if (filePath.includes("hash2.txt")) {
-          return Promise.resolve("content 2");
-        }
-        return Promise.reject(new Error("ENOENT"));
-      });
-
+      mockFs.readFile.mockImplementation(async (filePath: string) =>
+        filePath.endsWith("hash.txt") ? "before" : JSON.stringify(checkpoint),
+      );
       const { createCheckpointManager } = await import("./manager.js");
-      const manager = createCheckpointManager();
-
-      const result = await manager.rewind({
+      const result = await createCheckpointManager().rewind({
         checkpointId: "ckpt_1",
         restoreFiles: true,
-        restoreConversation: false,
-        excludeFiles: ["/path/file1.ts"],
-      });
-
-      expect(result.filesRestored).toHaveLength(1);
-      expect(result.filesRestored).not.toContain("/path/file1.ts");
-      expect(result.filesRestored).toContain("/path/file2.ts");
-    });
-
-    it("should report failed restorations", async () => {
-      const storedCheckpoint = {
-        id: "ckpt_1",
+        restoreConversation: true,
         sessionId: "session_1",
-        type: "file",
-        createdAt: new Date().toISOString(),
-        automatic: true,
-        files: [
-          {
-            id: "file_1",
-            filePath: "/readonly/file.ts",
-            contentHash: "hash1",
-            createdAt: new Date().toISOString(),
-            triggeredBy: "edit_file",
-            size: 10,
-          },
-        ],
-      };
-
-      mockFs.readdir.mockResolvedValue([{ name: "session_1", isDirectory: () => true }]);
-      mockFs.readFile.mockImplementation((filePath: string) => {
-        if (filePath.endsWith("ckpt_1.json")) {
-          return Promise.resolve(JSON.stringify(storedCheckpoint));
-        }
-        if (filePath.includes("hash1.txt")) {
-          return Promise.resolve("content");
-        }
-        return Promise.reject(new Error("ENOENT"));
+        projectPath: "/path",
       });
-      mockFs.writeFile.mockRejectedValueOnce(new Error("Permission denied"));
-
-      const { createCheckpointManager } = await import("./manager.js");
-      const manager = createCheckpointManager();
-
-      const result = await manager.rewind({
-        checkpointId: "ckpt_1",
-        restoreFiles: true,
-        restoreConversation: false,
-      });
-
-      expect(result.filesFailed).toHaveLength(1);
-      expect(result.filesFailed[0]?.path).toBe("/readonly/file.ts");
-      expect(result.filesFailed[0]?.error).toContain("Permission denied");
+      expect(result.filesRestored).toEqual([]);
+      expect(result.filesFailed[0]?.error).toMatch(/Legacy/);
+      expect(result.conversationRestored).toBe(false);
+      expect(mockFs.writeFile).not.toHaveBeenCalled();
     });
-
-    it("should throw error for non-existent checkpoint", async () => {
+    it("throws for a missing checkpoint", async () => {
       mockFs.readdir.mockResolvedValue([]);
-
       const { createCheckpointManager } = await import("./manager.js");
-      const manager = createCheckpointManager();
-
       await expect(
-        manager.rewind({
-          checkpointId: "nonexistent",
+        createCheckpointManager().rewind({
+          checkpointId: "missing",
           restoreFiles: true,
           restoreConversation: false,
+          sessionId: "session_1",
+          projectPath: "/path",
         }),
-      ).rejects.toThrow("Checkpoint not found");
+      ).rejects.toThrow(/not found/);
     });
   });
 
