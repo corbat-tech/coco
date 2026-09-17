@@ -44,7 +44,11 @@ if (headlessJson) {
 program
   .name("coco")
   .description("Corbat-Coco: Autonomous Coding Agent with Self-Review and Quality Convergence")
-  .version(VERSION, "-v, --version", "Output the current version");
+  .version(VERSION, "-v, --version", "Output the current version")
+  .addHelpText(
+    "after",
+    "\nRun coco to start an interactive session. See coco chat --help for provider, model, and headless (--print/--output) options.",
+  );
 
 // Register commands
 registerInitCommand(program);
@@ -64,8 +68,7 @@ program
   .description("Configure AI provider and API key")
   .action(async () => {
     const result = await runOnboardingV2();
-    if (result) {
-      await saveConfiguration(result);
+    if (result && (await saveConfiguration(result))) {
       console.log("\n✅ Configuration saved! Run `coco` to start coding.");
     } else {
       console.log("\n❌ Setup cancelled.");
@@ -140,11 +143,10 @@ program
       // Run setup if requested
       if (options.setup) {
         const result = await runOnboardingV2();
-        if (!result) {
+        if (!result || !(await saveConfiguration(result))) {
           console.log("\n❌ Setup cancelled.");
           return;
         }
-        await saveConfiguration(result);
       }
 
       // Use last used provider from preferences (falls back to env/anthropic)

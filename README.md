@@ -18,13 +18,13 @@
 > **2.42 previews target npm `next`; stable `latest` is unchanged.** Current work adds explicit quality evidence, session-owned POSIX background jobs and conservative file recovery. Missing measurements prevent quality acceptance. Windows background launch and rollback of shell/remote effects remain unsupported. Use trusted repositories and review changes. See [delivery progress and verification](https://github.com/corbat-tech/coco/blob/codex/coco-evolution/docs/evolution/REMAINING_DELIVERIES.md).
 
 **Coco is an open-source CLI coding agent and reusable agent runtime for real-world automation.**
-It plans work, edits files, runs tools/tests, and iterates until quality checks pass. Underneath the CLI, Coco exposes a runtime for building custom agents with providers, tools, permissions, sessions, events, and workflows.
+It plans work, edits files, runs tools/tests, and can iterate on failures. A completed agent turn does not certify that every quality check passed. Underneath the CLI, Coco exposes a runtime for building custom agents with providers, tools, permissions, sessions, events, and workflows.
 
 ---
 
 ## What Is Coco?
 
-Coco is a CLI coding agent for real projects. It can plan work, edit files, run tools and tests, and iterate until a quality threshold is reached.
+Coco is a CLI coding agent for real projects. It can plan work, edit files, run tools and tests, and iterate on verified failures and review findings.
 
 Core idea: instead of a single "here is some code" response, Coco runs an implementation loop with validation and fixes.
 
@@ -67,7 +67,7 @@ Use Coco Runtime as a base for custom agents: internal assistants, support copil
 **Coding Agent**
 
 - Multi-step execution in one run: explore -> implement -> test -> refine.
-- Quality mode with convergence scoring (configurable threshold and max iterations).
+- Quality mode that requests tests and iterative self-review; model-reported scores remain unverified.
 - Native tool use for files, git, shell, search/web, review, diff, build/test, and MCP servers.
 - Session-oriented REPL with slash commands, context compaction, and resumable workflows.
 
@@ -81,7 +81,7 @@ Use Coco Runtime as a base for custom agents: internal assistants, support copil
 
 - Provider retry/circuit-breaker support for long sessions.
 - Robust tool-call parsing and safer stream error handling.
-- Strict read-only planning mode by default.
+- A strict read-only tool policy when `/plan` is active; ordinary coding sessions can make changes.
 
 **Extensibility**
 
@@ -126,22 +126,32 @@ export ANTHROPIC_API_KEY="..."
 # Start interactive mode
 coco
 
-# Or run a direct task
-coco
 # Then type your task into the interactive prompt.
 ```
 
 On first run, Coco guides provider/model setup.
+
+For automation after configuring a provider:
+
+```bash
+coco chat --print "Inspect the project and summarize its structure" --output json
+coco chat --help
+```
+
+Headless mode can execute coding tools without interactive confirmation. Use a trusted checkout, a narrow task and appropriate host permissions; the JSON success field reports turn completion, not verified code quality. `--runtime-runner` remains experimental.
+
+The install command above selects stable `latest`. To evaluate this preview explicitly, install `@corbat-tech/coco@next`; verify the version before comparing preview behavior.
+
 
 ## Typical Workflow
 
 1. You give a task.
 2. Coco proposes or derives a plan.
 3. Coco edits code and runs tools/tests.
-4. In quality mode, Coco scores output and iterates on weak points.
+4. In quality mode, Coco requests tests and self-review, then iterates on findings. Use the separate quality analysis tools for measured evidence.
 5. Coco returns summary + diffs/results.
 
-Quality mode is configurable and can be turned on/off per session.
+Quality mode is configurable and can be turned on/off per session. Missing measurements are not passing results, and a model score is not a release gate.
 
 ## Runtime Reuse
 

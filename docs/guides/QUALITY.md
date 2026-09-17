@@ -1,10 +1,36 @@
 # Quality Analysis Guide
 
-How Corbat-Coco measures, reports, and enforces code quality.
+This guide describes the 2.42 preview contracts. Check `coco --version`; npm `latest` and `next` may point to different releases.
+
+## Three different kinds of feedback
+
+- `/quality` asks the language model to review its work. It is explicitly **unverified self-review**. Its prose or score does not authorize acceptance.
+- `review_code` inspects Git changes with patterns and optional linting. Its approval applies to the requested checks; it is not a complete security or requirements audit. A missing base or unavailable requested linter prevents approval.
+- `coco check` and `calculate_quality` produce an evidence-backed evaluation. Acceptance requires complete, current measurements; unavailable tools and failed execution cannot become a passing score.
+
+## Run and save an evaluation
+
+```bash
+coco check --path ./my-project
+coco check --path ./my-project --output json --output-file ./quality.json
+coco check --path ./my-project --output markdown --output-file ./quality.md
+```
+
+Reports are written only when `--output-file` is supplied; there is no automatic report after every agent reply. JSON, Markdown and HTML are supported. By default the command exits nonzero when the evaluation fails its minimum. `--no-fail` changes the exit behavior for inspection; it does not turn an incomplete evaluation into a pass.
+
+Only evaluate a trusted project: checks execute the project's test/build commands. Inspect its scripts and dependencies first.
+
+## Evidence and acceptance
+
+Every dimension records one of `measured`, `not_applicable`, `unavailable` or `error`, with its evidence/reason. Only measured dimensions contribute effective weight. Not-applicable dimensions can be excluded with a stated reason; unavailable or erroneous evidence makes acceptance incomplete.
+
+Tests, coverage and the project snapshot must belong to the same evaluation. Old coverage files are not a substitute for a new run. The current source hash also binds review and acceptance: editing the project invalidates earlier evidence. Cancellation and command failure remain failures.
+
+A complete report can still fail thresholds. Conversely, an iteration can stop because it reached its budget or stopped improving without passing. Read the acceptance fields and reasons, not just an overall number.
 
 ## Quality Dimensions
 
-Coco evaluates code across **12 dimensions** (0–100 each):
+The evaluator has **12 dimensions** (0–100). Some use static heuristics; a score is not a proof that requirements are correct or that no vulnerability exists.
 
 | Dimension | Weight | What it measures |
 |-----------|-------:|-----------------|
@@ -21,219 +47,26 @@ Coco evaluates code across **12 dimensions** (0–100 each):
 | Documentation | 4% | JSDoc / Javadoc coverage |
 | Style | 3% | Lint and formatting compliance |
 
-**Default minimum:** 85/100 overall, 80% coverage, 100 security
+**Acceptance floor:** 85/100 overall, 80% coverage and the required security threshold, plus complete evidence tied to the current project snapshot.
 
-## Supported Languages
+## Language support and limits
 
-| Language | ID | Analyzers |
-|----------|----|-----------|
-| TypeScript | `typescript` | All 12 dimensions |
-| JavaScript | `javascript` | All 12 dimensions |
-| React + TypeScript | `react-typescript` | All 12 + React-specific |
-| React + JavaScript | `react-javascript` | All 12 + React-specific |
-| Java | `java` | Complexity, Security, Style, Documentation, Coverage (JaCoCo) |
+The certified measurement path currently supports JavaScript/TypeScript source, including `.mjs`, `.cjs`, `.mts` and `.cts`. It needs compatible local test, coverage, build and lint tooling. An unsupported setup reports unavailable/error instead of inventing a score.
 
-Language is **auto-detected** from file extensions. Override with:
-```json
-// .coco.config.json
-{ "language": "react-typescript" }
-```
+The language registry also contains Java and React heuristics (for example, Javadoc/JaCoCo hints and React accessibility/hook patterns). These remain available to existing callers, but do not override the certified measurement contract. Their existence does not certify all twelve dimensions for every language. Static security patterns are not a vulnerability scanner or a penetration test.
 
-## Language-Specific Analysis
+Completeness, readability and similar dimensions use heuristics rather than an independent understanding of all user requirements. Review requirements and diffs yourself even when the measured gate passes.
 
-### TypeScript / JavaScript
+## Configuration and stopping
 
-All 12 dimensions run automatically. Key tools:
+Programmatic evaluator callers can supply supported thresholds and weights. Applicable measured weights are normalized. The acceptance floor is not bypassed by lowering a project's preferred target.
 
-- **Security** — OWASP pattern matching (SQLi, XSS, hardcoded secrets)
-- **Complexity** — AST-based cyclomatic complexity
-- **Coverage** — c8/v8 instrumentation
-- **Style** — oxlint / ESLint integration
+Project configuration can contain quality preferences, but do not assume every command consumes every field. In particular, `coco check` constructs its evaluator directly; verify the effective settings in the calling path before relying on a project-specific override. `ignoreRules` and `ignoreFiles` are configuration fields, not a promise that every analyzer filters its findings.
 
-### React
+Quality iteration may stop at the iteration limit, a stable score or another convergence guard. **Stopping is not acceptance.** When evidence is incomplete or thresholds are unmet, report the remaining checks and findings instead of claiming completion.
 
-In addition to TS/JS analysis, React projects get three extra analyzers:
+## CI and review
 
-**Component Quality (`style` dimension)**
-- Missing `key` prop in `.map()` rendering → error
-- Untyped props (`function X(props)` without interface) → error
-- Missing JSDoc on exported components → warning
-- Direct DOM manipulation → warning
-- `dangerouslySetInnerHTML` without sanitization → error
+Store the report with the commit and test logs being reviewed. Re-run after changes. A GitHub comment or HTML report is a presentation of evidence, not new evidence itself.
 
-**Accessibility (`robustness` dimension)**
-- `<img>` without `alt` → error (WCAG 1.1.1)
-- `<a>` without `href` → error (WCAG 2.1.1)
-- `<div>`/`<span>` with `onClick` but no keyboard support → warning
-- `<input>` without label association → warning
-
-**React Hooks Rules (`correctness` dimension)**
-- `useEffect` without dependency array → warning
-- Hook called inside conditional or loop → error (Rules of Hooks)
-
-### Java
-
-**Complexity** — Cyclomatic complexity per method (branch keyword counting)
-
-**Security** — OWASP Top 10 patterns:
-- SQL injection (string concatenation in `.execute()`)
-- Hardcoded credentials (password/secret variable assignments)
-- Unsafe deserialization (`ObjectInputStream.readObject()`)
-- Path traversal, command injection, XXE, insecure `Random`
-
-**Style** — Java conventions:
-- Class names must be PascalCase
-- Method names must be camelCase (not PascalCase)
-- Max 5 parameters per method
-- Max 120 characters per line
-
-**Documentation** — Javadoc coverage for `public` methods and classes
-
-**Coverage** — Parses JaCoCo XML report (`target/site/jacoco/jacoco.xml` by default):
-```json
-{
-  "analyzers": {
-    "java": {
-      "reportPath": "build/reports/jacoco/test/jacocoTestReport.xml"
-    }
-  }
-}
-```
-
-## Customising Quality Thresholds
-
-### Via `.coco.config.json` (recommended for teams)
-
-```json
-{
-  "quality": {
-    "minScore": 90,
-    "minCoverage": 85,
-    "securityThreshold": 100,
-    "maxIterations": 8,
-    "weights": {
-      "security": 0.15,
-      "correctness": 0.20
-    },
-    "ignoreRules": ["react/missing-jsdoc"],
-    "ignoreFiles": ["**/generated/**"]
-  }
-}
-```
-
-Weights are **normalised automatically** — you only set the relative importance.
-
-### Via `.coco/config.json` (personal/machine settings)
-
-```json
-{
-  "quality": {
-    "minScore": 85,
-    "minCoverage": 80,
-    "maxIterations": 10
-  }
-}
-```
-
-## Quality Reports
-
-### Terminal Output
-
-Coco prints a quality table after every evaluation:
-
-```
-╭─── Quality Report ───────────────────────────────╮
-│  Dimension        Score  Bar                  Status │
-├──────────────────────────────────────────────────────┤
-│  Correctness        92  ████████████████████  ✓      │
-│  Security          100  ████████████████████  ✓      │
-│  Test Coverage      78  ███████████████░░░░░  ~      │
-│  ...                                                  │
-├──────────────────────────────────────────────────────┤
-│  Overall            87  █████████████████░░░  ✓      │
-╰──────────────────────────────────────────────────────╯
-```
-
-### Saved Reports
-
-Reports are saved to `.coco/reports/` in three formats:
-
-```bash
-# JSON — machine-readable, use in CI pipelines
-.coco/reports/quality-2026-02-19T12-00-00.json
-
-# Markdown — GitHub PRs, wikis, READMEs
-.coco/reports/quality-2026-02-19T12-00-00.md
-
-# HTML — standalone browser report
-.coco/reports/quality-2026-02-19T12-00-00.html
-```
-
-### GitHub Actions Integration
-
-See [GITHUB-ACTIONS.md](GITHUB-ACTIONS.md) for posting quality reports as PR comments automatically.
-
-## Convergence Loop
-
-Coco iterates until quality converges:
-
-1. Generate / modify code
-2. Run tests and analyzers
-3. Check score vs. threshold
-4. If below threshold → identify issues → apply fixes → go to 2
-5. If converged → done ✅
-
-**Convergence conditions** (checked in order):
-1. Hit `maxIterations` limit
-2. Score ≥ target (95 by default)
-3. Score stable — delta < 2 above minimum for 2 consecutive iterations
-
-When using the `/coco-fix-iterate` skill, additional convergence guards run at the orchestration layer:
-- Score stuck below minimum for 5 iterations → stops with "needs manual intervention"
-- Score oscillating (delta < 3 for last 4 iterations) → stops with "oscillating"
-- Diminishing returns (< 1pt gain for 3 iterations) → stops with "diminishing_returns"
-
-Tune with:
-```json
-{ "quality": { "maxIterations": 5, "minScore": 80 } }
-```
-
-## Ignoring Rules and Files
-
-### Ignore specific rules
-
-```json
-{
-  "quality": {
-    "ignoreRules": [
-      "react/missing-jsdoc",
-      "react-hooks/exhaustive-deps"
-    ]
-  }
-}
-```
-
-> **Note**: `ignoreRules` and `ignoreFiles` are stored in the project config and available
-> to analyzers at runtime, but enforcement (filtering issues before scoring) is planned for
-> a future release. Currently these fields have no effect on analyzer output.
-
-### Ignore files from analysis
-
-```json
-{
-  "quality": {
-    "ignoreFiles": [
-      "**/generated/**",
-      "**/vendor/**",
-      "**/*.d.ts"
-    ]
-  }
-}
-```
-
----
-
-See also:
-- [Configuration Guide](CONFIGURATION.md)
-- [GitHub Actions Integration](GITHUB-ACTIONS.md)
-- [Providers Guide](PROVIDERS.md)
+See [Configuration Guide](CONFIGURATION.md), [GitHub Actions Integration](GITHUB-ACTIONS.md) and [Providers Guide](PROVIDERS.md).
