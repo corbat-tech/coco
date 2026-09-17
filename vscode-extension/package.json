@@ -2,7 +2,7 @@
   "name": "corbat-coco",
   "displayName": "COCO Code",
   "description": "AI coding agent with multi-provider LLM support, quality convergence loops, and terminal-first UX. Supports Anthropic, OpenAI, Gemini, Ollama, and 10+ providers.",
-  "version": "2.40.0",
+  "version": "2.42.0",
   "publisher": "corbat-tech",
   "license": "MIT",
   "engines": {
@@ -42,13 +42,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/corbat/corbat-coco.git"
+    "url": "https://github.com/corbat-tech/coco.git"
   },
-  "homepage": "https://github.com/corbat/corbat-coco#readme",
+  "homepage": "https://github.com/corbat-tech/coco#readme",
   "bugs": {
-    "url": "https://github.com/corbat/corbat-coco/issues"
+    "url": "https://github.com/corbat-tech/coco/issues"
   },
-  "qna": "https://github.com/corbat/corbat-coco/discussions",
+  "qna": "https://github.com/corbat-tech/coco/discussions",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -75,7 +75,7 @@
     "viewsWelcome": [
       {
         "view": "coco.welcome",
-        "contents": "COCO is an autonomous coding agent with quality convergence.\n\nIt runs in the integrated terminal — no context switching.\n[$(robot) Open COCO Agent](command:coco.open)\n[$(add) New Session](command:coco.newSession)\n\n[Learn more](https://github.com/corbat/corbat-coco)"
+        "contents": "COCO is an autonomous coding agent with quality convergence.\n\nIt runs in the integrated terminal \u2014 no context switching.\n[$(robot) Open COCO Agent](command:coco.open)\n[$(add) New Session](command:coco.newSession)\n\n[Learn more](https://github.com/corbat-tech/coco)"
       }
     ],
     "commands": [
@@ -140,7 +140,8 @@
             "coco",
             "/usr/local/bin/coco",
             "~/.local/bin/coco"
-          ]
+          ],
+          "scope": "machine"
         }
       }
     }
@@ -149,13 +150,27 @@
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "package": "vsce package --no-dependencies",
-    "publish": "vsce publish --no-dependencies"
+    "publish": "vsce publish --no-dependencies",
+    "typecheck": "tsc --noEmit",
+    "test:host": "pnpm build && tsc --outDir .test-dist && node scripts/test-host.mjs",
+    "test:contract": "pnpm build && node scripts/test-contract.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.24.0",
-    "typescript": "^5.7.0"
-  }
+    "typescript": "^5.7.0",
+    "@vscode/test-electron": "3.1.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "COCO executes project commands and edits files."
+    },
+    "virtualWorkspaces": false
+  },
+  "extensionKind": [
+    "workspace"
+  ]
 }

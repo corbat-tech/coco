@@ -1,102 +1,100 @@
-/**
- * COCO VSCode Extension — Terminal Mode
- *
- * Opens a dedicated terminal panel and runs `coco` inside it,
- * mirroring the Claude Code UX: the agent lives in the terminal,
- * not in a custom webview.
- */
-
+/** Terminal host: explicit executable/argv, project-scoped terminals and user trust. */
 import * as vscode from "vscode";
+import { resolveExecutable } from "./launch";
 
-/** Persistent terminal reference (reused across open calls) */
-let cocoTerminal: vscode.Terminal | undefined;
-
-/** Status bar item shown in the bottom bar */
-let statusBarItem: vscode.StatusBarItem | undefined;
+const terminals = new Map<string, vscode.Terminal>();
+let opening: Promise<void> | undefined;
+let generation = 0;
+let active = false;
 
 export function activate(context: vscode.ExtensionContext): void {
-  // Activity bar sidebar — empty provider triggers viewsWelcome content
-  vscode.window.registerTreeDataProvider("coco.welcome", {
-    getTreeItem: (el: vscode.TreeItem) => el,
-    getChildren: () => [],
-  });
-
-  // Status bar item — bottom-left, clickable to open COCO
-  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  statusBarItem.text = "$(robot) COCO";
-  statusBarItem.tooltip = "Open COCO Agent";
-  statusBarItem.command = "coco.open";
-  statusBarItem.show();
-  context.subscriptions.push(statusBarItem);
-
-  // Command: open (or focus) the COCO terminal
+  active = true;
+  const activation = ++generation;
   context.subscriptions.push(
-    vscode.commands.registerCommand("coco.open", () => {
-      openCocoTerminal(context);
+    vscode.window.registerTreeDataProvider("coco.welcome", {
+      getTreeItem: (item: vscode.TreeItem) => item,
+      getChildren: () => [],
     }),
   );
-
-  // Command: destroy current terminal and start a fresh session
+  const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  status.text = "$(robot) COCO";
+  status.tooltip = "Open COCO Agent";
+  status.command = "coco.open";
+  status.show();
+  context.subscriptions.push(status);
+  const open = (fresh: boolean) => {
+    if (opening) return opening;
+    opening = openCocoTerminal(fresh, activation)
+      .catch(async (error: unknown) => {
+        await vscode.window.showErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        );
+      })
+      .finally(() => {
+        if (activation === generation) opening = undefined;
+      });
+    return opening;
+  };
   context.subscriptions.push(
-    vscode.commands.registerCommand("coco.newSession", () => {
-      if (cocoTerminal) {
-        cocoTerminal.dispose();
-        cocoTerminal = undefined;
-      }
-      openCocoTerminal(context);
-    }),
-  );
-
-  // Detect terminal close to reset internal reference
-  context.subscriptions.push(
+    vscode.commands.registerCommand("coco.open", () => open(false)),
+    vscode.commands.registerCommand("coco.newSession", () => open(true)),
     vscode.window.onDidCloseTerminal((terminal) => {
-      if (terminal === cocoTerminal) {
-        cocoTerminal = undefined;
-      }
+      for (const [key, owned] of terminals) if (owned === terminal) terminals.delete(key);
     }),
   );
 }
 
 export function deactivate(): void {
-  cocoTerminal = undefined;
+  active = false;
+  generation++;
+  opening = undefined;
+  for (const terminal of terminals.values()) terminal.dispose();
+  terminals.clear();
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function openCocoTerminal(context: vscode.ExtensionContext): void {
-  // Reuse existing terminal if it is still alive
-  if (cocoTerminal) {
-    cocoTerminal.show(false); // false = do not steal focus from editor
+async function openCocoTerminal(fresh: boolean, activation: number): Promise<void> {
+  if (!active || activation !== generation) return;
+  if (!vscode.workspace.isTrusted) {
+    await vscode.window.showWarningMessage("Trust this workspace before running COCO.");
     return;
   }
-
-  const workspaceFolder = getWorkspaceFolder();
-  const cliPath = getCliPath();
-
-  cocoTerminal = vscode.window.createTerminal({
-    name: "COCO",
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  const activeDocument = vscode.window.activeTextEditor?.document.uri;
+  const folder =
+    (activeDocument && vscode.workspace.getWorkspaceFolder(activeDocument)) ||
+    (folders.length === 1
+      ? folders[0]
+      : await vscode.window.showWorkspaceFolderPick({
+          placeHolder: "Choose the project for COCO",
+        }));
+  if (!folder || !active || activation !== generation) return;
+  if (folder.uri.scheme !== "file")
+    throw new Error("COCO requires a filesystem workspace on the extension host.");
+  const key = folder.uri.toString();
+  const existing = terminals.get(key);
+  if (existing && existing.exitStatus === undefined && !fresh) {
+    existing.show(false);
+    return;
+  }
+  const executable = await resolveExecutable(
+    vscode.workspace.getConfiguration("coco").get<string>("cliPath") ?? "coco",
+  );
+  if (
+    !active ||
+    activation !== generation ||
+    !vscode.workspace.isTrusted ||
+    !vscode.workspace.workspaceFolders?.some((current) => current.uri.toString() === key)
+  )
+    return;
+  if (existing) existing.dispose();
+  const terminal = vscode.window.createTerminal({
+    name: `COCO — ${folder.name}`,
     iconPath: new vscode.ThemeIcon("robot"),
-    cwd: workspaceFolder,
+    cwd: folder.uri,
+    shellPath: executable,
+    shellArgs: ["-p", folder.uri.fsPath],
+    isTransient: true,
   });
-
-  cocoTerminal.show(false);
-
-  // Launch coco with an explicit project path for precision
-  const cmd = workspaceFolder
-    ? `${cliPath} -p "${workspaceFolder}"`
-    : cliPath;
-
-  cocoTerminal.sendText(cmd);
-}
-
-/** First workspace folder path, or undefined when no folder is open */
-function getWorkspaceFolder(): string | undefined {
-  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-}
-
-/** Reads coco.cliPath from settings, falling back to "coco" on $PATH */
-function getCliPath(): string {
-  return vscode.workspace.getConfiguration("coco").get<string>("cliPath") ?? "coco";
+  terminals.set(key, terminal);
+  terminal.show(false);
 }

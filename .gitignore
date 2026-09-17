@@ -60,3 +60,7 @@ yarn.lock
 
 # Git worktrees for parallel feature development
 .worktrees/
+
+# VS Code isolated test output
+vscode-extension/.test-dist/
+vscode-extension/.vscode-test/

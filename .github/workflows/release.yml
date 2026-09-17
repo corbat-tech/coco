@@ -103,6 +103,12 @@ jobs:
         run: |
           pnpm exec tsc --noEmit
           pnpm build
+      - name: Verify trust and terminal lifecycle contracts
+        working-directory: vscode-extension
+        run: pnpm test:contract
+      - name: Exercise real Extension Host
+        working-directory: vscode-extension
+        run: xvfb-run -a pnpm test:host
       - name: Package and verify VSIX contents
         working-directory: vscode-extension
         run: |
@@ -112,6 +118,11 @@ jobs:
           unzip -p ../artifacts/corbat-coco.vsix extension/dist/extension.js > ../artifacts/extension-smoke.js
           test -s ../artifacts/extension-smoke.js
           node --check ../artifacts/extension-smoke.js
+          cmp dist/extension.js ../artifacts/extension-smoke.js
+          if unzip -Z1 ../artifacts/corbat-coco.vsix | grep -E 'extension/(dist/test|\.test-dist|\.vscode-test)/'; then
+            echo "::error::Test fixtures must not ship in the VSIX"
+            exit 1
+          fi
           rm ../artifacts/extension-smoke.js
           (cd ../artifacts && sha256sum *.vsix > SHA256SUMS)
       - uses: actions/upload-artifact@v4
@@ -120,10 +131,6 @@ jobs:
           overwrite: true
           path: artifacts/*
           if-no-files-found: error
-      - name: Block VSIX publication until its operational gate is complete
-        run: |
-          echo "::error::VSIX publication requires E11 extension-host smoke and registry reconciliation. No Marketplace publication attempted."
-          exit 1
 
   github-release:
     name: Create release only after successful channel publication

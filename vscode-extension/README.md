@@ -1,15 +1,15 @@
 # COCO — Autonomous Coding Agent
 
-**COCO** is an AI coding agent with a quality convergence loop that iterates until your code meets a configurable quality threshold. It runs entirely in VS Code's integrated terminal — no custom webview, no context switching.
+**COCO** is a coding agent with tools, permissions and iterative review. Quality acceptance requires current, complete measurement evidence; a score alone is not a guarantee. It runs entirely in VS Code's integrated terminal — no custom webview, no context switching.
 
 ## Features
 
 - **Multi-provider LLM support** — Anthropic Claude, OpenAI GPT, Google Gemini, Kimi, Ollama, LM Studio, Groq, Mistral, DeepSeek, OpenRouter, Together AI, HuggingFace
-- **Quality convergence** — the agent self-reviews its output and iterates until it reaches a score ≥ 85/100
+- **Quality evidence** — measured checks, missing instrumentation and failures are reported separately
 - **Terminal-first UX** — COCO lives in VS Code's integrated terminal, just like the CLI
 - **REPL with slash commands** — `/model`, `/provider`, `/intent`, `/mcp`, and more
 - **MCP support** — connect Model Context Protocol servers for extended tooling
-- **Persistent sessions** — reuses the same terminal panel across window reloads
+- **Project-scoped terminals** — reuses the active project terminal; a new session closes that project’s previous terminal. Terminals do not survive a window reload.
 - **Zero config to start** — just install and run; configure your provider API key when prompted
 
 ## Requirements
@@ -77,36 +77,17 @@ Open VS Code Settings (`Ctrl+,` / `Cmd+,`) and search for **COCO**.
 }
 ```
 
-## Supported Providers
+## Providers and quality
 
-Configure your preferred provider on first launch or via `/provider`:
+Provider/model choices come from the installed CLI. Use `/provider` and `/model` to inspect available options; Ollama runs models you have already installed locally. The extension does not include models or credentials.
 
-| Provider | Models |
-|----------|--------|
-| **Anthropic** | Claude Sonnet 4.6, Opus 4.6, Haiku 4.5 |
-| **OpenAI** | GPT-5.3 Codex, GPT-4.1, o4-mini |
-| **Google Gemini** | Gemini 2.5 Pro, 2.0 Flash |
-| **Kimi / Kimi Code** | kimi-for-coding |
-| **Ollama** | Any locally downloaded model |
-| **LM Studio** | Any locally downloaded model |
-| **Groq** | Llama, Mixtral (ultra-fast) |
-| **Mistral** | Codestral, Mistral Large |
-| **DeepSeek** | DeepSeek Coder V3 |
-| **OpenRouter** | 100+ models via one API key |
-| **Together AI** | Open-source models |
-| **HuggingFace** | Open models with free inference |
+The quality workflow distinguishes acceptance from convergence. Missing tests, coverage or other required measurements prevent certification. Static heuristics and a passing score do not prove that all user requirements are met; review the actual test evidence and changes.
 
-## How Quality Convergence Works
+## Workspace and executable safety
 
-COCO's COCO loop (Converge → Orchestrate → Complete → Output) evaluates output across 12 quality dimensions on every iteration:
+The extension runs only in trusted filesystem workspaces. In a workspace with multiple roots, it chooses the active editor’s project or asks you to select one. Each project gets its own terminal.
 
-```
-Correctness · Security · Performance · Maintainability · Test coverage
-Documentation · Type safety · Error handling · Code style · Complexity
-Dependencies · Modularity
-```
-
-The loop runs until the quality score reaches ≥ 85/100 or the maximum iteration count is hit. You get production-ready code, not just a first draft.
+`coco.cliPath` is a machine setting naming one executable, without shell arguments. Paths with spaces are supported; project paths are passed as separate arguments. Windows `.cmd`/`.bat` wrappers are deliberately unsupported. Install a compatible executable or use the CLI directly on Windows. No Marketplace publication is required to install the VSIX from the GitHub release.
 
 ## Troubleshooting
 
@@ -126,11 +107,11 @@ Install Ollama (`https://ollama.com`), pull a model, then run `/provider` inside
 
 ## Links
 
-- [GitHub Repository](https://github.com/corbat/corbat-coco)
+- [GitHub Repository](https://github.com/corbat-tech/coco)
 - [npm Package](https://www.npmjs.com/package/@corbat-tech/coco)
-- [Documentation](https://github.com/corbat/corbat-coco#readme)
-- [Report an Issue](https://github.com/corbat/corbat-coco/issues)
-- [Discussions](https://github.com/corbat/corbat-coco/discussions)
+- [Documentation](https://github.com/corbat-tech/coco#readme)
+- [Report an Issue](https://github.com/corbat-tech/coco/issues)
+- [Discussions](https://github.com/corbat-tech/coco/discussions)
 
 ## License
 

@@ -24,3 +24,8 @@ node_modules/**
 
 # Generation scripts (only needed for dev)
 scripts/**
+
+# Extension Host fixtures never ship
+dist/test/**
+
+.test-dist/**
