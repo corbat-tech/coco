@@ -7,6 +7,28 @@ import { CheckpointManager } from "./manager.js";
 import { withFileCheckpoints } from "./capture.js";
 
 describe("owned file checkpoints", () => {
+  it("does not suppress or repeat dispatch when no project snapshot can be captured", async () => {
+    const root = await mkdtemp(join(tmpdir(), "coco-capture-missing-"));
+    try {
+      let calls = 0;
+      const manager = new CheckpointManager({ storageDir: join(root, "checkpoints") });
+      const dispatch = withFileCheckpoints(
+        async () => {
+          calls++;
+          return { success: false, error: "Rejected by execution policy", duration: 0 };
+        },
+        "session",
+        join(root, "missing"),
+        manager,
+      );
+      const result = await dispatch({ id: "call", name: "write_file", input: { path: "file.ts" } });
+      expect(result.success).toBe(false);
+      expect(calls).toBe(1);
+      expect(await manager.getCheckpoints("session")).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("captures and restores a real edit while preserving staged and untracked work", async () => {
     const root = await mkdtemp(join(tmpdir(), "coco-capture-"));
     const project = join(root, "project");

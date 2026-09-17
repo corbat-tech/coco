@@ -29,7 +29,11 @@ export function withFileCheckpoints(
     await previous;
     try {
       signal?.throwIfAborted();
-      const root = await fs.realpath(projectPath);
+      // Capture is optional evidence, not a second execution/permission boundary.
+      // A missing project cannot produce a restorable snapshot; the dispatcher
+      // still decides whether the requested operation is valid and authorized.
+      const root = await fs.realpath(projectPath).catch(() => undefined);
+      if (!root) return dispatch(call, signal);
       // Match file tools: relative input resolves against the host cwd, not -p.
       const requested = path.resolve(call.input.path);
       const lexical = path.relative(path.resolve(projectPath), requested);
