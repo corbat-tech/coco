@@ -1,6 +1,6 @@
 {
   "name": "@corbat-tech/coco",
-  "version": "2.42.0-next.5",
+  "version": "2.42.0-next.6",
   "description": "CLI coding agent and reusable runtime with tools, permissions, and review workflows",
   "type": "module",
   "main": "dist/index.js",

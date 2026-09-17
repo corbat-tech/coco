@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0-next.6] - 2026-09-17
+
+### Added
+
+- Session-owned background jobs in the REPL: two active jobs, bounded runtime/output, status/read/cancel tools and POSIX process-group cleanup. Other hosts must explicitly own their lifecycle; Windows background launch remains unavailable.
+
+### Fixed
+
+- Close REPL-owned processes and listeners on normal and exceptional exits; clear/resume closes the previous session owner.
+- Validate canonical project identity on resume, retain current consent/configuration and never replay interrupted effects.
+- Capture bounded regular-file edits with verified before/after images. Rewind checks conflicts, path scope and content hashes, preserves the Git index and rejects unverifiable legacy checkpoints.
+
+### Limits
+
+No rollback guarantee for shell, remote effects, directories, binary files, hardlinks or edits over 1 MiB. Multi-file restore can be partial on concurrent changes/I/O failure and reports that explicitly. Background jobs do not survive host restart. See `docs/evolution/NEXT_DELIVERY_NEXT6.md`.
+
 ## [2.42.0-next.5] - 2026-09-17
 
 ### Fixed
