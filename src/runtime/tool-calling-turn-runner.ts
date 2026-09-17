@@ -19,6 +19,8 @@ export interface ToolCallingRuntimeTurnRunnerOptions {
 
 interface RuntimeWithTools {
   executeTool(input: {
+    signal?: AbortSignal;
+    toolCallId?: string;
     sessionId?: string;
     mode?: RuntimeTurnContext["session"]["mode"];
     toolName: string;
@@ -57,6 +59,9 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
 
   constructor(options: ToolCallingRuntimeTurnRunnerOptions = {}) {
     this.maxToolIterations = options.maxToolIterations ?? 10;
+    if (!Number.isSafeInteger(this.maxToolIterations) || this.maxToolIterations < 1) {
+      throw new RangeError("maxToolIterations must be a positive safe integer");
+    }
   }
 
   async run(input: RuntimeTurnInput, context: RuntimeTurnContext): Promise<RuntimeTurnResult> {
@@ -72,9 +77,9 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
     const confirmedTools = new Set(input.confirmedTools ?? []);
     let inputTokens = 0;
     let outputTokens = 0;
-    let lastModel = input.options?.model ?? context.provider.id;
 
     for (let iteration = 0; iteration < this.maxToolIterations; iteration++) {
+      input.options?.signal?.throwIfAborted();
       const response = await context.provider.chatWithTools(messages, {
         tools,
         model: input.options?.model,
@@ -89,9 +94,16 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
 
       inputTokens += response.usage.inputTokens;
       outputTokens += response.usage.outputTokens;
-      lastModel = response.model;
-
-      if (response.stopReason !== "tool_use" || response.toolCalls.length === 0) {
+      input.options?.signal?.throwIfAborted();
+      if (response.stopReason === "max_tokens") {
+        throw new Error(
+          "Runtime turn incomplete: provider output was truncated (max_tokens). Changes may exist; inspect and verify before continuing.",
+        );
+      }
+      if (
+        ["end_turn", "stop_sequence"].includes(response.stopReason) &&
+        response.toolCalls.length === 0
+      ) {
         return {
           sessionId: context.session.id,
           content: response.content,
@@ -99,6 +111,12 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
           model: response.model,
           mode: context.session.mode,
         };
+      }
+
+      if (response.stopReason !== "tool_use" || response.toolCalls.length === 0) {
+        throw new Error(
+          "Runtime turn incomplete: inconsistent provider stop reason and tool calls. Changes may exist; inspect and verify before continuing.",
+        );
       }
 
       const assistantContent: Array<ToolUseContent | { type: "text"; text: string }> = [];
@@ -121,7 +139,10 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
 
       const toolResults: ToolResultContent[] = [];
       for (const toolCall of response.toolCalls) {
+        input.options?.signal?.throwIfAborted();
         const result = await runtime.executeTool({
+          signal: input.options?.signal,
+          toolCallId: toolCall.id,
           sessionId: context.session.id,
           mode: context.session.mode,
           toolName: toolCall.name,
@@ -142,13 +163,9 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
       });
     }
 
-    return {
-      sessionId: context.session.id,
-      content: "The tool-calling runtime reached its maximum tool iteration budget.",
-      usage: { inputTokens, outputTokens },
-      model: lastModel,
-      mode: context.session.mode,
-    };
+    throw new Error(
+      "Runtime turn incomplete: maximum tool iteration budget reached without a terminal response. Changes may exist; inspect and verify before continuing.",
+    );
   }
 }
 

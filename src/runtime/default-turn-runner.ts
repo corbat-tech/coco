@@ -15,6 +15,7 @@ export class DefaultRuntimeTurnRunner implements RuntimeTurnRunner {
       },
     ];
 
+    input.options?.signal?.throwIfAborted();
     const response = await context.provider.chat(messages, {
       model: input.options?.model,
       maxTokens: input.options?.maxTokens,
@@ -26,6 +27,10 @@ export class DefaultRuntimeTurnRunner implements RuntimeTurnRunner {
       thinking: input.options?.thinking,
     });
 
+    input.options?.signal?.throwIfAborted();
+    if (response.stopReason !== "end_turn" && response.stopReason !== "stop_sequence") {
+      throw new Error(`Runtime turn incomplete: provider stopped with ${response.stopReason}.`);
+    }
     return {
       sessionId: context.session.id,
       content: response.content,

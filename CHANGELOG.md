@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0-rc.2] - 2026-09-17
+
+### Fixed
+
+- Reject incomplete provider responses and exhausted tool iteration budgets instead of reporting a completed runtime turn. Experimental headless execution now returns a JSON failure through its existing error path.
+- Apply terminal-response validation to default chat and streaming runtime entry points; preserve partial streamed output while reporting failure, and reject late responses after cancellation. Forward cancellation to tools and stop the remainder of a batch after abort.
+
+### Evidence
+
+Reserved local-model tasks exposed the false-success path. Their original failures remain recorded; neither prompts nor judges were adjusted to turn those results into successes. A completed turn still does not certify task correctness. See the final capability audit for model limitations and artifact provenance.
+
 ## [2.42.0-rc.1] - 2026-09-17
 
 Release candidate consolidating the next.5–next.8 reliability changes. No additional runtime changes after next.8. Stable promotion remains conditional on final evaluation and publication verification recorded in `docs/evolution/REMAINING_DELIVERIES.md`.

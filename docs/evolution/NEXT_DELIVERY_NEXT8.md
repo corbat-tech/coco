@@ -1,6 +1,6 @@
 # Entrega next.8 — contexto, configuración y validación real
 
-Estado: implementación y revisión cerradas en `34f4a7c`; gate exacto e instalación limpia PASS. Publicación next.8 en curso (Actions35267933015); evaluaciones finales pendientes. No promover `latest` todavía.
+Estado: implementación y revisión cerradas en `34f4a7c`; gate exacto e instalación limpia PASS. Publicación next.8 verificada (Actions35267933015 PASS, npm next y cuatro assets GitHub); evaluaciones finales pendientes. No promover `latest` todavía.
 
 ## Cambios y evidencia
 
@@ -16,7 +16,7 @@ Estado: implementación y revisión cerradas en `34f4a7c`; gate exacto e instala
 
 - [x] Checkpoints: sin borrar cambios ajenos, metadata/proyecto/HEAD/OID verificados; legacy solo lectura; pruebas Git reales e independientes.
 - [x] Gate completo ≥80% líneas y statements, además de umbrales existentes, build y clean install.
-- [ ] Repetir corpus2 con4B/9B dos veces usando el paquete instalado. Evaluadorv3 exige terminación en todos los turnos; resultados anteriores con budget agotado no son éxito completo.
+- [x] Repetir corpus2 con4B/9B dos veces usando el paquete instalado. Evaluadorv3 exige terminación en todos los turnos; resultados anteriores con budget agotado no son éxito completo.
 - [ ] Ejecutar casos reservados `evidence/heldout-cases-v1.json` sin adaptar los prompts tras observar resultados. Distinguir resultado del código, terminación y respeto de restricciones.
 - [ ] Auditorías producto/capacidad/ingeniería; corregir bloqueantes y registrar límites. Los revisores con contexto anterior deben declararlo; revisión ciega local con Ollama sin historial interno por separado.
 - [ ] Publicación next.8 y RC verificadas; estable2.42.0 únicamente si cumplen los gates y las auditorías.
@@ -36,3 +36,5 @@ Conservar logs, commit, versión, digest del modelo, verificadores y fallos. La 
 Commit `34f4a7c`: 8310 pruebas principales y28 REPL PASS (15 omitidas), typecheck/lint/formato/build PASS. Cobertura:80.01% statements,80.73% líneas,70.81% ramas,82.06% funciones; umbrales de líneas/statements elevados a80 en la configuración. Instalación limpia del tarball y smoke de CLI/exports/herramienta real PASS. SHA256 local `ce6363fc54d6b2367067e25c982276e064a27e3e04559e42bf21e19052a2defb`; no confundir con el artefacto Linux publicado, que se verifica por separado.
 
 La repetición del corpus comenzó sobre `7fb9aca` (candidato previo a los ajustes finales de permisos), no sobre el artefacto final. Los casos reservados usarán el consumidor instalado de `34f4a7c`. No presentar los20 casos repetidos como validación exacta de ese último artefacto.
+
+Publicación next.8 confirmada: SHA256 del asset GitHub `ce6363fc54d6b2367067e25c982276e064a27e3e04559e42bf21e19052a2defb`, idéntico al tarball local evaluado; integridad npm `sha512-0D7DjKHfKPUvxMtuwUKARdJ1kSmQT6kSXM9llM6cQqstEi+DpgZWiV9IBbbQHpuD25QdO5Aet0hUQ2CHFAK3OQ==`. Registro `next=2.42.0-next.8`, `latest=2.41.0`. RC1 `4aa7ec0` (sin cambios runtime) pasa gate completo y clean install; publicación iniciada, todavía no acreditada.

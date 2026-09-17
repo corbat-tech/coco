@@ -365,7 +365,9 @@ export class AgentRuntime {
     let content = "";
     let completed = false;
     let failed = false;
+    let terminal = false;
     try {
+      input.options?.signal?.throwIfAborted();
       for await (const chunk of provider.stream(messages, {
         model: input.options?.model,
         maxTokens: input.options?.maxTokens,
@@ -376,6 +378,23 @@ export class AgentRuntime {
         signal: input.options?.signal,
         thinking: input.options?.thinking,
       })) {
+        input.options?.signal?.throwIfAborted();
+        if (chunk.type !== "text" && chunk.type !== "done") {
+          throw new Error("Runtime turn incomplete: text-only stream requested tool execution.");
+        }
+        if (terminal) {
+          throw new Error(
+            "Runtime turn incomplete: provider emitted content after its terminal event.",
+          );
+        }
+        if (chunk.type === "done") {
+          if (chunk.stopReason !== "end_turn" && chunk.stopReason !== "stop_sequence") {
+            throw new Error(
+              `Runtime turn incomplete: provider stopped with ${chunk.stopReason ?? "unknown"}.`,
+            );
+          }
+          terminal = true;
+        }
         if (chunk.type === "text" && chunk.text) {
           content += chunk.text;
           yield {
@@ -386,6 +405,9 @@ export class AgentRuntime {
         }
       }
 
+      input.options?.signal?.throwIfAborted();
+      if (!terminal)
+        throw new Error("Runtime turn incomplete: provider stream ended without a terminal event.");
       const result: RuntimeTurnResult = {
         sessionId: effectiveSession.id,
         content,

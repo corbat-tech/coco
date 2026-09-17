@@ -246,3 +246,42 @@ describe("headless result contract", () => {
     expect(JSON.parse(output)).toEqual(result);
   });
 });
+
+describe("experimental headless incomplete runtime responses", () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each(["max_tokens", "tool_use", "budget"])(
+    "returns one JSON failure and closes after %s",
+    async (reason) => {
+      const { createProvider } = await import("../providers/index.js");
+      const { AgentRuntime } = await import("../runtime/index.js");
+      const provider = await createProvider("ollama");
+      const chat = vi.mocked(provider.chatWithTools).mockResolvedValue({
+        id: "incomplete",
+        content: "Let me run one more check",
+        model: "fixture",
+        stopReason: reason === "max_tokens" ? "max_tokens" : "tool_use",
+        toolCalls: reason === "budget" ? [{ id: "pending", name: "missing_tool", input: {} }] : [],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      });
+      vi.mocked(createProvider).mockResolvedValueOnce(provider);
+      const close = vi.spyOn(AgentRuntime.prototype, "close");
+      let output = "";
+      vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        output += chunk.toString();
+        return true;
+      });
+      vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      const result = await runHeadless({
+        task: "fix code",
+        projectPath: "/test",
+        outputFormat: "json",
+        useRuntimeRunner: true,
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Runtime turn incomplete");
+      expect(JSON.parse(output)).toEqual(result);
+      expect(chat).toHaveBeenCalledTimes(reason === "budget" ? 10 : 1);
+      expect(close).toHaveBeenCalledOnce();
+    },
+  );
+});
