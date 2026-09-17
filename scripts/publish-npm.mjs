@@ -59,7 +59,18 @@ function verifyChannel(run, name, version, channel) {
     );
 }
 
-export async function publishNpm(artifactDir, channel, run = npm) {
+export async function publishNpm(artifactDir, channel, run = npm, options = {}) {
+  const mode = options.authMode ?? "token";
+  const env = options.env ?? process.env;
+  if (!["token", "oidc"].includes(mode)) throw new Error("Unsupported publication auth mode");
+  if (mode === "oidc") {
+    if (env.GITHUB_ACTIONS !== "true" || !env.ACTIONS_ID_TOKEN_REQUEST_URL || !env.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
+      throw new Error("OIDC publication requires a GitHub Actions job with id-token: write");
+    }
+    if (env.NODE_AUTH_TOKEN || env.NPM_TOKEN) {
+      throw new Error("OIDC publication must not include npm token credentials");
+    }
+  }
   if (!["next", "latest"].includes(channel)) throw new Error("Unsupported dist-tag");
   const [packed] = JSON.parse(await readFile(path.join(artifactDir, "pack.json"), "utf8"));
   if (packed.name !== "@corbat-tech/coco" || path.basename(packed.filename) !== packed.filename) {
@@ -97,9 +108,12 @@ export async function publishNpm(artifactDir, channel, run = npm) {
     // An unparseable response is not evidence that the version is absent.
   }
   if (code !== "E404") throw failure("Registry lookup failed; publication stopped", query);
-  const auth = run(["whoami", "--json"]);
-  if (auth.error || auth.signal || auth.status !== 0)
-    throw failure("Authentication preflight failed; no publish attempted", auth);
+  // npm whoami only authenticates tokens; npm publish exchanges the CI OIDC identity.
+  if (mode === "token") {
+    const auth = run(["whoami", "--json"]);
+    if (auth.error || auth.signal || auth.status !== 0)
+      throw failure("Authentication preflight failed; no publish attempted", auth);
+  }
   const result = run([
     "publish",
     archive,
@@ -119,5 +133,7 @@ export async function publishNpm(artifactDir, channel, run = npm) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await publishNpm(process.argv[2] ?? "artifacts", process.argv[3]);
+  await publishNpm(process.argv[2] ?? "artifacts", process.argv[3], npm, {
+    authMode: process.env.COCO_NPM_AUTH_MODE ?? "token",
+  });
 }

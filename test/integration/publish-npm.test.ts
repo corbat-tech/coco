@@ -92,6 +92,38 @@ describe("npm publication reconciliation", () => {
     await expect(publishNpm(dir, "next", run)).rejects.toThrow(/no publish attempted: E401/);
     expect(run).toHaveBeenCalledTimes(2);
   });
+  it("publishes with OIDC without token-only whoami", async () => {
+    const run = vi
+      .fn()
+      .mockReturnValueOnce({ status: 1, stdout: '{"error":{"code":"E404"}}' })
+      .mockReturnValueOnce({ status: 0, stdout: "" })
+      .mockReturnValueOnce({ status: 0, stdout: '{"next":"2.42.0"}' });
+    expect(
+      await publishNpm(dir, "next", run, {
+        authMode: "oidc",
+        env: {
+          GITHUB_ACTIONS: "true",
+          ACTIONS_ID_TOKEN_REQUEST_URL: "https://fixture.invalid",
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: "fixture-identity",
+        },
+      }),
+    ).toBe("published");
+    expect(run.mock.calls.map(([args]) => args[0])).toEqual(["view", "publish", "view"]);
+  });
+  it.each([
+    {},
+    { GITHUB_ACTIONS: "true" },
+    {
+      GITHUB_ACTIONS: "true",
+      ACTIONS_ID_TOKEN_REQUEST_URL: "fixture",
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "identity",
+      NODE_AUTH_TOKEN: "secret",
+    },
+  ])("blocks OIDC with missing identity or token fallback", async (env) => {
+    const run = vi.fn();
+    await expect(publishNpm(dir, "next", run, { authMode: "oidc", env })).rejects.toThrow();
+    expect(run).not.toHaveBeenCalled();
+  });
   it("does not silently move a mismatched channel for an identical version", async () => {
     const run = vi
       .fn()

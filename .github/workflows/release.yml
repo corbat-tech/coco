@@ -28,7 +28,8 @@ jobs:
         with:
           node-version: "22"
           cache: "pnpm"
-          registry-url: "https://registry.npmjs.org"
+      - name: Install npm with trusted publishing support
+        run: npm install --global npm@11.17.0
       - name: Validate tag and package identity
         id: metadata
         env:
@@ -58,7 +59,7 @@ jobs:
           if-no-files-found: error
       - name: Publish the exact verified tarball
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          COCO_NPM_AUTH_MODE: oidc
           RELEASE_CHANNEL: ${{ steps.metadata.outputs.channel }}
         run: |
           (cd artifacts && sha256sum --check SHA256SUMS)
