@@ -11,7 +11,7 @@ vi.mock("execa", async (importOriginal) => {
   return { ...actual, execa: vi.fn(actual.execa) };
 });
 
-it.each(["cancel", "shell exit"] as const)(
+it.each(["cancel", "shell exit", "overflow"] as const)(
   "cleans owned TERM-resistant descendants after %s without killing another invocation",
   async (mode) => {
     if (process.platform === "win32") return;
@@ -26,7 +26,7 @@ it.each(["cancel", "shell exit"] as const)(
     );
     await fs.writeFile(
       parent,
-      `const child = require('node:child_process').spawn(process.execPath, [${JSON.stringify(descendant)}], {stdio:['ignore','pipe','inherit']}); child.stdout.on('data', data => { process.stdout.write(data); ${mode === "shell exit" ? "process.exit(0);" : ""} }); setInterval(() => {},1000);`,
+      `const child = require('node:child_process').spawn(process.execPath, [${JSON.stringify(descendant)}], {stdio:['ignore','pipe','inherit']}); child.stdout.on('data', data => { process.stdout.write(data); ${mode === "shell exit" ? "process.exit(0);" : mode === "overflow" ? "process.stdout.write(Buffer.alloc(20 * 1024 * 1024, 120));" : ""} }); setInterval(() => {},1000);`,
     );
     const { execa: actualExeca } = await vi.importActual<typeof import("execa")>("execa");
     const environment = {
@@ -69,6 +69,7 @@ it.each(["cancel", "shell exit"] as const)(
         { signal: controller.signal },
       );
       if (mode === "cancel") await expect(pending).rejects.toThrow("owned cancellation");
+      else if (mode === "overflow") await expect(pending).rejects.toThrow(/16 MiB/);
       else expect(await pending).toMatchObject({ success: true });
       expect(owned!.exitCode !== null || owned!.signalCode !== null).toBe(true);
       await unrelated;
@@ -96,13 +97,15 @@ it.each(["cancel", "shell exit"] as const)(
 
 it("rejects oversized multibyte output instead of accepting a partial report", async () => {
   const { execa: actualExeca } = await vi.importActual<typeof import("execa")>("execa");
-  const spy = vi
-    .mocked(execaModule.execa)
-    .mockImplementation(((_command: string, _args: string[], options: execaModule.Options) =>
-      actualExeca(process.execPath, ["-e", 'process.stdout.write("😀".repeat(5 * 1024 * 1024));'], {
-        ...options,
-        extendEnv: false,
-      })) as typeof actualExeca);
+  const spy = vi.mocked(execaModule.execa).mockImplementation(((
+    _command: string,
+    _args: string[],
+    options: execaModule.Options,
+  ) =>
+    actualExeca(process.execPath, ["-e", 'process.stdout.write("😀".repeat(5 * 1024 * 1024));'], {
+      ...options,
+      extendEnv: false,
+    })) as typeof actualExeca);
   try {
     await expect(runTestsTool.execute({ framework: "vitest" })).rejects.toThrow(/16 MiB/);
     expect(_activeSubprocessCount()).toBe(0);

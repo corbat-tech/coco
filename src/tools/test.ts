@@ -270,12 +270,12 @@ Examples:
         }
         const parsed = parseTestResults(
           detectedFramework,
-          typeof result.stdout === "string"
-            ? result.stdout
-            : Buffer.from(result.stdout ?? []).toString("utf8"),
-          typeof result.stderr === "string"
-            ? result.stderr
-            : Buffer.from(result.stderr ?? []).toString("utf8"),
+          result.stdout instanceof Uint8Array
+            ? Buffer.from(result.stdout).toString("utf8")
+            : String(result.stdout ?? ""),
+          result.stderr instanceof Uint8Array
+            ? Buffer.from(result.stderr).toString("utf8")
+            : String(result.stderr ?? ""),
           result.exitCode,
           performance.now() - startTime,
         );
