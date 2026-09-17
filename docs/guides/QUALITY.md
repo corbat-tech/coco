@@ -34,8 +34,8 @@ The evaluator has **12 dimensions** (0–100). Some use static heuristics; a sco
 
 | Dimension | Weight | What it measures |
 |-----------|-------:|-----------------|
-| Correctness | 15% | Tests pass, build succeeds, logic correct |
-| Completeness | 10% | All requirements implemented |
+| Correctness | 15% | Available test and build results; not a proof of all logic |
+| Completeness | 10% | Structural completeness heuristics; not verified requirements |
 | Robustness | 10% | Edge cases handled, error handling present |
 | Readability | 10% | Code clarity and naming conventions |
 | Maintainability | 10% | Ease of future modification |
@@ -47,13 +47,13 @@ The evaluator has **12 dimensions** (0–100). Some use static heuristics; a sco
 | Documentation | 4% | JSDoc / Javadoc coverage |
 | Style | 3% | Lint and formatting compliance |
 
-**Acceptance floor:** 85/100 overall, 80% coverage and the required security threshold, plus complete evidence tied to the current project snapshot.
+**Acceptance floor:** 85/100 overall, 80% coverage and security 100, with no critical findings, plus complete evidence tied to the current project snapshot.
 
 ## Language support and limits
 
-The certified measurement path currently supports JavaScript/TypeScript source, including `.mjs`, `.cjs`, `.mts` and `.cts`. It needs compatible local test, coverage, build and lint tooling. An unsupported setup reports unavailable/error instead of inventing a score.
+The evidence-backed measurement path currently supports JavaScript/TypeScript source, including `.mjs`, `.cjs`, `.mts` and `.cts`. It needs compatible local test, coverage, build and lint tooling. An unsupported setup reports unavailable/error instead of inventing a score.
 
-The language registry also contains Java and React heuristics (for example, Javadoc/JaCoCo hints and React accessibility/hook patterns). These remain available to existing callers, but do not override the certified measurement contract. Their existence does not certify all twelve dimensions for every language. Static security patterns are not a vulnerability scanner or a penetration test.
+The language registry also contains Java and React heuristics (for example, Javadoc/JaCoCo hints and React accessibility/hook patterns). These remain available to existing callers, but do not override the evidence-backed measurement contract. Their existence does not verify all twelve dimensions for every language. Static security patterns are not a vulnerability scanner or a penetration test.
 
 Completeness, readability and similar dimensions use heuristics rather than an independent understanding of all user requirements. Review requirements and diffs yourself even when the measured gate passes.
 

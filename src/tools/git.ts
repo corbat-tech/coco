@@ -291,7 +291,7 @@ export const gitBranchTool: ToolDefinition<
   { branches: string[]; current: string }
 > = defineTool({
   name: "git_branch",
-  description: `List all local branches, create a new branch from the current HEAD, or delete a branch. Use this to see available branches before checking out, or to create a feature branch. Do NOT use this to switch the active branch — use git_checkout; do NOT delete branches that have unmerged work.
+  description: `List all local branches, create and switch to a new branch from the current HEAD, or delete a branch. Creating or deleting branches changes repository state and requires confirmation. To switch to an existing branch use git_checkout; do NOT delete branches that have unmerged work.
 
 Examples:
 - List branches: {} → { "branches": ["main", "feature/x"], "current": "main" }

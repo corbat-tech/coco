@@ -59,6 +59,7 @@ const CONFIRMATION_REQUIRED_TOOLS = new Set([
   "http_fetch",
   "http_json",
   "get_env",
+  "read_image",
   "manage_permissions",
 ]);
 
@@ -67,7 +68,7 @@ function riskForTool(tool: ToolDefinition): PermissionDecision["risk"] {
   if (tool.provenance?.kind === "mcp") return "secrets-sensitive";
   if (READ_ONLY_TOOL_NAMES.has(tool.name)) return "read-only";
   if (tool.name === "get_env") return "secrets-sensitive";
-  if (tool.name === "http_fetch" || tool.name === "http_json") return "network";
+  if (["http_fetch", "http_json", "read_image"].includes(tool.name)) return "network";
   if (DESTRUCTIVE_TOOL_NAMES.has(tool.name)) return "destructive";
   if (WRITE_CAPABLE_TOOL_NAMES.has(tool.name)) return "write";
   if (tool.category === "web") return "network";
@@ -83,6 +84,7 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
 
     const readOnlyTool =
       tool.provenance?.kind !== "mcp" &&
+      tool.name !== "read_image" &&
       (READ_ONLY_TOOL_NAMES.has(tool.name) || READ_ONLY_CATEGORIES.has(tool.category));
 
     if (definition.readOnly && !readOnlyTool) {
@@ -118,6 +120,21 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
     input: Record<string, unknown>,
   ): PermissionDecision {
     if (tool.provenance?.kind === "mcp") return this.canExecuteTool(mode, tool);
+
+    if (
+      tool.name === "git_branch" &&
+      (input["create"] !== undefined || input["delete"] !== undefined)
+    ) {
+      const readOnly = getAgentMode(mode as AgentModeId).readOnly;
+      return {
+        allowed: !readOnly,
+        requiresConfirmation: true,
+        risk: "destructive",
+        reason: readOnly
+          ? "Branch mutation is forbidden in read-only mode."
+          : "Creating/checking out or deleting a branch requires confirmation.",
+      };
+    }
 
     if (tool.name === "spawnSimpleAgent" || tool.name === "delegateTask") {
       const roleInput =
