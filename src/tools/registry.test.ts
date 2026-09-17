@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod";
+import { ToolRegistry } from "./registry.js";
 
 vi.mock("../utils/logger.js", () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -525,7 +526,71 @@ describe("zodFieldToJsonSchema edge cases", () => {
 
     const definitions = registry.getToolDefinitionsForLLM();
 
-    // Should return { type: "object" } for non-object schemas
-    expect(definitions[0].input_schema).toBeDefined();
+    // Primitive tool inputs cannot be represented as a callable object contract.
+    expect(definitions).toEqual([]);
   });
+});
+
+describe("faithful input schemas", () => {
+  it("preserves nested constraints, nullability, unions and input defaults", () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "contract",
+      description: "contract",
+      category: "test",
+      execute: vi.fn(),
+      parameters: z.object({
+        nested: z.object({
+          count: z.number().int().min(1).max(4),
+          label: z.string().min(2).describe("A label"),
+        }),
+        items: z.array(z.enum(["a", "b"])).min(1),
+        nullable: z.string().nullable(),
+        choice: z.union([z.string(), z.number()]).optional(),
+        defaulted: z.string().default("hello"),
+      }),
+    });
+    const schema = registry.getToolDefinitionsForLLM()[0]!.input_schema;
+    expect(schema.required).toEqual(["nested", "items", "nullable"]);
+    expect(schema.properties).toMatchObject({
+      nested: {
+        type: "object",
+        properties: {
+          count: { type: "integer", minimum: 1, maximum: 4 },
+          label: { type: "string", minLength: 2, description: "A label" },
+        },
+      },
+      items: { type: "array", minItems: 1, items: { enum: ["a", "b"] } },
+      nullable: { anyOf: [{ type: "string" }, { type: "null" }] },
+      choice: { anyOf: [{ type: "string" }, { type: "number" }] },
+      defaulted: { type: "string", default: "hello" },
+    });
+  });
+
+  it("does not advertise unsupported contracts as unconstrained objects", () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "unsupported",
+      description: "",
+      category: "test",
+      parameters: z.object({ value: z.date() }),
+      execute: vi.fn(),
+    });
+    registry.register({
+      name: "supported",
+      description: "",
+      category: "test",
+      parameters: z.object({}),
+      execute: vi.fn(),
+    });
+    expect(registry.getToolDefinitionsForLLM().map((tool) => tool.name)).toEqual(["supported"]);
+  });
+});
+
+it("advertises every registered built-in tool with a faithful object input", async () => {
+  const { createFullToolRegistry } = await import("./index.js");
+  const registry = createFullToolRegistry();
+  expect(registry.getToolDefinitionsForLLM().map((tool) => tool.name)).toEqual(
+    registry.getAll().map((tool) => tool.name),
+  );
 });

@@ -480,7 +480,7 @@ export class VertexProvider implements LLMProvider {
     functionDeclarations: Array<{
       name: string;
       description: string;
-      parameters: Record<string, unknown>;
+      parametersJsonSchema: Record<string, unknown>;
     }>;
   }> {
     return [
@@ -488,7 +488,7 @@ export class VertexProvider implements LLMProvider {
         functionDeclarations: tools.map((tool) => ({
           name: tool.name,
           description: tool.description,
-          parameters: tool.input_schema,
+          parametersJsonSchema: tool.input_schema,
         })),
       },
     ];

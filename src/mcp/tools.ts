@@ -5,6 +5,8 @@
  */
 
 import { z } from "zod";
+import { compileMCPInputSchema } from "./input-schema.js";
+import { getLogger } from "../utils/logger.js";
 import type {
   MCPTool,
   MCPWrappedTool,
@@ -195,13 +197,7 @@ export function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodType {
  * Create Zod schema from MCP tool input schema
  */
 function createToolParametersSchema(tool: MCPTool): z.ZodSchema {
-  const schema = tool.inputSchema;
-
-  if (!schema || schema.type !== "object") {
-    return z.object({});
-  }
-
-  return jsonSchemaToZod(schema as Record<string, unknown>);
+  return compileMCPInputSchema(tool.inputSchema as Record<string, unknown>);
 }
 
 /**
@@ -258,6 +254,7 @@ export function wrapMCPTool(
     category: opts.category as ToolCategory,
     provenance: { kind: "mcp", serverName, toolName: tool.name },
     parameters: parametersSchema,
+    inputSchema: structuredClone(tool.inputSchema) as Record<string, unknown>,
     execute: async (params: unknown, context) => {
       context?.signal?.throwIfAborted();
       try {
@@ -303,9 +300,18 @@ export function wrapMCPTools(
   const wrappedTools: MCPWrappedTool[] = [];
 
   for (const tool of tools) {
-    const { tool: cocoTool, wrapped } = wrapMCPTool(tool, serverName, client, options);
-    cocoTools.push(cocoTool);
-    wrappedTools.push(wrapped);
+    try {
+      const { tool: cocoTool, wrapped } = wrapMCPTool(tool, serverName, client, options);
+      cocoTools.push(cocoTool);
+      wrappedTools.push(wrapped);
+    } catch (error) {
+      getLogger().warn(
+        `MCP tool '${serverName}/${tool.name}' unavailable: unsupported input schema`,
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
   }
 
   return { tools: cocoTools, wrapped: wrappedTools };

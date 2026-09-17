@@ -1286,3 +1286,38 @@ describe("OpenAI-compatible provider compatibility", () => {
     expect(req.reasoning_effort).toBeUndefined();
   });
 });
+
+describe("tool input contract preservation", () => {
+  it.each(["convertTools", "convertToolsForResponses"])(
+    "preserves optional constraints through %s without strict rewriting",
+    async (method) => {
+      const { OpenAIProvider } = await import("./openai.js");
+      const provider = new OpenAIProvider();
+      const input_schema = {
+        type: "object",
+        properties: { optional: { anyOf: [{ type: "integer", minimum: 2 }, { type: "null" }] } },
+        required: [],
+      };
+      const tools = [{ name: "contract", description: "Contract", input_schema }];
+      const converted = (
+        provider as unknown as Record<
+          string,
+          (
+            input: Array<{
+              name: string;
+              description: string;
+              input_schema: Record<string, unknown>;
+            }>,
+          ) => Array<Record<string, unknown>>
+        >
+      )[method]!(tools);
+      const definition =
+        method === "convertTools"
+          ? (converted[0]!.function as Record<string, unknown>)
+          : converted[0]!;
+      expect(definition.strict).toBe(false);
+      expect(definition.parameters).toEqual(input_schema);
+      expect(input_schema.required).toEqual([]);
+    },
+  );
+});

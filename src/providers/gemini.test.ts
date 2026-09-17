@@ -167,6 +167,23 @@ describe("GeminiProvider", () => {
         tools,
       });
 
+      expect(mockGenerateContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({
+            tools: [
+              {
+                functionDeclarations: [
+                  {
+                    name: tools[0]!.name,
+                    description: tools[0]!.description,
+                    parametersJsonSchema: tools[0]!.input_schema,
+                  },
+                ],
+              },
+            ],
+          }),
+        }),
+      );
       expect(response.stopReason).toBe("tool_use");
       expect(response.toolCalls).toEqual([
         {

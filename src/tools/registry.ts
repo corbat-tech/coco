@@ -21,6 +21,8 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   provenance?: { kind: "mcp"; serverName: string; toolName: string };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   parameters: z.ZodType<TInput, any, any>;
+  /** Original JSON Schema for externally defined tools; parameters remains the runtime validator. */
+  inputSchema?: Record<string, unknown>;
   execute: (params: TInput, context?: ToolExecutionContext) => Promise<TOutput>;
 }
 
@@ -235,7 +237,7 @@ export class ToolRegistry {
         // Append the tool's JSON schema so the model can self-correct
         // (critical for mini-tier models that may not remember the schema)
         try {
-          const schema = zodToJsonSchema(tool.parameters);
+          const schema = tool.inputSchema ?? zodToJsonSchema(tool.parameters);
           errorMessage += `\n\nExpected schema for '${name}':\n${JSON.stringify(schema, null, 2)}`;
         } catch {
           // Schema serialization failed — skip the hint
@@ -292,67 +294,26 @@ export class ToolRegistry {
     description: string;
     input_schema: Record<string, unknown>;
   }> {
-    return this.getAll().map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      // Convert Zod schema to JSON schema
-      input_schema: zodToJsonSchema(tool.parameters),
-    }));
-  }
-}
-
-/**
- * Convert Zod schema to JSON schema (simplified)
- */
-function zodToJsonSchema(schema: z.ZodSchema): Record<string, unknown> {
-  // For now, use a basic conversion
-  // In production, use a library like zod-to-json-schema
-  try {
-    if (schema instanceof z.ZodObject) {
-      const shape = schema.shape;
-      const properties: Record<string, unknown> = {};
-      const required: string[] = [];
-
-      for (const [key, value] of Object.entries(shape)) {
-        const fieldSchema = value as z.ZodTypeAny;
-        properties[key] = zodFieldToJsonSchema(fieldSchema);
-
-        // Check if required (not optional)
-        if (!fieldSchema.isOptional()) {
-          required.push(key);
+    return this.getAll().flatMap((tool) => {
+      try {
+        const input_schema = tool.inputSchema ?? zodToJsonSchema(tool.parameters);
+        if (input_schema.type !== "object") {
+          throw new Error("Tool input must be an object schema");
         }
+        return [{ name: tool.name, description: tool.description, input_schema }];
+      } catch (error) {
+        this.logger.warn(`Tool '${tool.name}' unavailable to models: unsupported input schema`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return [];
       }
-
-      return {
-        type: "object",
-        properties,
-        required: required.length > 0 ? required : undefined,
-      };
-    }
-
-    return { type: "object" };
-  } catch {
-    return { type: "object" };
+    });
   }
 }
 
-/**
- * Convert a Zod field to JSON schema
- */
-function zodFieldToJsonSchema(field: z.ZodTypeAny): Record<string, unknown> {
-  if (field instanceof z.ZodString) return { type: "string" };
-  if (field instanceof z.ZodNumber) return { type: "number" };
-  if (field instanceof z.ZodBoolean) return { type: "boolean" };
-  if (field instanceof z.ZodArray) {
-    return { type: "array", items: zodFieldToJsonSchema(field.element as z.ZodTypeAny) };
-  }
-  if (field instanceof z.ZodOptional) return zodFieldToJsonSchema(field.unwrap() as z.ZodTypeAny);
-  if (field instanceof z.ZodDefault)
-    return zodFieldToJsonSchema(field.removeDefault() as z.ZodTypeAny);
-  if (field instanceof z.ZodEnum) {
-    return { type: "string", enum: field.options };
-  }
-  return {};
+/** Preserve the input contract; Zod remains authoritative when executing the tool. */
+function zodToJsonSchema(schema: z.ZodSchema): Record<string, unknown> {
+  return z.toJSONSchema(schema, { io: "input" });
 }
 
 /**

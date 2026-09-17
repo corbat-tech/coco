@@ -1079,7 +1079,8 @@ export class OpenAIProvider implements LLMProvider {
         name: tool.name,
         description: truncateToolDescription(tool.description),
         parameters: tool.input_schema,
-        strict: true,
+        // Preserve optional inputs; runtime tool validators enforce the full contract.
+        strict: false,
       },
     }));
   }
@@ -1737,7 +1738,8 @@ export class OpenAIProvider implements LLMProvider {
       name: tool.name,
       description: tool.description ? truncateToolDescription(tool.description) : undefined,
       parameters: tool.input_schema ?? null,
-      strict: true,
+      // Explicit opt-out prevents Responses from making optional properties required.
+      strict: false,
     }));
   }
 }

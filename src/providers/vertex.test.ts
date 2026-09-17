@@ -82,6 +82,21 @@ describe("VertexProvider", () => {
       contents: Array<{ role: string; parts: Array<Record<string, unknown>> }>;
     };
 
+    expect(JSON.parse(String(call?.[1]?.body)).tools).toEqual([
+      {
+        functionDeclarations: [
+          {
+            name: "get_weather",
+            description: "Returns weather by city",
+            parametersJsonSchema: {
+              type: "object",
+              properties: { city: { type: "string" } },
+              required: ["city"],
+            },
+          },
+        ],
+      },
+    ]);
     expect(body.contents).toEqual([
       { role: "user", parts: [{ text: "Find the weather" }] },
       {

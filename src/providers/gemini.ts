@@ -453,7 +453,7 @@ export class GeminiProvider implements LLMProvider {
     return tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
-      parameters: tool.input_schema as unknown as FunctionDeclaration["parameters"],
+      parametersJsonSchema: tool.input_schema,
     }));
   }
 
