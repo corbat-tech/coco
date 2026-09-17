@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0-next.4] - 2026-09-17
+
+### Fixed
+
+- Bound incoming MCP frames, SSE events and HTTP bodies to 16 MiB; preserve split UTF-8 and close oversized connections without replaying tool calls.
+- Own POSIX test-runner process groups through cancellation and completion; bound output by bytes and reject overflow or abnormal termination instead of accepting a passing report.
+- Carry cancellation through app interviews and onboarding/authentication; close owned callbacks and guard persistence against late success.
+- Preserve local tool input schemas with Zod 4 and validate original MCP JSON Schemas with Ajv without changing arguments. Keep all existing built-in tools and models.
+- Use native JSON Schema fields for Google tools and explicitly preserve optional inputs in OpenAI requests.
+- Prepare GitHub Actions trusted npm publication through OIDC, without a token fallback or token-only authentication preflight.
+
+### Candidate limits
+
+npm `next` only; `latest` stays unchanged. Windows process cleanup covers direct children; remote effects and escaped process groups are not controlled. `calculate_quality` and `bash_background` remain unavailable. No paid-model evaluation or complete external product audit is claimed. Publication requires the package owner's trusted-publisher configuration; see `docs/evolution/NEXT_DELIVERY_NEXT4.md` for actual verification and publication status.
+
 ## [2.42.0-next.3] - 2026-09-17
 
 ### Fixed

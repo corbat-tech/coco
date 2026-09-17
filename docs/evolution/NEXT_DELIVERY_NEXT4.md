@@ -11,7 +11,7 @@ Base: `2.42.0-next.3` / `55d3d8d`. Canal objetivo: `next`; no mover `latest`.
 - [x] Contratos MCP: esquema original y validación Ajv sin modificar argumentos.
 - [x] Adaptadores existentes: representación fiel o diagnóstico explícito; conservar modelos.
 - [ ] Publicación: OIDC GitHub → npm; configurar confianza en cuenta propietaria.
-- [ ] Gate completo, revisión independiente final, artefacto único e instalación limpia.
+- [x] Gate completo, revisión independiente final, artefacto único e instalación limpia.
 - [ ] Publicación verificada en npm y prerelease GitHub.
 
 ## Método
@@ -36,3 +36,31 @@ Se conservan TypeScript, modelos actuales y APIs compatibles. Sin llamadas de in
 - Cancelación: 174 tests PASS; revisión detectó y corrigió persistencia parcial del backlog (ahora temp+rename), procesos de browser/gcloud sin señal y probes que podían iniciar fallback tras abort. Fixture OAuth adicional corregido por descriptor promisify; revalidación pendiente.
 - Proveedores: 303 tests PASS para API additive isAvailable({signal}); types/lint/format PASS. Una advertencia de lint preexistente en owned-shell.then, sin errores. Última corrección pendiente del wrapper de circuit breaker antes del gate.
 - npm confirma `next.4` libre (E404), `latest=2.41.0`, `next=2.42.0-next.3`. Usuario está configurando Trusted Publisher.
+
+- `30573ea`: entrevista/onboarding/auth; 174 tests + 3 OAuth PASS. Revisión independiente confirmó correcciones, sin bloqueantes en este bloque.
+- `23a10bf`: probes cancelables de proveedores. 303 tests + 8 de wrapper PASS. Cancelación no cuenta como fallo del circuit breaker ni borra fallos previos (revisión cruzada + regresiones).
+- `97d9b87`: overflow real con descendiente resistente y normalización binaria. 36 tests runner PASS.
+- Gate completo `pnpm check:release` en ejecución en mirror aislado con Node 22.23.2. Sin inferencia real ni acceso a credenciales en tests. Nueva revisión final del diff solicitada; publicación aún no intentada.
+
+## Configuración de publicación
+
+npm Trusted Publisher: GitHub Actions, owner `corbat-tech`, repository `coco`, workflow filename `release.yml`, environment vacío. Workflow usa npm 11.17.0 y permisos id-token:write; no inyecta NPM_TOKEN. Configurar desde cuenta propietaria antes del tag. Mantener 2FA y secreto anterior sin usar; no borrarlo como parte de esta entrega.
+
+## Documentación contrastada
+
+- https://zod.dev/json-schema — conversión nativa de esquemas de entrada.
+- https://ajv.js.org/json-schema — validadores separados por dialecto.
+- https://developers.openai.com/api/docs/guides/function-calling — opcionalidad y strict:false.
+- https://googleapis.github.io/js-genai/release_docs/interfaces/types.FunctionDeclaration.html — parametersJsonSchema.
+- https://docs.npmjs.com/trusted-publishers/ — publicación OIDC.
+
+## Gate y revisión final
+
+- Gate completo PASS en 75,38 s: types, lint (advertencia preexistente), formato, 7.996 tests principales PASS / 15 skipped, 27 tests REPL PASS y build JS/declaraciones PASS.
+- Cobertura: 70,69 % statements; 63,14 % branches; 76,21 % functions; 71,33 % lines. No se han reducido umbrales; objetivo 80 % sigue como deuda.
+- Revisión final independiente del diff: sin bloqueantes después de las correcciones. Es revisión de esta entrega, no auditoría integral ni evaluación con modelos reales.
+- Los estados pendientes en el registro cronológico anterior quedaron resueltos: fixture OAuth (3 PASS), breaker (8 PASS), pruebas y build global.
+- Empaquetado/instalación limpia en curso. No se ha creado tag ni intentado publicación mientras se configura npm Trusted Publisher.
+
+- Candidato local instalado/verificado: CLI --version/--help, exports y runtime con herramienta real de archivos PASS (proveedor simulado). Integridad `sha512-+9je9E3NxjFbqZfiPje7A477xndRfZLTlXzdEjTHWyZ0+duLEemztf1LHWvqJ81+xx4R712KlnWbV2j5v2q7/w==`. Artefacto conservado en `.dev/evolution/candidate-2.42.0-next.4/`; logs en `.dev/evolution/next4-logs/` (ignorados por Git).
+- Código listo para etiquetar/publicar; pendiente confirmación de configuración del Trusted Publisher. El tarball que publique Actions debe superar de nuevo su gate y coincidir con la integridad registrada en npm.
