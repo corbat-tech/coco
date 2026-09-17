@@ -8,6 +8,10 @@
  */
 
 import * as p from "@clack/prompts";
+import {
+  cancellationCheckpoint,
+  withInteractiveCancellation,
+} from "../../utils/interactive-cancellation.js";
 import chalk from "chalk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -52,7 +56,8 @@ export interface OnboardingResult {
 /**
  * Ejecutar flujo de onboarding completo
  */
-export async function runOnboardingV2(): Promise<OnboardingResult | null> {
+async function runOnboardingV2Internal(signal?: AbortSignal): Promise<OnboardingResult | null> {
+  signal?.throwIfAborted();
   console.clear();
 
   // Paso 1: Detectar providers ya configurados
@@ -88,25 +93,29 @@ export async function runOnboardingV2(): Promise<OnboardingResult | null> {
     // Elegir proveedor directamente (sin lista redundante)
     const providers = getAllProviders();
 
-    const providerChoice = await p.select({
-      message: "Choose a provider to get started:",
-      options: [
-        ...providers.map((prov) => ({
-          value: prov.id,
-          label: `${prov.emoji} ${prov.name}`,
-          hint: `${formatPaymentBadge(prov.paymentType)} ${prov.requiresApiKey === false ? "Free, runs locally" : prov.description}`,
-        })),
-        {
-          value: "help",
-          label: "❓ How do I get an API key?",
-          hint: "Show provider URLs",
-        },
-        {
-          value: "exit",
-          label: "👋 Exit for now",
-        },
-      ],
-    });
+    const providerChoice = await cancellationCheckpoint(
+      p.select({
+        signal,
+        message: "Choose a provider to get started:",
+        options: [
+          ...providers.map((prov) => ({
+            value: prov.id,
+            label: `${prov.emoji} ${prov.name}`,
+            hint: `${formatPaymentBadge(prov.paymentType)} ${prov.requiresApiKey === false ? "Free, runs locally" : prov.description}`,
+          })),
+          {
+            value: "help",
+            label: "❓ How do I get an API key?",
+            hint: "Show provider URLs",
+          },
+          {
+            value: "exit",
+            label: "👋 Exit for now",
+          },
+        ],
+      }),
+      signal,
+    );
 
     if (p.isCancel(providerChoice) || providerChoice === "exit") {
       p.log.message(chalk.dim("\n👋 No worries! Run `coco` again when you're ready.\n"));
@@ -114,19 +123,22 @@ export async function runOnboardingV2(): Promise<OnboardingResult | null> {
     }
 
     if (providerChoice === "help") {
-      await showApiKeyHelp();
-      return runOnboardingV2(); // Volver al inicio
+      await cancellationCheckpoint(showApiKeyHelp(signal), signal);
+      return runOnboardingV2(signal); // Volver al inicio
     }
 
     const selectedProvider = getProviderDefinition(providerChoice as ProviderType);
 
     // Local providers (LM Studio, Ollama) go to their own setup flow
     if (selectedProvider.id === "lmstudio" || selectedProvider.id === "ollama") {
-      return await setupLocalProvider(selectedProvider.id);
+      return await cancellationCheckpoint(
+        setupLocalProvider(selectedProvider.id, undefined, signal),
+        signal,
+      );
     }
 
     // Para cloud providers, elegir método de autenticación
-    return await setupProviderWithAuth(selectedProvider);
+    return await cancellationCheckpoint(setupProviderWithAuth(selectedProvider, signal), signal);
   }
 
   // Ya tiene providers configurados - banner compacto
@@ -147,26 +159,30 @@ export async function runOnboardingV2(): Promise<OnboardingResult | null> {
       .join(", ")}`,
   );
 
-  const useExisting = await p.confirm({
-    message: "Use an existing provider?",
-    initialValue: true,
-  });
+  const useExisting = await cancellationCheckpoint(
+    p.confirm({ signal, message: "Use an existing provider?", initialValue: true }),
+    signal,
+  );
 
   if (p.isCancel(useExisting)) return null;
 
   if (useExisting) {
-    const selected = await selectExistingProvider(configuredProviders);
+    const selected = await cancellationCheckpoint(
+      selectExistingProvider(configuredProviders, signal),
+      signal,
+    );
     if (selected) return selected;
   }
 
   // Configurar nuevo provider
-  return await setupNewProvider();
+  return await cancellationCheckpoint(setupNewProvider(signal), signal);
 }
 
 /**
  * Mostrar ayuda detallada para obtener API keys
  */
-async function showApiKeyHelp(): Promise<void> {
+async function showApiKeyHelp(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
   console.clear();
   console.log(
     chalk.cyan.bold(`
@@ -187,6 +203,7 @@ async function showApiKeyHelp(): Promise<void> {
       parsedUrl.search = "";
       console.log(`   ${chalk.cyan("→")} ${parsedUrl.toString()}`);
     } catch {
+      signal?.throwIfAborted();
       console.log(`   ${chalk.cyan("→")} [API keys page]`);
     }
     console.log(chalk.dim(`   Env var: ${provider.envVar}`));
@@ -199,10 +216,10 @@ async function showApiKeyHelp(): Promise<void> {
 
   console.log(chalk.yellow("\n💡 Tip: Anthropic Claude gives the best coding results.\n"));
 
-  await p.confirm({
-    message: "Press Enter to continue...",
-    initialValue: true,
-  });
+  await cancellationCheckpoint(
+    p.confirm({ signal, message: "Press Enter to continue...", initialValue: true }),
+    signal,
+  );
 }
 
 /**
@@ -210,7 +227,9 @@ async function showApiKeyHelp(): Promise<void> {
  */
 async function setupProviderWithAuth(
   provider: ProviderDefinition,
+  signal?: AbortSignal,
 ): Promise<OnboardingResult | null> {
+  signal?.throwIfAborted();
   // Check available auth methods
   const hasOAuth = supportsOAuth(provider.id);
   const hasGcloudADC = provider.supportsGcloudADC;
@@ -247,10 +266,14 @@ async function setupProviderWithAuth(
 
   // Only show selection if there are multiple options
   if (authOptions.length > 1) {
-    const choice = await p.select({
-      message: `How would you like to authenticate with ${provider.name}?`,
-      options: authOptions,
-    });
+    const choice = await cancellationCheckpoint(
+      p.select({
+        signal,
+        message: `How would you like to authenticate with ${provider.name}?`,
+        options: authOptions,
+      }),
+      signal,
+    );
 
     if (p.isCancel(choice)) return null;
     authMethod = choice as "oauth" | "apikey" | "gcloud";
@@ -258,15 +281,15 @@ async function setupProviderWithAuth(
 
   if (authMethod === "oauth") {
     // OAuth flow
-    const oauthSpinner = p.spinner();
+    const oauthSpinner = p.spinner({ signal });
     oauthSpinner.start("Starting OAuth sign-in flow...");
-    const result = await runOAuthFlow(provider.id);
+    const result = await cancellationCheckpoint(runOAuthFlow(provider.id, signal), signal);
     oauthSpinner.stop(result ? "OAuth sign-in completed" : "OAuth sign-in cancelled");
     if (!result) return null;
 
     if (provider.id === "copilot") {
       // Copilot: select from copilot models directly
-      const model = await selectModel(provider);
+      const model = await cancellationCheckpoint(selectModel(provider, signal), signal);
       if (!model) return null;
 
       return {
@@ -282,7 +305,7 @@ async function setupProviderWithAuth(
     const codexProvider = getProviderDefinition("codex");
 
     // Select model from codex provider (which has the correct models for OAuth)
-    const model = await selectModel(codexProvider);
+    const model = await cancellationCheckpoint(selectModel(codexProvider, signal), signal);
     if (!model) return null;
 
     return {
@@ -294,17 +317,17 @@ async function setupProviderWithAuth(
 
   if (authMethod === "gcloud") {
     // gcloud ADC flow
-    return await setupGcloudADC(provider);
+    return await cancellationCheckpoint(setupGcloudADC(provider, signal), signal);
   }
 
   // API key flow
   showProviderInfo(provider);
 
-  const apiKey = await requestApiKey(provider);
+  const apiKey = await cancellationCheckpoint(requestApiKey(provider, signal), signal);
   if (!apiKey) return null;
   let vertexSettings: { project: string; location: string } | undefined;
   if (provider.id === "vertex") {
-    const settings = await promptVertexSettings();
+    const settings = await cancellationCheckpoint(promptVertexSettings(signal), signal);
     if (!settings) return null;
     vertexSettings = settings;
   }
@@ -312,23 +335,31 @@ async function setupProviderWithAuth(
   // Ask for custom URL if provider supports it
   let baseUrl: string | undefined;
   if (provider.askForCustomUrl) {
-    const wantsCustomUrl = await p.confirm({
-      message: `Use default API URL? (${provider.baseUrl})`,
-      initialValue: true,
-    });
+    const wantsCustomUrl = await cancellationCheckpoint(
+      p.confirm({
+        signal,
+        message: `Use default API URL? (${provider.baseUrl})`,
+        initialValue: true,
+      }),
+      signal,
+    );
 
     if (p.isCancel(wantsCustomUrl)) return null;
 
     if (!wantsCustomUrl) {
-      const url = await p.text({
-        message: "Enter custom API URL:",
-        placeholder: provider.baseUrl,
-        validate: (v) => {
-          if (!v) return "URL is required";
-          if (!v.startsWith("http")) return "Must start with http:// or https://";
-          return;
-        },
-      });
+      const url = await cancellationCheckpoint(
+        p.text({
+          signal,
+          message: "Enter custom API URL:",
+          placeholder: provider.baseUrl,
+          validate: (v) => {
+            if (!v) return "URL is required";
+            if (!v.startsWith("http")) return "Must start with http:// or https://";
+            return;
+          },
+        }),
+        signal,
+      );
 
       if (p.isCancel(url)) return null;
       baseUrl = url;
@@ -336,19 +367,22 @@ async function setupProviderWithAuth(
   }
 
   // Select model
-  const model = await selectModel(provider);
+  const model = await cancellationCheckpoint(selectModel(provider, signal), signal);
   if (!model) return null;
 
   // Test connection
-  const valid = await testConnection(provider, apiKey, model, baseUrl, vertexSettings);
+  const valid = await cancellationCheckpoint(
+    testConnection(provider, apiKey, model, baseUrl, vertexSettings, signal),
+    signal,
+  );
   if (!valid) {
-    const retry = await p.confirm({
-      message: "Would you like to try again?",
-      initialValue: true,
-    });
+    const retry = await cancellationCheckpoint(
+      p.confirm({ signal, message: "Would you like to try again?", initialValue: true }),
+      signal,
+    );
 
     if (retry && !p.isCancel(retry)) {
-      return setupProviderWithAuth(provider);
+      return setupProviderWithAuth(provider, signal);
     }
     return null;
   }
@@ -367,7 +401,11 @@ async function setupProviderWithAuth(
  * Setup provider with gcloud Application Default Credentials
  * Reuses existing local ADC and points users to manual setup when needed
  */
-async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingResult | null> {
+async function setupGcloudADC(
+  provider: ProviderDefinition,
+  signal?: AbortSignal,
+): Promise<OnboardingResult | null> {
+  signal?.throwIfAborted();
   console.log();
   console.log(chalk.magenta("   ╭─────────────────────────────────────────────────╮"));
   console.log(
@@ -379,38 +417,41 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
   console.log();
 
   // Check if gcloud CLI is installed
-  const gcloudCheckSpinner = p.spinner();
+  const gcloudCheckSpinner = p.spinner({ signal });
   gcloudCheckSpinner.start("Checking gcloud CLI...");
-  const gcloudInstalled = await isGcloudInstalled();
+  const gcloudInstalled = await cancellationCheckpoint(isGcloudInstalled(signal), signal);
   gcloudCheckSpinner.stop(gcloudInstalled ? "gcloud CLI detected" : "gcloud CLI not detected");
   if (!gcloudInstalled) {
     p.log.error("gcloud CLI is not installed");
     console.log(chalk.dim("   Install it from: https://cloud.google.com/sdk/docs/install"));
     console.log();
 
-    const useFallback = await p.confirm({
-      message: "Use API key instead?",
-      initialValue: true,
-    });
+    const useFallback = await cancellationCheckpoint(
+      p.confirm({ signal, message: "Use API key instead?", initialValue: true }),
+      signal,
+    );
 
     if (p.isCancel(useFallback) || !useFallback) return null;
 
     // Fall back to API key flow
     showProviderInfo(provider);
-    const apiKey = await requestApiKey(provider);
+    const apiKey = await cancellationCheckpoint(requestApiKey(provider, signal), signal);
     if (!apiKey) return null;
 
-    const model = await selectModel(provider);
+    const model = await cancellationCheckpoint(selectModel(provider, signal), signal);
     if (!model) return null;
 
     let vertexSettings: { project: string; location: string } | undefined;
     if (provider.id === "vertex") {
-      const settings = await promptVertexSettings();
+      const settings = await cancellationCheckpoint(promptVertexSettings(signal), signal);
       if (!settings) return null;
       vertexSettings = settings;
     }
 
-    const valid = await testConnection(provider, apiKey, model, undefined, vertexSettings);
+    const valid = await cancellationCheckpoint(
+      testConnection(provider, apiKey, model, undefined, vertexSettings, signal),
+      signal,
+    );
     if (!valid) return null;
 
     return {
@@ -422,9 +463,9 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
     };
   }
 
-  const adcInspectSpinner = p.spinner();
+  const adcInspectSpinner = p.spinner({ signal });
   adcInspectSpinner.start("Checking existing ADC credentials...");
-  let adc = await inspectADC();
+  let adc = await cancellationCheckpoint(inspectADC(signal), signal);
   adcInspectSpinner.stop(
     adc.status === "ok" && adc.token
       ? "ADC credentials found"
@@ -434,19 +475,23 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
   if (adc.status === "ok" && adc.token) {
     console.log(chalk.green("   ✓ gcloud ADC is already configured!"));
     console.log();
-    const adcChoice = await p.select({
-      message: "ADC session detected. What do you want to do?",
-      options: [
-        { value: "use", label: "Use current ADC session" },
-        { value: "switch", label: "Switch Google account (revoke and re-login)" },
-        { value: "cancel", label: "Cancel" },
-      ],
-    });
+    const adcChoice = await cancellationCheckpoint(
+      p.select({
+        signal,
+        message: "ADC session detected. What do you want to do?",
+        options: [
+          { value: "use", label: "Use current ADC session" },
+          { value: "switch", label: "Switch Google account (revoke and re-login)" },
+          { value: "cancel", label: "Cancel" },
+        ],
+      }),
+      signal,
+    );
     if (p.isCancel(adcChoice) || adcChoice === "cancel") return null;
     if (adcChoice === "switch") {
-      const revokeSpinner = p.spinner();
+      const revokeSpinner = p.spinner({ signal });
       revokeSpinner.start("Revoking current gcloud ADC session...");
-      const revoked = await runGcloudADCRevoke();
+      const revoked = await cancellationCheckpoint(runGcloudADCRevoke(signal), signal);
       revokeSpinner.stop(
         revoked ? "Current ADC session revoked" : "Could not revoke current ADC session",
       );
@@ -456,14 +501,14 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
         console.log();
         return null;
       }
-      const loginSpinner = p.spinner();
+      const loginSpinner = p.spinner({ signal });
       loginSpinner.start("Running `gcloud auth application-default login`...");
-      const loginOk = await runGcloudADCLogin();
+      const loginOk = await cancellationCheckpoint(runGcloudADCLogin(signal), signal);
       loginSpinner.stop(loginOk ? "gcloud login flow completed" : "gcloud login flow failed");
       if (!loginOk) return null;
-      const recheckSpinner = p.spinner();
+      const recheckSpinner = p.spinner({ signal });
       recheckSpinner.start("Verifying ADC credentials after re-login...");
-      adc = await inspectADC();
+      adc = await cancellationCheckpoint(inspectADC(signal), signal);
       recheckSpinner.stop(
         adc.status === "ok" && adc.token
           ? "ADC credentials verified"
@@ -473,10 +518,13 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
     }
     p.log.success("Authentication verified");
 
-    const vertexSettings = provider.id === "vertex" ? await promptVertexSettings() : undefined;
+    const vertexSettings =
+      provider.id === "vertex"
+        ? await cancellationCheckpoint(promptVertexSettings(signal), signal)
+        : undefined;
     if (provider.id === "vertex" && !vertexSettings) return null;
 
-    const model = await selectModel(provider);
+    const model = await cancellationCheckpoint(selectModel(provider, signal), signal);
     if (!model) return null;
 
     return {
@@ -494,22 +542,22 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
     console.log(chalk.dim(`   ${adc.message}`));
     console.log();
   }
-  const runLoginNow = await p.confirm({
-    message: "Authenticate with gcloud now from Coco?",
-    initialValue: true,
-  });
+  const runLoginNow = await cancellationCheckpoint(
+    p.confirm({ signal, message: "Authenticate with gcloud now from Coco?", initialValue: true }),
+    signal,
+  );
   if (p.isCancel(runLoginNow)) return null;
 
   if (runLoginNow) {
     p.log.step("Running `gcloud auth application-default login`...");
-    const loginSpinner = p.spinner();
+    const loginSpinner = p.spinner({ signal });
     loginSpinner.start("Launching gcloud login flow (browser may open)...");
-    const loginOk = await runGcloudADCLogin();
+    const loginOk = await cancellationCheckpoint(runGcloudADCLogin(signal), signal);
     loginSpinner.stop(loginOk ? "gcloud login flow completed" : "gcloud login flow failed");
     if (loginOk) {
-      const recheckSpinner = p.spinner();
+      const recheckSpinner = p.spinner({ signal });
       recheckSpinner.start("Verifying ADC credentials after login...");
-      adc = await inspectADC();
+      adc = await cancellationCheckpoint(inspectADC(signal), signal);
       recheckSpinner.stop(
         adc.status === "ok" && adc.token
           ? "ADC credentials verified"
@@ -520,10 +568,13 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
         console.log();
         p.log.success("Authentication verified");
 
-        const vertexSettings = provider.id === "vertex" ? await promptVertexSettings() : undefined;
+        const vertexSettings =
+          provider.id === "vertex"
+            ? await cancellationCheckpoint(promptVertexSettings(signal), signal)
+            : undefined;
         if (provider.id === "vertex" && !vertexSettings) return null;
 
-        const model = await selectModel(provider);
+        const model = await cancellationCheckpoint(selectModel(provider, signal), signal);
         if (!model) return null;
 
         return {
@@ -553,28 +604,31 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
   console.log(chalk.dim("   Coco will reuse the login on the next attempt if ADC is valid."));
   console.log();
 
-  const useFallback = await p.confirm({
-    message: "Use API key for now?",
-    initialValue: true,
-  });
+  const useFallback = await cancellationCheckpoint(
+    p.confirm({ signal, message: "Use API key for now?", initialValue: true }),
+    signal,
+  );
 
   if (p.isCancel(useFallback) || !useFallback) return null;
 
   showProviderInfo(provider);
-  const apiKey = await requestApiKey(provider);
+  const apiKey = await cancellationCheckpoint(requestApiKey(provider, signal), signal);
   if (!apiKey) return null;
 
-  const model = await selectModel(provider);
+  const model = await cancellationCheckpoint(selectModel(provider, signal), signal);
   if (!model) return null;
 
   let vertexSettings: { project: string; location: string } | undefined;
   if (provider.id === "vertex") {
-    const settings = await promptVertexSettings();
+    const settings = await cancellationCheckpoint(promptVertexSettings(signal), signal);
     if (!settings) return null;
     vertexSettings = settings;
   }
 
-  const valid = await testConnection(provider, apiKey, model, undefined, vertexSettings);
+  const valid = await cancellationCheckpoint(
+    testConnection(provider, apiKey, model, undefined, vertexSettings, signal),
+    signal,
+  );
   if (!valid) return null;
 
   return {
@@ -586,7 +640,10 @@ async function setupGcloudADC(provider: ProviderDefinition): Promise<OnboardingR
   };
 }
 
-async function promptVertexSettings(): Promise<{ project: string; location: string } | null> {
+async function promptVertexSettings(
+  signal?: AbortSignal,
+): Promise<{ project: string; location: string } | null> {
+  signal?.throwIfAborted();
   const projectDefault =
     process.env["VERTEX_PROJECT"] ??
     process.env["GOOGLE_CLOUD_PROJECT"] ??
@@ -609,20 +666,28 @@ async function promptVertexSettings(): Promise<{ project: string; location: stri
     ),
   );
 
-  const project = await p.text({
-    message: "Google Cloud project ID:",
-    placeholder: projectDefault || "my-gcp-project",
-    initialValue: projectDefault,
-    validate: (v) => (!v?.trim() ? "Project ID is required for Vertex AI" : undefined),
-  });
+  const project = await cancellationCheckpoint(
+    p.text({
+      signal,
+      message: "Google Cloud project ID:",
+      placeholder: projectDefault || "my-gcp-project",
+      initialValue: projectDefault,
+      validate: (v) => (!v?.trim() ? "Project ID is required for Vertex AI" : undefined),
+    }),
+    signal,
+  );
   if (p.isCancel(project)) return null;
 
-  const location = await p.text({
-    message: "Vertex AI location:",
-    placeholder: locationDefault,
-    initialValue: locationDefault,
-    validate: (v) => (!v?.trim() ? "Location is required for Vertex AI" : undefined),
-  });
+  const location = await cancellationCheckpoint(
+    p.text({
+      signal,
+      message: "Vertex AI location:",
+      placeholder: locationDefault,
+      initialValue: locationDefault,
+      validate: (v) => (!v?.trim() ? "Location is required for Vertex AI" : undefined),
+    }),
+    signal,
+  );
   if (p.isCancel(location)) return null;
 
   return {
@@ -699,7 +764,9 @@ type LocalProviderType = keyof typeof LOCAL_PROVIDER_CONFIG;
 async function testLocalModel(
   port: number,
   model: string,
+  signal?: AbortSignal,
 ): Promise<{ success: boolean; error?: string }> {
+  signal?.throwIfAborted();
   // Use a system prompt similar in size to what Coco uses in production
   // Coco uses: COCO_SYSTEM_PROMPT (~500 tokens) + CLAUDE.md content (~2000-6000 tokens)
   // Plus conversation context. Total can easily reach 8000+ tokens.
@@ -737,30 +804,39 @@ Use Zod for configuration schemas. Use Commander for CLI. Use Clack for prompts.
   const testSystemPrompt = basePrompt.repeat(8);
 
   try {
-    const response = await fetch(`http://localhost:${port}/v1/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: testSystemPrompt },
-          { role: "user", content: "Say OK if you can read this." },
-        ],
-        max_tokens: 10,
+    const response = await cancellationCheckpoint(
+      fetch(`http://localhost:${port}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: testSystemPrompt },
+            { role: "user", content: "Say OK if you can read this." },
+          ],
+          max_tokens: 10,
+        }),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+          : AbortSignal.timeout(30000), // Longer timeout for slower models
       }),
-      signal: AbortSignal.timeout(30000), // Longer timeout for slower models
-    });
+      signal,
+    );
 
     if (response.ok) {
       return { success: true };
     }
 
-    const errorData = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+    const errorData = (await cancellationCheckpoint(
+      response.json().catch(() => ({})),
+      signal,
+    )) as { error?: { message?: string } };
     return {
       success: false,
       error: errorData.error?.message || `HTTP ${response.status}`,
     };
   } catch (err) {
+    signal?.throwIfAborted();
     return {
       success: false,
       error: err instanceof Error ? err.message : "Connection failed",
@@ -774,7 +850,9 @@ Use Zod for configuration schemas. Use Commander for CLI. Use Clack for prompts.
 async function showContextLengthError(
   model: string,
   providerType: LocalProviderType = "lmstudio",
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted();
   const cfg = LOCAL_PROVIDER_CONFIG[providerType];
   p.log.message("");
   p.log.message(chalk.red("   ❌ Context length too small"));
@@ -788,10 +866,10 @@ async function showContextLengthError(
   p.log.message(chalk.dim(`   Model: ${model}`));
   p.log.message("");
 
-  await p.confirm({
-    message: "Press Enter after reloading the model...",
-    initialValue: true,
-  });
+  await cancellationCheckpoint(
+    p.confirm({ signal, message: "Press Enter after reloading the model...", initialValue: true }),
+    signal,
+  );
 }
 
 /**
@@ -800,7 +878,9 @@ async function showContextLengthError(
 async function setupLocalProvider(
   providerType: LocalProviderType,
   port?: number,
+  signal?: AbortSignal,
 ): Promise<OnboardingResult | null> {
+  signal?.throwIfAborted();
   const cfg = LOCAL_PROVIDER_CONFIG[providerType];
   const effectivePort = port ?? cfg.defaultPort;
   const provider = getProviderDefinition(providerType);
@@ -810,17 +890,23 @@ async function setupLocalProvider(
 
   // Loop hasta que el servidor esté conectado
   while (true) {
-    const spinner = p.spinner();
+    const spinner = p.spinner({ signal });
     spinner.start(`Checking ${cfg.displayName} server on port ${effectivePort}...`);
 
     let serverRunning = false;
     try {
-      const response = await fetch(`http://localhost:${effectivePort}/v1/models`, {
-        method: "GET",
-        signal: AbortSignal.timeout(3000),
-      });
+      const response = await cancellationCheckpoint(
+        fetch(`http://localhost:${effectivePort}/v1/models`, {
+          method: "GET",
+          signal: signal
+            ? AbortSignal.any([signal, AbortSignal.timeout(3000)])
+            : AbortSignal.timeout(3000),
+        }),
+        signal,
+      );
       serverRunning = response.ok;
     } catch {
+      signal?.throwIfAborted();
       // Server not running
     }
 
@@ -829,12 +915,19 @@ async function setupLocalProvider(
 
       // Try to get loaded models from local server
       try {
-        const modelsResponse = await fetch(`http://localhost:${effectivePort}/v1/models`, {
-          method: "GET",
-          signal: AbortSignal.timeout(3000),
-        });
+        const modelsResponse = await cancellationCheckpoint(
+          fetch(`http://localhost:${effectivePort}/v1/models`, {
+            method: "GET",
+            signal: signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(3000)])
+              : AbortSignal.timeout(3000),
+          }),
+          signal,
+        );
         if (modelsResponse.ok) {
-          const modelsData = (await modelsResponse.json()) as { data?: Array<{ id: string }> };
+          const modelsData = (await cancellationCheckpoint(modelsResponse.json(), signal)) as {
+            data?: Array<{ id: string }>;
+          };
           if (modelsData.data && modelsData.data.length > 0) {
             // Found loaded models - let user choose from them
             const loadedModels = modelsData.data.map((m) => m.id);
@@ -845,20 +938,26 @@ async function setupLocalProvider(
               p.log.message(chalk.green(`   📦 Using loaded model: ${model}`));
 
               // Test the model before returning
-              const testSpinner = p.spinner();
+              const testSpinner = p.spinner({ signal });
               testSpinner.start(`Testing model ${model}...`);
-              const testResult = await testLocalModel(effectivePort, model);
+              const testResult = await cancellationCheckpoint(
+                testLocalModel(effectivePort, model, signal),
+                signal,
+              );
               if (!testResult.success) {
                 testSpinner.stop(`Model test failed`);
                 if (
                   testResult.error?.includes("context length") ||
                   testResult.error?.includes("tokens to keep")
                 ) {
-                  await showContextLengthError(model, providerType);
-                  return setupLocalProvider(providerType, effectivePort);
+                  await cancellationCheckpoint(
+                    showContextLengthError(model, providerType, signal),
+                    signal,
+                  );
+                  return setupLocalProvider(providerType, effectivePort, signal);
                 }
                 p.log.message(chalk.yellow(`\n   ⚠️  Model test failed: ${testResult.error}\n`));
-                return setupLocalProvider(providerType, effectivePort);
+                return setupLocalProvider(providerType, effectivePort, signal);
               }
 
               testSpinner.stop(`Model ready!`);
@@ -892,40 +991,50 @@ async function setupLocalProvider(
                 const suggestions = formatLocalModelSuggestions(notDownloaded, providerType);
                 p.log.message(chalk.dim(suggestions));
               }
-              const modelChoice = await p.select({
-                message: "Choose a loaded model:",
-                options: loadedModels.map((m) => {
-                  const staticDef = providerModels.find(
-                    (pm) =>
-                      pm.id === m ||
-                      m.toLowerCase().includes(pm.id.toLowerCase().replace(/:/g, "-")),
-                  );
-                  const hint = staticDef ? ` — ${staticDef.description}` : "";
-                  const star = staticDef?.recommended ? "⭐ " : "";
-                  return {
-                    value: m,
-                    label: `${star}${m}${hint}`,
-                  };
+              const modelChoice = await cancellationCheckpoint(
+                p.select({
+                  signal,
+                  message: "Choose a loaded model:",
+                  options: loadedModels.map((m) => {
+                    const staticDef = providerModels.find(
+                      (pm) =>
+                        pm.id === m ||
+                        m.toLowerCase().includes(pm.id.toLowerCase().replace(/:/g, "-")),
+                    );
+                    const hint = staticDef ? ` — ${staticDef.description}` : "";
+                    const star = staticDef?.recommended ? "⭐ " : "";
+                    return {
+                      value: m,
+                      label: `${star}${m}${hint}`,
+                    };
+                  }),
                 }),
-              });
+                signal,
+              );
 
               if (p.isCancel(modelChoice)) return null;
 
               // Test the selected model
-              const testSpinner2 = p.spinner();
+              const testSpinner2 = p.spinner({ signal });
               testSpinner2.start(`Testing model ${modelChoice}...`);
-              const testResult = await testLocalModel(effectivePort, modelChoice);
+              const testResult = await cancellationCheckpoint(
+                testLocalModel(effectivePort, modelChoice, signal),
+                signal,
+              );
               if (!testResult.success) {
                 testSpinner2.stop(`Model test failed`);
                 if (
                   testResult.error?.includes("context length") ||
                   testResult.error?.includes("tokens to keep")
                 ) {
-                  await showContextLengthError(modelChoice);
-                  return setupLocalProvider(providerType, effectivePort);
+                  await cancellationCheckpoint(
+                    showContextLengthError(modelChoice, undefined, signal),
+                    signal,
+                  );
+                  return setupLocalProvider(providerType, effectivePort, signal);
                 }
                 p.log.message(chalk.yellow(`\n   ⚠️  Model test failed: ${testResult.error}\n`));
-                return setupLocalProvider(providerType, effectivePort);
+                return setupLocalProvider(providerType, effectivePort, signal);
               }
 
               testSpinner2.stop(`Model ready!`);
@@ -943,6 +1052,7 @@ async function setupLocalProvider(
           }
         }
       } catch {
+        signal?.throwIfAborted();
         // Could not get models, continue with manual selection
       }
 
@@ -957,31 +1067,39 @@ async function setupLocalProvider(
     }
     p.log.message("");
 
-    const action = await p.select({
-      message: `Is ${cfg.displayName} server running on port ${effectivePort}?`,
-      options: [
-        { value: "retry", label: "🔄 Retry connection", hint: "Check again" },
-        { value: "port", label: "🔧 Change port", hint: "Use different port" },
-        { value: "exit", label: "👋 Exit", hint: "Come back later" },
-      ],
-    });
+    const action = await cancellationCheckpoint(
+      p.select({
+        signal,
+        message: `Is ${cfg.displayName} server running on port ${effectivePort}?`,
+        options: [
+          { value: "retry", label: "🔄 Retry connection", hint: "Check again" },
+          { value: "port", label: "🔧 Change port", hint: "Use different port" },
+          { value: "exit", label: "👋 Exit", hint: "Come back later" },
+        ],
+      }),
+      signal,
+    );
 
     if (p.isCancel(action) || action === "exit") {
       return null;
     }
 
     if (action === "port") {
-      const newPort = await p.text({
-        message: "Port:",
-        placeholder: String(cfg.defaultPort),
-        validate: (v) => {
-          const num = parseInt(v ?? "", 10);
-          if (isNaN(num) || num < 1 || num > 65535) return "Invalid port";
-          return;
-        },
-      });
+      const newPort = await cancellationCheckpoint(
+        p.text({
+          signal,
+          message: "Port:",
+          placeholder: String(cfg.defaultPort),
+          validate: (v) => {
+            const num = parseInt(v ?? "", 10);
+            if (isNaN(num) || num < 1 || num > 65535) return "Invalid port";
+            return;
+          },
+        }),
+        signal,
+      );
       if (p.isCancel(newPort) || !newPort) return null;
-      return setupLocalProvider(providerType, parseInt(newPort, 10));
+      return setupLocalProvider(providerType, parseInt(newPort, 10), signal);
     }
     // retry: just loop again
   }
@@ -994,45 +1112,57 @@ async function setupLocalProvider(
   }
   p.log.message("");
 
-  const action = await p.select({
-    message: "What would you like to do?",
-    options: [
-      { value: "retry", label: "🔄 Retry (after loading a model)", hint: "Check again" },
-      {
-        value: "manual",
-        label: "✏️  Enter model name manually",
-        hint: "If you know the exact name",
-      },
-      { value: "exit", label: "👋 Exit", hint: "Come back later" },
-    ],
-  });
+  const action = await cancellationCheckpoint(
+    p.select({
+      signal,
+      message: "What would you like to do?",
+      options: [
+        { value: "retry", label: "🔄 Retry (after loading a model)", hint: "Check again" },
+        {
+          value: "manual",
+          label: "✏️  Enter model name manually",
+          hint: "If you know the exact name",
+        },
+        { value: "exit", label: "👋 Exit", hint: "Come back later" },
+      ],
+    }),
+    signal,
+  );
 
   if (p.isCancel(action) || action === "exit") {
     return null;
   }
 
   if (action === "retry") {
-    return setupLocalProvider(providerType, effectivePort);
+    return setupLocalProvider(providerType, effectivePort, signal);
   }
 
   // Manual model entry
-  const manualModel = await p.text({
-    message: `Enter the model name (exactly as shown in ${cfg.displayName}):`,
-    placeholder: cfg.modelPlaceholder,
-    validate: (v) => (!v || !v.trim() ? "Model name is required" : undefined),
-  });
+  const manualModel = await cancellationCheckpoint(
+    p.text({
+      signal,
+      message: `Enter the model name (exactly as shown in ${cfg.displayName}):`,
+      placeholder: cfg.modelPlaceholder,
+      validate: (v) => (!v || !v.trim() ? "Model name is required" : undefined),
+    }),
+    signal,
+  );
 
   if (p.isCancel(manualModel)) return null;
 
   // Test connection with manual model
-  const testSpinner = p.spinner();
+  const testSpinner = p.spinner({ signal });
   testSpinner.start("Testing model connection...");
 
-  const valid = await testConnectionQuiet(
-    provider,
-    cfg.apiKeyPlaceholder,
-    manualModel,
-    effectivePort === cfg.defaultPort ? undefined : baseUrl,
+  const valid = await cancellationCheckpoint(
+    testConnectionQuiet(
+      provider,
+      cfg.apiKeyPlaceholder,
+      manualModel,
+      effectivePort === cfg.defaultPort ? undefined : baseUrl,
+      signal,
+    ),
+    signal,
   );
 
   if (!valid) {
@@ -1041,12 +1171,12 @@ async function setupLocalProvider(
       chalk.dim(`   The model name might not match what's loaded in ${cfg.displayName}\n`),
     );
 
-    const retry = await p.confirm({
-      message: "Try again?",
-      initialValue: true,
-    });
+    const retry = await cancellationCheckpoint(
+      p.confirm({ signal, message: "Try again?", initialValue: true }),
+      signal,
+    );
     if (retry && !p.isCancel(retry)) {
-      return setupLocalProvider(providerType, effectivePort);
+      return setupLocalProvider(providerType, effectivePort, signal);
     }
     return null;
   }
@@ -1124,16 +1254,24 @@ function formatLocalModelSuggestions(
  * Setup LM Studio (convenience wrapper)
  * Exported for use by /provider command
  */
-export async function setupLMStudioProvider(port?: number): Promise<OnboardingResult | null> {
-  return setupLocalProvider("lmstudio", port);
+async function setupLMStudioProviderInternal(
+  port?: number,
+  signal?: AbortSignal,
+): Promise<OnboardingResult | null> {
+  signal?.throwIfAborted();
+  return setupLocalProvider("lmstudio", port, signal);
 }
 
 /**
  * Setup Ollama (convenience wrapper)
  * Exported for use by /provider command
  */
-export async function setupOllamaProvider(port?: number): Promise<OnboardingResult | null> {
-  return setupLocalProvider("ollama", port);
+async function setupOllamaProviderInternal(
+  port?: number,
+  signal?: AbortSignal,
+): Promise<OnboardingResult | null> {
+  signal?.throwIfAborted();
+  return setupLocalProvider("ollama", port, signal);
 }
 
 /**
@@ -1141,7 +1279,9 @@ export async function setupOllamaProvider(port?: number): Promise<OnboardingResu
  */
 async function selectExistingProvider(
   providers: ProviderDefinition[],
+  signal?: AbortSignal,
 ): Promise<OnboardingResult | null> {
+  signal?.throwIfAborted();
   const options = providers.map((p) => ({
     value: p.id,
     label: `${p.emoji} ${p.name}`,
@@ -1150,23 +1290,26 @@ async function selectExistingProvider(
 
   options.push({ value: "__new__" as ProviderType, label: "➕ Setup new provider", hint: "" });
 
-  const choice = await p.select({
-    message: "Select provider:",
-    options,
-  });
+  const choice = await cancellationCheckpoint(
+    p.select({ signal, message: "Select provider:", options }),
+    signal,
+  );
 
   if (p.isCancel(choice)) return null;
-  if (choice === ("__new__" as ProviderType)) return setupNewProvider();
+  if (choice === ("__new__" as ProviderType)) return setupNewProvider(signal);
 
   const provider = getProviderDefinition(choice as ProviderType);
   const apiKey = process.env[provider.envVar] || "";
 
   // Seleccionar modelo
-  const model = await selectModel(provider);
+  const model = await cancellationCheckpoint(selectModel(provider, signal), signal);
   if (!model) return null;
 
   // Testear conexión
-  const valid = await testConnection(provider, apiKey, model);
+  const valid = await cancellationCheckpoint(
+    testConnection(provider, apiKey, model, undefined, undefined, signal),
+    signal,
+  );
   if (!valid) return null;
 
   return {
@@ -1179,17 +1322,22 @@ async function selectExistingProvider(
 /**
  * Configurar nuevo provider (unified flow)
  */
-async function setupNewProvider(): Promise<OnboardingResult | null> {
+async function setupNewProvider(signal?: AbortSignal): Promise<OnboardingResult | null> {
+  signal?.throwIfAborted();
   const providers = getAllProviders();
 
-  const providerChoice = await p.select({
-    message: "Choose an AI provider:",
-    options: providers.map((prov) => ({
-      value: prov.id,
-      label: `${prov.emoji} ${prov.name}`,
-      hint: prov.requiresApiKey === false ? "Free, local" : prov.description,
-    })),
-  });
+  const providerChoice = await cancellationCheckpoint(
+    p.select({
+      signal,
+      message: "Choose an AI provider:",
+      options: providers.map((prov) => ({
+        value: prov.id,
+        label: `${prov.emoji} ${prov.name}`,
+        hint: prov.requiresApiKey === false ? "Free, local" : prov.description,
+      })),
+    }),
+    signal,
+  );
 
   if (p.isCancel(providerChoice)) return null;
 
@@ -1197,11 +1345,11 @@ async function setupNewProvider(): Promise<OnboardingResult | null> {
 
   // Local providers go to their own flow
   if (provider.id === "lmstudio" || provider.id === "ollama") {
-    return setupLocalProvider(provider.id);
+    return setupLocalProvider(provider.id, undefined, signal);
   }
 
   // Cloud providers use auth method selection
-  return setupProviderWithAuth(provider);
+  return setupProviderWithAuth(provider, signal);
 }
 
 /**
@@ -1231,16 +1379,24 @@ function showProviderInfo(provider: ProviderDefinition): void {
 /**
  * Solicitar API key
  */
-async function requestApiKey(provider: ProviderDefinition): Promise<string | null> {
-  const apiKey = await p.password({
-    message: `Enter your ${provider.name} API key:`,
-    validate: (value) => {
-      if (!value || value.length < 10) {
-        return "Please enter a valid API key (min 10 chars)";
-      }
-      return;
-    },
-  });
+async function requestApiKey(
+  provider: ProviderDefinition,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  signal?.throwIfAborted();
+  const apiKey = await cancellationCheckpoint(
+    p.password({
+      signal,
+      message: `Enter your ${provider.name} API key:`,
+      validate: (value) => {
+        if (!value || value.length < 10) {
+          return "Please enter a valid API key (min 10 chars)";
+        }
+        return;
+      },
+    }),
+    signal,
+  );
 
   if (p.isCancel(apiKey)) return null;
   return apiKey;
@@ -1249,7 +1405,11 @@ async function requestApiKey(provider: ProviderDefinition): Promise<string | nul
 /**
  * Seleccionar modelo
  */
-async function selectModel(provider: ProviderDefinition): Promise<string | null> {
+async function selectModel(
+  provider: ProviderDefinition,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  signal?.throwIfAborted();
   p.log.message("");
   p.log.step("Select a model");
 
@@ -1271,10 +1431,10 @@ async function selectModel(provider: ProviderDefinition): Promise<string | null>
     });
   }
 
-  const choice = await p.select({
-    message: "Choose a model:",
-    options: modelOptions,
-  });
+  const choice = await cancellationCheckpoint(
+    p.select({ signal, message: "Choose a model:", options: modelOptions }),
+    signal,
+  );
 
   if (p.isCancel(choice)) return null;
 
@@ -1282,13 +1442,17 @@ async function selectModel(provider: ProviderDefinition): Promise<string | null>
   if (choice === "__custom__") {
     const isLocalProv = provider.id === "lmstudio" || provider.id === "ollama";
     const localCfg = isLocalProv ? LOCAL_PROVIDER_CONFIG[provider.id as LocalProviderType] : null;
-    const custom = await p.text({
-      message: isLocalProv
-        ? `Enter the model name (as shown in ${localCfg!.displayName}):`
-        : "Enter model ID:",
-      placeholder: localCfg ? localCfg.modelPlaceholder : provider.models[0]?.id || "model-name",
-      validate: (v) => (!v || !v.trim() ? "Model name is required" : undefined),
-    });
+    const custom = await cancellationCheckpoint(
+      p.text({
+        signal,
+        message: isLocalProv
+          ? `Enter the model name (as shown in ${localCfg!.displayName}):`
+          : "Enter model ID:",
+        placeholder: localCfg ? localCfg.modelPlaceholder : provider.models[0]?.id || "model-name",
+        validate: (v) => (!v || !v.trim() ? "Model name is required" : undefined),
+      }),
+      signal,
+    );
 
     if (p.isCancel(custom)) return null;
     return custom;
@@ -1305,15 +1469,21 @@ async function testConnectionQuiet(
   apiKey: string,
   model: string,
   baseUrl?: string,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  signal?.throwIfAborted();
   try {
     process.env[provider.envVar] = apiKey;
     if (baseUrl) {
       process.env[`${provider.id.toUpperCase()}_BASE_URL`] = baseUrl;
     }
-    const testProvider = await createProvider(provider.id, { model });
-    return await testProvider.isAvailable();
+    const testProvider = await cancellationCheckpoint(
+      createProvider(provider.id, { model }),
+      signal,
+    );
+    return await cancellationCheckpoint(testProvider.isAvailable({ signal }), signal);
   } catch {
+    signal?.throwIfAborted();
     return false;
   }
 }
@@ -1327,9 +1497,11 @@ async function testConnection(
   model: string,
   baseUrl?: string,
   vertexSettings?: { project?: string; location?: string },
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  signal?.throwIfAborted();
   p.log.message("");
-  const spinner = p.spinner();
+  const spinner = p.spinner({ signal });
   spinner.start(`Testing connection to ${provider.name}...`);
 
   // Debug info (solo en desarrollo)
@@ -1352,17 +1524,20 @@ async function testConnection(
       if (vertexSettings?.location) process.env["VERTEX_LOCATION"] = vertexSettings.location;
     }
 
-    const testProvider = await createProvider(provider.id, {
-      model,
-      project: vertexSettings?.project,
-      location: vertexSettings?.location,
-    });
+    const testProvider = await cancellationCheckpoint(
+      createProvider(provider.id, {
+        model,
+        project: vertexSettings?.project,
+        location: vertexSettings?.location,
+      }),
+      signal,
+    );
 
     if (debug) {
       p.log.message(chalk.dim(`[Debug] Provider created: ${testProvider.id}`));
     }
 
-    const available = await testProvider.isAvailable();
+    const available = await cancellationCheckpoint(testProvider.isAvailable({ signal }), signal);
 
     if (!available) {
       spinner.stop("Connection failed");
@@ -1403,6 +1578,7 @@ async function testConnection(
     spinner.stop(chalk.green("✅ Connected successfully!"));
     return true;
   } catch (error) {
+    signal?.throwIfAborted();
     spinner.stop("Connection failed");
     const errorMsg = error instanceof Error ? error.message : String(error);
     p.log.error(chalk.red(`\n❌ Error: ${errorMsg}`));
@@ -1420,7 +1596,11 @@ async function testConnection(
 /**
  * Guardar configuración
  */
-export async function saveConfiguration(result: OnboardingResult): Promise<void> {
+async function saveConfigurationInternal(
+  result: OnboardingResult,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
   const provider = getProviderDefinition(result.type);
   const isGcloudADC = result.apiKey === "__gcloud_adc__";
 
@@ -1431,26 +1611,33 @@ export async function saveConfiguration(result: OnboardingResult): Promise<void>
       chalk.dim("   Run `gcloud auth application-default login` to refresh credentials"),
     );
     if (result.type === "vertex" && result.project) {
-      await saveEnvVars(
-        CONFIG_PATHS.env,
-        {
-          VERTEX_PROJECT: result.project,
-          VERTEX_LOCATION: result.location ?? "global",
-        },
-        true,
+      await cancellationCheckpoint(
+        saveEnvVars(
+          CONFIG_PATHS.env,
+          {
+            VERTEX_PROJECT: result.project,
+            VERTEX_LOCATION: result.location ?? "global",
+          },
+          true,
+          signal,
+        ),
+        signal,
       );
     }
-    await saveProviderPreference(result.type, result.model, {
-      project: result.project,
-      location: result.location,
-    });
+    await cancellationCheckpoint(
+      saveProviderPreference(result.type, result.model, {
+        project: result.project,
+        location: result.location,
+      }),
+      signal,
+    );
     return;
   }
 
   // Copilot credentials are already saved by the device flow (copilot.json)
   // Just save the provider/model preference to config.json
   if (result.type === "copilot") {
-    await saveProviderPreference("copilot", result.model);
+    await cancellationCheckpoint(saveProviderPreference("copilot", result.model), signal);
     p.log.success("✅ GitHub Copilot configured");
     p.log.message(chalk.dim("   Credentials stored in ~/.coco/tokens/copilot.json"));
     return;
@@ -1464,21 +1651,25 @@ export async function saveConfiguration(result: OnboardingResult): Promise<void>
       ? "Save your configuration?"
       : "Save your API key?";
 
-  const saveOptions = await p.select({
-    message,
-    options: [
-      {
-        value: "global",
-        label: "✓ Save to ~/.coco/.env",
-        hint: "Recommended — available in all projects",
-      },
-      {
-        value: "session",
-        label: "💨 Don't save",
-        hint: "You'll need to configure again next time",
-      },
-    ],
-  });
+  const saveOptions = await cancellationCheckpoint(
+    p.select({
+      signal,
+      message,
+      options: [
+        {
+          value: "global",
+          label: "✓ Save to ~/.coco/.env",
+          hint: "Recommended — available in all projects",
+        },
+        {
+          value: "session",
+          label: "💨 Don't save",
+          hint: "You'll need to configure again next time",
+        },
+      ],
+    }),
+    signal,
+  );
 
   if (p.isCancel(saveOptions)) return;
 
@@ -1510,7 +1701,10 @@ export async function saveConfiguration(result: OnboardingResult): Promise<void>
 
   switch (saveOptions) {
     case "global":
-      await saveEnvVars(CONFIG_PATHS.env, envVarsToSave, true);
+      await cancellationCheckpoint(
+        saveEnvVars(CONFIG_PATHS.env, envVarsToSave, true, signal),
+        signal,
+      );
       p.log.success(`✅ Saved to ~/.coco/.env`);
       break;
     case "session":
@@ -1523,10 +1717,13 @@ export async function saveConfiguration(result: OnboardingResult): Promise<void>
   }
 
   // Always save provider/model preference to config.json for next session
-  await saveProviderPreference(result.type, result.model, {
-    project: result.project,
-    location: result.location,
-  });
+  await cancellationCheckpoint(
+    saveProviderPreference(result.type, result.model, {
+      project: result.project,
+      location: result.location,
+    }),
+    signal,
+  );
 }
 
 /**
@@ -1536,13 +1733,16 @@ async function saveEnvVars(
   filePath: string,
   vars: Record<string, string>,
   createDir = false,
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted();
   // Crear directorio si es necesario (para ~/.coco/.env)
   if (createDir) {
     const dir = path.dirname(filePath);
     try {
-      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+      await cancellationCheckpoint(fs.mkdir(dir, { recursive: true, mode: 0o700 }), signal);
     } catch {
+      signal?.throwIfAborted();
       // Ya existe
     }
   }
@@ -1550,7 +1750,7 @@ async function saveEnvVars(
   // Leer archivo existente
   let existingVars: Record<string, string> = {};
   try {
-    const content = await fs.readFile(filePath, "utf-8");
+    const content = await cancellationCheckpoint(fs.readFile(filePath, "utf-8"), signal);
     for (const line of content.split("\n")) {
       const trimmed = line.trim();
       if (trimmed && !trimmed.startsWith("#")) {
@@ -1563,6 +1763,7 @@ async function saveEnvVars(
       }
     }
   } catch {
+    signal?.throwIfAborted();
     // Archivo no existe
   }
 
@@ -1580,7 +1781,10 @@ async function saveEnvVars(
     lines.push(`${key}=${value}`);
   }
 
-  await fs.writeFile(filePath, lines.join("\n") + "\n", { mode: 0o600 });
+  await cancellationCheckpoint(
+    fs.writeFile(filePath, lines.join("\n") + "\n", { mode: 0o600 }),
+    signal,
+  );
 }
 
 /**
@@ -1593,7 +1797,9 @@ async function saveEnvVars(
 async function handleLocalProviderUnavailable(
   providerType: LocalProviderType,
   config: ReplConfig,
+  signal?: AbortSignal,
 ): Promise<ReplConfig | null> {
+  signal?.throwIfAborted();
   const cfg = LOCAL_PROVIDER_CONFIG[providerType];
   const displayName = cfg.displayName;
 
@@ -1606,25 +1812,29 @@ async function handleLocalProviderUnavailable(
   );
   p.log.message("");
 
-  const choice = await p.select({
-    message: `What would you like to do?`,
-    options: [
-      {
-        value: "retry",
-        label: `Retry connecting to ${displayName}`,
-        hint: `Make sure ${displayName} is running`,
-      },
-      {
-        value: "choose",
-        label: "Choose a different provider",
-        hint: "Opens provider selection",
-      },
-      {
-        value: "exit",
-        label: "Exit for now",
-      },
-    ],
-  });
+  const choice = await cancellationCheckpoint(
+    p.select({
+      signal,
+      message: `What would you like to do?`,
+      options: [
+        {
+          value: "retry",
+          label: `Retry connecting to ${displayName}`,
+          hint: `Make sure ${displayName} is running`,
+        },
+        {
+          value: "choose",
+          label: "Choose a different provider",
+          hint: "Opens provider selection",
+        },
+        {
+          value: "exit",
+          label: "Exit for now",
+        },
+      ],
+    }),
+    signal,
+  );
 
   if (p.isCancel(choice) || choice === "exit") {
     return null;
@@ -1633,15 +1843,22 @@ async function handleLocalProviderUnavailable(
   if (choice === "retry") {
     // Try to connect again
     try {
-      const { createProvider } = await import("../../providers/index.js");
-      const provider = await createProvider(providerType, {
-        model: config.provider.model,
-      });
-      if (await provider.isAvailable()) {
+      const { createProvider } = await cancellationCheckpoint(
+        import("../../providers/index.js"),
+        signal,
+      );
+      const provider = await cancellationCheckpoint(
+        createProvider(providerType, {
+          model: config.provider.model,
+        }),
+        signal,
+      );
+      if (await cancellationCheckpoint(provider.isAvailable({ signal }), signal)) {
         p.log.success(`  Connected to ${displayName}!`);
         return config;
       }
     } catch {
+      signal?.throwIfAborted();
       // Still failed
     }
     p.log.error(`  Still can't reach ${displayName}.`);
@@ -1661,9 +1878,16 @@ async function handleLocalProviderUnavailable(
  * 2. If any provider is configured → use it silently (no warnings)
  * 3. If no provider configured → run onboarding
  */
-export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig | null> {
+async function ensureConfiguredV2Internal(
+  config: ReplConfig,
+  signal?: AbortSignal,
+): Promise<ReplConfig | null> {
+  signal?.throwIfAborted();
   const providers = getAllProviders();
-  const hasOpenAIOAuthTokens = await isOAuthConfigured("openai").catch(() => false);
+  const hasOpenAIOAuthTokens = await cancellationCheckpoint(
+    isOAuthConfigured("openai").catch(() => false),
+    signal,
+  );
 
   // 1a. Check if preferred provider uses OAuth (e.g., openai with OAuth)
   // Also handle legacy "codex" provider which always uses OAuth
@@ -1674,16 +1898,22 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
   if (preferredWantsOpenAIOAuth) {
     // For OpenAI OAuth, check openai tokens (codex maps to openai internally)
     try {
-      const tokenResult = await getOrRefreshOAuthToken("openai");
+      const tokenResult = await cancellationCheckpoint(
+        getOrRefreshOAuthToken("openai", signal),
+        signal,
+      );
       if (tokenResult) {
         // Set token in env for the session (codex provider reads from here)
         process.env["OPENAI_CODEX_TOKEN"] = tokenResult.accessToken;
 
         // Use codex provider internally for OAuth
-        const provider = await createProvider("codex", {
-          model: config.provider.model,
-        });
-        if (await provider.isAvailable()) {
+        const provider = await cancellationCheckpoint(
+          createProvider("codex", {
+            model: config.provider.model,
+          }),
+          signal,
+        );
+        if (await cancellationCheckpoint(provider.isAvailable({ signal }), signal)) {
           // Migrate legacy "codex" to "openai" with oauth authMethod
           if (config.provider.type === "codex") {
             const migratedConfig = {
@@ -1694,13 +1924,17 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
               },
             };
             // Save the migration
-            await saveProviderPreference("openai", config.provider.model || "gpt-4o");
+            await cancellationCheckpoint(
+              saveProviderPreference("openai", config.provider.model || "gpt-4o"),
+              signal,
+            );
             return migratedConfig;
           }
           return config;
         }
       }
     } catch {
+      signal?.throwIfAborted();
       // OAuth token failed, try other providers
     }
   }
@@ -1733,21 +1967,29 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
         preferredProviderDef.id === "openai" && preferredHasOpenAIOAuth
           ? "codex"
           : preferredProviderDef.id;
-      const provider = await createProvider(preferredInternalProviderId, {
-        model: config.provider.model,
-      });
-      if (await provider.isAvailable()) {
+      const provider = await cancellationCheckpoint(
+        createProvider(preferredInternalProviderId, {
+          model: config.provider.model,
+        }),
+        signal,
+      );
+      if (await cancellationCheckpoint(provider.isAvailable({ signal }), signal)) {
         return config;
       }
     } catch {
+      signal?.throwIfAborted();
       // Preferred provider failed
     }
 
     // Preferred local provider failed to connect — show retry dialog
     if (preferredIsLocal) {
-      const retryResult = await handleLocalProviderUnavailable(
-        preferredProviderDef.id as LocalProviderType,
-        config,
+      const retryResult = await cancellationCheckpoint(
+        handleLocalProviderUnavailable(
+          preferredProviderDef.id as LocalProviderType,
+          config,
+          signal,
+        ),
+        signal,
       );
       if (retryResult !== null) return retryResult;
       // User chose to exit or switch provider — fall through to onboarding
@@ -1773,7 +2015,7 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
 
     for (const prov of configuredProviders) {
       try {
-        const rememberedModel = await getLastUsedModel(prov.id);
+        const rememberedModel = await cancellationCheckpoint(getLastUsedModel(prov.id), signal);
         const recommended = getRecommendedModel(prov.id);
         const model = rememberedModel || recommended?.id || prov.models[0]?.id || "";
         let providerId = prov.id;
@@ -1781,20 +2023,26 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
         if (prov.id === "openai" && hasOpenAIOAuthTokens && !process.env[prov.envVar]) {
           // OpenAI OAuth path: materialize a fresh token in env so later startup
           // resolves openai -> codex consistently and doesn't demand OPENAI_API_KEY.
-          const tokenResult = await getOrRefreshOAuthToken("openai");
+          const tokenResult = await cancellationCheckpoint(
+            getOrRefreshOAuthToken("openai", signal),
+            signal,
+          );
           if (!tokenResult) continue;
           process.env["OPENAI_CODEX_TOKEN"] = tokenResult.accessToken;
           providerId = "codex";
         }
 
-        const provider = await createProvider(providerId, { model });
-        if (await provider.isAvailable()) {
+        const provider = await cancellationCheckpoint(
+          createProvider(providerId, { model }),
+          signal,
+        );
+        if (await cancellationCheckpoint(provider.isAvailable({ signal }), signal)) {
           // Only persist when the preferred provider was never configured.
           // If it was configured but temporarily unavailable (e.g. expired token,
           // network blip), do the in-session switch but keep the disk preference
           // intact so the next startup retries the user's actual choice.
           if (!preferredWasConfigured) {
-            await saveProviderPreference(prov.id, model);
+            await cancellationCheckpoint(saveProviderPreference(prov.id, model), signal);
           }
           // Silently use this provider - no warning needed
           return {
@@ -1807,6 +2055,7 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
           };
         }
       } catch {
+        signal?.throwIfAborted();
         // This provider also failed, try next
         continue;
       }
@@ -1821,7 +2070,10 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
     (!preferredWasConfiguredButUnavailable || !preferredUnavailableWasLocal)
   ) {
     try {
-      const tokenResult = await getOrRefreshOAuthToken("openai");
+      const tokenResult = await cancellationCheckpoint(
+        getOrRefreshOAuthToken("openai", signal),
+        signal,
+      );
       if (tokenResult) {
         process.env["OPENAI_CODEX_TOKEN"] = tokenResult.accessToken;
 
@@ -1829,11 +2081,11 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
         const recommended = getRecommendedModel("openai");
         const model = recommended?.id || openaiDef.models[0]?.id || "";
 
-        const provider = await createProvider("codex", { model });
-        if (await provider.isAvailable()) {
+        const provider = await cancellationCheckpoint(createProvider("codex", { model }), signal);
+        if (await cancellationCheckpoint(provider.isAvailable({ signal }), signal)) {
           // Same guard as section 2: only persist when preferred was never configured.
           if (!preferredWasConfigured) {
-            await saveProviderPreference("openai", model);
+            await cancellationCheckpoint(saveProviderPreference("openai", model), signal);
           }
           return {
             ...config,
@@ -1846,16 +2098,17 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
         }
       }
     } catch {
+      signal?.throwIfAborted();
       // OAuth failed, continue to onboarding
     }
   }
 
   // 3. No providers configured or all failed → run onboarding
-  const result = await runOnboardingV2();
+  const result = await cancellationCheckpoint(runOnboardingV2(signal), signal);
   if (!result) return null;
 
   // Save configuration
-  await saveConfiguration(result);
+  await cancellationCheckpoint(saveConfiguration(result, signal), signal);
 
   return {
     ...config,
@@ -1865,4 +2118,44 @@ export async function ensureConfiguredV2(config: ReplConfig): Promise<ReplConfig
       model: result.model,
     },
   };
+}
+
+export async function runOnboardingV2(signal?: AbortSignal): Promise<OnboardingResult | null> {
+  return withInteractiveCancellation(signal, (ownedSignal) => runOnboardingV2Internal(ownedSignal));
+}
+
+export async function setupLMStudioProvider(
+  port?: number,
+  signal?: AbortSignal,
+): Promise<OnboardingResult | null> {
+  return withInteractiveCancellation(signal, (ownedSignal) =>
+    setupLMStudioProviderInternal(port, ownedSignal),
+  );
+}
+
+export async function setupOllamaProvider(
+  port?: number,
+  signal?: AbortSignal,
+): Promise<OnboardingResult | null> {
+  return withInteractiveCancellation(signal, (ownedSignal) =>
+    setupOllamaProviderInternal(port, ownedSignal),
+  );
+}
+
+export async function saveConfiguration(
+  result: OnboardingResult,
+  signal?: AbortSignal,
+): Promise<void> {
+  return withInteractiveCancellation(signal, (ownedSignal) =>
+    saveConfigurationInternal(result, ownedSignal),
+  );
+}
+
+export async function ensureConfiguredV2(
+  config: ReplConfig,
+  signal?: AbortSignal,
+): Promise<ReplConfig | null> {
+  return withInteractiveCancellation(signal, (ownedSignal) =>
+    ensureConfiguredV2Internal(config, ownedSignal),
+  );
 }

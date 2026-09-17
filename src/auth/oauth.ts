@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+import { cancellationCheckpoint } from "../utils/interactive-cancellation.js";
 /**
  * OAuth 2.0 for AI Providers
  *
@@ -99,7 +101,11 @@ export const OAUTH_CONFIGS: Record<string, OAuthConfig> = {
 /**
  * Request a device code from the provider
  */
-export async function requestDeviceCode(provider: string): Promise<DeviceCodeResponse> {
+export async function requestDeviceCode(
+  provider: string,
+  signal?: AbortSignal,
+): Promise<DeviceCodeResponse> {
+  signal?.throwIfAborted();
   const config = OAUTH_CONFIGS[provider];
   if (!config) {
     throw new Error(`OAuth not supported for provider: ${provider}`);
@@ -121,19 +127,23 @@ export async function requestDeviceCode(provider: string): Promise<DeviceCodeRes
     body.set("audience", "https://api.openai.com/v1");
   }
 
-  const response = await fetch(config.deviceAuthEndpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": "Corbat-Coco CLI",
-      Accept: "application/json",
-    },
-    body: body.toString(),
-  });
+  const response = await cancellationCheckpoint(
+    fetch(config.deviceAuthEndpoint, {
+      signal,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Corbat-Coco CLI",
+        Accept: "application/json",
+      },
+      body: body.toString(),
+    }),
+    signal,
+  );
 
   if (!response.ok) {
     const contentType = response.headers.get("content-type") || "";
-    const error = await response.text();
+    const error = await cancellationCheckpoint(response.text(), signal);
 
     // Check if we got an HTML page (Cloudflare block, captcha, etc.)
     if (
@@ -157,7 +167,7 @@ export async function requestDeviceCode(provider: string): Promise<DeviceCodeRes
   // Verify we got JSON, not HTML
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) {
-    const text = await response.text();
+    const text = await cancellationCheckpoint(response.text(), signal);
     if (text.includes("<!DOCTYPE") || text.includes("<html")) {
       throw new Error(
         "OAuth service returned HTML instead of JSON.\n" +
@@ -167,7 +177,7 @@ export async function requestDeviceCode(provider: string): Promise<DeviceCodeRes
     }
   }
 
-  const data = (await response.json()) as {
+  const data = (await cancellationCheckpoint(response.json(), signal)) as {
     device_code: string;
     user_code: string;
     verification_uri: string;
@@ -195,7 +205,9 @@ export async function pollForToken(
   interval: number,
   expiresIn: number,
   onPoll?: () => void,
+  signal?: AbortSignal,
 ): Promise<OAuthTokens> {
+  signal?.throwIfAborted();
   const config = OAUTH_CONFIGS[provider];
   if (!config) {
     throw new Error(`OAuth not supported for provider: ${provider}`);
@@ -206,7 +218,7 @@ export async function pollForToken(
 
   while (Date.now() < expiresAt) {
     // Wait for the specified interval
-    await new Promise((resolve) => setTimeout(resolve, interval * 1000));
+    await cancellationCheckpoint(delay(interval * 1000, undefined, { signal }), signal);
 
     if (onPoll) onPoll();
 
@@ -216,15 +228,19 @@ export async function pollForToken(
       device_code: deviceCode,
     });
 
-    const response = await fetch(config.tokenEndpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: body.toString(),
-    });
+    const response = await cancellationCheckpoint(
+      fetch(config.tokenEndpoint, {
+        signal,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      }),
+      signal,
+    );
 
-    const data = (await response.json()) as {
+    const data = (await cancellationCheckpoint(response.json(), signal)) as {
       access_token?: string;
       refresh_token?: string;
       expires_in?: number;
@@ -463,7 +479,9 @@ export async function exchangeCodeForTokens(
   code: string,
   codeVerifier: string,
   redirectUri: string,
+  signal?: AbortSignal,
 ): Promise<OAuthTokens> {
+  signal?.throwIfAborted();
   const config = OAUTH_CONFIGS[provider];
   if (!config) {
     throw new Error(`OAuth not supported for provider: ${provider}`);
@@ -477,21 +495,25 @@ export async function exchangeCodeForTokens(
     redirect_uri: redirectUri,
   });
 
-  const response = await fetch(config.tokenEndpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body: body.toString(),
-  });
+  const response = await cancellationCheckpoint(
+    fetch(config.tokenEndpoint, {
+      signal,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: body.toString(),
+    }),
+    signal,
+  );
 
   if (!response.ok) {
-    const error = await response.text();
+    const error = await cancellationCheckpoint(response.text(), signal);
     throw new Error(`Token exchange failed: ${error}`);
   }
 
-  const data = (await response.json()) as {
+  const data = (await cancellationCheckpoint(response.json(), signal)) as {
     access_token: string;
     refresh_token?: string;
     expires_in?: number;

@@ -12,9 +12,11 @@
 import * as p from "@clack/prompts";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { LLMProvider } from "../providers/types.js";
 import type { BacklogSpec, BacklogTask, Sprint } from "./backlog-spec.js";
 import { safeRole } from "./backlog-spec.js";
+import { createRequestScope } from "../utils/request-scope.js";
 
 // ---------------------------------------------------------------------------
 // Public error type — callers can catch this to distinguish user cancel
@@ -103,6 +105,10 @@ function cancel(message: string): never {
 export interface SpecInterviewOptions {
   /** Skip the final "does this look good?" confirmation */
   skipConfirmation?: boolean;
+  /** Cancel prompts, provider requests and persistence. */
+  signal?: AbortSignal;
+  /** Total interview deadline; zero (default) leaves the duration unlimited. */
+  timeoutMs?: number;
 }
 
 /**
@@ -120,6 +126,22 @@ export async function runSpecInterview(
   outputPath: string,
   options?: SpecInterviewOptions,
 ): Promise<BacklogSpec> {
+  const scope = createRequestScope(options?.signal, options?.timeoutMs ?? 0);
+  try {
+    return await runInterview(initialDescription, provider, outputPath, options, scope.signal);
+  } finally {
+    scope.dispose();
+  }
+}
+
+async function runInterview(
+  initialDescription: string,
+  provider: LLMProvider,
+  outputPath: string,
+  options: SpecInterviewOptions | undefined,
+  signal: AbortSignal,
+): Promise<BacklogSpec> {
+  signal.throwIfAborted();
   p.intro("  Spec agent — planning your app");
 
   // ------------------------------------------------------------------
@@ -142,10 +164,14 @@ Response format:
   ]
 }`;
 
-  const clarifyRaw = await provider.chat([
-    { role: "system", content: SPEC_AGENT_SYSTEM },
-    { role: "user", content: clarifyPrompt },
-  ]);
+  const clarifyRaw = await provider.chat(
+    [
+      { role: "system", content: SPEC_AGENT_SYSTEM },
+      { role: "user", content: clarifyPrompt },
+    ],
+    { signal },
+  );
+  signal.throwIfAborted();
 
   let clarifyQuestions: ClarifyResponse["questions"] = [];
   try {
@@ -164,18 +190,21 @@ Response format:
 
     if (q.options && q.options.length > 0) {
       answer = await p.select({
+        signal,
         message: q.question,
         options: q.options.map((o) => ({ value: o, label: o })),
         initialValue: q.defaultAnswer ?? q.options[0],
       });
     } else {
       answer = await p.text({
+        signal,
         message: q.question,
         placeholder: q.defaultAnswer ?? "",
         defaultValue: q.defaultAnswer ?? "",
       });
     }
 
+    signal.throwIfAborted();
     if (p.isCancel(answer)) {
       cancel("Spec interview cancelled.");
     }
@@ -187,19 +216,23 @@ Response format:
   // Round 2: Fixed scope questions (always asked)
   // ------------------------------------------------------------------
   const mvpAnswer = await p.text({
+    signal,
     message: "What must work in the first version? (describe the core user flow)",
     placeholder: "e.g. User can sign up, log in, and create items",
   });
+  signal.throwIfAborted();
   if (p.isCancel(mvpAnswer)) {
     cancel("Spec interview cancelled.");
   }
   answers.mvpScope = mvpAnswer as string;
 
   const integrationsAnswer = await p.text({
+    signal,
     message: "Are there external integrations? (email, payments, third-party APIs…)",
     placeholder: "e.g. Stripe for payments, SendGrid for emails — or 'none'",
     defaultValue: "none",
   });
+  signal.throwIfAborted();
   if (p.isCancel(integrationsAnswer)) {
     cancel("Spec interview cancelled.");
   }
@@ -259,10 +292,14 @@ Response format (JSON only, no prose):
   ]
 }`;
 
-  const generateRaw = await provider.chat([
-    { role: "system", content: SPEC_AGENT_SYSTEM },
-    { role: "user", content: generatePrompt },
-  ]);
+  const generateRaw = await provider.chat(
+    [
+      { role: "system", content: SPEC_AGENT_SYSTEM },
+      { role: "user", content: generatePrompt },
+    ],
+    { signal },
+  );
+  signal.throwIfAborted();
 
   let generated: GeneratedBacklogSpec;
   try {
@@ -321,9 +358,11 @@ Response format (JSON only, no prose):
   // ------------------------------------------------------------------
   if (!options?.skipConfirmation) {
     const confirm = await p.confirm({
+      signal,
       message: "Start building with this plan?",
       initialValue: true,
     });
+    signal.throwIfAborted();
     if (p.isCancel(confirm) || !confirm) {
       cancel("Build cancelled.");
     }
@@ -332,9 +371,24 @@ Response format (JSON only, no prose):
   // ------------------------------------------------------------------
   // Persist to <outputPath>/.coco/backlog.json
   // ------------------------------------------------------------------
+  signal.throwIfAborted();
   const cocoDir = path.join(outputPath, ".coco");
   await fs.mkdir(cocoDir, { recursive: true });
-  await fs.writeFile(path.join(cocoDir, "backlog.json"), JSON.stringify(spec, null, 2), "utf-8");
+  signal.throwIfAborted();
+  const destination = path.join(cocoDir, "backlog.json");
+  const temporary = `${destination}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temporary, JSON.stringify(spec, null, 2), {
+      encoding: "utf-8",
+      signal,
+      flag: "wx",
+    });
+    signal.throwIfAborted();
+    await fs.rename(temporary, destination);
+    signal.throwIfAborted();
+  } finally {
+    await fs.rm(temporary, { force: true });
+  }
 
   p.outro("  Spec saved — starting sprints");
 

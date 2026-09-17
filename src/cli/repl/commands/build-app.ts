@@ -140,124 +140,136 @@ export const buildAppCommand: SlashCommand = {
     // ------------------------------------------------------------------
     // Create provider from session config
     // ------------------------------------------------------------------
-    let provider;
+    const buildController = new AbortController();
+    const abortBuild = () =>
+      buildController.abort(new DOMException("Build interrupted", "AbortError"));
+    process.once("SIGINT", abortBuild);
+    process.once("SIGTERM", abortBuild);
     try {
-      provider = await createProvider(session.config.provider.type, {
-        model: session.config.provider.model,
-        maxTokens: session.config.provider.maxTokens,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      p.log.error(`Error creating provider: ${msg}`);
-      return false;
-    }
-
-    // ------------------------------------------------------------------
-    // Spec interview
-    // ------------------------------------------------------------------
-    let spec;
-    try {
-      spec = await runSpecInterview(initialDescription, provider, outputPath, {
-        skipConfirmation: parsed.skipConfirmation || isAutonomous,
-      });
-    } catch (err) {
-      if (err instanceof UserCancelledError) {
-        // p.cancel() was already called inside runSpecInterview — just return
+      let provider;
+      try {
+        provider = await createProvider(session.config.provider.type, {
+          model: session.config.provider.model,
+          maxTokens: session.config.provider.maxTokens,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        p.log.error(`Error creating provider: ${msg}`);
         return false;
       }
-      const msg = err instanceof Error ? err.message : String(err);
-      p.log.error(`Spec interview failed: ${msg}`);
-      return false;
-    }
 
-    // ------------------------------------------------------------------
-    // Confirmation (when not autonomous and --yes not given)
-    // ------------------------------------------------------------------
-    if (!isAutonomous && !parsed.skipConfirmation) {
-      const confirm = await p.confirm({
-        message: `Build "${spec.projectName}" with ${spec.sprints.length} sprints?`,
-        initialValue: true,
-      });
-      if (p.isCancel(confirm) || !confirm) {
-        p.cancel("Build cancelled.");
+      // ------------------------------------------------------------------
+      // Spec interview
+      // ------------------------------------------------------------------
+      let spec;
+      try {
+        buildController.signal.throwIfAborted();
+        spec = await runSpecInterview(initialDescription, provider, outputPath, {
+          skipConfirmation: parsed.skipConfirmation || isAutonomous,
+          signal: buildController.signal,
+        });
+      } catch (err) {
+        if (err instanceof UserCancelledError) {
+          // p.cancel() was already called inside runSpecInterview — just return
+          return false;
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        p.log.error(`Spec interview failed: ${msg}`);
         return false;
       }
-    }
 
-    // ------------------------------------------------------------------
-    // Run sprints
-    // ------------------------------------------------------------------
-    console.log();
-    console.log(chalk.cyan("  Starting sprints…"));
-    console.log();
-
-    let buildResult;
-    const sprintController = new AbortController();
-    const abortSprint = () =>
-      sprintController.abort(new DOMException("Build interrupted", "AbortError"));
-    process.once("SIGINT", abortSprint);
-    process.once("SIGTERM", abortSprint);
-    try {
-      buildResult = await runSprints({
-        spec,
-        provider,
-        signal: sprintController.signal,
-        onProgress: (msg) => {
-          console.log(chalk.dim(`  ${msg}`));
-        },
-      });
-      sprintController.signal.throwIfAborted();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      p.log.error(`Sprint runner failed: ${msg}`);
-      return false;
-    } finally {
-      process.off("SIGINT", abortSprint);
-      process.off("SIGTERM", abortSprint);
-    }
-
-    // ------------------------------------------------------------------
-    // Result summary
-    // ------------------------------------------------------------------
-    console.log();
-    if (buildResult.success) {
-      console.log(chalk.green.bold("  Build complete!"));
-    } else {
-      console.log(chalk.yellow.bold("  Build finished with issues."));
-    }
-    console.log(chalk.dim(`  Output:       ${buildResult.outputPath}`));
-    console.log(
-      chalk.dim(
-        `  Quality:      ${buildResult.finalQualityScore}/100 ` +
-          `(threshold: ${spec.qualityThreshold})`,
-      ),
-    );
-    console.log(
-      chalk.dim(
-        `  Tests:        ${buildResult.sprintResults.reduce((n, r) => n + r.testsPassing, 0)} passing`,
-      ),
-    );
-    console.log(chalk.dim(`  Duration:     ${(buildResult.totalDurationMs / 1000).toFixed(1)}s`));
-    console.log();
-
-    // Per-sprint breakdown
-    for (const result of buildResult.sprintResults) {
-      const icon = result.success ? chalk.green("✓") : chalk.red("✗");
-      console.log(
-        `  ${icon} ${result.sprintId}  ` +
-          `score=${result.qualityScore}  ` +
-          `tests=${result.testsPassing}/${result.testsTotal}  ` +
-          `iter=${result.iterations}`,
-      );
-      if (result.errors.length > 0) {
-        for (const e of result.errors) {
-          p.log.error(`  ! ${e}`);
+      // ------------------------------------------------------------------
+      // Confirmation (when not autonomous and --yes not given)
+      // ------------------------------------------------------------------
+      if (!isAutonomous && !parsed.skipConfirmation) {
+        buildController.signal.throwIfAborted();
+        const confirm = await p.confirm({
+          signal: buildController.signal,
+          message: `Build "${spec.projectName}" with ${spec.sprints.length} sprints?`,
+          initialValue: true,
+        });
+        buildController.signal.throwIfAborted();
+        if (p.isCancel(confirm) || !confirm) {
+          p.cancel("Build cancelled.");
+          return false;
         }
       }
+
+      // ------------------------------------------------------------------
+      // Run sprints
+      // ------------------------------------------------------------------
+      console.log();
+      console.log(chalk.cyan("  Starting sprints…"));
+      console.log();
+
+      let buildResult;
+      try {
+        buildController.signal.throwIfAborted();
+        buildResult = await runSprints({
+          spec,
+          provider,
+          signal: buildController.signal,
+          onProgress: (msg) => {
+            console.log(chalk.dim(`  ${msg}`));
+          },
+        });
+        buildController.signal.throwIfAborted();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        p.log.error(`Sprint runner failed: ${msg}`);
+        return false;
+      }
+
+      // ------------------------------------------------------------------
+      // Result summary
+      // ------------------------------------------------------------------
+      console.log();
+      if (buildResult.success) {
+        console.log(chalk.green.bold("  Build complete!"));
+      } else {
+        console.log(chalk.yellow.bold("  Build finished with issues."));
+      }
+      console.log(chalk.dim(`  Output:       ${buildResult.outputPath}`));
+      console.log(
+        chalk.dim(
+          `  Quality:      ${buildResult.finalQualityScore}/100 ` +
+            `(threshold: ${spec.qualityThreshold})`,
+        ),
+      );
+      console.log(
+        chalk.dim(
+          `  Tests:        ${buildResult.sprintResults.reduce((n, r) => n + r.testsPassing, 0)} passing`,
+        ),
+      );
+      console.log(chalk.dim(`  Duration:     ${(buildResult.totalDurationMs / 1000).toFixed(1)}s`));
+      console.log();
+
+      // Per-sprint breakdown
+      for (const result of buildResult.sprintResults) {
+        const icon = result.success ? chalk.green("✓") : chalk.red("✗");
+        console.log(
+          `  ${icon} ${result.sprintId}  ` +
+            `score=${result.qualityScore}  ` +
+            `tests=${result.testsPassing}/${result.testsTotal}  ` +
+            `iter=${result.iterations}`,
+        );
+        if (result.errors.length > 0) {
+          for (const e of result.errors) {
+            p.log.error(`  ! ${e}`);
+          }
+        }
+      }
+
+      console.log();
+
+      return false; // Don't exit the REPL
+    } catch (error) {
+      if (!buildController.signal.aborted) throw error;
+      p.cancel("Build cancelled.");
+      return false;
+    } finally {
+      process.off("SIGINT", abortBuild);
+      process.off("SIGTERM", abortBuild);
     }
-
-    console.log();
-
-    return false; // Don't exit the REPL
   },
 };

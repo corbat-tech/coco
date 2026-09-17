@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+import { cancellationCheckpoint } from "../utils/interactive-cancellation.js";
 /**
  * GitHub Copilot Authentication
  *
@@ -120,25 +122,32 @@ export class CopilotAuthError extends Error {
 /**
  * Request a device code from GitHub for Copilot authentication
  */
-export async function requestGitHubDeviceCode(): Promise<GitHubDeviceCodeResponse> {
-  const response = await fetch(GITHUB_DEVICE_CODE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      client_id: COPILOT_CLIENT_ID,
-      scope: "read:user",
+export async function requestGitHubDeviceCode(
+  signal?: AbortSignal,
+): Promise<GitHubDeviceCodeResponse> {
+  signal?.throwIfAborted();
+  const response = await cancellationCheckpoint(
+    fetch(GITHUB_DEVICE_CODE_URL, {
+      signal,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        client_id: COPILOT_CLIENT_ID,
+        scope: "read:user",
+      }),
     }),
-  });
+    signal,
+  );
 
   if (!response.ok) {
-    const error = await response.text();
+    const error = await cancellationCheckpoint(response.text(), signal);
     throw new Error(`GitHub device code request failed: ${response.status} - ${error}`);
   }
 
-  return (await response.json()) as GitHubDeviceCodeResponse;
+  return (await cancellationCheckpoint(response.json(), signal)) as GitHubDeviceCodeResponse;
 }
 
 /**
@@ -149,28 +158,34 @@ export async function pollGitHubForToken(
   interval: number,
   expiresIn: number,
   onPoll?: () => void,
+  signal?: AbortSignal,
 ): Promise<string> {
+  signal?.throwIfAborted();
   const expiresAt = Date.now() + expiresIn * 1000;
 
   while (Date.now() < expiresAt) {
-    await new Promise((resolve) => setTimeout(resolve, interval * 1000));
+    await cancellationCheckpoint(delay(interval * 1000, undefined, { signal }), signal);
 
     if (onPoll) onPoll();
 
-    const response = await fetch(GITHUB_TOKEN_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        client_id: COPILOT_CLIENT_ID,
-        device_code: deviceCode,
-        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+    const response = await cancellationCheckpoint(
+      fetch(GITHUB_TOKEN_URL, {
+        signal,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          client_id: COPILOT_CLIENT_ID,
+          device_code: deviceCode,
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+        }),
       }),
-    });
+      signal,
+    );
 
-    const data = (await response.json()) as GitHubTokenResponse;
+    const data = (await cancellationCheckpoint(response.json(), signal)) as GitHubTokenResponse;
 
     if (data.access_token) {
       return data.access_token;
@@ -252,20 +267,29 @@ export async function exchangeForCopilotToken(
 /**
  * Resolve GitHub login for a token (best-effort, for UX diagnostics).
  */
-export async function getGitHubLogin(githubToken: string): Promise<string | null> {
+export async function getGitHubLogin(
+  githubToken: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  signal?.throwIfAborted();
   try {
-    const response = await fetch("https://api.github.com/user", {
-      method: "GET",
-      headers: {
-        Authorization: `token ${githubToken}`,
-        Accept: "application/json",
-        "User-Agent": "Corbat-Coco/1.0",
-      },
-    });
+    const response = await cancellationCheckpoint(
+      fetch("https://api.github.com/user", {
+        signal,
+        method: "GET",
+        headers: {
+          Authorization: `token ${githubToken}`,
+          Accept: "application/json",
+          "User-Agent": "Corbat-Coco/1.0",
+        },
+      }),
+      signal,
+    );
     if (!response.ok) return null;
-    const data = (await response.json()) as GitHubUserResponse;
+    const data = (await cancellationCheckpoint(response.json(), signal)) as GitHubUserResponse;
     return data.login ?? null;
   } catch {
+    signal?.throwIfAborted();
     return null;
   }
 }
@@ -420,13 +444,21 @@ export async function exchangeForCopilotTokenViaGhCli(
  *
  * Uses raw callback (not promisify) for testability — see exchangeForCopilotTokenViaGhCli.
  */
-export function getGitHubCliAuthStatus(): Promise<string | null> {
-  return new Promise((resolve) => {
+export function getGitHubCliAuthStatus(signal?: AbortSignal): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
     execFile(
       "gh",
       ["auth", "status", "--hostname", "github.com"],
-      { timeout: 5_000 },
+      { timeout: 5_000, signal },
       (_err, stdout, stderr) => {
+        if (signal?.aborted) {
+          reject(signal.reason);
+          return;
+        }
         // gh auth status writes to stdout on success, stderr on failure in some versions.
         const combined = (stdout ?? "") + (stderr ?? "");
         const match = combined.match(/Logged in to github\.com account (\S+)/);

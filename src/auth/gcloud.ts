@@ -1,3 +1,4 @@
+import { cancellationCheckpoint } from "../utils/interactive-cancellation.js";
 /**
  * Google Cloud Application Default Credentials (ADC) Support
  *
@@ -71,11 +72,13 @@ function getADCPath(): string {
 /**
  * Check if gcloud CLI is installed
  */
-export async function isGcloudInstalled(): Promise<boolean> {
+export async function isGcloudInstalled(signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   try {
-    await execAsync("gcloud --version");
+    await cancellationCheckpoint(execAsync("gcloud --version", { signal, timeout: 10000 }), signal);
     return true;
   } catch {
+    signal?.throwIfAborted();
     return false;
   }
 }
@@ -212,21 +215,29 @@ export async function isADCConfigured(): Promise<boolean> {
  * Run gcloud auth application-default login
  * Opens browser for user to authenticate with Google account
  */
-export async function runGcloudADCLogin(): Promise<boolean> {
+export async function runGcloudADCLogin(signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   try {
     // Prefer browser-based flow first for smoother UX.
-    await execAsync(ADC_LOGIN_COMMAND, {
-      timeout: 300000, // 5 minutes for interactive auth
-    });
+    await cancellationCheckpoint(
+      execAsync(ADC_LOGIN_COMMAND, {
+        signal,
+        timeout: 300000, // 5 minutes for interactive auth
+      }),
+      signal,
+    );
     return true;
   } catch {
+    signal?.throwIfAborted();
     try {
       // Fallback for headless environments where browser launch is unavailable.
-      await execAsync(`${ADC_LOGIN_COMMAND} --no-launch-browser`, {
-        timeout: 300000,
-      });
+      await cancellationCheckpoint(
+        execAsync(`${ADC_LOGIN_COMMAND} --no-launch-browser`, { signal, timeout: 300000 }),
+        signal,
+      );
       return true;
     } catch {
+      signal?.throwIfAborted();
       return false;
     }
   }
@@ -236,14 +247,17 @@ export async function runGcloudADCLogin(): Promise<boolean> {
  * Revoke gcloud Application Default Credentials for the current machine user.
  * Useful when user wants to switch to a different Google account.
  */
-export async function runGcloudADCRevoke(): Promise<boolean> {
+export async function runGcloudADCRevoke(signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   try {
-    await execAsync(ADC_REVOKE_COMMAND, {
-      timeout: 120000,
-    });
+    await cancellationCheckpoint(
+      execAsync(ADC_REVOKE_COMMAND, { signal, timeout: 120000 }),
+      signal,
+    );
     clearADCCache();
     return true;
   } catch (error) {
+    signal?.throwIfAborted();
     const message = error instanceof Error ? error.message : String(error);
     // Treat "already revoked / not found" style outcomes as success.
     if (

@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReplSession } from "../types.js";
-const mocks = vi.hoisted(() => ({ runSprints: vi.fn(), error: vi.fn() }));
+const mocks = vi.hoisted(() => ({ runSprints: vi.fn(), error: vi.fn(), interview: vi.fn() }));
 vi.mock("../../../swarm/sprint-runner.js", () => ({ runSprints: mocks.runSprints }));
 vi.mock("../../../swarm/spec-agent.js", () => ({
-  runSpecInterview: vi
-    .fn()
-    .mockResolvedValue({ projectName: "fixture", sprints: [], qualityThreshold: 85 }),
+  runSpecInterview: mocks.interview,
   UserCancelledError: class extends Error {},
 }));
 vi.mock("../../../providers/index.js", () => ({ createProvider: vi.fn().mockResolvedValue({}) }));
@@ -25,6 +23,7 @@ const result = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.interview.mockResolvedValue({ projectName: "fixture", sprints: [], qualityThreshold: 85 });
   vi.spyOn(console, "log").mockImplementation(() => {});
 });
 afterEach(() => vi.restoreAllMocks());
@@ -60,6 +59,26 @@ describe("build-app sprint signal ownership", () => {
         ).toBe(false);
       }
       expect(mocks.error).toHaveBeenCalledTimes(ending === "success" ? 0 : 1);
+    },
+  );
+});
+
+describe("build-app interview signal ownership", () => {
+  it.each(["SIGINT", "SIGTERM"])(
+    "owns %s before interview and skips sprints after a late result",
+    async (event) => {
+      const before = process.listeners(event);
+      mocks.interview.mockImplementationOnce(async (_description, _provider, _path, options) => {
+        expect(options.signal.aborted).toBe(false);
+        const listener = process.listeners(event).find((fn) => !before.includes(fn));
+        expect(listener).toBeDefined();
+        listener!();
+        expect(options.signal.aborted).toBe(true);
+        return { projectName: "fixture", sprints: [], qualityThreshold: 85 };
+      });
+      await buildAppCommand.execute(["fixture", "--yes"], session);
+      expect(mocks.runSprints).not.toHaveBeenCalled();
+      expect(process.listeners(event)).toEqual(before);
     },
   );
 });

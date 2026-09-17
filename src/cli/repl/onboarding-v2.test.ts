@@ -196,6 +196,68 @@ describe("onboarding-v2", () => {
     delete process.env["OPENAI_CODEX_TOKEN"];
   });
 
+  describe("host cancellation", () => {
+    it("rejects a pre-aborted signal before discovering providers", async () => {
+      const controller = new AbortController();
+      const reason = new Error("host stopped");
+      controller.abort(reason);
+      await expect(runOnboardingV2(controller.signal)).rejects.toBe(reason);
+      expect(mockedGetConfiguredProviders).not.toHaveBeenCalled();
+    });
+
+    it("passes the host signal to prompts and never starts OAuth after a late choice", async () => {
+      const controller = new AbortController();
+      const reason = new Error("host stopped");
+      mockedGetConfiguredProviders.mockReturnValue([]);
+      mockedGetAllProviders.mockReturnValue([makeProviderDef()]);
+      mockedSelect.mockImplementationOnce(async (options) => {
+        expect(options.signal).toBe(controller.signal);
+        controller.abort(reason);
+        return "anthropic";
+      });
+      await expect(runOnboardingV2(controller.signal)).rejects.toBe(reason);
+      expect(mockedRunOAuthFlow).not.toHaveBeenCalled();
+      expect(mockedCreateProvider).not.toHaveBeenCalled();
+    });
+
+    it("cancels the local discovery fetch without offering manual setup", async () => {
+      const controller = new AbortController();
+      const reason = new Error("host stopped");
+      mockedGetProviderDefinition.mockReturnValue(makeProviderDef({ id: "lmstudio" }));
+      const fetchMock = vi.fn(async (_url, options) => {
+        expect(options.signal.aborted).toBe(false);
+        controller.abort(reason);
+        expect(options.signal.aborted).toBe(true);
+        throw reason;
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      try {
+        await expect(setupLMStudioProvider(undefined, controller.signal)).rejects.toBe(reason);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(mockedSelect).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("removes only owned terminal listeners after interrupting a prompt", async () => {
+      const beforeInt = process.listeners("SIGINT");
+      const beforeTerm = process.listeners("SIGTERM");
+      mockedGetConfiguredProviders.mockReturnValue([]);
+      mockedGetAllProviders.mockReturnValue([makeProviderDef()]);
+      mockedSelect.mockImplementationOnce(async (options) => {
+        const listener = process.listeners("SIGINT").find((fn) => !beforeInt.includes(fn));
+        expect(listener).toBeDefined();
+        listener!();
+        expect(options.signal?.aborted).toBe(true);
+        return "exit";
+      });
+      await expect(runOnboardingV2()).rejects.toMatchObject({ name: "AbortError" });
+      expect(process.listeners("SIGINT")).toEqual(beforeInt);
+      expect(process.listeners("SIGTERM")).toEqual(beforeTerm);
+    });
+  });
+
   // ─── runOnboardingV2 ────────────────────────────────────────────
 
   describe("runOnboardingV2", () => {

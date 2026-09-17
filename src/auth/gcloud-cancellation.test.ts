@@ -216,3 +216,22 @@ describe("Windows ADC token lookup", () => {
     expect(mocks.execFile).not.toHaveBeenCalled();
   });
 });
+
+describe("interactive gcloud cancellation", () => {
+  it.each(["isGcloudInstalled", "runGcloudADCLogin", "runGcloudADCRevoke"] as const)(
+    "%s forwards cancellation to its command and does not fallback",
+    async (name) => {
+      const { [name]: operation } = await import("./gcloud.js");
+      const controller = new AbortController();
+      const reason = new Error("host stopped");
+      mocks.exec.mockImplementation((_command, options, callback) => {
+        expect(options.signal).toBe(controller.signal);
+        expect(options.timeout).toBeGreaterThan(0);
+        controller.abort(reason);
+        callback(new Error("command aborted"), "", "");
+      });
+      await expect(operation(controller.signal)).rejects.toBe(reason);
+      expect(mocks.exec).toHaveBeenCalledTimes(1);
+    },
+  );
+});
