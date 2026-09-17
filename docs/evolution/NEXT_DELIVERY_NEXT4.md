@@ -1,5 +1,7 @@
 # Entrega next.4 — progreso persistido
 
+**Estado final: next.4 publicada y verificada en npm, con prerelease GitHub creada.** El registro inferior es cronológico.
+
 Base: `2.42.0-next.3` / `55d3d8d`. Canal objetivo: `next`; no mover `latest`.
 
 ## Secuencia aprobada
@@ -10,9 +12,9 @@ Base: `2.42.0-next.3` / `55d3d8d`. Canal objetivo: `next`; no mover `latest`.
 - [x] Contratos locales: JSON Schema nativo de Zod 4 en modo entrada.
 - [x] Contratos MCP: esquema original y validación Ajv sin modificar argumentos.
 - [x] Adaptadores existentes: representación fiel o diagnóstico explícito; conservar modelos.
-- [ ] Publicación: OIDC GitHub → npm; configurar confianza en cuenta propietaria.
+- [x] Publicación: OIDC GitHub → npm; configurar confianza en cuenta propietaria.
 - [x] Gate completo, revisión independiente final, artefacto único e instalación limpia.
-- [ ] Publicación verificada en npm y prerelease GitHub.
+- [x] Publicación verificada en npm y prerelease GitHub.
 
 ## Método
 
@@ -76,3 +78,24 @@ npm Trusted Publisher: GitHub Actions, owner `corbat-tech`, repository `coco`, w
 - A las 19:51 CEST, registro visible: `next=2.42.0-next.4`, `latest=2.41.0`; integridad exacta coincide con candidato CI/local. Publicación OIDC confirmada tras retraso de aproximadamente cuatro minutos por visibilidad.
 - Corrección del script de espera revisada por integrador; 28 tests de publicación PASS. No afecta al tarball next.4 ni mueve su tag. Queda en la rama para futuras publicaciones.
 - Relanzado únicamente el workflow fallido: reconocerá versión ya existente e idéntica, omitirá publicación y completará instalación/release GitHub.
+
+- Instalación limpia desde npm PASS: CLI --version/--help, exports públicos y runtime con herramienta real de archivos (proveedor simulado). `next.4` pública y verificable; `latest=2.41.0` intacto.
+- `f348f37`: espera de visibilidad del registro revisada + 28 tests PASS. Cambio operativo posterior al tag, no incluido en el tarball ni necesario para usar Coco; protege futuras publicaciones.
+
+## Próximas entregas (no ejecutadas aquí)
+
+1. Evaluación pequeña de tareas reales con modelos actuales, fijando primero presupuesto y criterios de éxito. Medir calidad de diffs, pruebas, coste y capacidad de recuperación.
+2. Restaurar `calculate_quality` con evidencia real y criterios de aplicabilidad; mantener estado indisponible hasta validarlo.
+3. Restaurar background solo con propietario, cancelación y limpieza comprobables; mejorar recuperación de sesiones/rewind sin perder cambios ajenos.
+4. Subir cobertura hacia 80 % con casos de riesgo, pulir UX y retomar VSIX cuando supere su gate específico.
+5. Auditoría externa integral sin contexto y prueba de adopción por consultor al cerrar el programa. Nuevos modelos o extracción de arquitectura solo por necesidad demostrada.
+
+## Cierre definitivo
+
+- **Entregado `@corbat-tech/coco@2.42.0-next.4` en canal `next`. `latest=2.41.0` sin cambios.**
+- https://www.npmjs.com/package/@corbat-tech/coco/v/2.42.0-next.4
+- Prerelease: https://github.com/corbat-tech/coco/releases/tag/v2.42.0-next.4
+- Actions (intento 2): https://github.com/corbat-tech/coco/actions/runs/35254601994 . Job npm completo en verde: gate, build, pack, instalación del artefacto, reconciliación sin republish, integridad del registro e instalación desde npm. Prerelease creada por Actions.
+- El primer intento sí presentó el paquete mediante OIDC; falló solo la comprobación prematura. El segundo reconoció la versión idéntica publicada, sin modificarla ni volver a subirla. Corrección preventiva `f348f37` queda disponible para futuras entregas.
+- Revisión independiente de cada bloque y revisión final sin bloqueantes. Sin inferencia pagada ni auditoría integral de producto: permanecen como siguientes entregas explícitas.
+- No quedan tareas de implementación/publicación de esta entrega. Mantener tag/artifact inmutables. Continuación futura: prioridades del apartado anterior, comenzando por evaluación real acotada y restauración fundamentada de calidad.

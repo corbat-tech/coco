@@ -1,6 +1,6 @@
 # Coco: evolución pragmática y entregas progresivas
 
-Fecha: 2026-09-16. Estado: **next.3 publicada/verificada; siguiente entrega en implementación**.
+Fecha: 2026-09-16. Estado: **next.4 publicada/verificada en npm y GitHub; entrega cerrada**.
 
 Progreso activo: [NEXT_DELIVERY_NEXT4.md](evolution/NEXT_DELIVERY_NEXT4.md).
 Base inspeccionada: `174fc4128bc190fe0cb0b581d2153b805c49f4af`, paquete `2.41.0`.

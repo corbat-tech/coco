@@ -1,5 +1,7 @@
 # Coco next.3: pendientes imprescindibles
 
+Histórico de next.3. Estado vigente y pendientes: [NEXT_DELIVERY_NEXT4.md](NEXT_DELIVERY_NEXT4.md).
+
 **Estado final:2.42.0-next.3 publicada y verificada en npm next.** Latest2.41.0 intacto; desarrollo de este bloque cerrado.
 
 Fecha:2026-09-17. Solicitud: seleccionar los siguientes arreglos imprescindibles, implementarlos y publicar; aplazar extras. Base publicada2.42.0-next.2. Destino2.42.0-next.3 en npm next; latest2.41.0 intacto. Sin migración, modelos nuevos ni ampliación del producto.
