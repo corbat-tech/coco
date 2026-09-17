@@ -9,8 +9,9 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
-import { trackSubprocess } from "../utils/subprocess-registry.js";
 import { rethrowCancellation } from "../utils/cancellation.js";
+import { createRequestScope } from "../utils/request-scope.js";
+import { ownShell } from "./utils/owned-shell.js";
 
 /**
  * Test result interface
@@ -239,28 +240,51 @@ Examples:
       }
 
       signal?.throwIfAborted();
-      const proc = execa(command, args, {
-        cwd: projectDir,
-        reject: false,
-        timeout: 300000, // 5 minute timeout
-        cleanup: true, // direct child cleanup on parent exit
-        cancelSignal: signal,
-        forceKillAfterDelay: 3000,
-      });
-      trackSubprocess(proc);
-      const result = await proc;
-      signal?.throwIfAborted();
-
-      const duration = performance.now() - startTime;
-
-      // Parse results based on framework
-      return parseTestResults(
-        detectedFramework,
-        result.stdout ?? "",
-        result.stderr ?? "",
-        result.exitCode ?? 0,
-        duration,
-      );
+      const scope = createRequestScope(signal, 300000);
+      try {
+        const proc = execa(command, args, {
+          cwd: projectDir,
+          reject: false,
+          timeout: 0, // The scope owns the deadline and the complete process group.
+          detached: process.platform !== "win32",
+          encoding: "buffer", // execa otherwise counts characters rather than wire bytes.
+          maxBuffer: 16 * 1024 * 1024, // Per stream; overflow fails instead of parsing partial JSON.
+          ...(process.platform === "win32"
+            ? { cancelSignal: scope.signal, forceKillAfterDelay: 3000 }
+            : {}),
+        });
+        const result = await ownShell(proc, scope.signal);
+        scope.signal.throwIfAborted();
+        if (
+          result.timedOut ||
+          result.isCanceled ||
+          result.isMaxBuffer ||
+          result.signal ||
+          typeof result.exitCode !== "number"
+        ) {
+          throw new Error(
+            result.isMaxBuffer
+              ? "Test output exceeds the 16 MiB per-stream limit"
+              : "Test process terminated without a normal exit status",
+          );
+        }
+        const parsed = parseTestResults(
+          detectedFramework,
+          typeof result.stdout === "string"
+            ? result.stdout
+            : Buffer.from(result.stdout ?? []).toString("utf8"),
+          typeof result.stderr === "string"
+            ? result.stderr
+            : Buffer.from(result.stderr ?? []).toString("utf8"),
+          result.exitCode,
+          performance.now() - startTime,
+        );
+        // A valid report cannot override a failed process exit (e.g. teardown failure).
+        parsed.success = parsed.success && result.exitCode === 0;
+        return parsed;
+      } finally {
+        scope.dispose();
+      }
     } catch (error) {
       rethrowCancellation(error, signal);
       const msg = error instanceof Error ? error.message : String(error);
