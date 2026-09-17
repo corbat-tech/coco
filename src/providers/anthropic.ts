@@ -609,18 +609,24 @@ export class AnthropicProvider implements LLMProvider {
   /**
    * Check if provider is available
    */
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     if (!this.client) return false;
 
     try {
       // Try a minimal request
-      await this.client.messages.create({
-        model: this.config.model ?? DEFAULT_MODEL,
-        max_tokens: 1,
-        messages: [{ role: "user", content: "hi" }],
-      });
+      await this.client.messages.create(
+        {
+          model: this.config.model ?? DEFAULT_MODEL,
+          max_tokens: 1,
+          messages: [{ role: "user", content: "hi" }],
+        },
+        this.getRequestOptions(options),
+      );
+      options?.signal?.throwIfAborted();
       return true;
-    } catch {
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
       return false;
     }
   }

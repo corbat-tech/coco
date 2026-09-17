@@ -321,11 +321,18 @@ export class VertexProvider implements LLMProvider {
     return CONTEXT_WINDOWS[model] ?? 1048576;
   }
 
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     try {
-      await this.chat([{ role: "user", content: "hi" }], { maxTokens: 8, maxRetries: 0 });
+      await this.chat([{ role: "user", content: "hi" }], {
+        maxTokens: 8,
+        maxRetries: 0,
+        signal: options?.signal,
+      });
+      options?.signal?.throwIfAborted();
       return true;
-    } catch {
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
       return false;
     }
   }

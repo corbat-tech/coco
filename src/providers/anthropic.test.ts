@@ -1079,3 +1079,18 @@ describe("Anthropic adaptive thinking compatibility", () => {
     expect(call.output_config).toBeUndefined();
   });
 });
+
+it("availability forwards cancellation and rejects a late successful probe", async () => {
+  const { AnthropicProvider } = await import("./anthropic.js");
+  const provider = new AnthropicProvider();
+  await provider.initialize({ apiKey: "test" });
+  const controller = new AbortController();
+  const reason = new Error("cancel availability");
+  mockMessagesCreate.mockImplementationOnce(async (_body, options) => {
+    expect(options.signal).toBe(controller.signal);
+    expect(options.maxRetries).toBe(0);
+    controller.abort(reason);
+    return {};
+  });
+  await expect(provider.isAvailable({ signal: controller.signal })).rejects.toBe(reason);
+});

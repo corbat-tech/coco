@@ -1321,3 +1321,40 @@ describe("tool input contract preservation", () => {
     },
   );
 });
+
+describe("availability cancellation", () => {
+  it.each(["gpt-4o", "gpt-5"])(
+    "never starts fallback inference after a cancelled model probe (%s)",
+    async (model) => {
+      const { OpenAIProvider } = await import("./openai.js");
+      const provider = new OpenAIProvider();
+      await provider.initialize({ apiKey: "test", model });
+      mockCreate.mockClear();
+      mockResponsesCreate.mockClear();
+      const controller = new AbortController();
+      const reason = new Error("cancel availability");
+      mockList.mockImplementationOnce(async (options) => {
+        expect(options.signal).toBe(controller.signal);
+        expect(options.maxRetries).toBe(0);
+        controller.abort(reason);
+        throw new Error("late network failure");
+      });
+      await expect(provider.isAvailable({ signal: controller.signal })).rejects.toBe(reason);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockResponsesCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a late success after abort and does not start a fallback", async () => {
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test" });
+    const controller = new AbortController();
+    const reason = new Error("cancel");
+    mockList.mockImplementationOnce(async () => {
+      controller.abort(reason);
+      return { data: [] };
+    });
+    await expect(provider.isAvailable({ signal: controller.signal })).rejects.toBe(reason);
+  });
+});

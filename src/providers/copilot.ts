@@ -413,13 +413,15 @@ export class CopilotProvider extends OpenAIProvider {
   /**
    * Check if Copilot credentials are available
    */
-  override async isAvailable(): Promise<boolean> {
-    const scope = createRequestScope(undefined, this.config.timeout ?? 120000);
+  override async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
+    const scope = createRequestScope(options?.signal, this.config.timeout ?? 120000);
     try {
       const tokenResult = await getValidCopilotToken(scope.signal);
       scope.signal.throwIfAborted();
       return tokenResult !== null;
-    } catch {
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
       return false;
     } finally {
       scope.dispose();

@@ -271,13 +271,19 @@ export class GeminiProvider implements LLMProvider {
     return CONTEXT_WINDOWS[model] ?? 1000000;
   }
 
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     if (!this.client) return false;
 
     try {
-      await this.chat([{ role: "user", content: "hi" }], { maxRetries: 0 });
+      await this.chat([{ role: "user", content: "hi" }], {
+        maxRetries: 0,
+        signal: options?.signal,
+      });
+      options?.signal?.throwIfAborted();
       return true;
-    } catch {
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
       return false;
     }
   }

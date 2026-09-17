@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type {
   LLMProvider,
   Message,
@@ -182,3 +182,35 @@ describe("ResilientProvider", () => {
     await expect(resilient.isAvailable()).resolves.toBe(false);
   });
 });
+
+it.each(["reject", "resolve"])(
+  "cancelled availability %s does not count failure or reset prior failures",
+  async (settlement) => {
+    const provider = new MockProvider({
+      chat: async () => {
+        throw new Error("real failure");
+      },
+    });
+    const resilient = new ResilientProvider(provider, {
+      retry: { maxRetries: 0 },
+      circuitBreaker: { failureThreshold: 2, resetTimeout: 60000 },
+    });
+    await expect(resilient.chat([{ role: "user", content: "hello" }])).rejects.toThrow(
+      "real failure",
+    );
+    expect(resilient.getCircuitState()).toBe("closed");
+    const controller = new AbortController();
+    const reason = new Error("cancel availability");
+    vi.spyOn(provider, "isAvailable").mockImplementationOnce(async () => {
+      controller.abort(reason);
+      if (settlement === "reject") throw reason;
+      return true;
+    });
+    await expect(resilient.isAvailable({ signal: controller.signal })).rejects.toBe(reason);
+    expect(resilient.getCircuitState()).toBe("closed");
+    await expect(resilient.chat([{ role: "user", content: "hello" }])).rejects.toThrow(
+      "real failure",
+    );
+    expect(resilient.getCircuitState()).toBe("open");
+  },
+);

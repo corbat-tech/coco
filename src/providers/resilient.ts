@@ -126,10 +126,17 @@ export class ResilientProvider implements LLMProvider {
     return this.provider.getContextWindow();
   }
 
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     try {
-      return await this.breaker.execute(() => this.provider.isAvailable());
+      const available = await this.breaker.execute(
+        () => this.provider.isAvailable(options),
+        options?.signal,
+      );
+      options?.signal?.throwIfAborted();
+      return available;
     } catch (error) {
+      rethrowCancellation(error, options?.signal);
       if (error instanceof CircuitOpenError) {
         return false;
       }

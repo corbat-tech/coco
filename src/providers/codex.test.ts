@@ -1059,3 +1059,16 @@ describe("createCodexProvider", () => {
     expect(provider.id).toBe("codex");
   });
 });
+
+it("availability forwards cancellation to OAuth refresh and rejects late credentials", async () => {
+  const { CodexProvider } = await import("./codex.js");
+  const provider = new CodexProvider();
+  const controller = new AbortController();
+  const reason = new Error("cancel availability");
+  mockGetValidAccessToken.mockImplementationOnce(async (_provider, signal) => {
+    expect(signal).toBe(controller.signal);
+    controller.abort(reason);
+    return { accessToken: "late-token" };
+  });
+  await expect(provider.isAvailable({ signal: controller.signal })).rejects.toBe(reason);
+});

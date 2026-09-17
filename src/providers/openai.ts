@@ -1,3 +1,4 @@
+import { rethrowCancellation } from "../utils/cancellation.js";
 import { isDeepStrictEqual } from "node:util";
 import { ResponseIntegrityError } from "./response-integrity.js";
 /**
@@ -859,34 +860,45 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Check if provider is available
    */
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     if (!this.client) return false;
 
     try {
       // Try to list models first (standard OpenAI)
-      await this.client.models.list();
+      await this.client.models.list(this.getRequestOptions(options));
+      options?.signal?.throwIfAborted();
       return true;
-    } catch {
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
       // Fallback: try a simple request
       // This works better for OpenAI-compatible APIs like Kimi
       try {
         const model = this.config.model || DEFAULT_MODEL;
         if (this.modelNeedsResponsesApi(model)) {
-          await (this.client as any).responses.create({
-            model,
-            input: [{ role: "user", content: [{ type: "input_text", text: "Hi" }] }],
-            max_output_tokens: 1,
-            store: false,
-          });
+          await (this.client as any).responses.create(
+            {
+              model,
+              input: [{ role: "user", content: [{ type: "input_text", text: "Hi" }] }],
+              max_output_tokens: 1,
+              store: false,
+            },
+            this.getRequestOptions(options),
+          );
         } else {
-          await this.client.chat.completions.create({
-            model,
-            messages: [{ role: "user", content: "Hi" }],
-            ...buildMaxTokensParam(model, 1),
-          } as OpenAI.ChatCompletionCreateParamsNonStreaming);
+          await this.client.chat.completions.create(
+            {
+              model,
+              messages: [{ role: "user", content: "Hi" }],
+              ...buildMaxTokensParam(model, 1),
+            } as OpenAI.ChatCompletionCreateParamsNonStreaming,
+            this.getRequestOptions(options),
+          );
         }
+        options?.signal?.throwIfAborted();
         return true;
-      } catch {
+      } catch (error) {
+        rethrowCancellation(error, options?.signal);
         // If we get a 401/403, the key is invalid
         // If we get a 404, the model might not exist
         // If we get other errors, provider might be down

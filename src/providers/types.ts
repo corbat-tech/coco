@@ -199,7 +199,7 @@ export interface LLMProvider {
   /**
    * Check if provider is available
    */
-  isAvailable(): Promise<boolean>;
+  isAvailable(options?: { signal?: AbortSignal }): Promise<boolean>;
 }
 
 /**

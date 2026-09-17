@@ -223,11 +223,14 @@ export class CodexProvider implements LLMProvider {
   /**
    * Check if provider is available (has valid OAuth tokens)
    */
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     try {
-      const tokenResult = await getValidAccessToken("openai");
+      const tokenResult = await getValidAccessToken("openai", options?.signal);
+      options?.signal?.throwIfAborted();
       return tokenResult !== null;
-    } catch {
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
       return false;
     }
   }

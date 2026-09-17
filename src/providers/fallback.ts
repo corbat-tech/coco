@@ -268,15 +268,17 @@ export class ProviderFallback implements LLMProvider {
    *
    * @returns true if at least one provider is available
    */
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     const results = await Promise.all(
       this.providers.map(async (p) => {
         if (p.breaker.isOpen()) {
           return false;
         }
-        return p.provider.isAvailable();
+        return p.provider.isAvailable(options);
       }),
     );
+    options?.signal?.throwIfAborted();
     return results.some((available) => available);
   }
 
