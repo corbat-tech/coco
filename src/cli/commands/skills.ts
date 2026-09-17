@@ -208,16 +208,19 @@ async function runAdd(source: string, options: { global?: boolean }): Promise<vo
     }
   } else if (isGithubShorthand && !isGitUrl) {
     // Use npx skills add for registry/GitHub sources
-    const targetFlag = options.global ? "-g" : "";
-    const cmd = `npx skills add ${source} ${targetFlag}`.trim();
+    if (source.startsWith("-")) {
+      p.log.error("Invalid source: option-like sources are not supported.");
+      p.outro("");
+      return;
+    }
 
     p.log.info(`Installing via skills registry: ${source}`);
     const spinner = p.spinner();
     spinner.start("Running npx skills add...");
 
     try {
-      const { execSync } = await import("node:child_process");
-      execSync(cmd, {
+      const { execaSync } = await import("execa");
+      execaSync("npx", ["skills", "add", source, ...(options.global ? ["-g"] : [])], {
         stdio: "pipe",
         timeout: 120_000,
         cwd: process.cwd(),
@@ -240,13 +243,18 @@ async function runAdd(source: string, options: { global?: boolean }): Promise<vo
 
     await fs.mkdir(targetDir, { recursive: true });
     const skillName = source.split("/").pop()?.replace(".git", "") ?? "skill";
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(skillName)) {
+      p.log.error("Invalid skill directory name in git URL.");
+      p.outro("");
+      return;
+    }
     const skillDir = path.join(targetDir, skillName);
 
     const spinner = p.spinner();
     spinner.start(`Cloning ${source}...`);
     try {
-      const { execSync } = await import("node:child_process");
-      execSync(`git clone --depth 1 ${source} ${skillDir}`, {
+      const { execaSync } = await import("execa");
+      execaSync("git", ["clone", "--depth", "1", "--", source, skillDir], {
         stdio: "pipe",
         timeout: 60_000,
       });
@@ -394,6 +402,11 @@ async function runCreate(name: string, options: { global?: boolean }): Promise<v
     ? CONFIG_PATHS.skills
     : path.join(process.cwd(), ".agents", "skills");
 
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
+    p.log.error(`Invalid skill name: "${name}"`);
+    p.outro("");
+    return;
+  }
   const skillDir = path.join(targetDir, name);
 
   // Check if exists
@@ -439,8 +452,8 @@ async function runCreate(name: string, options: { global?: boolean }): Promise<v
   await fs.mkdir(skillDir, { recursive: true });
 
   const skillMd = `---
-name: "${name}"
-description: "${description}"
+name: ${JSON.stringify(name)}
+description: ${JSON.stringify(description)}
 version: "1.0.0"
 metadata:
   author: ""

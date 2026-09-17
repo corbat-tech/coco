@@ -388,8 +388,8 @@ async function promptThinkingForInteractiveModelChange(
     return;
   }
 
-  session.config.provider.thinking = selected === "off" ? undefined : selected;
   await saveThinkingPreference(provider, selected);
+  session.config.provider.thinking = selected;
 
   console.log(chalk.green(`✓ Thinking: ${formatThinkingMode(selected)}\n`));
 }

@@ -12,11 +12,7 @@
 import chalk from "chalk";
 import type { SlashCommand, ReplSession } from "../types.js";
 import type { ThinkingMode } from "../../../providers/thinking.js";
-import {
-  getThinkingCapability,
-  formatThinkingMode,
-  resolveDefaultThinking,
-} from "../../../providers/thinking.js";
+import { getThinkingCapability, formatThinkingMode } from "../../../providers/thinking.js";
 import { saveThinkingPreference } from "../../../config/env.js";
 import type { ProviderType } from "../../../providers/index.js";
 
@@ -29,8 +25,8 @@ function isEffortLevel(s: string): s is EffortLevel {
 
 function parseThinkingArg(arg: string): ThinkingMode | null {
   if (isEffortLevel(arg)) return arg;
-  const n = parseInt(arg, 10);
-  if (!isNaN(n) && n >= 0) return { budget: n };
+  const n = Number(arg);
+  if (/^\d+$/.test(arg) && Number.isSafeInteger(n)) return { budget: n };
   return null;
 }
 
@@ -167,11 +163,9 @@ export async function applyMode(
   }
 
   const previousMode = session.config.provider.thinking;
-  const newMode: ThinkingMode | undefined = parsed === "off" ? undefined : parsed;
+  const newMode: ThinkingMode = parsed;
+  await saveThinkingPreference(provider as ProviderType, parsed);
   session.config.provider.thinking = newMode;
-
-  const modeToSave = newMode ?? resolveDefaultThinking(provider, model);
-  await saveThinkingPreference(provider as ProviderType, modeToSave);
 
   const previousLabel = previousMode !== undefined ? formatThinkingMode(previousMode) : "off";
   const newLabel = newMode !== undefined ? formatThinkingMode(newMode) : "off";

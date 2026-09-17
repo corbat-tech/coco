@@ -661,3 +661,17 @@ describe("COCO_SYSTEM_PROMPT — agent behaviour contracts", () => {
     expect(agent.systemPrompt).toMatch(/bash_exec|write_file|read_file/i);
   });
 });
+
+describe("explicit local thinking preference", () => {
+  it("retains persisted off in startup config so Ollama receives none", async () => {
+    const env = await import("../../config/env.js");
+    vi.mocked(env.getLastUsedProvider).mockResolvedValueOnce("ollama");
+    vi.mocked(env.getLastUsedModel).mockResolvedValueOnce("qwen3.5:4b");
+    vi.mocked(env.getLastUsedThinking).mockResolvedValueOnce("off");
+    const { createDefaultReplConfig } = await import("./session.js");
+    const { mapToOllamaEffort } = await import("../../providers/thinking.js");
+    const config = await createDefaultReplConfig();
+    expect(config.provider.thinking).toBe("off");
+    expect(mapToOllamaEffort(config.provider.thinking, config.provider.model)).toBe("none");
+  });
+});

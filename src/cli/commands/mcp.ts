@@ -129,9 +129,10 @@ async function runAddServer(
     const env: Record<string, string> = {};
     if (options.env) {
       for (const pair of options.env.split(",")) {
-        const [key, value] = pair.split("=");
-        if (key && value) {
-          env[key.trim()] = value.trim();
+        const separator = pair.indexOf("=");
+        const key = pair.slice(0, separator).trim();
+        if (separator > 0 && key) {
+          env[key] = pair.slice(separator + 1).trim();
         }
       }
     }
