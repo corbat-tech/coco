@@ -511,7 +511,7 @@ Examples:
             filesChanged: 0,
             additions: 0,
             deletions: 0,
-            status: "approved",
+            status: diffWarnings.length > 0 ? "needs_work" : "approved",
           },
           required: [],
           suggestions: [],
@@ -551,6 +551,10 @@ Examples:
               files: changedFiles,
             });
 
+            if (lintResult.score === null)
+              diffWarnings.push(
+                lintResult.message ?? "Linter unavailable — code style was not checked.",
+              );
             if (lintResult.issues.length > 0) {
               const changedLines = getChangedLines(diff);
               allFindings.push(...filterLintIssues(lintResult.issues, changedLines));
@@ -578,11 +582,12 @@ Examples:
         (f) => f.severity === "minor" || f.severity === "info",
       );
 
-      const status_result: ReviewSummary["status"] = required.some((f) => f.severity === "critical")
-        ? "needs_work"
-        : required.length > 0
+      const status_result: ReviewSummary["status"] =
+        diffWarnings.length > 0 || required.some((f) => f.severity === "critical")
           ? "needs_work"
-          : "approved";
+          : required.length > 0
+            ? "needs_work"
+            : "approved";
 
       const result: ReviewResult = {
         summary: {
