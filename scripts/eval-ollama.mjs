@@ -89,7 +89,7 @@ await fs.writeFile(
       digest: installedModel.digest,
       artifacts,
       corpus: fixturePath ?? "builtin-v2",
-      evaluatorRevision: 3,
+      evaluatorRevision: 4,
     },
     null,
     2,
@@ -124,6 +124,8 @@ for (const fixture of fixtures.filter((f) => !filter || filter === "all" || f.id
   let error;
   let calls = 0;
   let terminalResponse = false;
+  let lastStopReason;
+  const turnStopReasons = [];
   let truncated = false;
   const turnCompletions = [];
   const usage = { inputTokens: 0, outputTokens: 0 };
@@ -145,6 +147,7 @@ for (const fixture of fixtures.filter((f) => !filter || filter === "all" || f.id
     provider.chatWithTools = async (...args) => {
       if (++calls > 30) throw new Error("Evaluation call limit exceeded");
       const response = await original(...args);
+      lastStopReason = response.stopReason;
       terminalResponse =
         ["end_turn", "stop_sequence"].includes(response.stopReason) &&
         response.toolCalls.length === 0;
@@ -169,7 +172,9 @@ for (const fixture of fixtures.filter((f) => !filter || filter === "all" || f.id
     };
     result = await runtime.runTurn(input);
     turnCompletions.push(terminalResponse && !truncated);
+    turnStopReasons.push(lastStopReason);
     if (fixture.followup) {
+      lastStopReason = undefined;
       terminalResponse = false;
       truncated = false;
       result = await runtime.runTurn({
@@ -178,6 +183,7 @@ for (const fixture of fixtures.filter((f) => !filter || filter === "all" || f.id
         content: fixture.followup,
       });
       turnCompletions.push(terminalResponse && !truncated);
+      turnStopReasons.push(lastStopReason);
     }
   } catch (e) {
     error = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
@@ -216,13 +222,17 @@ for (const fixture of fixtures.filter((f) => !filter || filter === "all" || f.id
     agentCompleted: !error && turnCompletions.length > 0 && turnCompletions.every(Boolean),
     codeVerified: judge.status === 0 && preserved,
     turnCompletions,
+    turnStopReasons,
+    lastStopReason,
     completionFailure: error
       ? "runtime_error"
-      : !terminalResponse
-        ? "tool_budget_exhausted"
-        : truncated
-          ? "output_truncated"
-          : undefined,
+      : truncated
+        ? "output_truncated"
+        : !terminalResponse
+          ? "nonterminal_response"
+          : turnCompletions.some((complete) => !complete)
+            ? "incomplete_prior_turn"
+            : undefined,
     error,
     verification: {
       status: judge.status,
@@ -232,7 +242,7 @@ for (const fixture of fixtures.filter((f) => !filter || filter === "all" || f.id
     usage,
     scope: "runtime-tools-six; session case has two turns, not long-context stress",
     corpusRevision: fixturePath ? "heldout-1" : 2,
-    evaluatorRevision: 3,
+    evaluatorRevision: 4,
     answer: result?.content,
     sourceHash: createHash("sha256").update(source).digest("hex"),
     before: fixture.source,

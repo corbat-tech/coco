@@ -78,3 +78,7 @@ Con esas condiciones satisfechas, una entrega estable para uso local supervisado
 ## Adjudicación del integrador sobre el candidato exacto
 
 `34f4a7c` incorpora ambos P1 y sus revisiones. El gate acumulado se ejecutó sobre ese commit:8310 pruebas principales+28 REPL PASS (15 omitidas), typecheck/lint/formato/build PASS;80.01% statements y80.73% líneas. Instalación limpia del tarball local y smoke PASS. Se cierra el pendiente de regresión acumulada; publicación y casos reservados aún pendientes en este registro. El alcance y los límites de aislamiento de esta auditoría permanecen sin cambios.
+
+## Adjudicación de cierre RC2
+
+El candidato `5bd23ef` corrige además el falso éxito de respuestas incompletas en las tres rutas públicas del runtime y propaga cancelación a las herramientas del lote. Implementación y delta revisadas por otro agente; 74 regresiones enfocadas y gate exacto de 8337 pruebas principales +28 REPL PASS, con 80.02% statements y 80.75% líneas e instalación limpia aprobada. La evidencia original de los reservados corresponde a next.8 y conserva sus fallos. El dictamen combinado es mantener RC2 para piloto supervisado, sin promover estable: faltan perfil recomendado validado y uso práctico independiente. Estado remoto y continuidad en [el cierre actual](HANDOFF_2026-09-17.md).

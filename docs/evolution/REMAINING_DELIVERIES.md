@@ -1,6 +1,6 @@
 # Cierre de mejora de Coco — entregas restantes
 
-Base inicial: 2.42.0-next.4; última entrega confirmada: **2.42.0-next.8 + VSIX 2.42.0**. Presupuesto API adicional: **0 €**. Incluye background y VSIX. Última instrucción: usar Ollama para evaluación real y ejecutar el plan.
+Base inicial: 2.42.0-next.4; última entrega confirmada: **2.42.0-rc.2 + VSIX 2.42.0**. Presupuesto API adicional: **0 €**. Incluye background y VSIX. Cierre técnico: candidato RC2; promoción estable pendiente por dictamen de capacidad. Ver [handoff actual](HANDOFF_2026-09-17.md).
 
 ## Cambio aprobado: evaluación local con Ollama
 
@@ -35,3 +35,5 @@ Criterio → implementación → pruebas en mirror/sandbox → revisión indepen
 - next.8 publicada y verificada: commit34f4a7c, Actions35267933015 PASS, npm next y assets GitHub. Gate8310+28,80.01% statements/80.73% líneas y clean install PASS. El corpus repetido del candidato previo7fb9aca da20/20, con límites de alcance documentados. Casos reservados finales aún en curso; RC1 preparada sin nuevos cambios runtime. No promover estable antes de adjudicar esos resultados.
 
 - RC1 `4aa7ec0` publicada en npm y GitHub: Actions35268904690 PASS tras reintentar únicamente la subida de assets (error temporal inicial); `next=2.42.0-rc.1`, `latest=2.41.0`. SHA256 publicado `bedc0be06f520e903ac599c4c76997939812eb7fadd2736eb60741ed1ef56ab7`. Los reservados detectaron un P1 del runtime experimental: respuesta no terminal podía anunciar éxito; corrección mínima en curso también para runner simple y streaming. No promover esta RC a estable.
+
+- Auditoría final de capacidad: mantener RC2 para piloto supervisado;2/6 reservados completos y4/6 código correcto con perfiles thinking:off. No atribuirlo al default ni afirmar superioridad. P1 de falso éxito corregido en5bd23ef; revisión independiente y gate8337+28/80.02% statements/80.75% líneas PASS. RC2 publicada/verificada: Actions35270377516 PASS, next=2.42.0-rc.2, latest=2.41.0; cuatro assets GitHub e integridad coincidente. El tramo RC→estable no se marca completo: faltan perfil recomendado validado y recorrido práctico independiente del producto instalado.

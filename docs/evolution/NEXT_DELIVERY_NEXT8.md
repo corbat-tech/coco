@@ -17,9 +17,9 @@ Estado: implementación y revisión cerradas en `34f4a7c`; gate exacto e instala
 - [x] Checkpoints: sin borrar cambios ajenos, metadata/proyecto/HEAD/OID verificados; legacy solo lectura; pruebas Git reales e independientes.
 - [x] Gate completo ≥80% líneas y statements, además de umbrales existentes, build y clean install.
 - [x] Repetir corpus2 con4B/9B dos veces usando el paquete instalado. Evaluadorv3 exige terminación en todos los turnos; resultados anteriores con budget agotado no son éxito completo.
-- [ ] Ejecutar casos reservados `evidence/heldout-cases-v1.json` sin adaptar los prompts tras observar resultados. Distinguir resultado del código, terminación y respeto de restricciones.
-- [ ] Auditorías producto/capacidad/ingeniería; corregir bloqueantes y registrar límites. Los revisores con contexto anterior deben declararlo; revisión ciega local con Ollama sin historial interno por separado.
-- [ ] Publicación next.8 y RC verificadas; estable2.42.0 únicamente si cumplen los gates y las auditorías.
+- [x] Ejecutar casos reservados `evidence/heldout-cases-v1.json` sin adaptar los prompts tras observar resultados. Distinguir resultado del código, terminación y respeto de restricciones.
+- [x] Auditorías producto/capacidad/ingeniería; corregir bloqueantes y registrar límites. Los revisores con contexto anterior deben declararlo; revisión ciega local con Ollama sin historial interno por separado.
+- [x] Publicación next.8 y RC2 verificadas; estable2.42.0 no aprobada por auditoría de capacidad, condiciones pendientes en el handoff actual.
 
 ## Reproducción
 
@@ -38,3 +38,7 @@ Commit `34f4a7c`: 8310 pruebas principales y28 REPL PASS (15 omitidas), typechec
 La repetición del corpus comenzó sobre `7fb9aca` (candidato previo a los ajustes finales de permisos), no sobre el artefacto final. Los casos reservados usarán el consumidor instalado de `34f4a7c`. No presentar los20 casos repetidos como validación exacta de ese último artefacto.
 
 Publicación next.8 confirmada: SHA256 del asset GitHub `ce6363fc54d6b2367067e25c982276e064a27e3e04559e42bf21e19052a2defb`, idéntico al tarball local evaluado; integridad npm `sha512-0D7DjKHfKPUvxMtuwUKARdJ1kSmQT6kSXM9llM6cQqstEi+DpgZWiV9IBbbQHpuD25QdO5Aet0hUQ2CHFAK3OQ==`. Registro `next=2.42.0-next.8`, `latest=2.41.0`. RC1 `4aa7ec0` (sin cambios runtime) pasa gate completo y clean install; publicación iniciada, todavía no acreditada.
+
+## Dictamen tras los reservados
+
+Ejecución original completada y conservada:2/6 éxitos completos,4/6 código verificado,3/6 finales válidos; perfiles4B/9B con thinking:off. No se generaliza al default ni a otros modelos. La auditoría recomienda mantener RC2 para piloto supervisado. El falso éxito del runtime detectado se corrige en5bd23ef; gate acumulado8337+28,80.02% statements y80.75% líneas e instalación limpia PASS. Los siguientes requisitos de uso para estable están en [el cierre](HANDOFF_2026-09-17.md).

@@ -1,8 +1,8 @@
 # Coco: evolución pragmática y entregas progresivas
 
-Fecha: 2026-09-16. Estado: **next.4 publicada/verificada; cierre del programa en ejecución con Ollama local**.
+Fecha inicial:2026-09-16. Actualización:2026-09-17. Estado: **implementación hasta RC2; estable pendiente de validación práctica según auditoría final**.
 
-Progreso activo: [REMAINING_DELIVERIES.md](evolution/REMAINING_DELIVERIES.md). Última entrega cerrada: [NEXT_DELIVERY_NEXT4.md](evolution/NEXT_DELIVERY_NEXT4.md).
+Progreso activo: [REMAINING_DELIVERIES.md](evolution/REMAINING_DELIVERIES.md). Cierre y condiciones pendientes: [HANDOFF_2026-09-17.md](evolution/HANDOFF_2026-09-17.md). Los registros anteriores se conservan como historia; para estado actual manda este cierre.
 Base inspeccionada: `174fc4128bc190fe0cb0b581d2153b805c49f4af`, paquete `2.41.0`.
 
 Este es el plan vigente para esta evolución. Sustituye **la secuencia de ejecución**, no la evidencia, del plan de 39 pasos de la [auditoría del 16 de septiembre](../../corbat-coco-auditoria/2026-09-16/public/04-plan-de-progreso.md). La auditoría permanece como snapshot histórico fuera del repositorio; su enlace requiere el directorio hermano. Los IDs COCO y S remiten a ese snapshot. [MASTER_PLAN.md](MASTER_PLAN.md) y [CODEX_IMPROVEMENTS_PLAN.md](CODEX_IMPROVEMENTS_PLAN.md) son antecedentes, no listas adicionales que completar antes de publicar. Mandan [CLAUDE.md](../CLAUDE.md) y los ADR aceptados.

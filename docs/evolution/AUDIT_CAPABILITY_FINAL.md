@@ -2,11 +2,13 @@
 
 Fecha: 17 de septiembre de 2026. Revisión en solo lectura del evaluador y sus resultados; no se modificaron corpus ni prompts y no se ejecutó inferencia desde esta auditoría. Un defecto de finalización descubierto al seguir sus resultados motivó una corrección autorizada del runtime, descrita abajo.
 
-## Dictamen provisional
+## Dictamen final de esta revisión
 
-**La evidencia disponible respalda capacidad útil para tareas pequeñas de programación local supervisada. No acredita autonomía general ni superioridad frente a otros agentes.** Los 20 casos repetidos del candidato `7fb9aca` completaron sus turnos, superaron sus verificadores externos y conservaron el archivo protegido. No son 20 tareas independientes: son cinco tareas repetidas dos veces con dos modelos.
+**Recomiendo mantener RC2 como candidata para piloto local supervisado y no promover todavía a estable. La evidencia muestra capacidad útil, pero no cierra el objetivo de uso fiable por un consultor sin contexto. No acredita autonomía general ni superioridad frente a otros agentes.** Los 20 casos repetidos del candidato `7fb9aca` completaron sus turnos, superaron sus verificadores externos y conservaron el archivo protegido. No son 20 tareas independientes: son cinco tareas repetidas dos veces con dos modelos.
 
-La promoción del candidato final `34f4a7c` sigue condicionada a sus seis ejecuciones reservadas, gate completo, instalación e integridad del artefacto. Los repetidos anteriores no deben atribuirse a ese binario final aunque compartan número de versión. Se identificó un bloqueante P1 de falso éxito en las rutas públicas del runtime. La RC1 debe permanecer como preview hasta verificar su corrección en una RC2; los límites del corpus deben acompañar cualquier afirmación comercial.
+Los seis reservados del candidato `34f4a7c` terminaron: **2/6 aprobados completos, 4/6 con código verificado y 3/6 con todos sus turnos terminados**. Qwen 3.5 4B obtuvo 0/3 y 9B obtuvo 2/3, ambos con `thinking: off` explícito. Son tres tareas por dos perfiles, no una estimación estadística de la capacidad general ni una evaluación equivalente de la configuración predeterminada/auto.
+
+Los reservados descubrieron además un P1 productivo de falso éxito ante respuestas incompletas. La corrección de RC2 (`5bd23ef`) tiene pruebas enfocadas y revisión independiente favorables; el integrador confirmó su gate exacto: 8.337 tests principales y 28 REPL, 80,02% statements y 80,75% líneas, typecheck/lint/format/build e instalación limpia aprobados. Ese cierre mejora la integridad del resultado, pero no cambia retrospectivamente los fallos de generación/terminación observados. Una RC2 instalable permite continuar pilotos supervisados sin afirmar que el criterio de suficiencia del plan ya está cumplido.
 
 ## Método y procedencia
 
@@ -15,6 +17,7 @@ Esta es una revisión informada de otro agente que conoce el desarrollo. No es u
 - `scripts/eval-ollama.mjs`: ejecución de un paquete instalado, proveedor Ollama local y seis herramientas.
 - `evidence/heldout-cases-v1.json`: tres casos reservados congelados, sin alterarlos.
 - `evidence/next8-ollama-repeated-v3.json`: agregado con commit, modelos/digests, hashes de entradas del paquete, resultados y código final.
+- `evidence/next8-ollama-heldout-v1.json`: seis reservados completos con resultados y eventos persistidos.
 - Eventos y respuestas completos en los directorios `next8-preaudit-{4b,9b}-r{1,2}` del espacio temporal de validación.
 - `evidence/ollama-blind-product-audit.json`: lectura documental por un modelo local sin historial de desarrollo, con input hash y metadatos de inferencia.
 
@@ -64,7 +67,7 @@ El runner experimental retornaba normalmente ante `max_tokens`, combinaciones in
 
 La corrección acotada rechaza esas respuestas antes de persistir un turno exitoso. Solo acepta `end_turn` o `stop_sequence` sin herramientas pendientes; el runner con herramientas exige `tool_use` con llamadas, y su presupuesto debe ser un entero positivo seguro. El stream puede haber emitido texto parcial, pero termina en `error`, sin `done` ni `turn.completed`, si falta un terminal válido o aparecen herramientas. Se comprueba cancelación antes y después del proveedor. Los efectos ya ejecutados se conservan y el error indica que deben inspeccionarse; no hay rollback automático ni reintentos que oculten el fallo.
 
-Validación inicial aislada: 73 tests aprobados entre runner, runtime y headless. Incluye presupuesto agotado, truncamiento, respuestas inconsistentes, cancelación tardía, historial sin falsa aceptación y JSON de fracaso con cierre del runtime. El typecheck completo aislado también aprobó. La revisión independiente y el gate exacto de la RC2 deben cerrar el hallazgo antes de estable. Estas pruebas de contrato no convierten en aprobados los casos reservados anteriores ni sustituyen sus resultados reales.
+Validación aislada final comunicada por el integrador: 74 tests aprobados entre runner, runtime y headless. Incluye presupuesto agotado, truncamiento, respuestas inconsistentes, cancelación tardía, historial sin falsa aceptación y JSON de fracaso con cierre del runtime. El typecheck completo aislado también aprobó. La revisión independiente de otro agente cerró el hallazgo sin bloqueantes. Se añadió además una comprobación entre herramientas de un mismo batch para impedir ejecutar la siguiente tras una cancelación. Esto no acredita cancelar todos los efectos de una herramienta ya activa. El integrador confirmó el gate exacto de RC2 y la instalación limpia aprobados. Estas pruebas de contrato no convierten en aprobados los casos reservados anteriores ni sustituyen sus resultados reales.
 
 ## Tres reservados 4B: resultado completo
 
@@ -76,7 +79,21 @@ Validación inicial aislada: 73 tests aprobados entre runner, runtime y headless
 
 El caso de rutas consumió 27 llamadas y 306,2 segundos. Su código elimina los segmentos `..` pero no el segmento precedente, por lo que acepta una ruta fuera de la raíz. El caso de corrección consumió cuatro llamadas y 15,4 segundos; reconoce verbalmente `enabled === true` pero mantiene la función original y espera otra autorización, conservando la instrucción anterior de no editar pese al segundo turno. El verificador obtiene 29 en vez de 2. Los tres conservaron el archivo protegido.
 
-Son fallos reales de generación y seguimiento de instrucciones bajo el perfil Qwen 3.5 4B con `thinking: off` explícito y los límites del evaluador. El producto conserva su configuración predeterminada/auto: estos resultados no cuantifican su calidad en otros modos, modelos o presupuestos. Los eventos disponibles no demuestran un fallo de infraestructura que justifique descartarlos. Recomendar una estable supervisada requiere publicar estas limitaciones, mantener revisión externa del diff y tests, y no presentar los 20 repetidos previos como representativos de tareas nuevas. Los tres casos 9B siguen pendientes.
+Son fallos reales de generación y seguimiento de instrucciones bajo el perfil Qwen 3.5 4B con `thinking: off` explícito y los límites del evaluador. El producto conserva su configuración predeterminada/auto: estos resultados no cuantifican su calidad en otros modos, modelos o presupuestos. Los eventos disponibles no demuestran un fallo de infraestructura que justifique descartarlos. Recomendar una estable supervisada requiere publicar estas limitaciones, mantener revisión externa del diff y tests, y no presentar los 20 repetidos previos como representativos de tareas nuevas. Los tres casos 9B también terminaron y se detallan a continuación.
+
+## Tres reservados 9B y adjudicación conjunta
+
+| Caso | Llamadas | Tiempo | Turno completado | Código verificado | Resultado global |
+| --- | ---: | ---: | --- | --- | --- |
+| Orden | 9 | 127,1 s | Sí | Sí | Aprobado |
+| Rutas | 26 | 489,9 s | No | Sí | Fallo |
+| Corrección de instrucciones | 5 | 38,9 s | Sí, ambos turnos | Sí | Aprobado |
+
+La deduplicación 9B usa dos pasadas, conserva referencias y orden de últimas posiciones. Su `Set` adicional es redundante, pero no invalida el contrato comprobado. La corrección 9B aplica `enabled === true` sin redondeo ni dependencias, conserva negativos/cero y supera los assertions; la inspección del código confirma la restricción de no redondear que las muestras decimales por sí solas no agotaban.
+
+En rutas 9B, el código resuelve correctamente `..` mediante una pila y supera los casos POSIX pedidos, pero la respuesta sigue intentando investigar después de 26 llamadas. No hubo final válido: no se cuenta como éxito. Como en los finales incompletos 4B, el diagnóstico guardado no permite atribuir con precisión truncamiento frente a otra inconsistencia terminal. Los seis archivos protegidos se conservaron.
+
+La comparación útil es interna y acotada: el corpus repetido previo aprobaba 20/20, mientras los reservados exponen dificultades adicionales en finalización y seguimiento de instrucciones. No se ha demostrado que aumentar presupuesto, habilitar razonamiento o cambiar modelo solucione todas ellas. Tampoco se ha demostrado un fallo de Coco en todos sus modos: el perfil y la tarea importan. No se modificaron prompts, casos ni verificadores para mejorar estos resultados.
 
 ## Adjudicación de la revisión documental ciega
 
@@ -94,15 +111,11 @@ El archivo `ollama-blind-product-audit.json` registra Qwen 3.5 9B leyendo docume
 | Proyectos sin tests reciben puntuaciones bajas aunque sean correctos | Matiz necesario: también pueden producir evidencia no disponible/incompleta y no ser aceptables; no siempre existe una puntuación válida baja. |
 | El producto está en preview | Correcto respecto de los documentos suministrados. El estado de publicación debe comprobarse por versión/canal, no por el veredicto del modelo. |
 
-## Pendientes para cerrar el dictamen
+## Condiciones pendientes para una futura promoción estable
 
-1. Adjuntar seis resultados reservados del candidato `34f4a7c` y revisar código/eventos, sin modificar casos tras observar resultados.
-2. Confirmar gate y artefacto exactos, incluidas correcciones finales de permisos y cobertura global acordada.
-3. Conservar los fallos de las referencias y limitaciones anteriores junto a cualquier resumen de éxitos.
-4. Explicar al usuario que estable significa una entrega soportada dentro de su alcance, no éxito universal ni calidad garantizada por un LLM.
+1. **Cerrado por el integrador:** publicación e integridad de RC2 verificadas, Actions `35270377516` PASS, npm next y cuatro assets GitHub. Gate completo e instalación limpia aprobados. Los seis reservados corresponden a `34f4a7c`, no al binario corregido `5bd23ef`.
+2. Obtener una pequeña prueba de uso real de un consultor sin historial del desarrollo, con tareas representativas y verificación externa del diff. La revisión documental por otro modelo no cumple esta condición.
+3. Validar el perfil/modelo que se vaya a recomendar al usuario en condiciones equivalentes, manteniendo visibles también los fallos. No es necesario ejecutar más inferencias para cerrar esta entrega como RC2.
+4. Conservar estos resultados y los límites de alcance; no transformar código correcto sin final válido en un aprobado ni ocultar el caso de código incorrecto.
 
-La decisión final debe separar corrección del runtime y capacidad del modelo: un gate exacto aprobado y el cierre del P1 permiten valorar una estable supervisada, pero los reservados fallidos limitan expresamente lo que se puede prometer y no se reclasifican como aprobados. Un fallo que produzca cambios ajenos, ignore autorización o anuncie éxito sin evidencia bloquea esa recomendación. Un límite conocido y documentado, como background no soportado en Windows o la necesidad de revisión humana, no la bloquea por sí solo.
-
-## Revisión de la corrección RC2
-
-Otro agente revisó las guardas de finalización de las tres rutas y las regresiones headless sin bloqueantes. Encontró una omisión preexistente de cancelación entre herramientas del mismo lote: ahora se propagan `signal`/`toolCallId` al ejecutor existente y se comprueba la señal antes de cada llamada. Esa delta pasó una segunda revisión independiente. Gate enfocado final:74 pruebas (24 contratos de finalización,13 headless,37 runtime) en mirror/sandbox. El gate acumulado exacto y la publicación de RC2 todavía están pendientes; no se atribuye esta corrección a next.8/RC1.
+No propongo ampliar funciones, migrar arquitectura ni ajustar prompts contra estos reservados. La entrega puede cerrarse ahora como **RC2 para piloto supervisado**, con tareas futuras pequeñas y medibles. La calidad de ingeniería y el resultado de las pruebas automáticas justifican probarla; la evidencia de capacidad y uso disponible todavía no justifica dar por terminada la promesa del plan de una estable validada por uso independiente.
