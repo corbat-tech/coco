@@ -1,7 +1,8 @@
 # Source files — not needed in packaged extension
 src/**
 **/*.ts
-!dist/**
+dist/**
+!dist/extension.js
 
 # Build tooling
 esbuild.js
