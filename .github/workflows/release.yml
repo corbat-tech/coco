@@ -40,10 +40,15 @@ jobs:
         run: pnpm build
 
       - name: Publish to npm
-        continue-on-error: true
         run: pnpm publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify npm publish
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          PUBLISHED_VERSION="$(npm view "@corbat-tech/coco@${PACKAGE_VERSION}" version)"
+          test "$PUBLISHED_VERSION" = "$PACKAGE_VERSION"
 
   # ── 2. VS Code Marketplace ───────────────────────────────────────────────────
   release-vscode:
@@ -78,7 +83,6 @@ jobs:
           retention-days: 90
 
       - name: Publish to VS Code Marketplace
-        continue-on-error: true
         run: npm run publish
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
