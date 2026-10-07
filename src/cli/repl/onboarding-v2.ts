@@ -606,7 +606,11 @@ async function setupGcloudADC(
   console.log(chalk.cyan("   $ gcloud auth application-default login"));
   console.log();
   if (adc.suggestion) {
-    console.log(chalk.dim(`   ${adc.suggestion}`));
+    console.log(
+      chalk.dim(
+        "   For OAuth scope issues, configure your client and retry ADC login with the scopes in docs/guides/PROVIDERS.md.",
+      ),
+    );
     console.log();
   }
   console.log(chalk.dim("   Coco will reuse the login on the next attempt if ADC is valid."));

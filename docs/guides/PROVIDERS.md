@@ -206,3 +206,8 @@ Cancellation is forwarded and incomplete results are rejected.
 The automated tests use simulated responses, including transport fixtures and file
 security cases. They do not establish live access for every account, region, quota
 or deployment. Validate the chosen model with the actual account before production.
+
+For a Gemini gcloud ADC login that needs additional OAuth scopes, configure a local
+OAuth client and run `gcloud auth application-default login --client-id-file=client_secret.json --scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/generative-language.retriever`.
+Keep the client secret file outside version control. Coco shows static help rather
+than logging returned authentication diagnostics.

@@ -972,7 +972,11 @@ async function setupGcloudADCForProvider(_provider: ProviderDefinition): Promise
   console.log(chalk.dim("\n   Authenticate manually in your terminal with:"));
   console.log(chalk.cyan("   $ gcloud auth application-default login"));
   if (adc.suggestion) {
-    console.log(chalk.dim(`\n   ${adc.suggestion}`));
+    console.log(
+      chalk.dim(
+        "\n   For OAuth scope issues, configure your client and retry ADC login with the scopes in docs/guides/PROVIDERS.md.",
+      ),
+    );
   }
   console.log();
 
