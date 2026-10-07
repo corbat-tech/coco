@@ -60,6 +60,8 @@ const CONFIRMATION_REQUIRED_TOOLS = new Set([
   "http_json",
   "get_env",
   "read_image",
+  "read_audio",
+  "generate_image",
   "manage_permissions",
 ]);
 
@@ -68,7 +70,8 @@ function riskForTool(tool: ToolDefinition): PermissionDecision["risk"] {
   if (tool.provenance?.kind === "mcp") return "secrets-sensitive";
   if (READ_ONLY_TOOL_NAMES.has(tool.name)) return "read-only";
   if (tool.name === "get_env") return "secrets-sensitive";
-  if (["http_fetch", "http_json", "read_image"].includes(tool.name)) return "network";
+  if (["http_fetch", "http_json", "read_image", "read_audio", "generate_image"].includes(tool.name))
+    return "network";
   if (DESTRUCTIVE_TOOL_NAMES.has(tool.name)) return "destructive";
   if (WRITE_CAPABLE_TOOL_NAMES.has(tool.name)) return "write";
   if (tool.category === "web") return "network";
@@ -84,7 +87,7 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
 
     const readOnlyTool =
       tool.provenance?.kind !== "mcp" &&
-      tool.name !== "read_image" &&
+      !["read_image", "read_audio", "generate_image"].includes(tool.name) &&
       (READ_ONLY_TOOL_NAMES.has(tool.name) || READ_ONLY_CATEGORIES.has(tool.category));
 
     if (definition.readOnly && !readOnlyTool) {

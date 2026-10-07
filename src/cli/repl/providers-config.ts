@@ -110,58 +110,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       vision: true,
     },
     // Updated: March 2026 — from docs.anthropic.com/en/docs/about-claude/models
-    models: [
-      {
-        id: "claude-opus-4-6",
-        name: "Claude Opus 4.6",
-        description: "Most intelligent — agents, coding & complex tasks",
-        contextWindow: 200000,
-        maxOutputTokens: 128000,
-        recommended: true,
-      },
-      {
-        id: "claude-sonnet-4-6",
-        name: "Claude Sonnet 4.6",
-        description: "Best speed + intelligence balance (1M beta)",
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "claude-haiku-4-5-20251001",
-        name: "Claude Haiku 4.5",
-        description: "Fastest and cheapest",
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "claude-sonnet-4-5-20250929",
-        name: "Claude Sonnet 4.5",
-        description: "Previous balanced model (Sep 2025)",
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "claude-opus-4-5-20251101",
-        name: "Claude Opus 4.5",
-        description: "Previous flagship (Nov 2025)",
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "claude-opus-4-1-20250805",
-        name: "Claude Opus 4.1",
-        description: "Legacy model (Aug 2025)",
-        contextWindow: 200000,
-        maxOutputTokens: 32000,
-      },
-      {
-        id: "claude-sonnet-4-20250514",
-        name: "Claude Sonnet 4",
-        description: "Stable production model (May 2025)",
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-      },
-    ],
+    models: [],
   },
 
   openai: {
@@ -183,79 +132,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       vision: true,
     },
     // Updated: March 2026 — from platform.openai.com/docs/models
-    models: [
-      {
-        id: "gpt-5.3-codex",
-        name: "GPT-5.3 Codex",
-        description: "Latest available agentic coding model",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-        recommended: true,
-      },
-      {
-        id: "gpt-5.2-codex",
-        name: "GPT-5.2 Codex",
-        description: "Previous coding model — stable (Jan 2026)",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5.1-codex-max",
-        name: "GPT-5.1 Codex Max",
-        description: "Frontier model for long-running project-scale work",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5.2",
-        name: "GPT-5.2",
-        description: "Flagship reasoning model (Dec 2025)",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5.1",
-        name: "GPT-5.1",
-        description: "General-purpose model (2025)",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-4.1",
-        name: "GPT-4.1",
-        description: "Best for long context — 1M window",
-        contextWindow: 1048576,
-        maxOutputTokens: 32768,
-      },
-      {
-        id: "gpt-4.1-mini",
-        name: "GPT-4.1 Mini",
-        description: "Fast & cheap long context — 1M window",
-        contextWindow: 1048576,
-        maxOutputTokens: 32768,
-      },
-      {
-        id: "o4-mini",
-        name: "o4-mini",
-        description: "Fast reasoning model",
-        contextWindow: 200000,
-        maxOutputTokens: 100000,
-      },
-      {
-        id: "gpt-4o",
-        name: "GPT-4o",
-        description: "Multimodal model — cheaper option (legacy)",
-        contextWindow: 128000,
-        maxOutputTokens: 16384,
-      },
-      {
-        id: "gpt-4o-mini",
-        name: "GPT-4o Mini",
-        description: "Cheapest OpenAI model (legacy)",
-        contextWindow: 128000,
-        maxOutputTokens: 16384,
-      },
-    ],
+    models: [],
   },
 
   // GitHub Copilot - Use your Copilot subscription to access multiple models
@@ -280,189 +157,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     },
     // Updated: April 2026 — from docs.github.com/en/copilot/reference/ai-models/supported-models
     // Premium request multipliers in descriptions are for paid Copilot plans.
-    models: [
-      // Anthropic models
-      {
-        id: "claude-sonnet-4.6",
-        name: "Claude Sonnet 4.6",
-        description: "Balanced Claude model via Copilot — Premium x1",
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-        recommended: true,
-      },
-      {
-        id: "claude-opus-4.6",
-        name: "Claude Opus 4.6",
-        description: "Most capable Claude model via Copilot — Premium x3",
-        contextWindow: 200000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "claude-sonnet-4.5",
-        name: "Claude Sonnet 4.5",
-        description: "Previous balanced Claude model via Copilot — Premium x1",
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "claude-opus-4.5",
-        name: "Claude Opus 4.5",
-        description: "Previous flagship Claude model via Copilot — Premium x3",
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "claude-haiku-4.5",
-        name: "Claude Haiku 4.5",
-        description: "Fast low-cost Claude model via Copilot — Premium x0.33",
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "claude-sonnet-4",
-        name: "Claude Sonnet 4",
-        description: "Previous balanced Claude model via Copilot — Premium x1",
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "claude-opus-4.6-fast",
-        name: "Claude Opus 4.6 (Fast)",
-        description: "Public preview fast Opus mode via Copilot — Premium x30",
-        contextWindow: 200000,
-        maxOutputTokens: 128000,
-      },
-      // OpenAI models (Codex/GPT-5+ use /responses API, others use /chat/completions)
-      {
-        id: "gpt-5.4-codex",
-        name: "GPT-5.4 Codex",
-        description: "Latest coding model via Copilot — Premium x1",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-        recommended: true,
-      },
-      {
-        id: "gpt-5.3-codex",
-        name: "GPT-5.3 Codex",
-        description: "Previous coding model via Copilot — Premium x1",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5.2-codex",
-        name: "GPT-5.2 Codex",
-        description: "Previous coding model via Copilot — Premium x1",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5.2",
-        name: "GPT-5.2",
-        description: "General GPT-5 model via Copilot — Premium x1",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5.4",
-        name: "GPT-5.4",
-        description: "Latest general GPT-5 model via Copilot — Premium x1",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5.4-mini",
-        name: "GPT-5.4 mini",
-        description: "Fast GPT-5.4 variant via Copilot — Premium x0.33",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5-mini",
-        name: "GPT-5 mini",
-        description: "Included model via Copilot paid plans — Premium x0",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5.1",
-        name: "GPT-5.1",
-        description: "Legacy GPT-5 model via Copilot — Premium x1",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-4.1",
-        name: "GPT-4.1",
-        description: "Included OpenAI model via Copilot paid plans — Premium x0",
-        contextWindow: 1048576,
-        maxOutputTokens: 32768,
-      },
-      {
-        id: "gpt-4o",
-        name: "GPT-4o",
-        description: "Included fallback/LTS OpenAI model via Copilot paid plans — Premium x0",
-        contextWindow: 128000,
-        maxOutputTokens: 16384,
-      },
-      // Google models
-      {
-        id: "gemini-3.1-pro",
-        name: "Gemini 3.1 Pro",
-        description: "Google's latest model via Copilot (1M) — Premium x1",
-        contextWindow: 1000000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "gemini-3.1-pro-preview",
-        name: "Gemini 3.1 Pro (Preview ID)",
-        description: "Compatibility alias for Gemini 3.1 Pro via Copilot — Premium x1",
-        contextWindow: 1000000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "gemini-3-flash",
-        name: "Gemini 3 Flash",
-        description: "Google's fast model via Copilot (1M) — Premium x0.33",
-        contextWindow: 1000000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "gemini-3-flash-preview",
-        name: "Gemini 3 Flash (Preview ID)",
-        description: "Compatibility alias for Gemini 3 Flash via Copilot — Premium x0.33",
-        contextWindow: 1000000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "gemini-2.5-pro",
-        name: "Gemini 2.5 Pro",
-        description: "Google stable model via Copilot (1M) — Premium x1",
-        contextWindow: 1048576,
-        maxOutputTokens: 65536,
-      },
-      // Evaluation models
-      {
-        id: "grok-code-fast-1",
-        name: "Grok Code Fast 1",
-        description: "xAI coding model via Copilot — Premium x0.25",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "raptor-mini",
-        name: "Raptor mini",
-        description: "Fine-tuned GPT-5 mini via Copilot — Premium x0",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "goldeneye",
-        name: "Goldeneye",
-        description: "Fine-tuned GPT-5.1-Codex via Copilot (Free x1)",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-    ],
+    models: [],
   },
 
   // Codex - ChatGPT Plus/Pro via OAuth (same models as OpenAI but uses subscription)
@@ -485,37 +180,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true,
     },
-    models: [
-      {
-        id: "gpt-5.3-codex",
-        name: "GPT-5.3 Codex",
-        description: "Latest available coding model via ChatGPT subscription",
-        contextWindow: 200000,
-        maxOutputTokens: 128000,
-        recommended: true,
-      },
-      {
-        id: "gpt-5.2-codex",
-        name: "GPT-5.2 Codex",
-        description: "Previous coding model - stable",
-        contextWindow: 200000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5-codex",
-        name: "GPT-5 Codex",
-        description: "Original GPT-5 coding model",
-        contextWindow: 200000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "gpt-5.2",
-        name: "GPT-5.2",
-        description: "General-purpose reasoning model",
-        contextWindow: 200000,
-        maxOutputTokens: 128000,
-      },
-    ],
+    models: [],
   },
 
   gemini: {
@@ -537,51 +202,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     },
     // Updated: March 2026 — from ai.google.dev/gemini-api/docs/models
     // gemini-3-pro-preview deprecated March 9, 2026 → use 3.1-pro-preview
-    models: [
-      {
-        id: "gemini-3.1-pro-preview",
-        name: "Gemini 3.1 Pro",
-        description: "Most powerful — agentic & coding (1M context)",
-        contextWindow: 1000000,
-        maxOutputTokens: 64000,
-        recommended: true,
-      },
-      {
-        id: "gemini-3-flash-preview",
-        name: "Gemini 3 Flash",
-        description: "Fast frontier-class performance (1M context)",
-        contextWindow: 1000000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "gemini-3.1-flash-lite-preview",
-        name: "Gemini 3.1 Flash-Lite",
-        description: "Cost-efficient workhorse model (1M context)",
-        contextWindow: 1000000,
-        maxOutputTokens: 64000,
-      },
-      {
-        id: "gemini-2.5-pro",
-        name: "Gemini 2.5 Pro",
-        description: "Production stable — complex reasoning & coding (GA)",
-        contextWindow: 1048576,
-        maxOutputTokens: 65536,
-      },
-      {
-        id: "gemini-2.5-flash",
-        name: "Gemini 2.5 Flash",
-        description: "Production stable — fast with thinking budgets (GA)",
-        contextWindow: 1048576,
-        maxOutputTokens: 65536,
-      },
-      {
-        id: "gemini-2.5-flash-lite",
-        name: "Gemini 2.5 Flash-Lite",
-        description: "Cheapest stable option (GA)",
-        contextWindow: 1048576,
-        maxOutputTokens: 65536,
-      },
-    ],
+    models: [],
   },
 
   vertex: {
@@ -602,58 +223,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true,
     },
-    models: [
-      {
-        id: "gemini-3-pro-preview",
-        name: "Gemini 3 Pro (Preview)",
-        description: "Most capable Vertex Gemini 3 model (preview)",
-        contextWindow: 1048576,
-        maxOutputTokens: 65536,
-      },
-      {
-        id: "gemini-3-flash-preview",
-        name: "Gemini 3 Flash (Preview)",
-        description: "Fast Gemini 3 model on Vertex (preview)",
-        contextWindow: 1048576,
-        maxOutputTokens: 65536,
-      },
-      {
-        id: "gemini-2.5-pro",
-        name: "Gemini 2.5 Pro",
-        description: "Stable high-quality Vertex model for coding and complex reasoning",
-        contextWindow: 1048576,
-        maxOutputTokens: 65536,
-        recommended: true,
-      },
-      {
-        id: "gemini-2.5-flash",
-        name: "Gemini 2.5 Flash",
-        description: "Faster Vertex model with 1M context",
-        contextWindow: 1048576,
-        maxOutputTokens: 65536,
-      },
-      {
-        id: "gemini-2.5-flash-lite",
-        name: "Gemini 2.5 Flash-Lite",
-        description: "Lowest-cost Vertex option",
-        contextWindow: 1048576,
-        maxOutputTokens: 65536,
-      },
-      {
-        id: "gemini-2.0-flash-001",
-        name: "Gemini 2.0 Flash 001",
-        description: "Broadly available Vertex model",
-        contextWindow: 1048576,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "gemini-2.0-flash-lite-001",
-        name: "Gemini 2.0 Flash-Lite 001",
-        description: "Lightweight Vertex fallback",
-        contextWindow: 1048576,
-        maxOutputTokens: 8192,
-      },
-    ],
+    models: [],
   },
 
   // Kimi/Moonshot - OpenAI compatible
@@ -675,58 +245,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true, // K2.5 supports vision
     },
-    models: [
-      {
-        id: "kimi-k2.5",
-        name: "Kimi K2.5",
-        description: "Latest multimodal model with 256K context and vision",
-        contextWindow: 262144,
-        maxOutputTokens: 8192,
-        recommended: true,
-      },
-      {
-        id: "kimi-k2-thinking",
-        name: "Kimi K2 Thinking",
-        description: "Reasoning variant with extended thinking (256K context)",
-        contextWindow: 262144,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "kimi-k2-0324",
-        name: "Kimi K2",
-        description: "Kimi K2 model with 128K context",
-        contextWindow: 131072,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "kimi-latest",
-        name: "Kimi Latest",
-        description: "Always points to the latest Kimi model",
-        contextWindow: 131072,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "moonshot-v1-128k",
-        name: "Moonshot v1 128K",
-        description: "128K context window (stable)",
-        contextWindow: 131072,
-        maxOutputTokens: 4096,
-      },
-      {
-        id: "moonshot-v1-32k",
-        name: "Moonshot v1 32K",
-        description: "32K context window",
-        contextWindow: 32768,
-        maxOutputTokens: 4096,
-      },
-      {
-        id: "moonshot-v1-8k",
-        name: "Moonshot v1 8K",
-        description: "8K context window (fastest)",
-        contextWindow: 8192,
-        maxOutputTokens: 4096,
-      },
-    ],
+    models: [],
   },
 
   // Kimi Code - Kimi subscription endpoint
@@ -747,16 +266,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: false,
     },
-    models: [
-      {
-        id: "kimi-for-coding",
-        name: "Kimi for Coding",
-        description: "Kimi Code model optimised for programming tasks",
-        contextWindow: 131072,
-        maxOutputTokens: 8192,
-        recommended: true,
-      },
-    ],
+    models: [],
   },
 
   // LM Studio - Local models via OpenAI-compatible API
@@ -781,62 +291,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     },
     // Updated: January 2026 - Qwen3-Coder is the new best
     // Search these names in LM Studio to download
-    models: [
-      // Qwen3-Coder - State of the art (July 2025)
-      {
-        id: "qwen3-coder-3b-instruct",
-        name: "Qwen3 Coder 3B",
-        description: "Search: 'qwen3 coder 3b' (8GB RAM)",
-        contextWindow: 256000,
-        maxOutputTokens: 8192,
-        recommended: true,
-      },
-      {
-        id: "qwen3-coder-8b-instruct",
-        name: "Qwen3 Coder 8B",
-        description: "Search: 'qwen3 coder 8b' (16GB RAM)",
-        contextWindow: 256000,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "qwen3-coder-14b-instruct",
-        name: "Qwen3 Coder 14B",
-        description: "Search: 'qwen3 coder 14b' (32GB RAM)",
-        contextWindow: 256000,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "qwen3-coder-30b-a3b-instruct",
-        name: "Qwen3 Coder 30B MoE",
-        description: "Search: 'qwen3 coder 30b' — MoE 30B/3B active (24GB RAM)",
-        contextWindow: 262000,
-        maxOutputTokens: 8192,
-      },
-      // DeepSeek - Great alternative
-      {
-        id: "deepseek-coder-v3-lite",
-        name: "DeepSeek Coder V3 Lite",
-        description: "Search: 'deepseek coder v3' (16GB RAM)",
-        contextWindow: 128000,
-        maxOutputTokens: 8192,
-      },
-      // Codestral - Mistral's coding model
-      {
-        id: "codestral-22b",
-        name: "Codestral 22B",
-        description: "Search: 'codestral' (24GB RAM)",
-        contextWindow: 32768,
-        maxOutputTokens: 8192,
-      },
-      // Legacy but still good
-      {
-        id: "qwen2.5-coder-7b-instruct",
-        name: "Qwen 2.5 Coder 7B",
-        description: "Search: 'qwen 2.5 coder 7b' (16GB RAM)",
-        contextWindow: 32768,
-        maxOutputTokens: 8192,
-      },
-    ],
+    models: [],
   },
 
   ollama: {
@@ -859,44 +314,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       vision: false,
     },
     // Updated: February 2026 - qwen2.5-coder:14b is best balance for most users
-    models: [
-      {
-        id: "qwen2.5-coder:14b",
-        name: "Qwen 2.5 Coder 14B",
-        description: "Best coding model (16GB RAM)",
-        contextWindow: 32768,
-        maxOutputTokens: 8192,
-        recommended: true,
-      },
-      {
-        id: "qwen3-coder:30b",
-        name: "Qwen3 Coder 30B",
-        description: "MoE 30B/3B active, 262K context (24GB RAM)",
-        contextWindow: 262144,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "deepseek-r1:14b",
-        name: "DeepSeek R1 14B",
-        description: "Advanced reasoning model (16GB RAM)",
-        contextWindow: 128000,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "codestral:22b",
-        name: "Codestral 22B",
-        description: "ollama pull codestral:22b — Mistral's coding model (24GB RAM)",
-        contextWindow: 32768,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "llama3.1:8b",
-        name: "Llama 3.1 8B",
-        description: "ollama pull llama3.1:8b — lightest option (8GB RAM)",
-        contextWindow: 128000,
-        maxOutputTokens: 8192,
-      },
-    ],
+    models: [],
   },
 
   // Groq - Ultra-fast inference API (freemium)
@@ -917,37 +335,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: false,
     },
-    models: [
-      {
-        id: "llama-3.3-70b-versatile",
-        name: "Llama 3.3 70B Versatile",
-        description: "Best for complex tasks — free tier (128K context)",
-        contextWindow: 128000,
-        maxOutputTokens: 32768,
-        recommended: true,
-      },
-      {
-        id: "llama-3.1-8b-instant",
-        name: "Llama 3.1 8B Instant",
-        description: "Fastest responses — ideal for simple tasks (128K)",
-        contextWindow: 128000,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "mixtral-8x7b-32768",
-        name: "Mixtral 8x7B",
-        description: "Mistral's MoE model — good balance (32K context)",
-        contextWindow: 32768,
-        maxOutputTokens: 4096,
-      },
-      {
-        id: "gemma2-9b-it",
-        name: "Gemma 2 9B",
-        description: "Google's compact model (8K context)",
-        contextWindow: 8192,
-        maxOutputTokens: 4096,
-      },
-    ],
+    models: [],
   },
 
   // OpenRouter - Routes to 100+ models via one API
@@ -968,37 +356,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true,
     },
-    models: [
-      {
-        id: "anthropic/claude-opus-4-6",
-        name: "Claude Opus 4.6 (via OR)",
-        description: "Anthropic's best — via OpenRouter (200K context)",
-        contextWindow: 200000,
-        maxOutputTokens: 128000,
-        recommended: true,
-      },
-      {
-        id: "openai/gpt-5.4-codex",
-        name: "GPT-5.4 Codex (via OR)",
-        description: "OpenAI's latest coding model — via OpenRouter",
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-      },
-      {
-        id: "google/gemini-3-flash-preview",
-        name: "Gemini 3 Flash (via OR)",
-        description: "Google's fast model — via OpenRouter (1M context)",
-        contextWindow: 1000000,
-        maxOutputTokens: 65536,
-      },
-      {
-        id: "meta-llama/llama-3.3-70b-instruct",
-        name: "Llama 3.3 70B (via OR)",
-        description: "Meta's open model — often free routes available",
-        contextWindow: 128000,
-        maxOutputTokens: 32768,
-      },
-    ],
+    models: [],
   },
 
   // Mistral AI - French AI lab, strong coding models
@@ -1019,37 +377,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: false,
     },
-    models: [
-      {
-        id: "codestral-latest",
-        name: "Codestral Latest",
-        description: "Best coding model — fill-in-middle support (32K)",
-        contextWindow: 32768,
-        maxOutputTokens: 8192,
-        recommended: true,
-      },
-      {
-        id: "mistral-large-latest",
-        name: "Mistral Large",
-        description: "Most capable — complex reasoning (128K context)",
-        contextWindow: 131072,
-        maxOutputTokens: 4096,
-      },
-      {
-        id: "mistral-small-latest",
-        name: "Mistral Small",
-        description: "Fast and cost-efficient (128K context)",
-        contextWindow: 131072,
-        maxOutputTokens: 4096,
-      },
-      {
-        id: "open-mixtral-8x22b",
-        name: "Mixtral 8x22B",
-        description: "Large MoE model — powerful open weights (64K)",
-        contextWindow: 65536,
-        maxOutputTokens: 4096,
-      },
-    ],
+    models: [],
   },
 
   // DeepSeek - Chinese AI lab, very competitive pricing
@@ -1070,30 +398,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: false,
     },
-    models: [
-      {
-        id: "deepseek-coder",
-        name: "DeepSeek Coder",
-        description: "Specialized coding model — best value (128K context)",
-        contextWindow: 128000,
-        maxOutputTokens: 8192,
-        recommended: true,
-      },
-      {
-        id: "deepseek-chat",
-        name: "DeepSeek Chat",
-        description: "General purpose — instruction following (64K context)",
-        contextWindow: 65536,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "deepseek-reasoner",
-        name: "DeepSeek Reasoner (R1)",
-        description: "Chain-of-thought reasoning model (64K context)",
-        contextWindow: 65536,
-        maxOutputTokens: 8192,
-      },
-    ],
+    models: [],
   },
 
   // Together AI - Fast inference, many open models
@@ -1114,30 +419,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: false,
     },
-    models: [
-      {
-        id: "Qwen/Qwen2.5-Coder-32B-Instruct",
-        name: "Qwen 2.5 Coder 32B",
-        description: "Best open coding model — 32K context",
-        contextWindow: 32768,
-        maxOutputTokens: 8192,
-        recommended: true,
-      },
-      {
-        id: "meta-llama/Meta-Llama-3.1-70B-Instruct",
-        name: "Llama 3.1 70B",
-        description: "Meta's open model — 128K context",
-        contextWindow: 128000,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "mistralai/Mixtral-8x7B-Instruct-v0.1",
-        name: "Mixtral 8x7B",
-        description: "Mistral MoE — fast & capable (32K context)",
-        contextWindow: 32768,
-        maxOutputTokens: 4096,
-      },
-    ],
+    models: [],
   },
 
   // Alibaba Qwen - DashScope API (OpenAI-compatible)
@@ -1158,51 +440,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: true,
       vision: true,
     },
-    models: [
-      {
-        id: "qwen-coder-plus",
-        name: "Qwen Coder Plus",
-        description: "Best coding model — Qwen3 based, 131K context",
-        contextWindow: 131072,
-        maxOutputTokens: 8192,
-        recommended: true,
-      },
-      {
-        id: "qwen-max",
-        name: "Qwen Max",
-        description: "Most capable general model — 32K context",
-        contextWindow: 32768,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "qwen-plus",
-        name: "Qwen Plus",
-        description: "Good balance of speed and quality — 131K context",
-        contextWindow: 131072,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "qwen-turbo",
-        name: "Qwen Turbo",
-        description: "Fastest and cheapest — 1M context",
-        contextWindow: 1000000,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "qwen2.5-coder-32b-instruct",
-        name: "Qwen 2.5 Coder 32B",
-        description: "Open weights coding model — 32K context",
-        contextWindow: 32768,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "qwq-plus",
-        name: "QwQ Plus",
-        description: "Reasoning model — chain-of-thought, 131K context",
-        contextWindow: 131072,
-        maxOutputTokens: 8192,
-      },
-    ],
+    models: [],
   },
 
   // HuggingFace Inference - Free tier for open models
@@ -1214,7 +452,7 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
     envVar: "HF_TOKEN",
     apiKeyUrl: "https://huggingface.co/settings/tokens",
     docsUrl: "https://huggingface.co/docs/api-inference",
-    baseUrl: "https://api-inference.huggingface.co/v1",
+    baseUrl: "https://router.huggingface.co/v1",
     supportsCustomModels: true,
     openaiCompatible: true,
     paymentType: "freemium",
@@ -1223,30 +461,112 @@ const LEGACY_PROVIDER_DEFINITIONS: Record<ProviderType, ProviderDefinition> = {
       functionCalling: false,
       vision: false,
     },
-    models: [
-      {
-        id: "Qwen/Qwen2.5-Coder-32B-Instruct",
-        name: "Qwen 2.5 Coder 32B",
-        description: "Best coding model — free tier available (32K)",
-        contextWindow: 32768,
-        maxOutputTokens: 8192,
-        recommended: true,
-      },
-      {
-        id: "meta-llama/Llama-3.3-70B-Instruct",
-        name: "Llama 3.3 70B",
-        description: "Meta's latest — strong reasoning (128K)",
-        contextWindow: 128000,
-        maxOutputTokens: 8192,
-      },
-      {
-        id: "microsoft/Phi-4",
-        name: "Phi-4",
-        description: "Microsoft's small but capable model (16K)",
-        contextWindow: 16384,
-        maxOutputTokens: 4096,
-      },
-    ],
+    models: [],
+  },
+  xai: {
+    id: "xai",
+    name: "xAI Grok",
+    emoji: "\ud83c\udf10",
+    description: "xAI Grok",
+    envVar: "XAI_API_KEY",
+    apiKeyUrl: "https://docs.x.ai/developers/models",
+    baseUrl: "https://api.x.ai/v1",
+    docsUrl: "https://docs.x.ai/developers/models",
+    models: [],
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "api",
+    askForCustomUrl: false,
+    requiresApiKey: true,
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: true,
+    },
+  },
+  minimax: {
+    id: "minimax",
+    name: "MiniMax",
+    emoji: "\ud83c\udf10",
+    description: "MiniMax",
+    envVar: "MINIMAX_API_KEY",
+    apiKeyUrl: "https://platform.minimax.io/docs/api-reference/text-openai-api",
+    baseUrl: "https://api.minimax.io/v1",
+    docsUrl: "https://platform.minimax.io/docs/api-reference/text-openai-api",
+    models: [],
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "api",
+    askForCustomUrl: false,
+    requiresApiKey: true,
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: true,
+    },
+  },
+  cerebras: {
+    id: "cerebras",
+    name: "Cerebras",
+    emoji: "\ud83c\udf10",
+    description: "Cerebras",
+    envVar: "CEREBRAS_API_KEY",
+    apiKeyUrl: "https://inference-docs.cerebras.ai/resources/openai",
+    baseUrl: "https://api.cerebras.ai/v1",
+    docsUrl: "https://inference-docs.cerebras.ai/resources/openai",
+    models: [],
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "api",
+    askForCustomUrl: false,
+    requiresApiKey: true,
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: false,
+    },
+  },
+  "azure-openai": {
+    id: "azure-openai",
+    name: "Azure OpenAI",
+    emoji: "\ud83c\udf10",
+    description: "Azure OpenAI",
+    envVar: "AZURE_OPENAI_API_KEY",
+    apiKeyUrl: "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses",
+    baseUrl: "",
+    docsUrl: "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses",
+    models: [],
+    supportsCustomModels: true,
+    openaiCompatible: true,
+    paymentType: "api",
+    askForCustomUrl: true,
+    requiresApiKey: true,
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: true,
+    },
+  },
+  bedrock: {
+    id: "bedrock",
+    name: "Amazon Bedrock",
+    emoji: "\ud83c\udf10",
+    description: "Amazon Bedrock",
+    envVar: "AWS_BEARER_TOKEN_BEDROCK",
+    apiKeyUrl: "https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html",
+    baseUrl: "",
+    docsUrl: "https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html",
+    models: [],
+    supportsCustomModels: true,
+    openaiCompatible: false,
+    paymentType: "api",
+    askForCustomUrl: false,
+    requiresApiKey: false,
+    features: {
+      streaming: true,
+      functionCalling: true,
+      vision: true,
+    },
   },
 };
 
@@ -1357,6 +677,7 @@ function hasLocalProviderConfig(type: "lmstudio" | "ollama"): boolean {
  */
 export function getConfiguredProviders(): ProviderDefinition[] {
   return getAllProviders().filter((p) => {
+    if (p.id === "azure-openai" || p.id === "bedrock") return isProviderConfigured(p.id);
     if (p.id === "copilot") {
       return !!process.env["GITHUB_TOKEN"] || !!process.env["GH_TOKEN"] || hasCopilotCredentials();
     }
@@ -1387,6 +708,9 @@ export function getConfiguredProviders(): ProviderDefinition[] {
  * Check if a provider is configured
  */
 export function isProviderConfigured(type: ProviderType): boolean {
+  if (type === "azure-openai")
+    return !!process.env["AZURE_OPENAI_ENDPOINT"] && !!process.env["AZURE_OPENAI_DEPLOYMENT"];
+  if (type === "bedrock") return !!(process.env["AWS_REGION"] || process.env["AWS_DEFAULT_REGION"]);
   if (type === "copilot") {
     return !!process.env["GITHUB_TOKEN"] || !!process.env["GH_TOKEN"] || hasCopilotCredentials();
   }

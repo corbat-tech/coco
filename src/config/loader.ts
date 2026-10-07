@@ -1,3 +1,6 @@
+import { resolveModelMigration } from "../providers/model-lifecycle.js";
+import { getCatalogDefaultModel } from "../providers/catalog.js";
+import { PROVIDER_IDS, type ProviderType } from "../providers/provider-types.js";
 /**
  * Configuration loader for Corbat-Coco
  *
@@ -41,6 +44,16 @@ export async function loadConfig(configPath?: string): Promise<CocoConfig> {
     config = deepMergeConfig(config, projectConfig);
   }
 
+  const migration = resolveModelMigration(config.provider.type, config.provider.model);
+  config.provider.model = migration.model;
+  if (migration.warning) console.warn(migration.warning);
+  for (const [provider, model] of Object.entries(config.providerModels ?? {})) {
+    if (PROVIDER_IDS.includes(provider as ProviderType)) {
+      const saved = resolveModelMigration(provider as ProviderType, model);
+      config.providerModels![provider] = saved.model;
+      if (saved.warning) console.warn(saved.warning);
+    }
+  }
   return config;
 }
 
@@ -107,7 +120,15 @@ function deepMergeConfig(base: CocoConfig, override: Partial<CocoConfig>): CocoC
     ...base,
     ...override,
     project: { ...base.project, ...override.project },
-    provider: { ...base.provider, ...override.provider },
+    provider: {
+      ...base.provider,
+      ...override.provider,
+      ...(override.provider?.type &&
+      override.provider.type !== base.provider.type &&
+      !override.provider.model
+        ? { model: getCatalogDefaultModel(override.provider.type) }
+        : {}),
+    },
     providerModels: { ...base.providerModels, ...override.providerModels },
     quality: { ...base.quality, ...override.quality },
     persistence: { ...base.persistence, ...override.persistence },

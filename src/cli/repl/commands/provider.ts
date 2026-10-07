@@ -1,3 +1,4 @@
+import { setupCloudProvider } from "../cloud-provider-setup.js";
 /**
  * /provider command - Change or view current provider
  * Interactive selection with arrow keys
@@ -328,6 +329,31 @@ async function switchProvider(
   let selectedAuthMethod: AuthMethod = "apikey"; // Default to API key
   let newApiKeyForSaving: string | null = null; // Track new API key entered, to persist it
   let vertexSettings: VertexSettings | undefined;
+
+  if (newProvider.id === "azure-openai" || newProvider.id === "bedrock") {
+    const result = await setupCloudProvider(newProvider.id);
+    if (!result) return false;
+    if ((await saveConfiguration(result)) === false) return false;
+    session.pendingProvider = {
+      instance: result.instance,
+      internalType: result.type,
+      userFacingType: result.type,
+      model: result.model,
+    };
+    session.config.provider = {
+      ...session.config.provider,
+      type: result.type,
+      model: result.model,
+      authMethod: result.authMethod,
+      cloudAuth: result.cloudAuth,
+      baseUrl: result.baseUrl,
+      deployment: result.deployment,
+      region: result.region,
+      awsProfile: result.awsProfile,
+    };
+    console.log(chalk.green(`✓ Switched to ${newProvider.name}: ${result.model}`));
+    return false;
+  }
 
   // Local providers use special setup flow (auto-detect models, no API key)
   if (newProvider.id === "lmstudio" || newProvider.id === "ollama") {

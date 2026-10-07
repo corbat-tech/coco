@@ -155,7 +155,7 @@ describe("OpenAIProvider", () => {
     });
 
     it("should return true when API is reachable", async () => {
-      mockList.mockResolvedValue({ data: [] });
+      mockList.mockResolvedValue({ data: [{ id: "gpt-4o" }] });
 
       const { OpenAIProvider } = await import("./openai.js");
 

@@ -39,6 +39,15 @@ export interface ImageContent {
 /**
  * Tool use content block
  */
+export interface ProviderConversationState {
+  provider: string;
+  model: string;
+  reasoningContent?: string;
+  responseItems?: Record<string, unknown>[];
+  anthropicBlocks?: Record<string, unknown>[];
+  bedrockBlocks?: Record<string, unknown>[];
+}
+
 export interface ToolUseContent {
   type: "tool_use";
   id: string;
@@ -46,6 +55,7 @@ export interface ToolUseContent {
   input: Record<string, unknown>;
   /** Gemini-specific: preserve function-call thought signature across tool turns */
   geminiThoughtSignature?: string;
+  providerState?: ProviderConversationState;
 }
 
 /**
@@ -88,6 +98,7 @@ export interface ToolCall {
   input: Record<string, unknown>;
   /** Gemini-specific: preserve function-call thought signature across tool turns */
   geminiThoughtSignature?: string;
+  providerState?: ProviderConversationState;
 }
 
 /**
@@ -212,6 +223,10 @@ export interface ProviderConfig {
   maxTokens?: number;
   temperature?: number;
   timeout?: number;
+  deployment?: string;
+  region?: string;
+  awsProfile?: string;
+  cloudAuth?: "identity" | "api-key";
   project?: string;
   location?: string;
   /** Internal: flag to indicate using Google Cloud ADC */

@@ -259,7 +259,7 @@ describe("AnthropicProvider", () => {
 
       const contextWindow = provider.getContextWindow();
 
-      expect(contextWindow).toBe(200000); // Claude's context window
+      expect(contextWindow).toBe(1000000); // Current Claude default
     });
   });
 
@@ -328,6 +328,7 @@ describe("AnthropicProvider", () => {
       await provider.initialize({
         apiKey: "test-key",
         temperature: 0.7,
+        model: "claude-haiku-4-5-20251001",
       });
 
       await provider.chat([{ role: "user", content: "Hello" }]);

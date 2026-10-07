@@ -69,6 +69,11 @@ export interface ReplConfig {
     maxTokens: number;
     project?: string;
     location?: string;
+    baseUrl?: string;
+    deployment?: string;
+    region?: string;
+    awsProfile?: string;
+    cloudAuth?: "identity" | "api-key";
     /** Active thinking/reasoning mode (undefined = not supported or use model default) */
     thinking?: ThinkingMode;
     /** Optional cheap model for background tasks (compaction, summarization) */

@@ -191,6 +191,7 @@ describe("GeminiProvider", () => {
           name: "read_file",
           input: { path: "a.txt" },
           geminiThoughtSignature: "sig-1",
+          providerState: { provider: "gemini", model: "gemini-3.8-flash" },
         },
       ]);
     });

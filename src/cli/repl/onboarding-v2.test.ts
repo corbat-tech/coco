@@ -894,7 +894,11 @@ describe("onboarding-v2", () => {
       const config = { provider: { type: "openai", model: "gpt-5", authMethod: "apikey" } } as any;
       try {
         expect(await ensureConfiguredV2(config)).toEqual(config);
-        expect(mockedCreateProvider).toHaveBeenCalledExactlyOnceWith("openai", { model: "gpt-5" });
+        expect(mockedCreateProvider).toHaveBeenCalledExactlyOnceWith("openai", {
+          type: "openai",
+          model: "gpt-5",
+          authMethod: "apikey",
+        });
         expect(mockedGetOrRefreshOAuthToken).not.toHaveBeenCalled();
       } finally {
         if (previous === undefined) delete process.env["OPENAI_API_KEY"];
@@ -919,7 +923,11 @@ describe("onboarding-v2", () => {
             provider: { type: "openai", model: "gpt-5", authMethod: "apikey" },
           } as any),
         ).toBeNull();
-        expect(mockedCreateProvider).toHaveBeenCalledExactlyOnceWith("openai", { model: "gpt-5" });
+        expect(mockedCreateProvider).toHaveBeenCalledExactlyOnceWith("openai", {
+          type: "openai",
+          model: "gpt-5",
+          authMethod: "apikey",
+        });
         expect(mockedGetOrRefreshOAuthToken).not.toHaveBeenCalled();
       } finally {
         if (previous === undefined) delete process.env["OPENAI_API_KEY"];

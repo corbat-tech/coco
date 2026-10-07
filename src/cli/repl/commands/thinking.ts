@@ -16,7 +16,7 @@ import { getThinkingCapability, formatThinkingMode } from "../../../providers/th
 import { saveThinkingPreference } from "../../../config/env.js";
 import type { ProviderType } from "../../../providers/index.js";
 
-const EFFORT_LEVELS = ["off", "auto", "low", "medium", "high"] as const;
+const EFFORT_LEVELS = ["off", "auto", "low", "medium", "high", "xhigh", "max"] as const;
 type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
 function isEffortLevel(s: string): s is EffortLevel {

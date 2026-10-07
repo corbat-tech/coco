@@ -130,6 +130,7 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
           name: toolCall.name,
           input: toolCall.input,
           geminiThoughtSignature: toolCall.geminiThoughtSignature,
+          providerState: toolCall.providerState,
         });
       }
       messages.push({

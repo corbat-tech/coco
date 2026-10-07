@@ -190,7 +190,7 @@ describe("createDefaultConfig", () => {
     const config = createDefaultConfig("test");
 
     expect(config.provider.type).toBe("anthropic");
-    expect(config.provider.model).toBe("claude-sonnet-4-6");
+    expect(config.provider.model).toBe("claude-sonnet-5-5");
   });
 
   it("should set default quality thresholds", () => {

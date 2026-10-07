@@ -1,3 +1,6 @@
+import { getCatalogModel } from "./catalog.js";
+import type { ProviderType } from "./provider-types.js";
+import { catalogEffort, type ReasoningEffort } from "./contracts.js";
 /**
  * Unified thinking/reasoning mode support for all LLM providers.
  *
@@ -20,7 +23,15 @@
  * "high"   — maximum reasoning
  * { budget: N } — explicit token budget (Anthropic / Gemini only; rejected for effort-only providers)
  */
-export type ThinkingMode = "off" | "auto" | "low" | "medium" | "high" | { budget: number };
+export type ThinkingMode =
+  | "off"
+  | "auto"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | { budget: number };
 
 /**
  * Whether this provider/model uses effort buckets (OpenAI) or token budgets (Anthropic, Gemini).
@@ -29,7 +40,9 @@ export type ThinkingKind = "effort" | "budget";
 
 export type AnthropicThinkingParam =
   | { type: "enabled"; budget_tokens: number }
-  | { type: "adaptive" };
+  | { type: "adaptive" }
+  | { type: "disabled" }
+  | { type: "between_tools" };
 
 export interface ThinkingCapability {
   /** True when the model supports configurable reasoning */
@@ -67,6 +80,9 @@ function isAnthropicThinkingModel(model: string): boolean {
   // Excludes kimi-for-coding (uses Anthropic SDK but different endpoint)
   if (m === "kimi-for-coding") return false;
   return (
+    m.includes("claude-opus-5") ||
+    m.includes("claude-sonnet-5") ||
+    m.includes("claude-fable-5") ||
     m.includes("claude-3-7") ||
     m.includes("claude-opus-4") ||
     m.includes("claude-sonnet-4") ||
@@ -78,6 +94,9 @@ function isAnthropicThinkingModel(model: string): boolean {
 function isAnthropicAdaptiveThinkingModel(model: string): boolean {
   const m = model.toLowerCase();
   return (
+    m.includes("claude-opus-5") ||
+    m.includes("claude-sonnet-5") ||
+    m.includes("claude-fable-5") ||
     m.includes("claude-opus-4-8") ||
     m.includes("claude-opus-4-7") ||
     m.includes("claude-opus-4-6") ||
@@ -91,6 +110,7 @@ function isOpenAIReasoningModel(model: string): boolean {
     m.startsWith("o1") ||
     m.startsWith("o3") ||
     m.startsWith("o4") ||
+    m.startsWith("gpt-6") ||
     m.startsWith("gpt-5") ||
     m.includes("codex")
   );
@@ -187,7 +207,7 @@ export function mapToOllamaEffort(
   if (!family || mode === undefined || mode === "auto" || typeof mode === "object")
     return undefined;
   if (mode === "off") return family === "toggle" ? "none" : undefined;
-  return mode;
+  return mode === "xhigh" || mode === "max" ? "high" : mode;
 }
 
 /**
@@ -195,6 +215,17 @@ export function mapToOllamaEffort(
  * `provider` here is the provider type string from ProviderType.
  */
 export function getThinkingCapability(provider: string, model: string): ThinkingCapability {
+  const profile = getCatalogModel(provider as ProviderType, model)?.reasoning;
+  if (profile)
+    return {
+      supported: true,
+      kinds: [profile.kind],
+      levels: [
+        ...(!profile.mandatory && !profile.levels.includes("off") ? ["off" as const] : []),
+        ...(profile.levels as ThinkingMode[]),
+      ],
+      defaultMode: profile.defaultMode as ThinkingMode,
+    };
   switch (provider) {
     case "anthropic":
     case "kimi-code":
@@ -273,6 +304,13 @@ export function mapToAnthropic(
   mode: ThinkingMode | undefined,
   model: string,
 ): AnthropicThinkingParam | undefined {
+  const profile = getCatalogModel("anthropic", model)?.reasoning;
+  if (profile) {
+    catalogEffort("anthropic", model, mode);
+    if (mode === "off")
+      return { type: model === "claude-sonnet-5-5" ? "between_tools" : "disabled" };
+    return { type: "adaptive" };
+  }
   if (!mode || mode === "off") return undefined;
   if (!isAnthropicThinkingModel(model)) return undefined;
 
@@ -302,7 +340,11 @@ export function mapToAnthropic(
 export function mapToAnthropicEffort(
   mode: ThinkingMode | undefined,
   model: string,
-): "low" | "medium" | "high" | undefined {
+): "low" | "medium" | "high" | "xhigh" | "max" | undefined {
+  if (getCatalogModel("anthropic", model)?.reasoning) {
+    const effort = catalogEffort("anthropic", model, mode);
+    return effort && effort !== "none" ? effort : undefined;
+  }
   if (!mode || mode === "off" || mode === "auto") return undefined;
   if (!isAnthropicAdaptiveThinkingModel(model)) return undefined;
 
@@ -323,7 +365,8 @@ export function mapToAnthropicEffort(
 export function mapToOpenAIEffort(
   mode: ThinkingMode | undefined,
   model: string,
-): "low" | "medium" | "high" | undefined {
+): ReasoningEffort | undefined {
+  if (getCatalogModel("openai", model)?.reasoning) return catalogEffort("openai", model, mode);
   if (!mode || mode === "off") return undefined;
   if (!isOpenAIReasoningModel(model)) return undefined;
 
@@ -380,6 +423,15 @@ export function mapToGeminiThinkingConfig(
   | { thinkingBudget: number }
   | { thinkingLevel: "minimal" | "low" | "medium" | "high" }
   | undefined {
+  const profile = getCatalogModel("gemini", model)?.reasoning;
+  if (profile?.kind === "effort") {
+    const effort = catalogEffort("gemini", model, mode);
+    if (effort === undefined) return undefined;
+    if (effort === "none") return { thinkingLevel: "minimal" };
+    if (!["low", "medium", "high"].includes(effort))
+      throw new Error(`Unsupported Gemini thinking level: ${effort}`);
+    return { thinkingLevel: effort as "low" | "medium" | "high" };
+  }
   if (isGeminiLevelThinkingModel(model)) {
     if (!mode || mode === "auto") return undefined;
     if (mode === "off") return { thinkingLevel: "low" };

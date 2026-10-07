@@ -5,12 +5,14 @@ import os from "node:os";
 const io = vi.hoisted(() => ({ anthropic: vi.fn(), openai: vi.fn(), gemini: vi.fn() }));
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
+    static APIError = class extends Error {};
     messages = { create: io.anthropic };
   },
 }));
 vi.mock("openai", () => ({
   default: class {
     chat = { completions: { create: io.openai } };
+    responses = { create: io.openai };
   },
 }));
 vi.mock("@google/genai", () => ({
@@ -31,10 +33,25 @@ describe("authorized image upload with isolated fixtures and simulated SDKs", ()
     await fs.mkdir(root);
     vi.spyOn(process, "cwd").mockReturnValue(root);
     vi.stubEnv("GOOGLE_API_KEY", "fixture-key");
-    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "fixture-key");
+    vi.stubEnv("ANTHROPIC_API_KEY", "fixture-key");
+    vi.stubEnv("OPENAI_API_KEY", "fixture-key");
+    vi.stubEnv("COCO_PROVIDER_RESILIENCE", "0");
     await fs.writeFile(path.join(root, "local.png"), Buffer.from("local image bytes"));
-    io.anthropic.mockResolvedValue({ content: [{ type: "text", text: "Anthropic description" }] });
-    io.openai.mockResolvedValue({ choices: [{ message: { content: "OpenAI description" } }] });
+    io.anthropic.mockResolvedValue({
+      id: "fixture",
+      model: "claude-sonnet-5-5",
+      stop_reason: "end_turn",
+      usage: { input_tokens: 0, output_tokens: 0 },
+      content: [{ type: "text", text: "Anthropic description" }],
+    });
+    io.openai.mockResolvedValue({
+      status: "completed",
+      output_text: "OpenAI description",
+      output: [],
+      usage: { input_tokens: 0, output_tokens: 0 },
+      choices: [{ message: { content: "OpenAI description" } }],
+    });
     io.gemini.mockResolvedValue({ text: "Gemini description" });
   });
   afterEach(async () => {
@@ -73,8 +90,9 @@ describe("authorized image upload with isolated fixtures and simulated SDKs", ()
           provider === "gemini"
             ? (args[0] as { config: { abortSignal?: AbortSignal } }).config.abortSignal
             : (args[1] as { signal?: AbortSignal }).signal;
-        expect(forwarded).toBe(controller.signal);
+        expect(forwarded).toBeInstanceOf(AbortSignal);
         controller.abort(new Error("cancelled image"));
+        expect(forwarded?.aborted).toBe(true);
         return { content: [], choices: [], text: "late" };
       });
       await expect(
@@ -125,8 +143,9 @@ describe("authorized image upload with isolated fixtures and simulated SDKs", ()
   });
   it("reports missing credentials and provider failures without inventing analysis", async () => {
     vi.stubEnv("GOOGLE_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
     await expect(readImageTool.execute({ path: "local.png", provider: "gemini" })).rejects.toThrow(
-      /environment variable required/,
+      /API key not provided/,
     );
     expect(io.gemini).not.toHaveBeenCalled();
     io.anthropic.mockRejectedValue(new Error("provider unavailable"));

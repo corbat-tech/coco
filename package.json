@@ -1,6 +1,6 @@
 {
   "name": "@corbat-tech/coco",
-  "version": "2.42.0-rc.2",
+  "version": "2.42.0-rc.3",
   "description": "CLI coding agent and reusable runtime with tools, permissions, and review workflows",
   "type": "module",
   "main": "dist/index.js",
@@ -90,9 +90,12 @@
     }
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.95.2",
+    "@anthropic-ai/sdk": "^0.132.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1147.0",
+    "@aws-sdk/credential-providers": "^3.1147.0",
+    "@azure/identity": "^4.13.3",
     "@clack/prompts": "^1.1.0",
-    "@google/genai": "2.22.0",
+    "@google/genai": "2.27.0",
     "@typescript-eslint/parser": "^8.56.1",
     "@typescript-eslint/typescript-estree": "^8.56.1",
     "ajv": "^8",
@@ -109,7 +112,7 @@
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
     "minimatch": "^10.2.4",
-    "openai": "^6.27.0",
+    "openai": "^7.30.0",
     "ora": "^9.3.0",
     "simple-git": "^3.32.3",
     "string-width": "^8.2.0",

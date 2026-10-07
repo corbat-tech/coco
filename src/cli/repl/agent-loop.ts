@@ -568,6 +568,7 @@ export async function executeAgentTurn(
             name: string;
             completed?: ToolCall;
             geminiThoughtSignature?: string;
+            providerState?: import("../../providers/types.js").ProviderConversationState;
           }
         > = new Map();
 
@@ -632,6 +633,7 @@ export async function executeAgentTurn(
                       id,
                       name: toolName ?? "",
                       geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
+                      providerState: chunk.toolCall.providerState,
                     });
                 }
                 // Notify that a tool is being prepared/parsed
@@ -678,6 +680,7 @@ export async function executeAgentTurn(
                   ),
                   geminiThoughtSignature:
                     chunk.toolCall.geminiThoughtSignature ?? builder?.geminiThoughtSignature,
+                  providerState: chunk.toolCall.providerState ?? builder?.providerState,
                 };
                 if (builder?.completed) {
                   if (!isDeepStrictEqual(builder.completed, finalToolCall)) throw invalidBatch();
@@ -1150,6 +1153,7 @@ export async function executeAgentTurn(
         name: toolCall.name,
         input: toolCall.input,
         geminiThoughtSignature: toolCall.geminiThoughtSignature,
+        providerState: toolCall.providerState,
       });
 
       // Check if this tool was declined

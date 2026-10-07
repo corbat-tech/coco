@@ -19,7 +19,8 @@ export type ProviderEndpointStrategy =
   | "anthropic-messages"
   | "openai-responses"
   | "openai-chat"
-  | "gemini-generate-content";
+  | "gemini-generate-content"
+  | "bedrock-converse";
 
 export type ModelCompatibilityStatus = ModelStatus | "unverified";
 
@@ -55,9 +56,10 @@ function selectEndpoint(
   provider: ProviderType,
   model: ModelCatalogEntry | undefined,
 ): ProviderEndpointStrategy {
+  if (hasCapability(model, "bedrock-converse")) return "bedrock-converse";
   if (hasCapability(model, "anthropic-messages")) return "anthropic-messages";
   if (hasCapability(model, "gemini-generate-content")) return "gemini-generate-content";
-  if (provider === "openai" || provider === "codex") {
+  if (["openai", "codex", "xai", "azure-openai"].includes(provider)) {
     if (hasCapability(model, "openai-responses")) return "openai-responses";
   }
   return "openai-chat";

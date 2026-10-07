@@ -89,7 +89,7 @@ export class GeminiProvider implements LLMProvider {
           try {
             return await this.client!.models.generateContent({
               model: this.getModel(options?.model),
-              contents: this.convertContents(messages),
+              contents: this.convertContents(messages, this.getModel(options?.model)),
               config: {
                 ...this.buildConfig(messages, options),
                 abortSignal: scope.signal,
@@ -131,7 +131,7 @@ export class GeminiProvider implements LLMProvider {
           try {
             return await this.client!.models.generateContent({
               model: this.getModel(options.model),
-              contents: this.convertContents(messages),
+              contents: this.convertContents(messages, this.getModel(options?.model)),
               config: {
                 ...this.buildConfig(messages, options, options.tools, options.toolChoice),
                 abortSignal: scope.signal,
@@ -167,7 +167,7 @@ export class GeminiProvider implements LLMProvider {
     try {
       const stream = await this.client!.models.generateContentStream({
         model: this.getModel(options?.model),
-        contents: this.convertContents(messages),
+        contents: this.convertContents(messages, this.getModel(options?.model)),
         config: {
           ...this.buildConfig(messages, options),
           abortSignal: scope.signal,
@@ -219,7 +219,7 @@ export class GeminiProvider implements LLMProvider {
     try {
       const stream = await this.client!.models.generateContentStream({
         model: this.getModel(options.model),
-        contents: this.convertContents(messages),
+        contents: this.convertContents(messages, this.getModel(options?.model)),
         config: {
           ...this.buildConfig(messages, options, options.tools, options.toolChoice),
           abortSignal: scope.signal,
@@ -243,7 +243,15 @@ export class GeminiProvider implements LLMProvider {
         scope.signal.throwIfAborted();
         yield { type: "tool_use_start", toolCall: { id: toolCall.id, name: toolCall.name } };
         scope.signal.throwIfAborted();
-        yield { type: "tool_use_end", toolCall };
+        yield {
+          type: "tool_use_end",
+          toolCall: {
+            ...toolCall,
+            ...(toolCall.geminiThoughtSignature
+              ? { providerState: { provider: this.id, model: this.getModel(options.model) } }
+              : {}),
+          },
+        };
       }
       scope.signal.throwIfAborted();
       yield { type: "done", stopReason };
@@ -372,7 +380,7 @@ export class GeminiProvider implements LLMProvider {
     return text || undefined;
   }
 
-  private convertContents(messages: Message[]): Content[] {
+  private convertContents(messages: Message[], model: string): Content[] {
     const toolNameByUseId = this.buildToolUseNameMap(messages);
     const conversation = messages.filter((m) => m.role !== "system");
     const contents: Content[] = [];
@@ -395,10 +403,10 @@ export class GeminiProvider implements LLMProvider {
           }
           contents.push({ role: "user", parts });
         } else {
-          contents.push({ role: "user", parts: this.convertContent(msg.content) });
+          contents.push({ role: "user", parts: this.convertContent(msg.content, model) });
         }
       } else if (msg.role === "assistant") {
-        contents.push({ role: "model", parts: this.convertContent(msg.content) });
+        contents.push({ role: "model", parts: this.convertContent(msg.content, model) });
       }
     }
 
@@ -418,7 +426,7 @@ export class GeminiProvider implements LLMProvider {
     return map;
   }
 
-  private convertContent(content: MessageContent): Part[] {
+  private convertContent(content: MessageContent, model: string): Part[] {
     if (typeof content === "string") {
       return [{ text: content }];
     }
@@ -437,7 +445,12 @@ export class GeminiProvider implements LLMProvider {
         });
       } else if (block.type === "tool_use") {
         const toolUse = block as ToolUseContent;
-        const thoughtSignature = toolUse.geminiThoughtSignature ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR;
+        const sameOrigin =
+          !toolUse.providerState ||
+          (toolUse.providerState.provider === this.id && toolUse.providerState.model === model);
+        const thoughtSignature =
+          (sameOrigin ? toolUse.geminiThoughtSignature : undefined) ??
+          SKIP_THOUGHT_SIGNATURE_VALIDATOR;
         const functionCall: FunctionCall = {
           id: toolUse.id,
           name: toolUse.name,
@@ -519,7 +532,12 @@ export class GeminiProvider implements LLMProvider {
         outputTokens: usage?.candidatesTokenCount ?? 0,
       },
       model: this.getModel(model),
-      toolCalls,
+      toolCalls: toolCalls.map((call) => ({
+        ...call,
+        ...(call.geminiThoughtSignature
+          ? { providerState: { provider: this.id, model: this.getModel(model) } }
+          : {}),
+      })),
     };
   }
 

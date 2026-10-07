@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0-rc.3] - 2026-10-07
+
+### Added
+
+- xAI, MiniMax, Cerebras, Azure OpenAI and native Amazon Bedrock providers, including cloud credential onboarding.
+- Image generation/editing and audio-file analysis through explicitly configured OpenAI/Gemini API routes.
+- Live OpenRouter and Hugging Face model discovery in the model selector.
+
+### Changed
+
+- Refresh platform-specific model catalogs from official documentation; migrate deprecated/retired saved IDs with explicit warnings.
+- Preserve scoped reasoning and signed/encrypted state across tool rounds; normalize typed content and send provider-specific request flags.
+- Update SDKs and model effort modes, pricing tiers, permissions and capability metadata. Regional cloud rates remain unknown until verified.
+
+### Validation and limits
+
+Release gate, installed-package smoke and registry verification are required before publication. Paid-provider access is not live-verified; deployment/account/region restrictions still apply. This candidate continues on the `next` channel; the previous product capability evaluation has not been promoted to stable. See `docs/guides/PROVIDERS.md` for official sources and configuration.
+
 ## [2.42.0-rc.2] - 2026-09-17
 
 ### Fixed

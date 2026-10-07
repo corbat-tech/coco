@@ -637,7 +637,7 @@ describe("Provider Integration Tests", () => {
 
       // Check that models contain the expected model name in the returned array
       const modelNames = models.map((m) => m.model);
-      expect(modelNames).toContain("claude-sonnet-4-20250514");
+      expect(modelNames).toContain("claude-sonnet-5-5");
     });
   });
 });

@@ -78,6 +78,8 @@ function getAnthropicTemperature(
   thinkingParam: ReturnType<typeof mapToAnthropic>,
   configuredTemperature: number | undefined,
 ): number | undefined {
+  if (thinkingParam && ["adaptive", "disabled", "between_tools"].includes(thinkingParam.type))
+    return undefined;
   if (thinkingParam?.type === "enabled") return 1;
   return configuredTemperature;
 }
@@ -85,7 +87,7 @@ function getAnthropicTemperature(
 function getAnthropicOutputConfig(
   mode: ChatOptions["thinking"],
   model: string,
-): { effort: "low" | "medium" | "high" } | undefined {
+): { effort: "low" | "medium" | "high" | "xhigh" | "max" } | undefined {
   const effort = mapToAnthropicEffort(mode, model);
   return effort ? { effort } : undefined;
 }
@@ -151,7 +153,7 @@ export class AnthropicProvider implements LLMProvider {
                 options?.temperature ?? this.config.temperature ?? 0,
               ),
               system: this.extractSystem(messages, options?.system),
-              messages: this.convertMessages(messages),
+              messages: this.convertMessages(messages, model),
               stop_sequences: options?.stopSequences,
               ...(thinkingParam && { thinking: thinkingParam }),
               ...(outputConfig && { output_config: outputConfig }),
@@ -206,7 +208,7 @@ export class AnthropicProvider implements LLMProvider {
                 options?.temperature ?? this.config.temperature ?? 0,
               ),
               system: this.extractSystem(messages, options?.system),
-              messages: this.convertMessages(messages),
+              messages: this.convertMessages(messages, model),
               tools: this.convertTools(options.tools),
               tool_choice: options.toolChoice
                 ? this.convertToolChoice(options.toolChoice)
@@ -242,7 +244,22 @@ export class AnthropicProvider implements LLMProvider {
               outputTokens: response.usage.output_tokens,
             },
             model: response.model,
-            toolCalls,
+            toolCalls: toolCalls.map((call) => ({
+              ...call,
+              ...(response.content.some(
+                (block) => block.type === "thinking" || block.type === "redacted_thinking",
+              )
+                ? {
+                    providerState: {
+                      provider: this.id,
+                      model,
+                      anthropicBlocks: response.content.filter(
+                        (block) => block.type === "thinking" || block.type === "redacted_thinking",
+                      ) as unknown as Record<string, unknown>[],
+                    },
+                  }
+                : {}),
+            })),
           };
         } catch (error) {
           rethrowCancellation(error, options?.signal);
@@ -277,7 +294,7 @@ export class AnthropicProvider implements LLMProvider {
             options?.temperature ?? this.config.temperature ?? 0,
           ),
           system: this.extractSystem(messages, options?.system),
-          messages: this.convertMessages(messages),
+          messages: this.convertMessages(messages, model),
           ...(thinkingParam && { thinking: thinkingParam }),
           ...(outputConfig && { output_config: outputConfig }),
         },
@@ -374,7 +391,7 @@ export class AnthropicProvider implements LLMProvider {
             options?.temperature ?? this.config.temperature ?? 0,
           ),
           system: this.extractSystem(messages, options?.system),
-          messages: this.convertMessages(messages),
+          messages: this.convertMessages(messages, model),
           tools: this.convertTools(options.tools),
           tool_choice: options.toolChoice ? this.convertToolChoice(options.toolChoice) : undefined,
           ...(thinkingParam && { thinking: thinkingParam }),
@@ -391,7 +408,13 @@ export class AnthropicProvider implements LLMProvider {
         json: string;
         hasDelta: boolean;
       };
-      let openBlock: { index: number; type: string; tool?: PendingTool } | null = null;
+      const reasoningBlocks: Record<string, unknown>[] = [];
+      let openBlock: {
+        index: number;
+        type: string;
+        tool?: PendingTool;
+        reasoning?: Record<string, unknown>;
+      } | null = null;
       const usedIndices = new Set<number>();
       const pendingTools: PendingTool[] = [];
 
@@ -446,6 +469,8 @@ export class AnthropicProvider implements LLMProvider {
               throw new ResponseIntegrityError("Invalid response content block", this.name);
             }
             openBlock = { index: event.index, type: contentBlock.type };
+            if (contentBlock.type === "thinking" || contentBlock.type === "redacted_thinking")
+              openBlock.reasoning = { ...contentBlock };
             if (contentBlock.type === "tool_use") {
               if (!contentBlock.id?.trim() || !contentBlock.name?.trim()) {
                 throw new ResponseIntegrityError("Tool call is missing its identity", this.name);
@@ -472,6 +497,12 @@ export class AnthropicProvider implements LLMProvider {
                 this.name,
               );
             }
+            if (delta.type === "thinking_delta" && openBlock?.reasoning)
+              openBlock.reasoning.thinking =
+                String(openBlock.reasoning.thinking ?? "") + delta.thinking;
+            if (delta.type === "signature_delta" && openBlock?.reasoning)
+              openBlock.reasoning.signature =
+                String(openBlock.reasoning.signature ?? "") + delta.signature;
             if (delta.type === "input_json_delta") {
               if (!openBlock?.tool || event.index !== openBlock.index) {
                 throw new ResponseIntegrityError(
@@ -502,6 +533,7 @@ export class AnthropicProvider implements LLMProvider {
                 this.name,
               );
             }
+            if (openBlock.reasoning) reasoningBlocks.push(openBlock.reasoning);
             if (openBlock.tool) pendingTools.push(openBlock.tool);
             openBlock = null;
           } else if (event.type === "message_stop") {
@@ -523,7 +555,15 @@ export class AnthropicProvider implements LLMProvider {
             );
             for (const toolCall of calls) {
               this.assertStreamActive(options, timeoutTriggered);
-              yield { type: "tool_use_end", toolCall };
+              yield {
+                type: "tool_use_end",
+                toolCall: {
+                  ...toolCall,
+                  providerState: reasoningBlocks.length
+                    ? { provider: this.id, model, anthropicBlocks: reasoningBlocks }
+                    : undefined,
+                },
+              };
               this.assertStreamActive(options, timeoutTriggered);
             }
             this.assertStreamActive(options, timeoutTriggered);
@@ -683,12 +723,28 @@ export class AnthropicProvider implements LLMProvider {
   /**
    * Convert messages to Anthropic format
    */
-  private convertMessages(messages: Message[]): Anthropic.MessageParam[] {
+  private convertMessages(messages: Message[], model: string): Anthropic.MessageParam[] {
     return messages
       .filter((m) => m.role !== "system") // System is handled separately
       .map((m) => ({
         role: m.role as "user" | "assistant",
-        content: this.convertContent(m.content),
+        content: (() => {
+          const converted = this.convertContent(m.content);
+          if (!Array.isArray(m.content) || !Array.isArray(converted)) return converted;
+          const state = m.content.find(
+            (block) =>
+              block.type === "tool_use" &&
+              block.providerState?.provider === this.id &&
+              block.providerState.model === model,
+          );
+          return state?.type === "tool_use"
+            ? [
+                ...((state.providerState?.anthropicBlocks ??
+                  []) as unknown as Anthropic.ContentBlockParam[]),
+                ...converted,
+              ]
+            : converted;
+        })(),
       }));
   }
 

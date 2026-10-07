@@ -217,7 +217,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("anthropic");
 
-    expect(model).toBe("claude-sonnet-4-6");
+    expect(model).toBe("claude-sonnet-5-5");
   });
 
   it("should return custom OPENAI_MODEL if set", () => {
@@ -233,7 +233,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("openai");
 
-    expect(model).toBe("gpt-5.5");
+    expect(model).toBe("gpt-6.1-sol");
   });
 
   it("should return custom GEMINI_MODEL if set", () => {
@@ -249,7 +249,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("gemini");
 
-    expect(model).toBe("gemini-3.1-pro-preview");
+    expect(model).toBe("gemini-3.8-flash");
   });
 
   it("should return default vertex model", () => {
@@ -257,7 +257,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("vertex");
 
-    expect(model).toBe("gemini-2.5-pro");
+    expect(model).toBe("gemini-3.5-flash");
   });
 
   it("should return custom KIMI_MODEL if set", () => {
@@ -273,7 +273,7 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("kimi");
 
-    expect(model).toBe("kimi-k2.5");
+    expect(model).toBe("kimi-k3");
   });
 
   it("should return custom QWEN_MODEL if set", () => {
@@ -289,13 +289,13 @@ describe("getDefaultModel", () => {
 
     const model = getDefaultModel("qwen");
 
-    expect(model).toBe("qwen-coder-plus");
+    expect(model).toBe("qwen3.8-max");
   });
 
   it("should return default for unknown provider", () => {
     const model = getDefaultModel("unknown" as ProviderType);
 
-    expect(model).toBe("claude-sonnet-4-6");
+    expect(model).toBe("claude-sonnet-5-5");
   });
 });
 

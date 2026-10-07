@@ -1,3 +1,7 @@
+import { visibleChatText } from "./chat-content.js";
+import { catalogEffort, responseEndpoint, type ReasoningEffort } from "./contracts.js";
+import { getCatalogModel } from "./catalog.js";
+import type { ProviderType } from "./provider-types.js";
 import { rethrowCancellation } from "../utils/cancellation.js";
 import { isDeepStrictEqual } from "node:util";
 import { ResponseIntegrityError } from "./response-integrity.js";
@@ -184,6 +188,7 @@ const MODELS_WITH_THINKING_MODE: string[] = ["kimi-k2.5", "kimi-k2-0324", "kimi-
 export function needsResponsesApi(model: string): boolean {
   return (
     model.includes("codex") ||
+    model.startsWith("gpt-6") ||
     model.startsWith("gpt-5") ||
     model.startsWith("o4-") ||
     model === "o3"
@@ -205,6 +210,7 @@ function needsMaxCompletionTokens(model: string): boolean {
     model.startsWith("o4") ||
     model.startsWith("gpt-4o") ||
     model.startsWith("gpt-4.1") ||
+    model.startsWith("gpt-6") ||
     model.startsWith("gpt-5") ||
     model.startsWith("chatgpt-4o")
   );
@@ -273,7 +279,9 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Check if a model supports temperature parameter
    */
-  protected supportsTemperature(model: string): boolean {
+  protected supportsTemperature(model: string, thinking?: ThinkingMode): boolean {
+    const profile = getCatalogModel(this.id as ProviderType, model)?.reasoning;
+    if (profile) return !profile.mandatory && thinking === "off";
     return !MODELS_WITHOUT_TEMPERATURE.some((m) => model.toLowerCase().includes(m.toLowerCase()));
   }
 
@@ -283,7 +291,7 @@ export class OpenAIProvider implements LLMProvider {
    * when their endpoint does not expose /v1/responses.
    */
   protected modelNeedsResponsesApi(model: string): boolean {
-    return this.id === "openai" && needsResponsesApi(model);
+    return responseEndpoint(this.id, model) || (this.id === "openai" && needsResponsesApi(model));
   }
 
   /**
@@ -295,7 +303,15 @@ export class OpenAIProvider implements LLMProvider {
     model: string,
     thinking: ThinkingMode | undefined,
     _hasTools: boolean,
-  ): "none" | "low" | "medium" | "high" | undefined {
+  ): ReasoningEffort | undefined {
+    if (getCatalogModel(this.id as ProviderType, model)?.reasoning) {
+      const effort = catalogEffort(this.id, model, thinking);
+      if (this.id === "deepseek" && effort === "none") return undefined;
+      const profile = getCatalogModel(this.id as ProviderType, model)!.reasoning!;
+      return profile.levels.includes("auto") && !profile.levels.includes("low")
+        ? undefined
+        : effort;
+    }
     if (this.id === "ollama") return mapToOllamaEffort(thinking, model);
     const capability = getThinkingCapability(this.id, model);
     if (!capability.supported || !capability.kinds.includes("effort")) {
@@ -307,7 +323,9 @@ export class OpenAIProvider implements LLMProvider {
   protected getResponsesReasoningEffort(
     model: string,
     thinking: ThinkingMode | undefined,
-  ): "low" | "medium" | "high" | undefined {
+  ): ReasoningEffort | undefined {
+    if (getCatalogModel(this.id as ProviderType, model)?.reasoning)
+      return catalogEffort(this.id, model, thinking);
     const capability = getThinkingCapability(this.id, model);
     if (!capability.supported || !capability.kinds.includes("effort")) {
       return undefined;
@@ -324,6 +342,21 @@ export class OpenAIProvider implements LLMProvider {
     model: string,
     thinking?: ThinkingMode,
   ): Record<string, unknown> | undefined {
+    const profile = getCatalogModel(this.id as ProviderType, model)?.reasoning;
+    if (thinking === "off" && profile?.mandatory)
+      throw new ProviderError(`${model} requires reasoning.`, { provider: this.id });
+    if (this.id === "cerebras" && model === "qwen-3.8-27b") return { clear_thinking: false };
+    if (this.id === "qwen" && profile) return { enable_thinking: thinking !== "off" };
+    if (this.id === "deepseek" && profile)
+      return { thinking: { type: thinking === "off" ? "disabled" : "enabled" } };
+    if (this.id === "minimax")
+      return { thinking: { type: thinking === "off" ? "disabled" : "adaptive" } };
+    if (this.id === "kimi" && getCatalogModel("kimi", model)?.reasoning) {
+      return model === "kimi-k3"
+        ? undefined
+        : { thinking: { type: thinking === "off" ? "disabled" : "enabled" } };
+    }
+    if (this.id !== "kimi") return undefined;
     const kimiBody = mapToKimiExtraBody(thinking, model);
     if (kimiBody) return kimiBody;
 
@@ -349,7 +382,8 @@ export class OpenAIProvider implements LLMProvider {
     return withRetry(
       async () => {
         try {
-          const supportsTemp = this.supportsTemperature(model);
+          const supportsTemp = this.supportsTemperature(model, options?.thinking);
+          const extraBody = this.getExtraBody(model, options?.thinking);
 
           const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
           const reasoningEffort = this.getChatCompletionsReasoningEffort(
@@ -361,12 +395,13 @@ export class OpenAIProvider implements LLMProvider {
             {
               model,
               ...buildMaxTokensParam(model, maxTokens),
-              messages: this.convertMessages(messages, options?.system),
+              messages: this.convertMessages(messages, options?.system, model),
               stop: options?.stopSequences,
               ...(supportsTemp && {
                 temperature: options?.temperature ?? this.config.temperature ?? 0,
               }),
               ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+              ...extraBody,
             } as OpenAI.ChatCompletionCreateParamsNonStreaming,
             this.getRequestOptions(options),
           );
@@ -375,7 +410,7 @@ export class OpenAIProvider implements LLMProvider {
 
           return {
             id: response.id,
-            content: choice?.message?.content ?? "",
+            content: visibleChatText(choice?.message?.content),
             stopReason: this.mapFinishReason(choice?.finish_reason),
             usage: {
               inputTokens: response.usage?.prompt_tokens ?? 0,
@@ -413,7 +448,7 @@ export class OpenAIProvider implements LLMProvider {
     return withRetry(
       async () => {
         try {
-          const supportsTemp = this.supportsTemperature(model);
+          const supportsTemp = this.supportsTemperature(model, options?.thinking);
           const extraBody = this.getExtraBody(model, options?.thinking);
           const reasoningEffort = this.getChatCompletionsReasoningEffort(
             model,
@@ -427,10 +462,12 @@ export class OpenAIProvider implements LLMProvider {
           const requestParams: Record<string, unknown> = {
             model,
             ...buildMaxTokensParam(model, maxTokens),
-            messages: this.convertMessages(messages, options?.system),
+            messages: this.convertMessages(messages, options?.system, model),
             tools: this.convertTools(tools),
             tool_choice: this.convertToolChoice(options.toolChoice),
-            parallel_tool_calls: tierCfg.parallelToolCalls,
+            ...(!["minimax", "cerebras"].includes(this.id) && {
+              parallel_tool_calls: tierCfg.parallelToolCalls,
+            }),
           };
 
           if (supportsTemp) {
@@ -461,14 +498,19 @@ export class OpenAIProvider implements LLMProvider {
 
           return {
             id: response.id,
-            content: choice?.message?.content ?? "",
+            content: visibleChatText(choice?.message?.content),
             stopReason: this.mapFinishReason(choice?.finish_reason),
             usage: {
               inputTokens: response.usage?.prompt_tokens ?? 0,
               outputTokens: response.usage?.completion_tokens ?? 0,
             },
             model: response.model,
-            toolCalls,
+            toolCalls: toolCalls.map((call) => ({
+              ...call,
+              ...(this.chatState(choice?.message, model)
+                ? { providerState: this.chatState(choice?.message, model) }
+                : {}),
+            })),
           };
         } catch (error) {
           options?.signal?.throwIfAborted();
@@ -494,7 +536,8 @@ export class OpenAIProvider implements LLMProvider {
     }
 
     try {
-      const supportsTemp = this.supportsTemperature(model);
+      const supportsTemp = this.supportsTemperature(model, options?.thinking);
+      const extraBody = this.getExtraBody(model, options?.thinking);
 
       const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
       const reasoningEffort = this.getChatCompletionsReasoningEffort(
@@ -506,12 +549,13 @@ export class OpenAIProvider implements LLMProvider {
         {
           model,
           ...buildMaxTokensParam(model, maxTokens),
-          messages: this.convertMessages(messages, options?.system),
+          messages: this.convertMessages(messages, options?.system, model),
           stream: true,
           ...(supportsTemp && {
             temperature: options?.temperature ?? this.config.temperature ?? 0,
           }),
           ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+          ...extraBody,
         } as OpenAI.ChatCompletionCreateParamsStreaming,
         this.getRequestOptions(options),
       );
@@ -523,7 +567,8 @@ export class OpenAIProvider implements LLMProvider {
         const delta = chunk.choices[0]?.delta;
         if (delta?.content) {
           this.assertStreamActive(options);
-          yield { type: "text", text: delta.content };
+          const text = visibleChatText(delta.content);
+          if (text) yield { type: "text", text };
         }
         const finishReason = chunk.choices[0]?.finish_reason;
         if (finishReason) {
@@ -559,7 +604,7 @@ export class OpenAIProvider implements LLMProvider {
     const tierCfg = getTierConfig(this.id, model);
     let timeoutTriggered = false;
     try {
-      const supportsTemp = this.supportsTemperature(model);
+      const supportsTemp = this.supportsTemperature(model, options?.thinking);
       const extraBody = this.getExtraBody(model, options?.thinking);
       const reasoningEffort = this.getChatCompletionsReasoningEffort(
         model,
@@ -573,10 +618,12 @@ export class OpenAIProvider implements LLMProvider {
       const requestParams: Record<string, unknown> = {
         model,
         ...buildMaxTokensParam(model, maxTokens),
-        messages: this.convertMessages(messages, options?.system),
+        messages: this.convertMessages(messages, options?.system, model),
         tools: this.convertTools(tools),
         tool_choice: this.convertToolChoice(options.toolChoice),
-        parallel_tool_calls: tierCfg.parallelToolCalls,
+        ...(!["minimax", "cerebras"].includes(this.id) && {
+          parallel_tool_calls: tierCfg.parallelToolCalls,
+        }),
         stream: true,
       };
 
@@ -598,6 +645,7 @@ export class OpenAIProvider implements LLMProvider {
       );
 
       const toolCallAssembler = new ChatToolCallAssembler();
+      let reasoningContent = "";
 
       // Activity-based timeout: abort the stream if no events for streamTimeout ms.
       // IMPORTANT: We use AbortController instead of throwing from setInterval,
@@ -626,6 +674,12 @@ export class OpenAIProvider implements LLMProvider {
         for await (const chunk of stream) {
           options?.signal?.throwIfAborted();
           const delta = chunk.choices[0]?.delta;
+          const reasoningDelta = (delta as { reasoning_content?: string } | undefined)
+            ?.reasoning_content;
+          if (reasoningDelta) {
+            reasoningContent += reasoningDelta;
+            lastActivityTime = Date.now();
+          }
 
           // Reset timeout on any activity (content, tool calls)
           if (delta?.content || delta?.tool_calls) {
@@ -635,7 +689,8 @@ export class OpenAIProvider implements LLMProvider {
           // Handle text content
           if (delta?.content) {
             this.assertStreamActive(options, timeoutTriggered);
-            yield { type: "text", text: delta.content };
+            const text = visibleChatText(delta.content);
+            if (text) yield { type: "text", text };
           }
 
           // Handle tool calls
@@ -681,7 +736,15 @@ export class OpenAIProvider implements LLMProvider {
             const calls = this.validateCompletedToolCalls(toolCallAssembler.finalizeAll(this.name));
             for (const toolCall of calls) {
               this.assertStreamActive(options, timeoutTriggered);
-              yield { type: "tool_use_end", toolCall };
+              yield {
+                type: "tool_use_end",
+                toolCall: {
+                  ...toolCall,
+                  providerState: reasoningContent
+                    ? { provider: this.id, model, reasoningContent }
+                    : undefined,
+                },
+              };
               this.assertStreamActive(options, timeoutTriggered);
             }
             this.assertStreamActive(options, timeoutTriggered);
@@ -872,44 +935,30 @@ export class OpenAIProvider implements LLMProvider {
 
     try {
       // Try to list models first (standard OpenAI)
-      await this.client.models.list(this.getRequestOptions(options));
+      const listed = await this.client.models.list(this.getRequestOptions(options));
+      options?.signal?.throwIfAborted();
+      const model = this.config.model || DEFAULT_MODEL;
+      // A reachable endpoint does not prove access to the selected model.
+      if (listed.data?.some((entry) => entry.id === model)) return true;
+      return await this.probeSelectedModel(options);
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
+      return this.probeSelectedModel(options);
+    }
+  }
+
+  private async probeSelectedModel(options?: { signal?: AbortSignal }): Promise<boolean> {
+    try {
+      await this.chat([{ role: "user", content: "Reply OK." }], {
+        maxTokens: 64,
+        maxRetries: 0,
+        signal: options?.signal,
+      });
       options?.signal?.throwIfAborted();
       return true;
     } catch (error) {
       rethrowCancellation(error, options?.signal);
-      // Fallback: try a simple request
-      // This works better for OpenAI-compatible APIs like Kimi
-      try {
-        const model = this.config.model || DEFAULT_MODEL;
-        if (this.modelNeedsResponsesApi(model)) {
-          await (this.client as any).responses.create(
-            {
-              model,
-              input: [{ role: "user", content: [{ type: "input_text", text: "Hi" }] }],
-              max_output_tokens: 1,
-              store: false,
-            },
-            this.getRequestOptions(options),
-          );
-        } else {
-          await this.client.chat.completions.create(
-            {
-              model,
-              messages: [{ role: "user", content: "Hi" }],
-              ...buildMaxTokensParam(model, 1),
-            } as OpenAI.ChatCompletionCreateParamsNonStreaming,
-            this.getRequestOptions(options),
-          );
-        }
-        options?.signal?.throwIfAborted();
-        return true;
-      } catch (error) {
-        rethrowCancellation(error, options?.signal);
-        // If we get a 401/403, the key is invalid
-        // If we get a 404, the model might not exist
-        // If we get other errors, provider might be down
-        return false;
-      }
+      return false;
     }
   }
 
@@ -948,6 +997,7 @@ export class OpenAIProvider implements LLMProvider {
   private convertMessages(
     messages: Message[],
     systemPrompt?: string,
+    model = this.config.model,
   ): OpenAI.ChatCompletionMessageParam[] {
     const result: OpenAI.ChatCompletionMessageParam[] = [];
 
@@ -996,6 +1046,13 @@ export class OpenAIProvider implements LLMProvider {
               parts.push({ type: "text", text: block.text });
             } else if (block.type === "image") {
               const imgBlock = block as ImageContent;
+              if (
+                this.id === "cerebras" &&
+                !["image/png", "image/jpeg"].includes(imgBlock.source.media_type)
+              )
+                throw new ProviderError("Cerebras image input accepts PNG or JPEG only.", {
+                  provider: this.id,
+                });
               parts.push({
                 type: "image_url",
                 image_url: {
@@ -1054,6 +1111,16 @@ export class OpenAIProvider implements LLMProvider {
           }
         }
 
+        const state = Array.isArray(msg.content)
+          ? msg.content.find(
+              (block) =>
+                block.type === "tool_use" &&
+                block.providerState?.provider === this.id &&
+                block.providerState?.model === model,
+            )
+          : undefined;
+        if (state?.type === "tool_use" && state.providerState?.reasoningContent !== undefined)
+          Object.assign(assistantMsg, { reasoning_content: state.providerState.reasoningContent });
         result.push(assistantMsg);
       }
     }
@@ -1146,6 +1213,13 @@ export class OpenAIProvider implements LLMProvider {
       byId.set(call.id, call);
     }
     return [...byId.values()];
+  }
+
+  private chatState(message: unknown, model: string) {
+    const value = (message as { reasoning_content?: unknown } | undefined)?.reasoning_content;
+    return typeof value === "string"
+      ? { provider: this.id, model, reasoningContent: value }
+      : undefined;
   }
 
   private extractToolCalls(toolCalls?: OpenAI.ChatCompletionMessageToolCall[]): ToolCall[] {
@@ -1255,7 +1329,7 @@ export class OpenAIProvider implements LLMProvider {
         try {
           const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
           const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-          const supportsTemp = this.supportsTemperature(model);
+          const supportsTemp = this.supportsTemperature(model, options?.thinking);
 
           const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
           const response = await this.client!.responses.create(
@@ -1270,6 +1344,7 @@ export class OpenAIProvider implements LLMProvider {
               // Responses API uses nested reasoning.effort (not top-level reasoning_effort)
               ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
               store: false,
+              include: ["reasoning.encrypted_content"],
             },
             this.getRequestOptions(options),
           );
@@ -1313,7 +1388,7 @@ export class OpenAIProvider implements LLMProvider {
           const tools = this.convertToolsForResponses(
             this.limitTools(options.tools, tierCfg.maxTools),
           );
-          const supportsTemp = this.supportsTemperature(model);
+          const supportsTemp = this.supportsTemperature(model, options?.thinking);
 
           const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
           const response = await this.client!.responses.create(
@@ -1328,6 +1403,7 @@ export class OpenAIProvider implements LLMProvider {
               }),
               ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
               store: false,
+              include: ["reasoning.encrypted_content"],
             },
             this.getRequestOptions(options),
           );
@@ -1368,7 +1444,18 @@ export class OpenAIProvider implements LLMProvider {
               outputTokens: response.usage?.output_tokens ?? 0,
             },
             model: String(response.model),
-            toolCalls: this.validateCompletedToolCalls(toolCalls),
+            toolCalls: this.validateCompletedToolCalls(toolCalls).map((call) => ({
+              ...call,
+              providerState: response.output.some((item) => item.type === "reasoning")
+                ? {
+                    provider: this.id,
+                    model,
+                    responseItems: response.output.filter(
+                      (item) => item.type === "reasoning",
+                    ) as unknown as Record<string, unknown>[],
+                  }
+                : undefined,
+            })),
           };
         } catch (error) {
           options?.signal?.throwIfAborted();
@@ -1394,7 +1481,7 @@ export class OpenAIProvider implements LLMProvider {
     try {
       const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-      const supportsTemp = this.supportsTemperature(model);
+      const supportsTemp = this.supportsTemperature(model, options?.thinking);
 
       const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
       const stream = await this.client!.responses.create(
@@ -1408,6 +1495,7 @@ export class OpenAIProvider implements LLMProvider {
           }),
           ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
           store: false,
+          include: ["reasoning.encrypted_content"],
           stream: true,
         },
         this.getRequestOptions(options),
@@ -1485,7 +1573,7 @@ export class OpenAIProvider implements LLMProvider {
       const limitedTools = this.limitTools(options.tools, tierCfg.maxTools);
       const tools =
         limitedTools.length > 0 ? this.convertToolsForResponses(limitedTools) : undefined;
-      const supportsTemp = this.supportsTemperature(model);
+      const supportsTemp = this.supportsTemperature(model, options?.thinking);
 
       const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
       const requestParams: Record<string, unknown> = {
@@ -1496,6 +1584,7 @@ export class OpenAIProvider implements LLMProvider {
         ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
         ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
         store: false,
+        include: ["reasoning.encrypted_content"],
         stream: true,
       };
 
@@ -1624,7 +1713,12 @@ export class OpenAIProvider implements LLMProvider {
                   completedCalls,
                 ),
               );
+              const responseItems = event.response.output.filter(
+                (item) => item.type === "reasoning",
+              ) as unknown as Record<string, unknown>[];
               for (const toolCall of calls) {
+                if (responseItems.length)
+                  toolCall.providerState = { provider: this.id, model, responseItems };
                 this.assertStreamActive(options, timeoutTriggered);
                 yield { type: "tool_use_end", toolCall };
                 this.assertStreamActive(options, timeoutTriggered);
@@ -1714,6 +1808,16 @@ export class OpenAIProvider implements LLMProvider {
           });
         }
       } else if (msg.role === "assistant") {
+        const state = Array.isArray(msg.content)
+          ? msg.content.find(
+              (b) =>
+                b.type === "tool_use" &&
+                b.providerState?.provider === this.id &&
+                b.providerState?.model === this.config.model,
+            )
+          : undefined;
+        if (state?.type === "tool_use" && state.providerState?.responseItems)
+          input.push(...(state.providerState.responseItems as unknown as Responses.ResponseInput));
         if (typeof msg.content === "string") {
           input.push({ role: "assistant", content: msg.content });
         } else if (Array.isArray(msg.content)) {

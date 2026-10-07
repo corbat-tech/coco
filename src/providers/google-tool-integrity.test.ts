@@ -157,7 +157,15 @@ describe.each(["gemini", "vertex"] as const)("%s provider tool terminal", (kind)
     const result = await p.chatWithTools([], { tools: [] });
     expect(result.stopReason).toBe("tool_use");
     expect(result.toolCalls).toEqual([
-      { id: "native-id", name: "read_file", input: {}, geminiThoughtSignature: "opaque-signature" },
+      {
+        id: "native-id",
+        name: "read_file",
+        input: {},
+        geminiThoughtSignature: "opaque-signature",
+        ...(kind === "gemini"
+          ? { providerState: { provider: "gemini", model: "gemini-3.8-flash" } }
+          : {}),
+      },
     ]);
   });
   if (kind === "vertex") {

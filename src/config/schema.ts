@@ -1,3 +1,4 @@
+import { PROVIDER_IDS } from "../providers/provider-types.js";
 /**
  * Configuration schema for Corbat-Coco
  */
@@ -8,7 +9,7 @@ import { z } from "zod";
  * Thinking/reasoning mode schema — mirrors ThinkingMode in providers/thinking.ts
  */
 export const ThinkingModeSchema = z.union([
-  z.enum(["off", "auto", "low", "medium", "high"]),
+  z.enum(["off", "auto", "low", "medium", "high", "xhigh", "max"]),
   z.object({ budget: z.number().int().min(0).max(200000) }),
 ]);
 
@@ -16,32 +17,17 @@ export const ThinkingModeSchema = z.union([
  * Provider configuration schema
  */
 export const ProviderConfigSchema = z.object({
-  type: z
-    .enum([
-      "anthropic",
-      "openai",
-      "codex",
-      "copilot",
-      "gemini",
-      "vertex",
-      "kimi",
-      "kimi-code",
-      "lmstudio",
-      "ollama",
-      "groq",
-      "openrouter",
-      "mistral",
-      "deepseek",
-      "together",
-      "huggingface",
-      "qwen",
-    ])
-    .default("anthropic"),
+  type: z.enum(PROVIDER_IDS).default("anthropic"),
   apiKey: z.string().optional(),
-  model: z.string().default("claude-sonnet-4-6"),
+  model: z.string().default("claude-sonnet-5-5"),
   maxTokens: z.number().min(1).max(200000).default(8192),
   temperature: z.number().min(0).max(2).default(0),
   timeout: z.number().min(1000).default(120000),
+  deployment: z.string().optional(),
+  region: z.string().optional(),
+  awsProfile: z.string().optional(),
+  cloudAuth: z.enum(["identity", "api-key"]).optional(),
+  baseUrl: z.string().url().optional(),
   project: z.string().optional(),
   location: z.string().optional(),
 });
@@ -250,10 +236,20 @@ export type SkillsConfig = z.infer<typeof SkillsConfigSchema>;
  * Complete configuration schema
  */
 export const CocoConfigSchema = z.object({
+  media: z
+    .object({
+      image: z
+        .object({ provider: z.enum(["openai", "gemini"]), model: z.string().optional() })
+        .optional(),
+      audio: z
+        .object({ provider: z.enum(["openai", "gemini"]), model: z.string().optional() })
+        .optional(),
+    })
+    .optional(),
   project: ProjectConfigSchema,
   provider: ProviderConfigSchema.default({
     type: "anthropic",
-    model: "claude-sonnet-4-6",
+    model: "claude-sonnet-5-5",
     maxTokens: 8192,
     temperature: 0,
     timeout: 120000,
@@ -316,7 +312,7 @@ export function createDefaultConfigObject(
     },
     provider: {
       type: "anthropic",
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5-5",
       maxTokens: 8192,
       temperature: 0,
       timeout: 120000,

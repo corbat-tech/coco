@@ -257,7 +257,7 @@ describe("CodexProvider", () => {
       const { CodexProvider } = await import("./codex.js");
       const provider = new CodexProvider();
 
-      expect(provider.getContextWindow()).toBe(1000000);
+      expect(provider.getContextWindow()).toBe(1050000);
     });
 
     it("should return 200000 for gpt-5-codex", async () => {
@@ -375,7 +375,7 @@ describe("CodexProvider", () => {
 
       const response = await provider.chat([{ role: "user", content: "Hello" }]);
 
-      expect(response.model).toBe("gpt-5.5");
+      expect(response.model).toBe("gpt-6.1-sol");
     });
 
     it("should use model from options", async () => {

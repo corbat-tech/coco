@@ -23,6 +23,7 @@ export async function activateSessionProvider(
     const next = matches
       ? pending.instance
       : await createProvider(internal, {
+          ...session.config.provider,
           model: session.config.provider.model || undefined,
           maxTokens: session.config.provider.maxTokens,
           project: session.config.provider.project,

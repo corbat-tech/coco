@@ -1,3 +1,4 @@
+import { setupCloudProvider } from "./cloud-provider-setup.js";
 /**
  * REPL Onboarding v2
  *
@@ -52,6 +53,10 @@ export interface OnboardingResult {
   baseUrl?: string;
   project?: string;
   location?: string;
+  deployment?: string;
+  region?: string;
+  awsProfile?: string;
+  cloudAuth?: "identity" | "api-key";
 }
 
 /**
@@ -102,7 +107,7 @@ async function runOnboardingV2Internal(signal?: AbortSignal): Promise<Onboarding
           ...providers.map((prov) => ({
             value: prov.id,
             label: `${prov.emoji} ${prov.name}`,
-            hint: `${formatPaymentBadge(prov.paymentType)} ${prov.requiresApiKey === false ? "Free, runs locally" : prov.description}`,
+            hint: `${formatPaymentBadge(prov.paymentType)} ${["lmstudio", "ollama"].includes(prov.id) ? "Free, runs locally" : prov.description}`,
           })),
           {
             value: "help",
@@ -231,6 +236,8 @@ async function setupProviderWithAuth(
   signal?: AbortSignal,
 ): Promise<OnboardingResult | null> {
   signal?.throwIfAborted();
+  if (provider.id === "azure-openai" || provider.id === "bedrock")
+    return setupCloudProvider(provider.id, signal);
   // Check available auth methods
   const hasOAuth = supportsOAuth(provider.id);
   const hasGcloudADC = provider.supportsGcloudADC;
@@ -1334,7 +1341,7 @@ async function setupNewProvider(signal?: AbortSignal): Promise<OnboardingResult 
       options: providers.map((prov) => ({
         value: prov.id,
         label: `${prov.emoji} ${prov.name}`,
-        hint: prov.requiresApiKey === false ? "Free, local" : prov.description,
+        hint: ["lmstudio", "ollama"].includes(prov.id) ? "Free, local" : prov.description,
       })),
     }),
     signal,
@@ -1647,11 +1654,13 @@ async function saveConfigurationInternal(
 
   // API keys are user-level credentials — always saved globally in ~/.coco/.env
   const isLocalProvider = result.type === "lmstudio" || result.type === "ollama";
-  const message = isLocalProvider
-    ? `Save your ${result.type === "ollama" ? "Ollama" : "LM Studio"} configuration?`
-    : result.type === "codex"
-      ? "Save your configuration?"
-      : "Save your API key?";
+  const message = ["bedrock", "azure-openai"].includes(result.type)
+    ? "Save your cloud configuration?"
+    : isLocalProvider
+      ? `Save your ${result.type === "ollama" ? "Ollama" : "LM Studio"} configuration?`
+      : result.type === "codex"
+        ? "Save your configuration?"
+        : "Save your API key?";
 
   const saveOptions = await cancellationCheckpoint(
     p.select({
@@ -1691,8 +1700,18 @@ async function saveConfigurationInternal(
     envVarsToSave["CODEX_MODEL"] = result.model;
   } else {
     // Cloud providers: save API key
-    envVarsToSave[provider.envVar] = result.apiKey;
-    if (result.baseUrl) {
+    if (result.apiKey) envVarsToSave[provider.envVar] = result.apiKey;
+    if (result.type === "azure-openai") {
+      if (result.cloudAuth) envVarsToSave["AZURE_OPENAI_AUTH_MODE"] = result.cloudAuth;
+      if (result.baseUrl) envVarsToSave["AZURE_OPENAI_ENDPOINT"] = result.baseUrl;
+      if (result.deployment) envVarsToSave["AZURE_OPENAI_DEPLOYMENT"] = result.deployment;
+    }
+    if (result.type === "bedrock") {
+      if (result.cloudAuth) envVarsToSave["AWS_BEDROCK_AUTH_MODE"] = result.cloudAuth;
+      if (result.region) envVarsToSave["AWS_REGION"] = result.region;
+      if (result.awsProfile) envVarsToSave["AWS_PROFILE"] = result.awsProfile;
+    }
+    if (result.baseUrl && result.type !== "azure-openai") {
       envVarsToSave[`${provider.envVar.replace("_API_KEY", "_BASE_URL")}`] = result.baseUrl;
     }
     if (result.type === "vertex" && result.project) {
@@ -1853,6 +1872,7 @@ async function handleLocalProviderUnavailable(
       );
       const provider = await cancellationCheckpoint(
         createProvider(providerType, {
+          ...config.provider,
           model: config.provider.model,
         }),
         signal,
@@ -1956,7 +1976,7 @@ async function ensureConfiguredV2Internal(
   // Local providers (lmstudio, ollama) don't need API keys — but copilot
   // uses device flow auth, not a local server, so it's not "local"
   const preferredIsLocal =
-    preferredProviderDef?.requiresApiKey === false && preferredProviderDef?.id !== "copilot";
+    !!preferredProviderDef && ["lmstudio", "ollama"].includes(preferredProviderDef.id);
   const preferredHasApiKey = preferredProviderDef
     ? !preferredWantsOpenAIOAuth && !!process.env[preferredProviderDef.envVar]
     : false;
@@ -1965,7 +1985,16 @@ async function ensureConfiguredV2Internal(
   const preferredHasCopilotCreds =
     preferredProviderDef?.id === "copilot" && isProviderConfigured("copilot");
   const preferredIsConfigured =
-    preferredIsLocal || preferredHasApiKey || preferredHasOpenAIOAuth || preferredHasCopilotCreds;
+    preferredIsLocal ||
+    preferredHasApiKey ||
+    preferredHasOpenAIOAuth ||
+    preferredHasCopilotCreds ||
+    (preferredProviderDef &&
+      ["azure-openai", "bedrock"].includes(preferredProviderDef.id) &&
+      (isProviderConfigured(preferredProviderDef.id) ||
+        (preferredProviderDef.id === "azure-openai"
+          ? !!config.provider.baseUrl && !!config.provider.deployment
+          : !!config.provider.region)));
   // True when the user's preferred provider had credentials at startup.
   // Used to prevent silent fallbacks from overwriting the user's persisted preference.
   const preferredWasConfigured = Boolean(preferredProviderDef && preferredIsConfigured);
@@ -1980,6 +2009,7 @@ async function ensureConfiguredV2Internal(
           : preferredProviderDef.id;
       const provider = await cancellationCheckpoint(
         createProvider(preferredInternalProviderId, {
+          ...config.provider,
           model: config.provider.model,
         }),
         signal,
@@ -2021,7 +2051,7 @@ async function ensureConfiguredV2Internal(
       if (p.id === "openai") {
         return hasOpenAIOAuthTokens || !!process.env[p.envVar];
       }
-      return p.requiresApiKey === false || !!process.env[p.envVar];
+      return ["lmstudio", "ollama"].includes(p.id) || isProviderConfigured(p.id);
     });
 
     for (const prov of configuredProviders) {
@@ -2072,7 +2102,7 @@ async function ensureConfiguredV2Internal(
               authMethod:
                 providerId === "codex"
                   ? "oauth"
-                  : prov.requiresApiKey === false
+                  : ["lmstudio", "ollama"].includes(prov.id)
                     ? undefined
                     : "apikey",
             },
@@ -2142,6 +2172,11 @@ async function ensureConfiguredV2Internal(
       type: result.type,
       model: result.model,
       authMethod: result.authMethod,
+      cloudAuth: result.cloudAuth,
+      baseUrl: result.baseUrl,
+      deployment: result.deployment,
+      region: result.region,
+      awsProfile: result.awsProfile,
     },
   };
 }

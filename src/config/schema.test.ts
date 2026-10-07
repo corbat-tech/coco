@@ -76,7 +76,7 @@ describe("CocoConfigSchema", () => {
 
       // Check provider defaults
       expect(result.provider.type).toBe("anthropic");
-      expect(result.provider.model).toBe("claude-sonnet-4-6");
+      expect(result.provider.model).toBe("claude-sonnet-5-5");
 
       // Check quality defaults
       expect(result.quality.minScore).toBe(85);
@@ -454,7 +454,7 @@ describe("createDefaultConfigObject", () => {
     const config = createDefaultConfigObject("test");
 
     expect(config.provider.type).toBe("anthropic");
-    expect(config.provider.model).toBe("claude-sonnet-4-6");
+    expect(config.provider.model).toBe("claude-sonnet-5-5");
     expect(config.provider.maxTokens).toBe(8192);
     expect(config.provider.temperature).toBe(0);
     expect(config.provider.timeout).toBe(120000);

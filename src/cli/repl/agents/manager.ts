@@ -411,6 +411,7 @@ export class AgentManager extends EventEmitter {
           name: tc.name,
           input: tc.input,
           geminiThoughtSignature: tc.geminiThoughtSignature,
+          providerState: tc.providerState,
         }));
 
         const assistantContent = response.content
