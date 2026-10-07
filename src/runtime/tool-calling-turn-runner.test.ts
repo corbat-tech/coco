@@ -45,6 +45,41 @@ async function fixture(chat: ReturnType<typeof vi.fn>, maxToolIterations = 2) {
   return { runtime, execute };
 }
 describe("runtime tool turn completion contract", () => {
+  it("rejects invented tools for a greeting even when the caller preconfirms them", async () => {
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce(response("tool_use", [call]))
+      .mockResolvedValueOnce({ ...response("end_turn"), content: "¡Hola!" });
+    const { runtime, execute } = await fixture(chat);
+    try {
+      const result = await runtime.runTurn({
+        content: "hola",
+        mode: "build",
+        confirmedTools: ["read_file"],
+      });
+      expect(result.content).toBe("¡Hola!");
+      expect(execute).not.toHaveBeenCalled();
+      expect(chat.mock.calls[0]?.[1]?.tools).toEqual([]);
+      const messages = chat.mock.calls[1]?.[0];
+      expect(JSON.stringify(messages)).toContain("direct text reply");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("preserves tools for mixed conversational and action requests", async () => {
+    const chat = vi
+      .fn()
+      .mockResolvedValueOnce(response("tool_use", [call]))
+      .mockResolvedValueOnce(response("end_turn"));
+    const { runtime, execute } = await fixture(chat);
+    try {
+      await runtime.runTurn({ content: "Hello, read example", mode: "build" });
+      expect(execute).toHaveBeenCalledTimes(1);
+    } finally {
+      await runtime.close();
+    }
+  });
   it.each([
     ["max_tokens", []],
     ["tool_use", []],

@@ -16,6 +16,7 @@ import chalk from "chalk";
 import { isDeepStrictEqual } from "node:util";
 import { ResponseIntegrityError } from "../../providers/response-integrity.js";
 import { validateToolCallInput } from "../../providers/tool-call-normalizer.js";
+import { isConversationalOnlyTurn } from "../../runtime/conversational-turn.js";
 import { AgentRuntime } from "../../runtime/agent-runtime.js";
 import { createRuntimeToolDispatch } from "./runtime-tool-dispatch.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -194,11 +195,14 @@ export async function executeAgentTurn(
   // Get tool definitions for LLM (cast to provider's ToolDefinition type)
   // In plan mode, restrict to read-only tools only
   const allTools = toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
-  const tools = readOnlyModeEnabled
-    ? strictPlanModeEnabled
-      ? filterStrictPlanModeTools(allTools)
-      : filterReadOnlyTools(allTools)
-    : allTools;
+  const conversationalOnly = isConversationalOnlyTurn(userMessage);
+  const tools = conversationalOnly
+    ? []
+    : readOnlyModeEnabled
+      ? strictPlanModeEnabled
+        ? filterStrictPlanModeTools(allTools)
+        : filterReadOnlyTools(allTools)
+      : allTools;
   const availableMcpToolNames = allTools
     .map((t) => t.name)
     .filter((name) => name.startsWith("mcp_"));
@@ -212,6 +216,11 @@ export async function executeAgentTurn(
   }
 
   const normalizedUserRequest = extractPlainText(userMessage).toLowerCase();
+  // Polite action requests ("Can you run ...?") still need action recovery.
+  const informationRequest =
+    /^(explain|describe|what (is|are)|why|explica|describe|qu[ée] (es|son)|c[oó]mo funciona|por qu[ée])\b/u.test(
+      normalizedUserRequest.trim(),
+    );
   const userExplicitlyRequestedMcp =
     /\bmcp\b/.test(normalizedUserRequest) ||
     /\b(use|using|usa|usar|utiliza|utilizar)\b.{0,24}\bmcp\b/.test(normalizedUserRequest);
@@ -414,8 +423,9 @@ export async function executeAgentTurn(
     if (stopReason === "tool_use") {
       return {
         recover: true,
-        reason:
-          "The previous response indicated tool use, but no tool calls were received. Re-emit the tool call(s) now.",
+        reason: conversationalOnly
+          ? "This is a conversational message. Reply directly in text without tools."
+          : "The previous response indicated tool use, but no tool calls were received. Use tools only if needed for the user's request; otherwise answer directly in text.",
         category: "tool_use",
       };
     }
@@ -437,10 +447,11 @@ export async function executeAgentTurn(
       /^(voy a|ahora voy|voy a revisar|voy a comprobar|voy a mirar|déjame|dejame|a continuación|i('| )?ll|i will|let me|starting|preparing|activating|checking|reviewing|looking into|working on|continuo|contin[uú]o|de acuerdo[, ]+voy)\b/i.test(
         trimmed,
       );
-    if (planningOnly) {
+    if (planningOnly && !conversationalOnly && !informationRequest) {
       return {
         recover: true,
-        reason: "Do not only describe the next step. Execute it now with concrete tool calls.",
+        reason:
+          "If the user requested an external action, execute the next step with the appropriate tool. If the user requested an explanation or conversation, answer directly in text. Never invent a shell command just to print a reply.",
         category: "planning_only",
       };
     }
@@ -930,6 +941,15 @@ export async function executeAgentTurn(
       // Check for abort
       if (options.signal?.aborted || turnAborted) {
         break;
+      }
+
+      if (conversationalOnly) {
+        declinedTools.set(
+          toolCall.id,
+          "This isolated conversational message requires a direct text reply, without tools.",
+        );
+        recordToolSkipped(toolCall, "Conversational turn requires no tools");
+        continue;
       }
 
       if (shouldForceMcpForTool(toolCall)) {

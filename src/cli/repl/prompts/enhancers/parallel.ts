@@ -24,7 +24,7 @@ export const PARALLEL_ENHANCER: PromptEnhancer = {
   ],
   priority: 20,
   enabled: true,
-  content: `ALWAYS execute independent operations concurrently. This is 3-5x faster.
+  content: `When the user's request needs tools, execute independent operations concurrently. Do not create unnecessary operations for conversation.
 
 Parallel (no data dependency):
 - Reading multiple files → call all read_file in one batch

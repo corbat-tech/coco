@@ -621,6 +621,15 @@ describe("clearSession", () => {
 // claiming it lacks credentials, etc.).
 //
 describe("COCO_SYSTEM_PROMPT — agent behaviour contracts", () => {
+  it("permits direct conversational replies without manufacturing shell actions", async () => {
+    const { createDefaultReplConfig } = await import("./session.js");
+    const { agent } = await createDefaultReplConfig();
+
+    expect(agent.systemPrompt).toContain("reply directly in text without tools");
+    expect(agent.systemPrompt).toContain("Never run shell commands (including echo or printf)");
+    expect(agent.systemPrompt).not.toContain("Text is ONLY");
+    expect(agent.systemPrompt).toContain("Process for requests requiring tools:");
+  });
   it("instructs the agent to use tools instead of asking the user", async () => {
     const { createDefaultReplConfig } = await import("./session.js");
     const { agent } = await createDefaultReplConfig();

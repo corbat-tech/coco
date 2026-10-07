@@ -12,6 +12,7 @@ import type {
   RuntimeTurnResult,
   RuntimeTurnRunner,
 } from "./types.js";
+import { isConversationalOnlyTurn } from "./conversational-turn.js";
 
 export interface ToolCallingRuntimeTurnRunnerOptions {
   maxToolIterations?: number;
@@ -73,7 +74,10 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
         content: input.content,
       },
     ];
-    const tools = context.toolRegistry.getToolDefinitionsForLLM() as ProviderToolDefinition[];
+    const conversationalOnly = isConversationalOnlyTurn(input.content);
+    const tools = conversationalOnly
+      ? []
+      : (context.toolRegistry.getToolDefinitionsForLLM() as ProviderToolDefinition[]);
     const confirmedTools = new Set(input.confirmedTools ?? []);
     let inputTokens = 0;
     let outputTokens = 0;
@@ -141,6 +145,16 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
       const toolResults: ToolResultContent[] = [];
       for (const toolCall of response.toolCalls) {
         input.options?.signal?.throwIfAborted();
+        if (conversationalOnly) {
+          toolResults.push({
+            type: "tool_result",
+            tool_use_id: toolCall.id,
+            content:
+              "This isolated conversational message requires a direct text reply, without tools.",
+            is_error: true,
+          });
+          continue;
+        }
         const result = await runtime.executeTool({
           signal: input.options?.signal,
           toolCallId: toolCall.id,
