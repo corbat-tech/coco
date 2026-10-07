@@ -334,7 +334,7 @@ describe("executeAgentTurn", () => {
     });
   });
 
-  it("should process a simple message without tool calls", async () => {
+  it.each(["Hello", "hola"])("answers the greeting %s without tool execution", async (greeting) => {
     const { executeAgentTurn } = await import("./agent-loop.js");
     const { addMessage } = await import("./session.js");
 
@@ -342,10 +342,11 @@ describe("executeAgentTurn", () => {
       createTextStreamMock("Hello! How can I help you?"),
     );
 
-    const result = await executeAgentTurn(mockSession, "Hello", mockProvider, mockToolRegistry);
+    const result = await executeAgentTurn(mockSession, greeting, mockProvider, mockToolRegistry);
 
     expect(result.content).toBe("Hello! How can I help you?");
     expect(result.toolCalls).toEqual([]);
+    expect(mockToolRegistry.execute).not.toHaveBeenCalled();
     // Token usage is now estimated, so just check they're > 0
     expect(result.usage.inputTokens).toBeGreaterThan(0);
     expect(result.usage.outputTokens).toBeGreaterThan(0);
@@ -353,6 +354,62 @@ describe("executeAgentTurn", () => {
     expect(result.quality?.score).toBeLessThanOrEqual(100);
     expect(result.aborted).toBe(false);
     expect(addMessage).toHaveBeenCalledTimes(2); // user message + assistant response
+  });
+
+  it.each(["hola", "gracias", "bye"])(
+    "blocks model-invented shell calls for %s before confirmation",
+    async (greeting) => {
+      const { executeAgentTurn } = await import("./agent-loop.js");
+      const { confirmToolExecutionWithFallback } = await import("./confirmation.js");
+      (mockProvider.streamWithTools as Mock)
+        .mockImplementationOnce(
+          createToolStreamMock("", [
+            { id: "hello-shell", name: "bash_exec", input: { command: "printf 'hola\\n'" } },
+          ]),
+        )
+        .mockImplementation(createTextStreamMock("¡Hola!", "end_turn"));
+      const result = await executeAgentTurn(mockSession, greeting, mockProvider, mockToolRegistry);
+      expect(result.content).toContain("¡Hola!");
+      expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+      expect(confirmToolExecutionWithFallback).not.toHaveBeenCalled();
+      expect(vi.mocked(mockProvider.streamWithTools).mock.calls[0]?.[1]?.tools).toEqual([]);
+    },
+  );
+
+  it("does not force an explanatory response into a tool retry", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+    (mockProvider.streamWithTools as Mock).mockImplementation(
+      createTextStreamMock("I will explain: a closure retains its lexical scope.", "end_turn"),
+    );
+    const result = await executeAgentTurn(
+      mockSession,
+      "Explain closures",
+      mockProvider,
+      mockToolRegistry,
+    );
+    expect(result.content).toContain("lexical scope");
+    expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(1);
+    expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+  });
+
+  it("keeps tool execution for a greeting followed by an action request", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+    (mockProvider.streamWithTools as Mock)
+      .mockImplementationOnce(
+        createToolStreamMock("", [
+          { id: "read-request", name: "read_file", input: { path: "README.md" } },
+        ]),
+      )
+      .mockImplementation(createTextStreamMock("Read complete", "end_turn"));
+    vi.mocked(mockToolRegistry.execute).mockResolvedValue({
+      success: true,
+      data: "README",
+      duration: 1,
+    });
+    await executeAgentTurn(mockSession, "Hola, read README.md", mockProvider, mockToolRegistry, {
+      skipConfirmation: true,
+    });
+    expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
   });
 
   it("deduplicates repeated identical tool calls in the same streamed turn", async () => {
@@ -388,9 +445,15 @@ describe("executeAgentTurn", () => {
       duration: 1,
     });
 
-    const result = await executeAgentTurn(mockSession, "hola", mockProvider, mockToolRegistry, {
-      skipConfirmation: true,
-    });
+    const result = await executeAgentTurn(
+      mockSession,
+      "Read the HOME environment variable",
+      mockProvider,
+      mockToolRegistry,
+      {
+        skipConfirmation: true,
+      },
+    );
 
     expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
     expect(result.toolCalls).toHaveLength(1);

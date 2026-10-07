@@ -25,7 +25,7 @@ export const VERIFICATION_ENHANCER: PromptEnhancer = {
   ],
   priority: 10,
   enabled: true,
-  content: `YOU MUST verify before ANY completion claim. No exceptions.
+  content: `Verify claims that external actions completed using fresh evidence. Greetings, explanations, code examples, and conversational replies do not require running commands. Never manufacture an action merely to satisfy this protocol.
 
 Gate function (all 5 steps mandatory):
 1. IDENTIFY the proving command for your claim (test, build, typecheck, lint)
