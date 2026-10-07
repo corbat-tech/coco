@@ -1,0 +1,70 @@
+{
+  "typecheck": {
+    "command": [
+      "pnpm",
+      "typecheck"
+    ],
+    "exit": 0,
+    "seconds": 6.3,
+    "log_sha256": "9f7493296c3785a5cc40086f730e2482a218da22e9816c35e8af501eeb83ba0f"
+  },
+  "lint": {
+    "command": [
+      "pnpm",
+      "lint"
+    ],
+    "exit": 0,
+    "seconds": 3.59,
+    "log_sha256": "c17f1b6abe31f39b07ab6779a39be1195635c6c21bdbfc64f19e357276a943dd"
+  },
+  "format": {
+    "command": [
+      "pnpm",
+      "format"
+    ],
+    "exit": 0,
+    "seconds": 1.54,
+    "log_sha256": "6822b34721c1396293da8a43fa0d9f1e66b18507cef7fe0907daa3a6728bbff3"
+  },
+  "test": {
+    "command": [
+      "pnpm",
+      "test",
+      "--maxWorkers=4"
+    ],
+    "exit": 1,
+    "seconds": 28.56,
+    "log_sha256": "ed1cc7490a4023741bd2fbdb0581f1df9674c38d882350e6c6d4469a1554281f"
+  },
+  "repl": {
+    "command": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "--config",
+      "vitest.repl.config.ts"
+    ],
+    "exit": 0,
+    "seconds": 1.54,
+    "log_sha256": "0b135d5b4f8bc61775c9f74e77fc43a163f112f0413d7ae5243d0ce55d3ecfe1"
+  },
+  "e2e": {
+    "command": [
+      "pnpm",
+      "test:e2e"
+    ],
+    "exit": 1,
+    "seconds": 0.52,
+    "log_sha256": "8ddddf0f30a5da857c9770d2f8e2f50eee87e7aba74d26016e8e15d8c7027453"
+  },
+  "build": {
+    "command": [
+      "pnpm",
+      "build"
+    ],
+    "exit": 0,
+    "seconds": 8.42,
+    "log_sha256": "bcd9fc4edb9323a11bf240648e40b5a2b78903c2f0d6bfca4620fd60c30afe44"
+  }
+}

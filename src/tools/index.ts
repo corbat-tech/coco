@@ -363,6 +363,7 @@ import { semanticSearchTools } from "./semantic-search.js";
 import { diagramTools } from "./diagram.js";
 import { pdfTools } from "./pdf.js";
 import { imageTools } from "./image.js";
+import { mediaTools } from "./media.js";
 import { databaseTools } from "./database.js";
 import { gitSimpleTools } from "./git-simple.js";
 import { simpleAgentTools } from "./simple-agent.js";
@@ -403,6 +404,7 @@ export function registerAllTools(registry: ToolRegistry): void {
     ...diagramTools,
     ...pdfTools,
     ...imageTools,
+    ...mediaTools,
     ...databaseTools,
     ...astValidatorTools,
     ...codeAnalyzerTools,
@@ -434,3 +436,5 @@ export function createFullToolRegistry(): ToolRegistry {
   registerAllTools(registry);
   return registry;
 }
+
+export { generateImageTool, readAudioTool, mediaTools } from "./media.js";

@@ -6,9 +6,8 @@
  * - ASK: Medium-risk tools that prompt for confirmation each time
  * - DENY: Dangerous patterns that should never be auto-approved
  *
- * Bash patterns use the format from bash-patterns.ts:
- *   "bash:<command>[:<subcommand>[:<action>]]"
- * These match exact patterns only — "bash:git" does NOT approve "bash:git:push".
+ * Shell approval is bound to an exact invocation. Legacy bash labels below
+ * are risk descriptions only; recommended grants never authorize shell prefixes.
  */
 
 import * as p from "@clack/prompts";
@@ -21,17 +20,7 @@ import { saveTrustedTool } from "./session.js";
 // Recommended Template
 // ============================================================================
 
-/**
- * ALLOW (global) — Read-only tools safe to trust everywhere.
- * These never modify files, never write to disk, never push to remote.
- *
- * Includes:
- * - Coco native read-only tools (read_file, glob, grep, etc.)
- * - Bash read-only commands (find, cat, ls, head, tail, etc.)
- * - Git read-only subcommands (status, diff, log, branch, show, etc.)
- * - Docker/kubectl read-only inspection commands
- * - Data processing tools (jq, yq, sort, uniq, wc, diff)
- */
+/** Native tool recommendations. Shell calls always require exact approval. */
 export const RECOMMENDED_GLOBAL: string[] = [
   // ── Coco native tools (read-only) ──
   "read_file",
@@ -50,99 +39,9 @@ export const RECOMMENDED_GLOBAL: string[] = [
   "analyze_complexity",
   "calculate_quality",
   "get_coverage",
-
-  // ── Bash: filesystem read-only ──
-  "bash:find",
-  "bash:cat",
-  "bash:ls",
-  "bash:head",
-  "bash:tail",
-  "bash:tree",
-  "bash:pwd",
-  "bash:which",
-  "bash:wc",
-  "bash:echo",
-  "bash:diff",
-
-  // ── Bash: data processing (read-only, pipes) ──
-  "bash:sort",
-  "bash:uniq",
-  "bash:jq",
-  "bash:yq",
-  "bash:grep",
-
-  // ── Bash: modern CLI alternatives ──
-  "bash:rg",
-  "bash:fd",
-  "bash:bat",
-
-  // ── Bash: system info (read-only) ──
-  "bash:stat",
-  "bash:du",
-  "bash:df",
-  "bash:whoami",
-  "bash:uname",
-  "bash:hostname",
-  "bash:man",
-  "bash:type",
-
-  // ── Bash: macOS utilities ──
-  "bash:open",
-  "bash:pbcopy",
-  "bash:pbpaste",
-
-  // ── Bash: git read-only ──
-  "bash:git:status",
-  "bash:git:log",
-  "bash:git:show",
-  "bash:git:diff",
-  "bash:git:branch",
-  "bash:git:ls-files",
-  "bash:git:rev-parse",
-  "bash:git:fetch",
-  "bash:git:worktree",
-
-  // ── Bash: docker read-only ──
-  "bash:docker:ps",
-  "bash:docker:images",
-  "bash:docker:logs",
-  "bash:docker:inspect",
-
-  // ── Bash: kubectl read-only ──
-  "bash:kubectl:get",
-  "bash:kubectl:describe",
-  "bash:kubectl:logs",
-
-  // ── Bash: gh read-only ──
-  "bash:gh:pr:list",
-  "bash:gh:pr:view",
-  "bash:gh:pr:status",
-  "bash:gh:pr:diff",
-  "bash:gh:pr:checks",
-  "bash:gh:issue:list",
-  "bash:gh:issue:view",
-  "bash:gh:issue:status",
-  "bash:gh:search:repos",
-  "bash:gh:search:issues",
-  "bash:gh:search:prs",
-  "bash:gh:run:list",
-  "bash:gh:run:view",
-  "bash:gh:api",
 ];
 
-/**
- * ALLOW (write + build) — Tools that modify files, stage changes, run builds.
- * Applied globally (same as RECOMMENDED_GLOBAL). Separated for readability.
- *
- * Includes:
- * - Coco native write tools (write_file, edit_file, git_add, etc.)
- * - Bash filesystem write (mkdir, touch, cp, mv)
- * - Bash build/compile commands (npm/pnpm/yarn, node, java, gradle, mvn, tsc)
- *
- * Note: git_commit and bash:git:commit are intentionally excluded.
- * Commits are in ALWAYS_ASK so users review before coco writes git history.
- * Use `/permissions allow-commits` to opt a specific project into auto-commit.
- */
+/** Local write/build tools; native git_commit remains opt-in per project. */
 export const RECOMMENDED_PROJECT: string[] = [
   // ── Coco native tools (write, local) ──
   "write_file",
@@ -154,93 +53,6 @@ export const RECOMMENDED_PROJECT: string[] = [
   "run_test_file",
   "run_script",
   "tsc",
-
-  // ── Bash: filesystem write (local, non-destructive) ──
-  "bash:mkdir",
-  "bash:touch",
-  "bash:cp",
-  "bash:mv",
-
-  // ── Bash: text processing (can modify files with -i / > redirect) ──
-  "bash:sed",
-  "bash:awk",
-
-  // ── Bash: JS/TS toolchain ──
-  "bash:npm:install",
-  "bash:npm:run",
-  "bash:npm:test",
-  "bash:npm:ci",
-  "bash:pnpm:install",
-  "bash:pnpm:i",
-  "bash:pnpm:run",
-  "bash:pnpm:test",
-  "bash:pnpm:typecheck",
-  "bash:pnpm:lint",
-  "bash:pnpm:build",
-  "bash:pnpm:check",
-  "bash:pnpm:format",
-  "bash:pnpm:dev",
-  "bash:pnpm:add",
-  "bash:pnpm:remove",
-  "bash:pnpm:update",
-  "bash:pnpm:exec",
-  "bash:pnpm:rebuild",
-  "bash:yarn:install",
-  "bash:yarn:run",
-  "bash:yarn:test",
-  "bash:node",
-  "bash:vitest",
-  "bash:tsc",
-  "bash:tsx",
-  "bash:oxlint",
-  "bash:bun:run",
-  "bash:bun:test",
-  "bash:bun:build",
-  "bash:deno:run",
-  "bash:deno:test",
-  "bash:deno:check",
-  "bash:deno:fmt",
-  "bash:deno:lint",
-
-  // ── Bash: JVM toolchain ──
-  "bash:java",
-  "bash:javac",
-  "bash:kotlinc",
-  "bash:gradle:build",
-  "bash:gradle:test",
-  "bash:gradle:clean",
-  "bash:./gradlew:build",
-  "bash:./gradlew:test",
-  "bash:./gradlew:clean",
-  "bash:mvn:compile",
-  "bash:mvn:test",
-  "bash:mvn:clean",
-  "bash:mvn:package",
-  "bash:./mvnw:compile",
-  "bash:./mvnw:test",
-  "bash:./mvnw:clean",
-  "bash:./mvnw:package",
-
-  // ── Bash: other build tools ──
-  "bash:cargo:build",
-  "bash:cargo:test",
-  "bash:cargo:check",
-  "bash:cargo:clippy",
-  "bash:go:build",
-  "bash:go:test",
-  "bash:go:vet",
-  "bash:pip:install",
-  "bash:pip3:install",
-  "bash:uv:sync",
-  "bash:uv:run",
-
-  // ── Bash: lint/format ──
-  "bash:eslint",
-  "bash:prettier",
-  "bash:make",
-
-  // ── Bash: git local (staging only — commit and push are in ASK) ──
-  "bash:git:add",
 ];
 
 /**
@@ -758,7 +570,12 @@ export function showPermissionDetails(): void {
   const total = allAllow.length + ALWAYS_ASK.length + RECOMMENDED_DENY.length;
 
   console.log();
-  console.log(chalk.bold(`  📋 Recommended Permissions (${total} rules)`));
+  console.log(chalk.bold(`  📋 Recommended Permissions (${total} entries)`));
+  console.log(
+    chalk.dim(
+      "  Shell calls require exact approval. Legacy bash labels below describe risk, not executable grants.",
+    ),
+  );
   console.log();
 
   // ── Allow ──

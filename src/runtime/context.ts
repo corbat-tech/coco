@@ -333,14 +333,15 @@ export function assertRuntimeUsageWithinPolicy(
   }
   if (
     budget.maxEstimatedCostUsd !== undefined &&
-    (usage.estimatedCostUsd ?? 0) > budget.maxEstimatedCostUsd
+    (!Number.isFinite(usage.estimatedCostUsd) ||
+      (usage.estimatedCostUsd ?? 0) > budget.maxEstimatedCostUsd)
   ) {
     throw new RuntimePolicyViolation({
       code: "estimated_cost_exceeded",
       subject,
       tenantId: usage.tenantId,
       policyPath: "runtimePolicy.costBudget.maxEstimatedCostUsd",
-      message: `Runtime policy estimated cost budget exceeded: ${usage.estimatedCostUsd ?? 0}/${budget.maxEstimatedCostUsd}`,
+      message: `Runtime policy estimated cost budget exceeded or pricing unavailable: ${usage.estimatedCostUsd ?? 0}/${budget.maxEstimatedCostUsd}`,
     });
   }
 }

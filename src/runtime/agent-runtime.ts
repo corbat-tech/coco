@@ -23,6 +23,7 @@ import { createEventLog, createFileEventLog } from "./event-log.js";
 import { createPermissionPolicy } from "./permission-policy.js";
 import { createProviderRegistry, ProviderRegistry } from "./provider-registry.js";
 import { createRuntimeSessionStore } from "./runtime-session-store.js";
+import { RuntimeToolExecutor } from "./runtime-tool-executor.js";
 import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.js";
 import type {
   AgentRuntimeOptions,
@@ -75,6 +76,7 @@ export class AgentRuntime {
   private readonly runtimeHostMode: RuntimeHostMode;
   private readonly requestTimestampsBySubject = new Map<string, number[]>();
   private activeRuns = 0;
+  private readonly toolExecutor: RuntimeToolExecutor;
 
   constructor(private readonly options: AgentRuntimeOptions) {
     this.providerRegistry = createProviderRegistry();
@@ -94,6 +96,13 @@ export class AgentRuntime {
       : undefined;
     this.runtimePolicy = mergeRuntimePolicy(this.runtimeContext?.policy, options.runtimePolicy);
     this.runtimeHostMode = options.runtimeHostMode ?? "local";
+    this.toolExecutor = new RuntimeToolExecutor({
+      toolRegistry: this.toolRegistry,
+      eventLog: this.eventLog,
+      permissionPolicy: this.permissionPolicy,
+      runtimePolicy: this.runtimePolicy,
+      eventProfile: "runtime-api",
+    });
     assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "runtime.initialize");
     this.workflowEngine =
       options.workflowEngine ??
@@ -356,7 +365,9 @@ export class AgentRuntime {
     let content = "";
     let completed = false;
     let failed = false;
+    let terminal = false;
     try {
+      input.options?.signal?.throwIfAborted();
       for await (const chunk of provider.stream(messages, {
         model: input.options?.model,
         maxTokens: input.options?.maxTokens,
@@ -367,6 +378,23 @@ export class AgentRuntime {
         signal: input.options?.signal,
         thinking: input.options?.thinking,
       })) {
+        input.options?.signal?.throwIfAborted();
+        if (chunk.type !== "text" && chunk.type !== "done") {
+          throw new Error("Runtime turn incomplete: text-only stream requested tool execution.");
+        }
+        if (terminal) {
+          throw new Error(
+            "Runtime turn incomplete: provider emitted content after its terminal event.",
+          );
+        }
+        if (chunk.type === "done") {
+          if (chunk.stopReason !== "end_turn" && chunk.stopReason !== "stop_sequence") {
+            throw new Error(
+              `Runtime turn incomplete: provider stopped with ${chunk.stopReason ?? "unknown"}.`,
+            );
+          }
+          terminal = true;
+        }
         if (chunk.type === "text" && chunk.text) {
           content += chunk.text;
           yield {
@@ -377,6 +405,9 @@ export class AgentRuntime {
         }
       }
 
+      input.options?.signal?.throwIfAborted();
+      if (!terminal)
+        throw new Error("Runtime turn incomplete: provider stream ended without a terminal event.");
       const result: RuntimeTurnResult = {
         sessionId: effectiveSession.id,
         content,
@@ -449,6 +480,21 @@ export class AgentRuntime {
     }
   }
 
+  /** Enable session-owned background jobs only from a host with a close lifecycle. */
+  enableBackgroundJobs(sessionId: string, projectRoot: string): void {
+    assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "tool.execute");
+    if (!this.getSession(sessionId)) throw new Error(`Runtime session not found: ${sessionId}`);
+    this.toolExecutor.enableBackgroundJobs(sessionId, projectRoot);
+  }
+
+  async closeSession(sessionId: string): Promise<void> {
+    await this.toolExecutor.closeSession(sessionId);
+  }
+
+  async close(): Promise<void> {
+    await this.toolExecutor.close();
+  }
+
   async executeTool(input: RuntimeToolExecutionInput): Promise<RuntimeToolExecutionResult> {
     assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "tool.execute");
     const startedAt = performance.now();
@@ -462,6 +508,7 @@ export class AgentRuntime {
       };
       this.eventLog.record("tool.blocked", {
         sessionId: input.sessionId,
+        ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
         mode: input.mode ?? "ask",
         tool: input.toolName,
         reason: decision.reason,
@@ -476,111 +523,10 @@ export class AgentRuntime {
       };
     }
 
-    const mode = input.mode ?? session?.mode ?? "ask";
-    const tool = this.toolRegistry.get(input.toolName);
-
-    if (!tool) {
-      const decision = {
-        allowed: false,
-        reason: "Tool not registered.",
-        risk: "read-only" as const,
-      };
-      this.eventLog.record("tool.blocked", {
-        sessionId: input.sessionId,
-        mode,
-        tool: input.toolName,
-        reason: decision.reason,
-        runtimeApi: true,
-      });
-      return {
-        toolName: input.toolName,
-        success: false,
-        error: decision.reason,
-        duration: performance.now() - startedAt,
-        decision,
-      };
-    }
-
-    const decision = this.permissionPolicy.canExecuteToolInput
-      ? this.permissionPolicy.canExecuteToolInput(mode, tool, input.input)
-      : this.permissionPolicy.canExecuteTool(mode, tool);
-    const runtimeDecision = decision.allowed
-      ? evaluateRuntimeToolPolicy(this.runtimePolicy, {
-          toolName: input.toolName,
-          risk: decision.risk,
-          confirmed: input.confirmed,
-        })
-      : undefined;
-    const effectiveDecision = runtimeDecision ?? decision;
-
-    if (
-      !decision.allowed ||
-      !effectiveDecision.allowed ||
-      (decision.requiresConfirmation && input.confirmed !== true)
-    ) {
-      const reason =
-        effectiveDecision.reason ??
-        decision.reason ??
-        (decision.requiresConfirmation
-          ? "Tool requires explicit runtime confirmation."
-          : "Tool is not allowed.");
-      this.eventLog.record("tool.blocked", {
-        sessionId: input.sessionId,
-        mode,
-        tool: input.toolName,
-        reason,
-        risk: effectiveDecision.risk,
-        requiresConfirmation:
-          effectiveDecision.requiresConfirmation ?? decision.requiresConfirmation,
-        runtimePolicyBlocked: runtimeDecision ? !runtimeDecision.allowed : false,
-        runtimeApi: true,
-      });
-      return {
-        toolName: input.toolName,
-        success: false,
-        error: reason,
-        duration: performance.now() - startedAt,
-        decision: {
-          ...decision,
-          allowed: false,
-          reason,
-          requiresConfirmation:
-            effectiveDecision.requiresConfirmation ?? decision.requiresConfirmation,
-          risk: effectiveDecision.risk,
-        },
-      };
-    }
-
-    this.eventLog.record("tool.started", {
-      sessionId: input.sessionId,
-      mode,
-      tool: input.toolName,
-      risk: effectiveDecision.risk,
-      runtimeApi: true,
-      metadataKeys: Object.keys(input.metadata ?? {}).sort(),
+    return this.toolExecutor.execute({
+      ...input,
+      mode: input.mode ?? session?.mode ?? "ask",
     });
-    const result = await this.toolRegistry.execute(input.toolName, input.input);
-    this.eventLog.record("tool.completed", {
-      sessionId: input.sessionId,
-      mode,
-      tool: input.toolName,
-      success: result.success,
-      duration: result.duration,
-      runtimeApi: true,
-    });
-
-    return {
-      toolName: input.toolName,
-      success: result.success,
-      output: result.data,
-      error: result.error,
-      duration: result.duration,
-      decision: {
-        ...decision,
-        risk: effectiveDecision.risk,
-        requiresConfirmation: decision.requiresConfirmation,
-      },
-    };
   }
 
   assertToolAllowed(mode: RuntimeMode, toolName: string, input?: Record<string, unknown>): boolean {

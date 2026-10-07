@@ -7,6 +7,154 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0-rc.3] - 2026-10-07
+
+### Added
+
+- xAI, MiniMax, Cerebras, Azure OpenAI and native Amazon Bedrock providers, including cloud credential onboarding.
+- Image generation/editing and audio-file analysis through explicitly configured OpenAI/Gemini API routes.
+- Live OpenRouter and Hugging Face model discovery in the model selector.
+
+### Changed
+
+- Refresh platform-specific model catalogs from official documentation; migrate deprecated/retired saved IDs with explicit warnings.
+- Preserve scoped reasoning and signed/encrypted state across tool rounds; normalize typed content and send provider-specific request flags.
+- Update SDKs and model effort modes, pricing tiers, permissions and capability metadata. Regional cloud rates remain unknown until verified.
+- Update simple-git to 4.0.2, Undici to 7.30.0 and brace-expansion to 5.0.12 to resolve the production dependency advisories. Coco already uses the supported named simpleGit export. Patch development dependencies and retain Vitest 4 compatibility; the complete dependency audit reports no advisories.
+
+### Validation and limits
+
+Release gate, installed-package smoke and registry verification are required before publication. Paid-provider access is not live-verified; deployment/account/region restrictions still apply. This candidate continues on the `next` channel; the previous product capability evaluation has not been promoted to stable. See `docs/guides/PROVIDERS.md` for official sources and configuration.
+
+## [2.42.0-rc.2] - 2026-09-17
+
+### Fixed
+
+- Reject incomplete provider responses and exhausted tool iteration budgets instead of reporting a completed runtime turn. Experimental headless execution now returns a JSON failure through its existing error path.
+- Apply terminal-response validation to default chat and streaming runtime entry points; preserve partial streamed output while reporting failure, and reject late responses after cancellation. Forward cancellation to tools and stop the remainder of a batch after abort.
+
+### Evidence
+
+Reserved local-model tasks exposed the false-success path. Their original failures remain recorded; neither prompts nor judges were adjusted to turn those results into successes. A completed turn still does not certify task correctness. See the final capability audit for model limitations and artifact provenance.
+
+## [2.42.0-rc.1] - 2026-09-17
+
+Release candidate consolidating the next.5–next.8 reliability changes. No additional runtime changes after next.8. Stable promotion remains conditional on final evaluation and publication verification recorded in `docs/evolution/REMAINING_DELIVERIES.md`.
+
+## [2.42.0-next.8] - 2026-09-17
+
+### Fixed
+
+- Preserve original instructions and complete tool pairs during context compaction; retain history on cancellation, truncated summaries or concurrent session changes. Bound repository context selection and validate cache scope and schema.
+- Honor explicit reasoning-off for supported Ollama model families; retain existing models and defaults. Preserve thinking preferences and MCP environment values containing equals signs.
+- Replace destructive legacy Git checkpoint restoration with project/HEAD-bound snapshots and conservative restoration; reject unverifiable metadata and protect ignored files from rename collisions.
+- Require authorization for Git branch mutations and cloud image uploads; validate image paths and forward cancellation to vision SDKs.
+- Create skills using separate command arguments and validated names; report missing review evidence instead of approving it.
+
+### Validation and limits
+
+The exact candidate passed 8,310 main tests and 28 REPL tests, with 80.01% statements and 80.73% lines; both coverage thresholds are now enforced at 80%. Real local Ollama evaluation, independent agent reviews and documented limitations are recorded in `docs/evolution/`. No paid-provider live validation, operating-system sandbox guarantee or competitor benchmark is claimed.
+
+## [2.42.0-next.7] - 2026-09-17
+
+### Fixed
+
+- Bound headless input and produce consistent JSON failures; preserve UTF-8 input and Unicode terminal wrapping. Keep update checks from blocking the prompt.
+- Validate and reuse provider candidates before committing preferences, preserve explicit authentication choices, and stop cleanly when setup is cancelled.
+- Publish a separately verified VSIX with executable/argument separation, workspace trust and terminal lifecycle checks, including real Extension Host tests. Available as a GitHub asset; not published to Marketplace.
+
+## [2.42.0-next.6] - 2026-09-17
+
+### Added
+
+- Session-owned background jobs in the REPL: two active jobs, bounded runtime/output, status/read/cancel tools and POSIX process-group cleanup. Other hosts must explicitly own their lifecycle; Windows background launch remains unavailable.
+
+### Fixed
+
+- Close REPL-owned processes and listeners on normal and exceptional exits; clear/resume closes the previous session owner.
+- Validate canonical project identity on resume, retain current consent/configuration and never replay interrupted effects.
+- Capture bounded regular-file edits with verified before/after images. Rewind checks conflicts, path scope and content hashes, preserves the Git index and rejects unverifiable legacy checkpoints.
+
+### Limits
+
+No rollback guarantee for shell, remote effects, directories, binary files, hardlinks or edits over 1 MiB. Multi-file restore can be partial on concurrent changes/I/O failure and reports that explicitly. Background jobs do not survive host restart. See `docs/evolution/NEXT_DELIVERY_NEXT6.md`.
+
+## [2.42.0-next.5] - 2026-09-17
+
+### Fixed
+
+- Restore `calculate_quality` as an explicit evidence report: measured, not applicable, unavailable and failed measurements remain distinct; incomplete evidence cannot authorize acceptance.
+- Bind tests, review and final acceptance to the same project content. Keep acceptance separate from convergence and preserve effective weights for applicable dimensions.
+- Generate fresh coverage in isolated report directories; fail closed on missing instrumentation, invalid linter output, unsupported source or interrupted analysis commands.
+
+### Validation and limits
+
+Real local Ollama baseline against next.4: qwen3.5:4b passed 4/5 synthetic tasks, qwen3.5:9b passed 5/5. These are a reference, not evidence of improvement in this release or general coding capability. Quality certification currently covers JavaScript/TypeScript; unsupported languages report unavailable. npm `next` only; background, recovery, VSIX, extended context evaluation and final audit remain separate deliveries.
+
+## [2.42.0-next.4] - 2026-09-17
+
+### Fixed
+
+- Bound incoming MCP frames, SSE events and HTTP bodies to 16 MiB; preserve split UTF-8 and close oversized connections without replaying tool calls.
+- Own POSIX test-runner process groups through cancellation and completion; bound output by bytes and reject overflow or abnormal termination instead of accepting a passing report.
+- Carry cancellation through app interviews and onboarding/authentication; close owned callbacks and guard persistence against late success.
+- Preserve local tool input schemas with Zod 4 and validate original MCP JSON Schemas with Ajv without changing arguments. Keep all existing built-in tools and models.
+- Use native JSON Schema fields for Google tools and explicitly preserve optional inputs in OpenAI requests.
+- Prepare GitHub Actions trusted npm publication through OIDC, without a token fallback or token-only authentication preflight.
+
+### Candidate limits
+
+npm `next` only; `latest` stays unchanged. Windows process cleanup covers direct children; remote effects and escaped process groups are not controlled. `calculate_quality` and `bash_background` remain unavailable. No paid-model evaluation or complete external product audit is claimed. Publication requires the package owner's trusted-publisher configuration; see `docs/evolution/NEXT_DELIVERY_NEXT4.md` for actual verification and publication status.
+
+## [2.42.0-next.3] - 2026-09-17
+
+### Fixed
+
+- Bound foreground shell capture and forwarded output during streaming; preserve ownership of POSIX process groups on cancellation, deadlines and shell exit, with TERM/KILL escalation.
+- Disable unowned `bash_background` explicitly while retaining its compatibility export.
+- Propagate host cancellation and optional total deadlines through coordinated agents, sprint reviewers and test subprocesses. Drain started batches and reject late success; clean up `/build-app` signal listeners.
+- Give only the full-project architecture symbol test a60-second budget for instrumented shared CI runners, preserving all detection and assertions.
+
+### Candidate limits
+
+npm `next` only. Windows shell and `run_tests` cleanup cover direct children; deliberately escaped process groups and remote effects are not controlled. No sandbox claim. Full quality methodology, MCP quotas, recovery, VSIX and final audit remain pending. Existing model catalog retained. See `docs/evolution/ESSENTIALS_NEXT3.md` for verification and publication status.
+
+## [2.42.0-next.2] - 2026-09-16
+
+### Fixed
+
+- Codex and Google providers require valid terminal responses and validate complete tool batches before exposing executable calls. Preserve native Google identities and thought signatures.
+- REPL refuses incomplete or contradictory tool batches without execution or automatic replay; provisional identity fragments remain supported.
+- `calculate_quality` now explicitly reports aggregate evaluation unavailable, without a score or acceptance certification, pending E09. Individual test/lint/complexity tools remain available.
+- npm publication reports controlled authentication, permission, OTP and network diagnostics without exposing raw output; verifies immutable integrity and release channel.
+
+### Candidate limits
+
+Target npm `next` only; stable `latest` stays unchanged. Process descendant/background ownership, streaming output quotas, full analyzer applicability, final independent audit and live-model evaluations remain pending. No VSIX/hosted deployment or model catalog changes. See the handoff for actual publication status; a version entry does not establish that npm publication succeeded.
+
+## [2.42.0-next.1] - 2026-09-16
+
+### Candidate scope
+
+Incremental hardening candidate on npm `next`; `latest` remains unchanged. The evolution programme is paused after E07.n2b, not declared complete. Use only in trusted local repositories with human review.
+
+### Fixed
+
+- Shared authorization for local, delegated and MCP tools; stricter path and shell approval boundaries.
+- Honest unavailable states for unfinished legacy build/resume and unsafe file undo paths.
+- Cancellation ownership across providers, authentication, delegated agents, graph execution and MCP connections; no automatic replay of uncertain MCP tool writes.
+- Strict tool argument parsing without JSON repair or invented empty inputs; OpenAI and Anthropic require valid response completion before exposing executable tools.
+- MCP stdio shutdown waits for process closure and escalates when necessary; SSE and HTTP shutdown drain owned work.
+- Release checks cover the installed artifact and fail publication when validation fails. Gemini SDK updated to2.22.0; existing model catalog retained.
+
+### Known limitations
+
+- Terminal integrity for Codex/Gemini/Vertex and consumer-side defenses remain pending.
+- Process descendant/background ownership, streaming output quotas and quality measurement availability still require work. Cancellation does not guarantee rollback or termination of remote effects.
+- No claim of sandboxing untrusted repositories, a completed quality audit, or improved task success with live models. VSIX/hosted deployment and model catalog expansion are outside this candidate.
+
+See `docs/evolution/HANDOFF_2026-09-16.md` for exact progress and resumption steps.
+
 ## [2.41.0] - 2026-06-20
 
 ### Added

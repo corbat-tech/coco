@@ -23,11 +23,15 @@ import type {
   ToolDefinition,
   ToolUseContent,
   ToolResultContent,
+  ToolCall,
 } from "./types.js";
+import { createRequestScope } from "../utils/request-scope.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 import { ProviderError } from "../utils/errors.js";
 import { getValidAccessToken } from "../auth/index.js";
-import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
-import { ResponsesToolCallAssembler, parseToolCallArguments } from "./tool-call-normalizer.js";
+import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import { ResponsesToolCallAssembler } from "./tool-call-normalizer.js";
+import { ResponseIntegrityError } from "./response-integrity.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
 /**
@@ -116,6 +120,33 @@ type ResponsesInputItem =
   | ResponsesFunctionCall
   | ResponsesFunctionCallOutput;
 
+/** Validate the whole response before exposing any executable call. */
+function completeToolResponse(
+  payload: unknown,
+  assembler: ResponsesToolCallAssembler,
+  completedCalls: ToolCall[],
+  provider: string,
+): ToolCall[] {
+  const response = payload as Record<string, unknown> | undefined;
+  if (
+    response?.status !== "completed" ||
+    !Array.isArray(response.output) ||
+    response.output.some((item: unknown) => !item || typeof item !== "object")
+  ) {
+    throw new ResponseIntegrityError("Tool response has an inconsistent terminal status", provider);
+  }
+  const calls = assembler.finalizeCompleted(provider, response.output, completedCalls);
+  if (
+    calls.some(
+      (call) =>
+        typeof call.id !== "string" || !call.id || typeof call.name !== "string" || !call.name,
+    )
+  ) {
+    throw new ResponseIntegrityError("Completed tool call is missing its identity", provider);
+  }
+  return calls;
+}
+
 /**
  * Codex provider implementation
  * Uses ChatGPT Plus/Pro subscription via OAuth
@@ -192,11 +223,14 @@ export class CodexProvider implements LLMProvider {
   /**
    * Check if provider is available (has valid OAuth tokens)
    */
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     try {
-      const tokenResult = await getValidAccessToken("openai");
+      const tokenResult = await getValidAccessToken("openai", options?.signal);
+      options?.signal?.throwIfAborted();
       return tokenResult !== null;
-    } catch {
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
       return false;
     }
   }
@@ -204,7 +238,8 @@ export class CodexProvider implements LLMProvider {
   /**
    * Make a request to the Codex API
    */
-  private async makeRequest(body: Record<string, unknown>): Promise<Response> {
+  private async makeRequest(body: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
+    signal.throwIfAborted();
     this.ensureInitialized();
 
     const headers: Record<string, string> = {
@@ -221,6 +256,7 @@ export class CodexProvider implements LLMProvider {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal,
     });
 
     if (!response.ok) {
@@ -368,122 +404,139 @@ export class CodexProvider implements LLMProvider {
     return body;
   }
 
-  /**
-   * Read SSE stream and call handler for each parsed event.
-   * Returns when stream ends.
-   */
-  private async readSSEStream(
+  /** Read events with the request's transport signal; always close our reader. */
+  private async *readSSEEvents(
     response: Response,
-    onEvent: (event: Record<string, unknown>) => void,
-  ): Promise<void> {
+    signal: AbortSignal,
+    strict = false,
+  ): AsyncIterable<Record<string, unknown>> {
     if (!response.body) {
       throw new ProviderError("No response body from Codex API", { provider: this.id });
     }
-
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-
-    // Activity-based timeout using AbortController
-    let lastActivityTime = Date.now();
-    const timeoutController = new AbortController();
-
-    const timeoutInterval = setInterval(() => {
-      if (Date.now() - lastActivityTime > STREAM_TIMEOUT_MS) {
-        clearInterval(timeoutInterval);
-        timeoutController.abort();
-      }
-    }, 5000);
-
     try {
       while (true) {
-        if (timeoutController.signal.aborted) break;
-
+        signal.throwIfAborted();
         const { done, value } = await reader.read();
+        signal.throwIfAborted();
         if (done) break;
-
-        lastActivityTime = Date.now();
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-
         for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6).trim();
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
           if (!data || data === "[DONE]") continue;
-
+          let event: Record<string, unknown>;
           try {
-            onEvent(JSON.parse(data));
+            event = JSON.parse(data);
           } catch {
-            // Invalid JSON, skip
+            if (strict)
+              throw new ResponseIntegrityError("Malformed tool response event", this.name);
+            continue;
           }
+          if (strict && (!event || typeof event !== "object" || Array.isArray(event))) {
+            throw new ResponseIntegrityError("Malformed tool response event", this.name);
+          }
+          signal.throwIfAborted();
+          yield event;
+          signal.throwIfAborted();
         }
       }
     } finally {
-      clearInterval(timeoutInterval);
-      reader.releaseLock();
+      try {
+        await reader.cancel();
+      } catch {
+        /* Preserve the original transport failure. */
+      } finally {
+        reader.releaseLock();
+      }
     }
+  }
 
-    if (timeoutController.signal.aborted) {
-      throw new Error(
-        `Stream timeout: No response from Codex API for ${STREAM_TIMEOUT_MS / 1000}s`,
-      );
-    }
+  private async readSSEStream(
+    response: Response,
+    onEvent: (event: Record<string, unknown>) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    for await (const event of this.readSSEEvents(response, signal)) onEvent(event);
   }
 
   /**
    * Send a chat message using Codex Responses API format
    */
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
-    return withRetry(async () => {
-      const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-      const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-      const body = this.buildRequestBody(model, input, instructions, {
-        maxTokens: options?.maxTokens,
-        temperature: options?.temperature,
-      });
+    this.ensureInitialized();
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? STREAM_TIMEOUT_MS,
+    );
+    try {
+      return await withRetry(
+        async () => {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+          const body = this.buildRequestBody(model, input, instructions, {
+            maxTokens: options?.maxTokens,
+            temperature: options?.temperature,
+          });
 
-      const response = await this.makeRequest(body);
+          const response = await this.makeRequest(body, scope.signal);
 
-      let content = "";
-      let responseId = `codex-${Date.now()}`;
-      let inputTokens = 0;
-      let outputTokens = 0;
-      let status = "completed";
+          let content = "";
+          let responseId = `codex-${Date.now()}`;
+          let inputTokens = 0;
+          let outputTokens = 0;
+          let status = "completed";
 
-      await this.readSSEStream(response, (event) => {
-        if (event.id) responseId = event.id as string;
+          await this.readSSEStream(
+            response,
+            (event) => {
+              if (event.id) responseId = event.id as string;
 
-        if (event.type === "response.output_text.delta" && event.delta) {
-          content += event.delta as string;
-        } else if (event.type === "response.output_text.done" && event.text) {
-          content = event.text as string;
-        } else if (event.type === "response.completed" && event.response) {
-          const resp = event.response as Record<string, unknown>;
-          const usage = resp.usage as Record<string, number> | undefined;
-          if (usage) {
-            inputTokens = usage.input_tokens ?? 0;
-            outputTokens = usage.output_tokens ?? 0;
-          }
-          status = (resp.status as string) ?? "completed";
-        }
-      });
+              if (event.type === "response.output_text.delta" && event.delta) {
+                content += event.delta as string;
+              } else if (event.type === "response.output_text.done" && event.text) {
+                content = event.text as string;
+              } else if (event.type === "response.completed" && event.response) {
+                const resp = event.response as Record<string, unknown>;
+                const usage = resp.usage as Record<string, number> | undefined;
+                if (usage) {
+                  inputTokens = usage.input_tokens ?? 0;
+                  outputTokens = usage.output_tokens ?? 0;
+                }
+                status = (resp.status as string) ?? "completed";
+              }
+            },
+            scope.signal,
+          );
 
-      const stopReason =
-        status === "completed"
-          ? ("end_turn" as const)
-          : status === "incomplete"
-            ? ("max_tokens" as const)
-            : ("end_turn" as const);
+          const stopReason =
+            status === "completed"
+              ? ("end_turn" as const)
+              : status === "incomplete"
+                ? ("max_tokens" as const)
+                : ("end_turn" as const);
 
-      return {
-        id: responseId,
-        content,
-        stopReason,
-        model,
-        usage: { inputTokens, outputTokens },
-      };
-    }, this.retryConfig);
+          return {
+            id: responseId,
+            content,
+            stopReason,
+            model,
+            usage: { inputTokens, outputTokens },
+          };
+        },
+        resolveRetryConfig(this.retryConfig, options?.maxRetries),
+        scope.signal,
+      );
+    } catch (error) {
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
   }
 
   /**
@@ -493,38 +546,210 @@ export class CodexProvider implements LLMProvider {
     messages: Message[],
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
-    return withRetry(async () => {
+    this.ensureInitialized();
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? STREAM_TIMEOUT_MS,
+    );
+    try {
+      return await withRetry(
+        async () => {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+          const body = this.buildRequestBody(model, input, instructions, {
+            tools: options.tools,
+            maxTokens: options?.maxTokens,
+          });
+
+          const response = await this.makeRequest(body, scope.signal);
+
+          let content = "";
+          let responseId = `codex-${Date.now()}`;
+          let inputTokens = 0;
+          let outputTokens = 0;
+          const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+
+          const toolCallAssembler = new ResponsesToolCallAssembler();
+
+          let completed = false;
+          for await (const event of this.readSSEEvents(response, scope.signal, true)) {
+            if (event.id) responseId = event.id as string;
+
+            switch (event.type) {
+              case "response.output_text.delta":
+                content += (event.delta as string) ?? "";
+                break;
+
+              case "response.output_text.done":
+                content = (event.text as string) ?? content;
+                break;
+
+              case "response.output_item.added": {
+                toolCallAssembler.onOutputItemAdded({
+                  output_index: event.output_index as number | undefined,
+                  item: event.item as {
+                    type?: string;
+                    id?: string;
+                    call_id?: string;
+                    name?: string;
+                    arguments?: string;
+                  },
+                });
+                break;
+              }
+
+              case "response.function_call_arguments.delta": {
+                toolCallAssembler.onArgumentsDelta({
+                  item_id: event.item_id as string | undefined,
+                  output_index: event.output_index as number | undefined,
+                  delta: event.delta as string | undefined,
+                });
+                break;
+              }
+
+              case "response.function_call_arguments.done": {
+                const toolCall = toolCallAssembler.onArgumentsDone(
+                  {
+                    item_id: event.item_id as string | undefined,
+                    output_index: event.output_index as number | undefined,
+                    arguments: event.arguments as string | undefined,
+                  },
+                  this.name,
+                );
+                if (toolCall) {
+                  toolCalls.push({
+                    id: toolCall.id,
+                    name: toolCall.name,
+                    input: toolCall.input,
+                  });
+                }
+                break;
+              }
+
+              case "response.incomplete":
+              case "response.failed":
+              case "error":
+                throw new ResponseIntegrityError("Tool response did not complete", this.name);
+
+              case "response.completed": {
+                const calls = completeToolResponse(
+                  event.response,
+                  toolCallAssembler,
+                  toolCalls,
+                  this.name,
+                );
+                const resp = event.response as Record<string, unknown>;
+                const usage = resp.usage as Record<string, number> | undefined;
+                if (usage) {
+                  inputTokens = usage.input_tokens ?? 0;
+                  outputTokens = usage.output_tokens ?? 0;
+                }
+                toolCalls.splice(0, toolCalls.length, ...calls);
+                completed = true;
+                break;
+              }
+            }
+            if (completed) break;
+          }
+          if (!completed) {
+            throw new ResponseIntegrityError(
+              "Tool response ended without a terminal event",
+              this.name,
+            );
+          }
+
+          return {
+            id: responseId,
+            content,
+            stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
+            model,
+            usage: { inputTokens, outputTokens },
+            toolCalls,
+          };
+        },
+        resolveRetryConfig(this.retryConfig, options?.maxRetries),
+        scope.signal,
+      );
+    } catch (error) {
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
+  }
+
+  /**
+   * Stream a chat response (no tools)
+   */
+  async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
+    this.ensureInitialized();
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? STREAM_TIMEOUT_MS,
+    );
+    try {
       const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
       const body = this.buildRequestBody(model, input, instructions, {
-        tools: options.tools,
         maxTokens: options?.maxTokens,
       });
+      const response = await this.makeRequest(body, scope.signal);
+      for await (const event of this.readSSEEvents(response, scope.signal)) {
+        scope.signal.throwIfAborted();
+        if (event.type === "response.output_text.delta" && event.delta) {
+          yield { type: "text", text: event.delta as string };
+          scope.signal.throwIfAborted();
+        } else if (event.type === "response.completed") {
+          yield { type: "done", stopReason: "end_turn" };
+          scope.signal.throwIfAborted();
+        }
+      }
+      scope.signal.throwIfAborted();
+    } catch (error) {
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
+  }
 
-      const response = await this.makeRequest(body);
-
-      let content = "";
-      let responseId = `codex-${Date.now()}`;
-      let inputTokens = 0;
-      let outputTokens = 0;
-      const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
-
+  /**
+   * Stream a chat response with tool use via Responses API.
+   *
+   * IMPORTANT: fnCallBuilders is keyed by output item ID (item.id), NOT by
+   * call_id. The streaming events (function_call_arguments.delta/done) use
+   * item_id which references the output item's id field, not call_id.
+   */
+  async *streamWithTools(
+    messages: Message[],
+    options: ChatWithToolsOptions,
+  ): AsyncIterable<StreamChunk> {
+    this.ensureInitialized();
+    const scope = createRequestScope(
+      options.signal,
+      options.timeout ?? this.config.timeout ?? STREAM_TIMEOUT_MS,
+    );
+    try {
+      const model = options.model ?? this.config.model ?? DEFAULT_MODEL;
+      const { input, instructions } = this.convertToResponsesInput(messages, options.system);
+      const body = this.buildRequestBody(model, input, instructions, {
+        tools: options.tools,
+        maxTokens: options.maxTokens,
+      });
+      const response = await this.makeRequest(body, scope.signal);
       const toolCallAssembler = new ResponsesToolCallAssembler();
-
-      await this.readSSEStream(response, (event) => {
-        if (event.id) responseId = event.id as string;
-
+      const completedCalls: ToolCall[] = [];
+      for await (const event of this.readSSEEvents(response, scope.signal, true)) {
+        scope.signal.throwIfAborted();
         switch (event.type) {
           case "response.output_text.delta":
-            content += (event.delta as string) ?? "";
-            break;
-
-          case "response.output_text.done":
-            content = (event.text as string) ?? content;
+            scope.signal.throwIfAborted();
+            yield { type: "text", text: (event.delta as string) ?? "" };
+            scope.signal.throwIfAborted();
             break;
 
           case "response.output_item.added": {
-            toolCallAssembler.onOutputItemAdded({
+            const start = toolCallAssembler.onOutputItemAdded({
               output_index: event.output_index as number | undefined,
               item: event.item as {
                 type?: string;
@@ -534,6 +759,14 @@ export class CodexProvider implements LLMProvider {
                 arguments?: string;
               },
             });
+            if (start) {
+              scope.signal.throwIfAborted();
+              yield {
+                type: "tool_use_start",
+                toolCall: { id: start.id, name: start.name },
+              };
+              scope.signal.throwIfAborted();
+            }
             break;
           }
 
@@ -555,320 +788,40 @@ export class CodexProvider implements LLMProvider {
               },
               this.name,
             );
-            if (toolCall) {
-              toolCalls.push({
-                id: toolCall.id,
-                name: toolCall.name,
-                input: toolCall.input,
-              });
-            }
+            if (toolCall) completedCalls.push(toolCall);
             break;
           }
+
+          case "response.incomplete":
+          case "response.failed":
+          case "error":
+            throw new ResponseIntegrityError("Tool response did not complete", this.name);
 
           case "response.completed": {
-            const resp = event.response as Record<string, unknown>;
-            const usage = resp.usage as Record<string, number> | undefined;
-            if (usage) {
-              inputTokens = usage.input_tokens ?? 0;
-              outputTokens = usage.output_tokens ?? 0;
+            const calls = completeToolResponse(
+              event.response,
+              toolCallAssembler,
+              completedCalls,
+              this.name,
+            );
+            for (const toolCall of calls) {
+              scope.signal.throwIfAborted();
+              yield { type: "tool_use_end", toolCall };
+              scope.signal.throwIfAborted();
             }
-            for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
-              toolCalls.push({
-                id: toolCall.id,
-                name: toolCall.name,
-                input: toolCall.input,
-              });
-            }
-            break;
-          }
-        }
-      });
-
-      return {
-        id: responseId,
-        content,
-        stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
-        model,
-        usage: { inputTokens, outputTokens },
-        toolCalls,
-      };
-    }, this.retryConfig);
-  }
-
-  /**
-   * Stream a chat response (no tools)
-   */
-  async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
-    const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-    const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-    const body = this.buildRequestBody(model, input, instructions, {
-      maxTokens: options?.maxTokens,
-    });
-
-    const response = await this.makeRequest(body);
-
-    if (!response.body) {
-      throw new ProviderError("No response body from Codex API", { provider: this.id });
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let lastActivityTime = Date.now();
-    const timeoutController = new AbortController();
-
-    const timeoutInterval = setInterval(() => {
-      if (Date.now() - lastActivityTime > STREAM_TIMEOUT_MS) {
-        clearInterval(timeoutInterval);
-        timeoutController.abort();
-      }
-    }, 5000);
-
-    try {
-      while (true) {
-        if (timeoutController.signal.aborted) break;
-
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        lastActivityTime = Date.now();
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6).trim();
-          if (!data || data === "[DONE]") continue;
-
-          try {
-            const event = JSON.parse(data);
-
-            if (event.type === "response.output_text.delta" && event.delta) {
-              yield { type: "text", text: event.delta };
-            } else if (event.type === "response.completed") {
-              yield { type: "done", stopReason: "end_turn" };
-            }
-          } catch {
-            // Invalid JSON, skip
+            yield { type: "done", stopReason: calls.length ? "tool_use" : "end_turn" };
+            scope.signal.throwIfAborted();
+            return;
           }
         }
       }
+      scope.signal.throwIfAborted();
+      throw new ResponseIntegrityError("Tool response ended without a terminal event", this.name);
+    } catch (error) {
+      rethrowCancellation(error, scope.signal);
+      throw error;
     } finally {
-      clearInterval(timeoutInterval);
-      reader.releaseLock();
-    }
-
-    if (timeoutController.signal.aborted) {
-      throw new Error(
-        `Stream timeout: No response from Codex API for ${STREAM_TIMEOUT_MS / 1000}s`,
-      );
-    }
-  }
-
-  /**
-   * Stream a chat response with tool use via Responses API.
-   *
-   * IMPORTANT: fnCallBuilders is keyed by output item ID (item.id), NOT by
-   * call_id. The streaming events (function_call_arguments.delta/done) use
-   * item_id which references the output item's id field, not call_id.
-   */
-  async *streamWithTools(
-    messages: Message[],
-    options: ChatWithToolsOptions,
-  ): AsyncIterable<StreamChunk> {
-    const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-    const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-    const body = this.buildRequestBody(model, input, instructions, {
-      tools: options.tools,
-      maxTokens: options?.maxTokens,
-    });
-
-    const response = await this.makeRequest(body);
-
-    if (!response.body) {
-      throw new ProviderError("No response body from Codex API", { provider: this.id });
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    const toolCallAssembler = new ResponsesToolCallAssembler();
-    const emittedToolCallIds = new Set<string>();
-    const emittedToolCallSignatures = new Set<string>();
-
-    // Activity-based timeout using AbortController (safe for async generators)
-    let lastActivityTime = Date.now();
-    const timeoutController = new AbortController();
-
-    const timeoutInterval = setInterval(() => {
-      if (Date.now() - lastActivityTime > STREAM_TIMEOUT_MS) {
-        clearInterval(timeoutInterval);
-        timeoutController.abort();
-      }
-    }, 5000);
-
-    try {
-      while (true) {
-        if (timeoutController.signal.aborted) break;
-
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        lastActivityTime = Date.now();
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6).trim();
-          if (!data || data === "[DONE]") continue;
-
-          let event: Record<string, unknown>;
-          try {
-            event = JSON.parse(data);
-          } catch {
-            continue;
-          }
-
-          switch (event.type) {
-            case "response.output_text.delta":
-              yield { type: "text", text: (event.delta as string) ?? "" };
-              break;
-
-            case "response.output_item.added": {
-              const start = toolCallAssembler.onOutputItemAdded({
-                output_index: event.output_index as number | undefined,
-                item: event.item as {
-                  type?: string;
-                  id?: string;
-                  call_id?: string;
-                  name?: string;
-                  arguments?: string;
-                },
-              });
-              if (start) {
-                yield {
-                  type: "tool_use_start",
-                  toolCall: { id: start.id, name: start.name },
-                };
-              }
-              break;
-            }
-
-            case "response.function_call_arguments.delta": {
-              toolCallAssembler.onArgumentsDelta({
-                item_id: event.item_id as string | undefined,
-                output_index: event.output_index as number | undefined,
-                delta: event.delta as string | undefined,
-              });
-              break;
-            }
-
-            case "response.function_call_arguments.done": {
-              const toolCall = toolCallAssembler.onArgumentsDone(
-                {
-                  item_id: event.item_id as string | undefined,
-                  output_index: event.output_index as number | undefined,
-                  arguments: event.arguments as string | undefined,
-                },
-                this.name,
-              );
-              if (toolCall) {
-                if (toolCall.id) emittedToolCallIds.add(toolCall.id);
-                const signature = `${toolCall.name}:${JSON.stringify(toolCall.input ?? {})}`;
-                emittedToolCallSignatures.add(signature);
-                yield {
-                  type: "tool_use_end",
-                  toolCall: {
-                    id: toolCall.id,
-                    name: toolCall.name,
-                    input: toolCall.input,
-                  },
-                };
-              }
-              break;
-            }
-
-            case "response.completed": {
-              // Emit any remaining function calls not finalized via done events
-              for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
-                if (toolCall.id) emittedToolCallIds.add(toolCall.id);
-                const signature = `${toolCall.name}:${JSON.stringify(toolCall.input ?? {})}`;
-                emittedToolCallSignatures.add(signature);
-                yield {
-                  type: "tool_use_end",
-                  toolCall: {
-                    id: toolCall.id,
-                    name: toolCall.name,
-                    input: toolCall.input,
-                  },
-                };
-              }
-
-              const responsePayload = event.response as
-                | {
-                    output?: Array<{
-                      type?: string;
-                      call_id?: string;
-                      name?: string;
-                      arguments?: string;
-                    }>;
-                  }
-                | undefined;
-              const output =
-                (responsePayload?.output as Array<{
-                  type?: string;
-                  call_id?: string;
-                  name?: string;
-                  arguments?: string;
-                }>) ?? [];
-
-              // Fallback: some compatible backends include function calls in
-              // response.completed.output but may skip the granular done events.
-              for (const item of output) {
-                if (item.type !== "function_call" || !item.call_id || !item.name) continue;
-                const parsedInput = parseToolCallArguments(item.arguments ?? "{}", this.name);
-                const signature = `${item.name}:${JSON.stringify(parsedInput ?? {})}`;
-                if (
-                  emittedToolCallIds.has(item.call_id) ||
-                  emittedToolCallSignatures.has(signature)
-                ) {
-                  continue;
-                }
-                emittedToolCallIds.add(item.call_id);
-                emittedToolCallSignatures.add(signature);
-                yield {
-                  type: "tool_use_end",
-                  toolCall: {
-                    id: item.call_id,
-                    name: item.name,
-                    input: parsedInput,
-                  },
-                };
-              }
-
-              const hasToolCalls = output.some((i) => i.type === "function_call");
-              yield {
-                type: "done",
-                stopReason: hasToolCalls ? "tool_use" : "end_turn",
-              };
-              break;
-            }
-          }
-        }
-      }
-    } finally {
-      clearInterval(timeoutInterval);
-      reader.releaseLock();
-    }
-
-    if (timeoutController.signal.aborted) {
-      throw new Error(
-        `Stream timeout: No response from Codex API for ${STREAM_TIMEOUT_MS / 1000}s`,
-      );
+      scope.dispose();
     }
   }
 }

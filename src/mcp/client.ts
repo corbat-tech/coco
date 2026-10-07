@@ -6,6 +6,7 @@
 
 import type {
   MCPClient,
+  MCPRequestOptions,
   MCPTransport,
   MCPInitializeParams,
   MCPInitializeResult,
@@ -19,6 +20,7 @@ import type {
   JSONRPCRequest,
   JSONRPCResponse,
 } from "./types.js";
+import { createRequestScope } from "../utils/request-scope.js";
 import { MCPConnectionError, MCPTimeoutError } from "./errors.js";
 
 /**
@@ -35,8 +37,7 @@ export class MCPClientImpl implements MCPClient {
     string | number,
     {
       resolve: (value: unknown) => void;
-      reject: (error: Error) => void;
-      timeout: ReturnType<typeof setTimeout>;
+      reject: (error: unknown) => void;
     }
   >();
   private initialized = false;
@@ -74,9 +75,6 @@ export class MCPClientImpl implements MCPClient {
     const pending = this.pendingRequests.get(message.id);
     if (!pending) return;
 
-    clearTimeout(pending.timeout);
-    this.pendingRequests.delete(message.id);
-
     if (message.error) {
       pending.reject(new Error(message.error.message));
     } else {
@@ -89,7 +87,6 @@ export class MCPClientImpl implements MCPClient {
    */
   private rejectAllPending(error: Error): void {
     for (const [, pending] of this.pendingRequests) {
-      clearTimeout(pending.timeout);
       pending.reject(error);
     }
     this.pendingRequests.clear();
@@ -98,37 +95,113 @@ export class MCPClientImpl implements MCPClient {
   /**
    * Send a request and wait for response
    */
-  private async sendRequest<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+  private async sendRequest<T>(
+    method: string,
+    params?: Record<string, unknown>,
+    options: MCPRequestOptions = {},
+  ): Promise<T> {
+    const { signal } = options;
+    signal?.throwIfAborted();
+    const timeoutMs = options.timeout ?? this.requestTimeout;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 2147483647) {
+      throw new RangeError("MCP request timeout must be between 0 and 2147483647ms");
+    }
     if (!this.transport.isConnected()) {
       throw new MCPConnectionError("Transport not connected");
     }
 
     const id = ++this.requestId;
-    const request: JSONRPCRequest = {
-      jsonrpc: "2.0",
-      id,
-      method,
-      params,
-    };
-
+    const request: JSONRPCRequest = { jsonrpc: "2.0", id, method, params };
     return new Promise<T>((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      let settled = false;
+      let dispatched = false;
+      let sending = false;
+      let deferredCancellation: { reason: unknown } | undefined;
+      const transportController = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = () => {
+        if (settled) return false;
+        settled = true;
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
         this.pendingRequests.delete(id);
-        reject(new MCPTimeoutError(`Request '${method}' timed out after ${this.requestTimeout}ms`));
-      }, this.requestTimeout);
-
+        return true;
+      };
+      const fail = (error: unknown) => {
+        if (cleanup()) {
+          transportController.abort(error);
+          reject(error);
+        }
+      };
+      const cancel = (reason: unknown) => {
+        if (settled) return;
+        if (method === "initialize" && sending) {
+          // Auth may be committing a known token rotation. Keep a recipient for
+          // a save failure before exposing the deadline to the initializer.
+          deferredCancellation = { reason };
+          clearTimeout(timer);
+          transportController.abort(reason);
+          return;
+        }
+        fail(reason);
+        if (dispatched && method !== "initialize") this.notifyCancellation(id);
+      };
+      const onAbort = () => cancel(signal?.reason);
       this.pendingRequests.set(id, {
-        resolve: resolve as (value: unknown) => void,
-        reject,
-        timeout,
+        resolve: (value) => {
+          if (deferredCancellation) return;
+          if (cleanup()) {
+            resolve(value as T);
+            transportController.abort();
+          }
+        },
+        reject: fail,
       });
-
-      this.transport.send(request).catch((error) => {
-        clearTimeout(timeout);
-        this.pendingRequests.delete(id);
-        reject(error);
-      });
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          cancel(new MCPTimeoutError(`Request '${method}' timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      try {
+        // A transport may synchronously deliver a response or throw on dispatch.
+        dispatched = true;
+        sending = true;
+        Promise.resolve(this.transport.send(request, { signal: transportController.signal })).then(
+          () => {
+            sending = false;
+            if (deferredCancellation) fail(deferredCancellation.reason);
+          },
+          (error: unknown) => {
+            sending = false;
+            fail(error);
+          },
+        );
+      } catch (error) {
+        fail(error);
+      }
     });
+  }
+
+  /** Best effort only: cancellation cannot roll back remote side effects. */
+  private notifyCancellation(requestId: string | number): void {
+    const scope = createRequestScope(undefined, 1000);
+    void (async () => {
+      try {
+        await this.transport.send(
+          { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId } },
+          { signal: scope.signal },
+        );
+      } catch {
+        // The original request already has its outcome; notification failure is not global.
+      } finally {
+        scope.dispose();
+      }
+    })();
   }
 
   /**
@@ -146,7 +219,6 @@ export class MCPClientImpl implements MCPClient {
     // Send initialized notification
     await this.transport.send({
       jsonrpc: "2.0",
-      id: ++this.requestId,
       method: "notifications/initialized",
     });
 
@@ -156,17 +228,21 @@ export class MCPClientImpl implements MCPClient {
   /**
    * List available tools
    */
-  async listTools(): Promise<{ tools: MCPTool[] }> {
+  async listTools(options?: MCPRequestOptions): Promise<{ tools: MCPTool[] }> {
     this.ensureInitialized();
-    return this.sendRequest<{ tools: MCPTool[] }>("tools/list");
+    return this.sendRequest<{ tools: MCPTool[] }>("tools/list", undefined, options);
   }
 
   /**
    * Call a tool on the MCP server
    */
-  async callTool(params: MCPCallToolParams): Promise<MCPCallToolResult> {
+  async callTool(
+    params: MCPCallToolParams,
+    options?: MCPRequestOptions,
+  ): Promise<MCPCallToolResult> {
+    options?.signal?.throwIfAborted();
     this.ensureInitialized();
-    return this.sendRequest<MCPCallToolResult>("tools/call", params);
+    return this.sendRequest<MCPCallToolResult>("tools/call", params, options);
   }
 
   /**

@@ -1,3 +1,4 @@
+import { StringDecoder } from "node:string_decoder";
 /**
  * Input Handler for REPL
  *
@@ -398,6 +399,7 @@ export function createInputHandler(_session: ReplSession): InputHandler {
   const sessionHistory: string[] = [...savedHistory];
 
   let closed = false;
+  let finishPrompt: ((value: string | null, error?: Error) => void) | undefined;
   let currentLine = "";
   let cursorPos = 0;
   let completions: Array<{ cmd: string; desc: string }> = [];
@@ -697,7 +699,10 @@ export function createInputHandler(_session: ReplSession): InputHandler {
     async prompt(): Promise<string | null> {
       if (closed) return null;
 
-      return new Promise((resolve) => {
+      if (finishPrompt) throw new Error("An input prompt is already active");
+      return new Promise((resolve, reject) => {
+        const decoder = new StringDecoder("utf8");
+        let settled = false;
         currentLine = "";
         cursorPos = 0;
         completions = [];
@@ -726,7 +731,14 @@ export function createInputHandler(_session: ReplSession): InputHandler {
         const onResize = () => render();
         process.stdout.on("resize", onResize);
 
+        const onEnd = () => finishPrompt?.(null);
+        const onError = (error: Error) => finishPrompt?.(null, error);
         const cleanup = () => {
+          settled = true;
+          finishPrompt = undefined;
+          process.stdin.removeListener("end", onEnd);
+          process.stdin.removeListener("close", onEnd);
+          process.stdin.removeListener("error", onError);
           // Disable bracketed paste mode
           process.stdout.write("\x1b[?2004l");
           process.stdin.removeListener("data", onData);
@@ -738,7 +750,8 @@ export function createInputHandler(_session: ReplSession): InputHandler {
         };
 
         const onData = (data: Buffer) => {
-          const key = data.toString();
+          const key = decoder.write(data);
+          if (!key) return;
 
           // --- Bracketed paste handling ---
           // Modern terminals wrap pasted text in \x1b[200~ ... \x1b[201~ markers
@@ -1166,13 +1179,24 @@ export function createInputHandler(_session: ReplSession): InputHandler {
           }
         };
 
+        finishPrompt = (value, error) => {
+          if (settled) return;
+          cleanup();
+          if (error) reject(error);
+          else resolve(value);
+        };
         process.stdin.on("data", onData);
+        process.stdin.once("end", onEnd);
+        process.stdin.once("close", onEnd);
+        process.stdin.once("error", onError);
+        if (process.stdin.readableEnded || process.stdin.destroyed) finishPrompt(null);
       });
     },
 
     close(): void {
       if (!closed) {
         closed = true;
+        finishPrompt?.(null);
         // Disable bracketed paste mode on close
         process.stdout.write("\x1b[?2004l");
         saveHistory(sessionHistory);

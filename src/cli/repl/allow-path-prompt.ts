@@ -5,17 +5,25 @@
  * Offers the user to authorize the directory inline, without needing /allow-path.
  */
 
-import path from "node:path";
 import chalk from "chalk";
 import * as p from "@clack/prompts";
-import { addAllowedPathToSession, persistAllowedPath } from "../../tools/allowed-paths.js";
+import {
+  addAllowedPathToSession,
+  persistAllowedPath,
+  canonicalizeAllowedDirectory,
+} from "../../tools/allowed-paths.js";
 
 /**
  * Prompt the user to authorize an external directory.
  * Returns true if authorized (tool should retry), false otherwise.
  */
 export async function promptAllowPath(dirPath: string): Promise<boolean> {
-  const absolute = path.resolve(dirPath);
+  let absolute: string;
+  try {
+    absolute = canonicalizeAllowedDirectory(dirPath);
+  } catch {
+    return false;
+  }
 
   console.log();
   console.log(chalk.yellow("  ⚠ Access denied — path is outside the project directory"));
@@ -40,10 +48,10 @@ export async function promptAllowPath(dirPath: string): Promise<boolean> {
   const level = (action as string).includes("read") ? "read" : "write";
   const persist = (action as string).startsWith("persist");
 
-  addAllowedPathToSession(absolute, level as "read" | "write");
+  addAllowedPathToSession(absolute, level as "read" | "write", absolute);
 
   if (persist) {
-    await persistAllowedPath(absolute, level as "read" | "write");
+    await persistAllowedPath(absolute, level as "read" | "write", absolute);
   }
 
   const levelLabel = level === "write" ? "write" : "read-only";

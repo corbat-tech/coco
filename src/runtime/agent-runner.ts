@@ -11,6 +11,7 @@ import {
 import type { EventLog } from "./types.js";
 
 export interface AgentRunnerExecutionInput {
+  signal?: AbortSignal;
   task: AgentTask;
   capability: AgentCapability;
   trace?: AgentTraceContext;
@@ -18,6 +19,7 @@ export interface AgentRunnerExecutionInput {
 }
 
 export interface AgentRunnerExecutionContext {
+  signal?: AbortSignal;
   task: AgentTask;
   capability: AgentCapability;
   trace: AgentTraceContext;
@@ -56,12 +58,16 @@ export class AgentRunner {
       trace,
     });
 
+    let raw: AgentRunnerRawResult | undefined;
     try {
-      const raw = await (this.options.executor ?? defaultExecutor)({
+      input.signal?.throwIfAborted();
+      raw = await (this.options.executor ?? defaultExecutor)({
         task: input.task,
         capability: input.capability,
         trace,
+        signal: input.signal,
         assertToolAllowed: (toolName) => {
+          input.signal?.throwIfAborted();
           const decision = evaluateAgentToolPolicy({
             capability: input.capability,
             toolName,
@@ -79,6 +85,7 @@ export class AgentRunner {
           }
         },
       });
+      input.signal?.throwIfAborted();
       const result = normalizeAgentRunResult({
         id: `${input.task.id}-run-${Date.now().toString(36)}`,
         taskId: input.task.id,
@@ -114,7 +121,19 @@ export class AgentRunner {
         taskId: input.task.id,
         role: input.task.role,
         success: false,
+        status: input.signal?.aborted
+          ? input.signal.reason instanceof Error && input.signal.reason.name === "TimeoutError"
+            ? "timeout"
+            : "cancelled"
+          : "failed",
         output: message,
+        turns: raw?.turns,
+        toolsUsed: raw?.toolsUsed,
+        usage: {
+          inputTokens: raw?.inputTokens ?? 0,
+          outputTokens: raw?.outputTokens ?? 0,
+          estimated: raw?.inputTokens === undefined || raw?.outputTokens === undefined,
+        },
         startedAt,
         completedAt: new Date().toISOString(),
         durationMs: Date.now() - Date.parse(startedAt),

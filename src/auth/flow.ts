@@ -1,3 +1,4 @@
+import { cancellationCheckpoint } from "../utils/interactive-cancellation.js";
 /**
  * OAuth Flow Implementation
  *
@@ -152,7 +153,8 @@ function printAuthUrl(url: string): void {
 /**
  * Open URL in browser (cross-platform)
  */
-async function openBrowser(url: string): Promise<boolean> {
+async function openBrowser(url: string, signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   // Parse and reconstruct URL to sanitize input and break taint chain.
   // Only allow http/https schemes to prevent arbitrary protocol handlers.
   let sanitizedUrl: string;
@@ -163,6 +165,7 @@ async function openBrowser(url: string): Promise<boolean> {
     }
     sanitizedUrl = parsed.toString();
   } catch {
+    signal?.throwIfAborted();
     return false;
   }
 
@@ -170,17 +173,33 @@ async function openBrowser(url: string): Promise<boolean> {
 
   try {
     if (platform === "darwin") {
-      await execFileAsync("open", [sanitizedUrl]);
+      await cancellationCheckpoint(
+        execFileAsync("open", [sanitizedUrl], { signal, timeout: 10000 }),
+        signal,
+      );
     } else if (platform === "win32") {
-      await execFileAsync("rundll32", ["url.dll,FileProtocolHandler", sanitizedUrl]);
+      await cancellationCheckpoint(
+        execFileAsync("rundll32", ["url.dll,FileProtocolHandler", sanitizedUrl], {
+          signal,
+          timeout: 10000,
+        }),
+        signal,
+      );
     } else if (isWSL) {
       // WSL has no display server — delegate to Windows browser via cmd.exe
-      await execFileAsync("cmd.exe", ["/c", "start", "", sanitizedUrl]);
+      await cancellationCheckpoint(
+        execFileAsync("cmd.exe", ["/c", "start", "", sanitizedUrl], { signal, timeout: 10000 }),
+        signal,
+      );
     } else {
-      await execFileAsync("xdg-open", [sanitizedUrl]);
+      await cancellationCheckpoint(
+        execFileAsync("xdg-open", [sanitizedUrl], { signal, timeout: 10000 }),
+        signal,
+      );
     }
     return true;
   } catch {
+    signal?.throwIfAborted();
     return false;
   }
 }
@@ -189,7 +208,8 @@ async function openBrowser(url: string): Promise<boolean> {
  * Fallback browser open methods
  * Tries multiple approaches for stubborn systems
  */
-async function openBrowserFallback(url: string): Promise<boolean> {
+async function openBrowserFallback(url: string, signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   // Parse and reconstruct URL to sanitize input and break taint chain.
   // Only allow http/https schemes to prevent arbitrary protocol handlers.
   let sanitizedUrl: string;
@@ -200,6 +220,7 @@ async function openBrowserFallback(url: string): Promise<boolean> {
     }
     sanitizedUrl = parsed.toString();
   } catch {
+    signal?.throwIfAborted();
     return false;
   }
 
@@ -239,9 +260,10 @@ async function openBrowserFallback(url: string): Promise<boolean> {
 
   for (const { cmd, args } of commands) {
     try {
-      await execFileAsync(cmd, args);
+      await cancellationCheckpoint(execFileAsync(cmd, args, { signal, timeout: 10000 }), signal);
       return true;
     } catch {
+      signal?.throwIfAborted();
       // Try next method
       continue;
     }
@@ -263,10 +285,12 @@ async function openBrowserFallback(url: string): Promise<boolean> {
  */
 export async function runOAuthFlow(
   provider: string,
+  signal?: AbortSignal,
 ): Promise<{ tokens: OAuthTokens; accessToken: string } | null> {
+  signal?.throwIfAborted();
   // Copilot uses its own GitHub device flow (not standard OAuth)
   if (provider === "copilot") {
-    return runCopilotDeviceFlow();
+    return runCopilotDeviceFlow(signal);
   }
 
   // Map codex to openai for OAuth config (they share the same auth)
@@ -303,17 +327,17 @@ export async function runOAuthFlow(
     },
   ];
 
-  const authMethod = await p.select({
-    message: "Choose authentication method:",
-    options: authOptions,
-  });
+  const authMethod = await cancellationCheckpoint(
+    p.select({ signal, message: "Choose authentication method:", options: authOptions }),
+    signal,
+  );
 
   if (p.isCancel(authMethod)) return null;
 
   if (authMethod === "browser") {
-    return runBrowserOAuthFlow(provider);
+    return runBrowserOAuthFlow(provider, signal);
   } else {
-    return runApiKeyFlow(provider);
+    return runApiKeyFlow(provider, signal);
   }
 }
 
@@ -322,8 +346,10 @@ export async function runOAuthFlow(
  */
 async function isPortAvailable(
   port: number,
+  signal?: AbortSignal,
 ): Promise<{ available: boolean; processName?: string }> {
-  const net = await import("node:net");
+  signal?.throwIfAborted();
+  const net = await cancellationCheckpoint(import("node:net"), signal);
 
   return new Promise((resolve) => {
     const server = net.createServer();
@@ -363,7 +389,9 @@ function getRequiredPort(provider: string): number | undefined {
  */
 async function runBrowserOAuthFlow(
   provider: string,
+  signal?: AbortSignal,
 ): Promise<{ tokens: OAuthTokens; accessToken: string } | null> {
+  signal?.throwIfAborted();
   // Map codex to openai for OAuth (they share the same auth)
   const oauthProvider = getOAuthProviderName(provider);
   const displayInfo = getProviderDisplayInfo(provider);
@@ -376,7 +404,7 @@ async function runBrowserOAuthFlow(
     console.log();
     console.log(chalk.dim("   Checking port availability..."));
 
-    const portCheck = await isPortAvailable(requiredPort);
+    const portCheck = await cancellationCheckpoint(isPortAvailable(requiredPort, signal), signal);
 
     if (!portCheck.available) {
       console.log();
@@ -424,20 +452,20 @@ async function runBrowserOAuthFlow(
         hint: "",
       });
 
-      const fallback = await p.select({
-        message: "What would you like to do?",
-        options: fallbackOptions,
-      });
+      const fallback = await cancellationCheckpoint(
+        p.select({ signal, message: "What would you like to do?", options: fallbackOptions }),
+        signal,
+      );
 
       if (p.isCancel(fallback) || fallback === "cancel") return null;
 
       if (fallback === "api_key") {
-        return runApiKeyFlow(provider);
+        return runApiKeyFlow(provider, signal);
       } else if (fallback === "device_code") {
-        return runDeviceCodeFlow(provider);
+        return runDeviceCodeFlow(provider, signal);
       } else if (fallback === "retry") {
         // Recursive retry
-        return runBrowserOAuthFlow(provider);
+        return runBrowserOAuthFlow(provider, signal);
       }
       return null;
     }
@@ -445,12 +473,15 @@ async function runBrowserOAuthFlow(
 
   console.log(chalk.dim("   Starting authentication server..."));
 
+  let callbackServer: Awaited<ReturnType<typeof createCallbackServer>> | undefined;
   try {
     // Step 1: Generate PKCE credentials
     const pkce = generatePKCECredentials();
 
     // Step 2: Start callback server (waits until server is ready)
-    const { port, resultPromise } = await createCallbackServer(pkce.state);
+    callbackServer = await createCallbackServer(pkce.state, undefined, undefined, signal);
+    signal?.throwIfAborted();
+    const { port, resultPromise } = callbackServer;
 
     // Step 3: Build redirect URI and authorization URL
     const redirectUri = `http://localhost:${port}/auth/callback`;
@@ -485,19 +516,22 @@ async function runBrowserOAuthFlow(
     console.log();
 
     // Step 5: Open browser
-    const openIt = await p.confirm({
-      message: "Open browser to sign in?",
-      initialValue: true,
-    });
+    const openIt = await cancellationCheckpoint(
+      p.confirm({ signal, message: "Open browser to sign in?", initialValue: true }),
+      signal,
+    );
 
     if (p.isCancel(openIt)) return null;
 
     if (openIt) {
-      const opened = await openBrowser(authUrl);
+      const opened = await cancellationCheckpoint(openBrowser(authUrl, signal), signal);
       if (opened) {
         console.log(chalk.green("   ✓ Browser opened"));
       } else {
-        const fallbackOpened = await openBrowserFallback(authUrl);
+        const fallbackOpened = await cancellationCheckpoint(
+          openBrowserFallback(authUrl, signal),
+          signal,
+        );
         if (fallbackOpened) {
           console.log(chalk.green("   ✓ Browser opened"));
         } else {
@@ -516,25 +550,29 @@ async function runBrowserOAuthFlow(
     }
 
     // Step 6: Wait for callback
-    const spinner = p.spinner();
+    const spinner = p.spinner({ signal });
     spinner.start("Waiting for you to sign in...");
 
-    const callbackResult = await resultPromise;
+    const callbackResult = await cancellationCheckpoint(resultPromise, signal);
 
     spinner.stop(chalk.green("✓ Authentication received!"));
 
     // Step 7: Exchange code for tokens
     console.log(chalk.dim("   Exchanging code for tokens..."));
 
-    const tokens = await exchangeCodeForTokens(
-      oauthProvider,
-      callbackResult.code,
-      pkce.codeVerifier,
-      redirectUri,
+    const tokens = await cancellationCheckpoint(
+      exchangeCodeForTokens(
+        oauthProvider,
+        callbackResult.code,
+        pkce.codeVerifier,
+        redirectUri,
+        signal,
+      ),
+      signal,
     );
 
     // Step 8: Save tokens (use oauthProvider so codex and openai share the same tokens)
-    await saveTokens(oauthProvider, tokens);
+    await cancellationCheckpoint(saveTokens(oauthProvider, tokens), signal);
 
     console.log(chalk.green("\n   ✅ Authentication complete!\n"));
     if (oauthProvider === "openai") {
@@ -544,6 +582,8 @@ async function runBrowserOAuthFlow(
 
     return { tokens, accessToken: tokens.accessToken };
   } catch (error) {
+    await callbackServer?.close();
+    signal?.throwIfAborted();
     const errorMsg = error instanceof Error ? error.message : String(error);
 
     console.log();
@@ -602,18 +642,20 @@ async function runBrowserOAuthFlow(
       hint: "",
     });
 
-    const fallback = await p.select({
-      message: "What would you like to do?",
-      options: fallbackOptions,
-    });
+    const fallback = await cancellationCheckpoint(
+      p.select({ signal, message: "What would you like to do?", options: fallbackOptions }),
+      signal,
+    );
 
     if (p.isCancel(fallback) || fallback === "cancel") return null;
 
     if (fallback === "device_code") {
-      return runDeviceCodeFlow(provider);
+      return runDeviceCodeFlow(provider, signal);
     } else {
-      return runApiKeyFlow(provider);
+      return runApiKeyFlow(provider, signal);
     }
+  } finally {
+    await callbackServer?.close();
   }
 }
 
@@ -623,7 +665,9 @@ async function runBrowserOAuthFlow(
  */
 async function runDeviceCodeFlow(
   provider: string,
+  signal?: AbortSignal,
 ): Promise<{ tokens: OAuthTokens; accessToken: string } | null> {
+  signal?.throwIfAborted();
   // Map codex to openai for OAuth (they share the same auth)
   const oauthProvider = getOAuthProviderName(provider);
   const displayInfo = getProviderDisplayInfo(provider);
@@ -633,7 +677,10 @@ async function runDeviceCodeFlow(
 
   try {
     // Step 1: Request device code
-    const deviceCode = await requestDeviceCode(oauthProvider);
+    const deviceCode = await cancellationCheckpoint(
+      requestDeviceCode(oauthProvider, signal),
+      signal,
+    );
 
     // Step 2: Show user instructions
     console.log();
@@ -658,19 +705,22 @@ async function runDeviceCodeFlow(
     console.log();
 
     // Step 3: Open browser automatically
-    const openIt = await p.confirm({
-      message: "Open browser to sign in?",
-      initialValue: true,
-    });
+    const openIt = await cancellationCheckpoint(
+      p.confirm({ signal, message: "Open browser to sign in?", initialValue: true }),
+      signal,
+    );
 
     if (p.isCancel(openIt)) return null;
 
     if (openIt) {
-      const opened = await openBrowser(verificationUrl);
+      const opened = await cancellationCheckpoint(openBrowser(verificationUrl, signal), signal);
       if (opened) {
         console.log(chalk.green("   ✓ Browser opened"));
       } else {
-        const fallbackOpened = await openBrowserFallback(verificationUrl);
+        const fallbackOpened = await cancellationCheckpoint(
+          openBrowserFallback(verificationUrl, signal),
+          signal,
+        );
         if (fallbackOpened) {
           console.log(chalk.green("   ✓ Browser opened"));
         } else {
@@ -682,26 +732,30 @@ async function runDeviceCodeFlow(
     console.log();
 
     // Step 4: Poll for token (with spinner)
-    const spinner = p.spinner();
+    const spinner = p.spinner({ signal });
     spinner.start("Waiting for you to sign in...");
 
     let pollCount = 0;
-    const tokens = await pollForToken(
-      oauthProvider,
-      deviceCode.deviceCode,
-      deviceCode.interval,
-      deviceCode.expiresIn,
-      () => {
-        pollCount++;
-        const dots = ".".repeat((pollCount % 3) + 1);
-        spinner.message(`Waiting for you to sign in${dots}`);
-      },
+    const tokens = await cancellationCheckpoint(
+      pollForToken(
+        oauthProvider,
+        deviceCode.deviceCode,
+        deviceCode.interval,
+        deviceCode.expiresIn,
+        () => {
+          pollCount++;
+          const dots = ".".repeat((pollCount % 3) + 1);
+          spinner.message(`Waiting for you to sign in${dots}`);
+        },
+        signal,
+      ),
+      signal,
     );
 
     spinner.stop(chalk.green("✓ Signed in successfully!"));
 
     // Step 5: Save tokens (use oauthProvider so codex and openai share the same tokens)
-    await saveTokens(oauthProvider, tokens);
+    await cancellationCheckpoint(saveTokens(oauthProvider, tokens), signal);
 
     console.log(chalk.green("\n   ✅ Authentication complete!\n"));
     if (oauthProvider === "openai") {
@@ -713,6 +767,7 @@ async function runDeviceCodeFlow(
 
     return { tokens, accessToken: tokens.accessToken };
   } catch (error) {
+    signal?.throwIfAborted();
     const errorMsg = error instanceof Error ? error.message : String(error);
 
     // Check if it's a Cloudflare/network error
@@ -727,14 +782,14 @@ async function runDeviceCodeFlow(
       console.log(chalk.dim("   This can happen due to network restrictions."));
       console.log();
 
-      const useFallback = await p.confirm({
-        message: "Use API key instead?",
-        initialValue: true,
-      });
+      const useFallback = await cancellationCheckpoint(
+        p.confirm({ signal, message: "Use API key instead?", initialValue: true }),
+        signal,
+      );
 
       if (p.isCancel(useFallback) || !useFallback) return null;
 
-      return runApiKeyFlow(provider);
+      return runApiKeyFlow(provider, signal);
     }
 
     // Log a generic error category to avoid logging sensitive data from the device code flow
@@ -755,7 +810,9 @@ async function runDeviceCodeFlow(
  */
 async function runApiKeyFlow(
   provider: string,
+  signal?: AbortSignal,
 ): Promise<{ tokens: OAuthTokens; accessToken: string } | null> {
+  signal?.throwIfAborted();
   if (provider === "copilot") {
     throw new Error("runApiKeyFlow called with copilot — use runCopilotDeviceFlow() instead");
   }
@@ -799,24 +856,28 @@ async function runApiKeyFlow(
     parsedUrl.search = "";
     console.log(chalk.cyan(`   → ${parsedUrl.toString()}`));
   } catch {
+    signal?.throwIfAborted();
     console.log(chalk.cyan("   → [provider API keys page]"));
   }
   console.log();
 
   // Ask to open browser
-  const openIt = await p.confirm({
-    message: "Open browser to get API key?",
-    initialValue: true,
-  });
+  const openIt = await cancellationCheckpoint(
+    p.confirm({ signal, message: "Open browser to get API key?", initialValue: true }),
+    signal,
+  );
 
   if (p.isCancel(openIt)) return null;
 
   if (openIt) {
-    const opened = await openBrowser(apiKeysUrl);
+    const opened = await cancellationCheckpoint(openBrowser(apiKeysUrl, signal), signal);
     if (opened) {
       console.log(chalk.green("   ✓ Browser opened"));
     } else {
-      const fallbackOpened = await openBrowserFallback(apiKeysUrl);
+      const fallbackOpened = await cancellationCheckpoint(
+        openBrowserFallback(apiKeysUrl, signal),
+        signal,
+      );
       if (fallbackOpened) {
         console.log(chalk.green("   ✓ Browser opened"));
       } else {
@@ -828,18 +889,22 @@ async function runApiKeyFlow(
   console.log();
 
   // Ask for the API key
-  const apiKey = await p.password({
-    message: `Paste your ${displayInfo.name} API key${keyPrefixHint}:`,
-    validate: (value) => {
-      if (!value || value.length < 10) {
-        return "Please enter a valid API key";
-      }
-      if (keyPrefix && !value.startsWith(keyPrefix)) {
-        return `${displayInfo.name} API keys typically start with '${keyPrefix}'`;
-      }
-      return;
-    },
-  });
+  const apiKey = await cancellationCheckpoint(
+    p.password({
+      signal,
+      message: `Paste your ${displayInfo.name} API key${keyPrefixHint}:`,
+      validate: (value) => {
+        if (!value || value.length < 10) {
+          return "Please enter a valid API key";
+        }
+        if (keyPrefix && !value.startsWith(keyPrefix)) {
+          return `${displayInfo.name} API keys typically start with '${keyPrefix}'`;
+        }
+        return;
+      },
+    }),
+    signal,
+  );
 
   if (p.isCancel(apiKey)) return null;
 
@@ -850,7 +915,7 @@ async function runApiKeyFlow(
   };
 
   // Save for future use (use oauthProvider so codex and openai share the same tokens)
-  await saveTokens(oauthProvider, tokens);
+  await cancellationCheckpoint(saveTokens(oauthProvider, tokens), signal);
 
   console.log(chalk.green("\n   ✅ API key saved!\n"));
 
@@ -865,15 +930,19 @@ async function runApiKeyFlow(
  * the `gh api` subprocess (Go HTTP client, PAC-aware, system-CA-aware).
  * This is the reliable path on corporate networks.
  */
-async function runCopilotAuthViaGhCli(ghCliUser: string): Promise<{
+async function runCopilotAuthViaGhCli(
+  ghCliUser: string,
+  signal?: AbortSignal,
+): Promise<{
   tokens: OAuthTokens;
   accessToken: string;
 } | null> {
-  const spinner = p.spinner();
+  signal?.throwIfAborted();
+  const spinner = p.spinner({ signal });
   spinner.start("Exchanging GitHub CLI credentials for Copilot token...");
 
   try {
-    const githubToken = await getGitHubCliToken();
+    const githubToken = await cancellationCheckpoint(getGitHubCliToken(signal), signal);
     if (!githubToken) {
       spinner.stop(chalk.red("✗ Could not read gh auth token"));
       return null;
@@ -882,9 +951,13 @@ async function runCopilotAuthViaGhCli(ghCliUser: string): Promise<{
     // Try direct exchange first, fall back to gh api subprocess
     let copilotToken;
     try {
-      copilotToken = await exchangeForCopilotToken(githubToken);
+      copilotToken = await cancellationCheckpoint(
+        exchangeForCopilotToken(githubToken, signal),
+        signal,
+      );
     } catch {
-      copilotToken = await exchangeForCopilotTokenViaGhCli();
+      signal?.throwIfAborted();
+      copilotToken = await cancellationCheckpoint(exchangeForCopilotTokenViaGhCli(signal), signal);
     }
 
     if (!copilotToken) {
@@ -900,7 +973,7 @@ async function runCopilotAuthViaGhCli(ghCliUser: string): Promise<{
       copilotTokenExpiresAt: copilotToken.expires_at * 1000,
       accountType: copilotToken.annotations?.copilot_plan,
     };
-    await saveCopilotCredentials(creds);
+    await cancellationCheckpoint(saveCopilotCredentials(creds), signal);
 
     spinner.stop(chalk.green("✓ GitHub Copilot authenticated via gh CLI!"));
     const userLabel = ghCliUser !== "authenticated" ? ` (@${ghCliUser})` : "";
@@ -914,6 +987,7 @@ async function runCopilotAuthViaGhCli(ghCliUser: string): Promise<{
     };
     return { tokens, accessToken: copilotToken.token };
   } catch (error) {
+    signal?.throwIfAborted();
     const { code } = describeFetchError(error);
     spinner.stop(chalk.red("✗ Failed to authenticate via gh CLI"));
     printNetworkTroubleshooting(code);
@@ -931,10 +1005,11 @@ async function runCopilotAuthViaGhCli(ghCliUser: string): Promise<{
  * 4. Exchange GitHub token for Copilot API token
  * 5. Save both tokens
  */
-async function runCopilotDeviceFlow(): Promise<{
+async function runCopilotDeviceFlow(signal?: AbortSignal): Promise<{
   tokens: OAuthTokens;
   accessToken: string;
 } | null> {
+  signal?.throwIfAborted();
   console.log();
   console.log(chalk.magenta("   ╭─────────────────────────────────────────────────╮"));
   console.log(
@@ -952,22 +1027,26 @@ async function runCopilotDeviceFlow(): Promise<{
   // reach GitHub, but the `gh` CLI can (Go's HTTP stack handles PAC/system CAs).
   // If the user already has a `gh` session, offer it as the preferred path —
   // this avoids the device flow entirely and works on any network where gh works.
-  const ghCliUser = await getGitHubCliAuthStatus();
+  const ghCliUser = await cancellationCheckpoint(getGitHubCliAuthStatus(signal), signal);
   if (ghCliUser) {
     console.log(
       chalk.dim(`   ℹ  GitHub CLI session detected`) +
         (ghCliUser !== "authenticated" ? chalk.dim(` (@${ghCliUser})`) : "") +
         chalk.dim("."),
     );
-    const useGhSession = await p.confirm({
-      message: "Use your existing `gh` session? (recommended on corporate networks)",
-      initialValue: true,
-    });
+    const useGhSession = await cancellationCheckpoint(
+      p.confirm({
+        signal,
+        message: "Use your existing `gh` session? (recommended on corporate networks)",
+        initialValue: true,
+      }),
+      signal,
+    );
 
     if (p.isCancel(useGhSession)) return null;
 
     if (useGhSession) {
-      return runCopilotAuthViaGhCli(ghCliUser);
+      return runCopilotAuthViaGhCli(ghCliUser, signal);
     }
     console.log();
   }
@@ -975,7 +1054,7 @@ async function runCopilotDeviceFlow(): Promise<{
   try {
     // Step 1: Request device code
     console.log(chalk.dim("   Requesting device code from GitHub..."));
-    const deviceCode = await requestGitHubDeviceCode();
+    const deviceCode = await cancellationCheckpoint(requestGitHubDeviceCode(signal), signal);
 
     // Step 2: Show code to user
     console.log();
@@ -998,19 +1077,25 @@ async function runCopilotDeviceFlow(): Promise<{
     console.log();
 
     // Step 3: Open browser
-    const openIt = await p.confirm({
-      message: "Open browser to sign in?",
-      initialValue: true,
-    });
+    const openIt = await cancellationCheckpoint(
+      p.confirm({ signal, message: "Open browser to sign in?", initialValue: true }),
+      signal,
+    );
 
     if (p.isCancel(openIt)) return null;
 
     if (openIt) {
-      const opened = await openBrowser(deviceCode.verification_uri);
+      const opened = await cancellationCheckpoint(
+        openBrowser(deviceCode.verification_uri, signal),
+        signal,
+      );
       if (opened) {
         console.log(chalk.green("   ✓ Browser opened"));
       } else {
-        const fallbackOpened = await openBrowserFallback(deviceCode.verification_uri);
+        const fallbackOpened = await cancellationCheckpoint(
+          openBrowserFallback(deviceCode.verification_uri, signal),
+          signal,
+        );
         if (fallbackOpened) {
           console.log(chalk.green("   ✓ Browser opened"));
         } else {
@@ -1022,24 +1107,28 @@ async function runCopilotDeviceFlow(): Promise<{
     console.log();
 
     // Step 4: Poll for GitHub token
-    const spinner = p.spinner();
+    const spinner = p.spinner({ signal });
     spinner.start("Waiting for you to sign in on GitHub...");
 
     let pollCount = 0;
-    const githubToken = await pollGitHubForToken(
-      deviceCode.device_code,
-      deviceCode.interval,
-      deviceCode.expires_in,
-      () => {
-        pollCount++;
-        const dots = ".".repeat((pollCount % 3) + 1);
-        spinner.message(`Waiting for you to sign in on GitHub${dots}`);
-      },
+    const githubToken = await cancellationCheckpoint(
+      pollGitHubForToken(
+        deviceCode.device_code,
+        deviceCode.interval,
+        deviceCode.expires_in,
+        () => {
+          pollCount++;
+          const dots = ".".repeat((pollCount % 3) + 1);
+          spinner.message(`Waiting for you to sign in on GitHub${dots}`);
+        },
+        signal,
+      ),
+      signal,
     );
 
     spinner.stop(chalk.green("✓ GitHub authentication successful!"));
 
-    const githubLogin = await getGitHubLogin(githubToken);
+    const githubLogin = await cancellationCheckpoint(getGitHubLogin(githubToken, signal), signal);
     if (githubLogin) {
       console.log(chalk.dim(`   Authenticated as: @${githubLogin}`));
     }
@@ -1047,7 +1136,10 @@ async function runCopilotDeviceFlow(): Promise<{
     // Step 5: Exchange for Copilot token
     console.log(chalk.dim("   Exchanging token for Copilot access..."));
 
-    const copilotToken = await exchangeForCopilotToken(githubToken);
+    const copilotToken = await cancellationCheckpoint(
+      exchangeForCopilotToken(githubToken, signal),
+      signal,
+    );
 
     // Step 6: Save credentials
     const creds: CopilotCredentials = {
@@ -1057,7 +1149,7 @@ async function runCopilotDeviceFlow(): Promise<{
       accountType: copilotToken.annotations?.copilot_plan,
     };
 
-    await saveCopilotCredentials(creds);
+    await cancellationCheckpoint(saveCopilotCredentials(creds), signal);
 
     const planType = creds.accountType ?? "individual";
     console.log(chalk.green("\n   ✅ GitHub Copilot authenticated!\n"));
@@ -1073,6 +1165,7 @@ async function runCopilotDeviceFlow(): Promise<{
 
     return { tokens, accessToken: copilotToken.token };
   } catch (error) {
+    signal?.throwIfAborted();
     const errorMsg = error instanceof Error ? error.message : String(error);
 
     console.log();
@@ -1155,15 +1248,17 @@ function printNetworkTroubleshooting(code?: string): void {
  */
 export async function getOrRefreshOAuthToken(
   provider: string,
+  signal?: AbortSignal,
 ): Promise<{ accessToken: string } | null> {
+  signal?.throwIfAborted();
   // Copilot has its own token management
   if (provider === "copilot") {
-    const tokenResult = await getValidCopilotToken();
+    const tokenResult = await cancellationCheckpoint(getValidCopilotToken(signal), signal);
     if (tokenResult) {
       return { accessToken: tokenResult.token };
     }
     // Need to authenticate
-    const flowResult = await runOAuthFlow(provider);
+    const flowResult = await cancellationCheckpoint(runOAuthFlow(provider, signal), signal);
     if (flowResult) {
       return { accessToken: flowResult.accessToken };
     }
@@ -1174,13 +1269,13 @@ export async function getOrRefreshOAuthToken(
   const oauthProvider = getOAuthProviderName(provider);
 
   // First try to load existing tokens
-  const result = await getValidAccessToken(oauthProvider);
+  const result = await cancellationCheckpoint(getValidAccessToken(oauthProvider, signal), signal);
   if (result) {
     return { accessToken: result.accessToken };
   }
 
   // Need to authenticate - pass original provider so UI shows correct name
-  const flowResult = await runOAuthFlow(provider);
+  const flowResult = await cancellationCheckpoint(runOAuthFlow(provider, signal), signal);
   if (flowResult) {
     return { accessToken: flowResult.accessToken };
   }

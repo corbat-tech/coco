@@ -1,11 +1,8 @@
 /**
  * Quality Loop - Quality-driven iterative development
  *
- * When enabled, the agent automatically:
- * 1. Generates code + tests
- * 2. Runs tests
- * 3. Self-reviews with 12-dimension quality scoring
- * 4. Iterates until quality converges (score delta < 2)
+ * Requests implementation, tests and iterative self-review from the model.
+ * Text reports are unverified claims, not an independent quality gate.
  *
  * Toggle with /quality command or --quality CLI flag.
  */
@@ -114,12 +111,12 @@ export function formatQualityLoopHint(): string {
   return (
     chalk.dim("  tip: ") +
     chalk.magenta("/quality on") +
-    chalk.dim(" enables Coco quality mode: auto-test, self-review, and iterate until robust")
+    chalk.dim(" requests tests and iterative self-review; reported scores are unverified")
   );
 }
 
 /**
- * Format quality convergence result for display after quality loop completion
+ * Display model-authored reports without certifying their claims
  */
 export function formatQualityResult(result: QualityLoopResult): string {
   const lines: string[] = [];
@@ -127,13 +124,11 @@ export function formatQualityResult(result: QualityLoopResult): string {
   // Score progression bar
   const scores = result.scoreHistory;
   const progressStr = scores.map((s) => String(s)).join(" → ");
-  const convergedLabel = result.converged
-    ? chalk.green("converged")
-    : chalk.yellow("max iterations");
+  const convergedLabel = result.converged ? "reported converged" : "reported not converged";
 
   lines.push("");
   lines.push(
-    chalk.magenta("── Quality: ") +
+    chalk.magenta("── Quality self-report (unverified): ") +
       chalk.white(progressStr) +
       chalk.dim(` (${convergedLabel})`) +
       chalk.magenta(" ──"),
@@ -143,21 +138,18 @@ export function formatQualityResult(result: QualityLoopResult): string {
   const parts: string[] = [];
 
   if (result.testsPassed !== undefined && result.testsTotal !== undefined) {
-    const testsColor = result.testsPassed === result.testsTotal ? chalk.green : chalk.yellow;
-    parts.push(testsColor(`Tests: ${result.testsPassed}/${result.testsTotal}`));
+    parts.push(chalk.dim(`Reported tests: ${result.testsPassed}/${result.testsTotal}`));
   }
 
   if (result.coverage !== undefined) {
-    const covColor = result.coverage >= 80 ? chalk.green : chalk.yellow;
-    parts.push(covColor(`Coverage: ${result.coverage}%`));
+    parts.push(chalk.dim(`Reported coverage: ${result.coverage}%`));
   }
 
   if (result.securityScore !== undefined) {
-    const secColor = result.securityScore === 100 ? chalk.green : chalk.red;
-    parts.push(secColor(`Security: ${result.securityScore}`));
+    parts.push(chalk.dim(`Reported security: ${result.securityScore}`));
   }
 
-  parts.push(chalk.dim(`Iterations: ${result.iterations}`));
+  parts.push(chalk.dim(`Reported iterations: ${result.iterations}`));
 
   if (result.durationMs !== undefined) {
     const secs = (result.durationMs / 1000).toFixed(1);
@@ -278,6 +270,11 @@ export function getQualityLoopSystemPrompt(): string {
   return `
 ## Quality Loop Mode (ACTIVE)
 
+This is a model self-review workflow, not an independent quality certification.
+Dimension scores are subjective self-assessments. Report test counts, coverage and security
+only when supported by observed tool output for the final files; otherwise report unknown.
+A model-authored QUALITY_LOOP_REPORT is unverified and must not be presented as a passed gate.
+
 You are operating in quality loop mode. After implementing code changes, you MUST follow this iteration cycle:
 
 1. **Implement** the requested changes (code + tests)
@@ -298,7 +295,7 @@ score_history: [first_score, ..., final_score]
 tests_passed: X
 tests_total: Y
 coverage: Z
-security: 100
+security: unknown
 iterations: N
 converged: true|false
 \`\`\`
@@ -309,5 +306,7 @@ Key rules:
 - Minimum 2 iterations before declaring convergence
 - Maximum 10 iterations
 - Fix critical issues before moving on
+- After the last code change, run verification again; do not reuse results from older files
+- Do not replace a failed or unavailable check with an estimated passing result
 - Report honestly - don't inflate scores`;
 }

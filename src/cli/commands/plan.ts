@@ -337,7 +337,11 @@ export async function runPlan(options: PlanOptions = {}): Promise<PlanResult> {
       console.log(chalk.dim(`    - ${artifact.type}: ${artifact.description}`));
     }
 
-    p.outro(chalk.green("Planning complete! Run 'coco build' to start development."));
+    p.outro(
+      chalk.green(
+        "Planning complete! Open 'coco' to discuss and implement the plan interactively. Legacy 'coco build' is not implemented.",
+      ),
+    );
   }
 
   return {

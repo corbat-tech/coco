@@ -1,3 +1,10 @@
+import { visibleChatText } from "./chat-content.js";
+import { catalogEffort, responseEndpoint, type ReasoningEffort } from "./contracts.js";
+import { getCatalogModel } from "./catalog.js";
+import type { ProviderType } from "./provider-types.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
+import { isDeepStrictEqual } from "node:util";
+import { ResponseIntegrityError } from "./response-integrity.js";
 /**
  * OpenAI provider for Corbat-Coco
  * Also supports OpenAI-compatible APIs (Kimi/Moonshot, etc.)
@@ -21,13 +28,18 @@ import type {
   ToolResultContent,
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
-import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import {
   ChatToolCallAssembler,
   ResponsesToolCallAssembler,
   parseToolCallArguments,
 } from "./tool-call-normalizer.js";
-import { getThinkingCapability, mapToOpenAIEffort, mapToKimiExtraBody } from "./thinking.js";
+import {
+  getThinkingCapability,
+  mapToOpenAIEffort,
+  mapToKimiExtraBody,
+  mapToOllamaEffort,
+} from "./thinking.js";
 import type { ThinkingMode } from "./thinking.js";
 import { getTierConfig } from "./model-tier.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
@@ -176,6 +188,7 @@ const MODELS_WITH_THINKING_MODE: string[] = ["kimi-k2.5", "kimi-k2-0324", "kimi-
 export function needsResponsesApi(model: string): boolean {
   return (
     model.includes("codex") ||
+    model.startsWith("gpt-6") ||
     model.startsWith("gpt-5") ||
     model.startsWith("o4-") ||
     model === "o3"
@@ -197,6 +210,7 @@ function needsMaxCompletionTokens(model: string): boolean {
     model.startsWith("o4") ||
     model.startsWith("gpt-4o") ||
     model.startsWith("gpt-4.1") ||
+    model.startsWith("gpt-6") ||
     model.startsWith("gpt-5") ||
     model.startsWith("chatgpt-4o")
   );
@@ -265,7 +279,9 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Check if a model supports temperature parameter
    */
-  protected supportsTemperature(model: string): boolean {
+  protected supportsTemperature(model: string, thinking?: ThinkingMode): boolean {
+    const profile = getCatalogModel(this.id as ProviderType, model)?.reasoning;
+    if (profile) return !profile.mandatory && thinking === "off";
     return !MODELS_WITHOUT_TEMPERATURE.some((m) => model.toLowerCase().includes(m.toLowerCase()));
   }
 
@@ -275,7 +291,7 @@ export class OpenAIProvider implements LLMProvider {
    * when their endpoint does not expose /v1/responses.
    */
   protected modelNeedsResponsesApi(model: string): boolean {
-    return this.id === "openai" && needsResponsesApi(model);
+    return responseEndpoint(this.id, model) || (this.id === "openai" && needsResponsesApi(model));
   }
 
   /**
@@ -287,7 +303,16 @@ export class OpenAIProvider implements LLMProvider {
     model: string,
     thinking: ThinkingMode | undefined,
     _hasTools: boolean,
-  ): "low" | "medium" | "high" | undefined {
+  ): ReasoningEffort | undefined {
+    if (getCatalogModel(this.id as ProviderType, model)?.reasoning) {
+      const effort = catalogEffort(this.id, model, thinking);
+      if (this.id === "deepseek" && effort === "none") return undefined;
+      const profile = getCatalogModel(this.id as ProviderType, model)!.reasoning!;
+      return profile.levels.includes("auto") && !profile.levels.includes("low")
+        ? undefined
+        : effort;
+    }
+    if (this.id === "ollama") return mapToOllamaEffort(thinking, model);
     const capability = getThinkingCapability(this.id, model);
     if (!capability.supported || !capability.kinds.includes("effort")) {
       return undefined;
@@ -298,7 +323,9 @@ export class OpenAIProvider implements LLMProvider {
   protected getResponsesReasoningEffort(
     model: string,
     thinking: ThinkingMode | undefined,
-  ): "low" | "medium" | "high" | undefined {
+  ): ReasoningEffort | undefined {
+    if (getCatalogModel(this.id as ProviderType, model)?.reasoning)
+      return catalogEffort(this.id, model, thinking);
     const capability = getThinkingCapability(this.id, model);
     if (!capability.supported || !capability.kinds.includes("effort")) {
       return undefined;
@@ -315,6 +342,21 @@ export class OpenAIProvider implements LLMProvider {
     model: string,
     thinking?: ThinkingMode,
   ): Record<string, unknown> | undefined {
+    const profile = getCatalogModel(this.id as ProviderType, model)?.reasoning;
+    if (thinking === "off" && profile?.mandatory)
+      throw new ProviderError(`${model} requires reasoning.`, { provider: this.id });
+    if (this.id === "cerebras" && model === "qwen-3.8-27b") return { clear_thinking: false };
+    if (this.id === "qwen" && profile) return { enable_thinking: thinking !== "off" };
+    if (this.id === "deepseek" && profile)
+      return { thinking: { type: thinking === "off" ? "disabled" : "enabled" } };
+    if (this.id === "minimax")
+      return { thinking: { type: thinking === "off" ? "disabled" : "adaptive" } };
+    if (this.id === "kimi" && getCatalogModel("kimi", model)?.reasoning) {
+      return model === "kimi-k3"
+        ? undefined
+        : { thinking: { type: thinking === "off" ? "disabled" : "enabled" } };
+    }
+    if (this.id !== "kimi") return undefined;
     const kimiBody = mapToKimiExtraBody(thinking, model);
     if (kimiBody) return kimiBody;
 
@@ -330,49 +372,60 @@ export class OpenAIProvider implements LLMProvider {
    */
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
     if (this.modelNeedsResponsesApi(model)) {
       return this.chatViaResponses(messages, options);
     }
 
-    return withRetry(async () => {
-      try {
-        const supportsTemp = this.supportsTemperature(model);
+    return withRetry(
+      async () => {
+        try {
+          const supportsTemp = this.supportsTemperature(model, options?.thinking);
+          const extraBody = this.getExtraBody(model, options?.thinking);
 
-        const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
-        const reasoningEffort = this.getChatCompletionsReasoningEffort(
-          model,
-          options?.thinking,
-          false,
-        );
-        const response = await this.client!.chat.completions.create({
-          model,
-          ...buildMaxTokensParam(model, maxTokens),
-          messages: this.convertMessages(messages, options?.system),
-          stop: options?.stopSequences,
-          ...(supportsTemp && {
-            temperature: options?.temperature ?? this.config.temperature ?? 0,
-          }),
-          ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-        } as OpenAI.ChatCompletionCreateParamsNonStreaming);
+          const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+          const reasoningEffort = this.getChatCompletionsReasoningEffort(
+            model,
+            options?.thinking,
+            false,
+          );
+          const response = await this.client!.chat.completions.create(
+            {
+              model,
+              ...buildMaxTokensParam(model, maxTokens),
+              messages: this.convertMessages(messages, options?.system, model),
+              stop: options?.stopSequences,
+              ...(supportsTemp && {
+                temperature: options?.temperature ?? this.config.temperature ?? 0,
+              }),
+              ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+              ...extraBody,
+            } as OpenAI.ChatCompletionCreateParamsNonStreaming,
+            this.getRequestOptions(options),
+          );
 
-        const choice = response.choices[0];
+          const choice = response.choices[0];
 
-        return {
-          id: response.id,
-          content: choice?.message?.content ?? "",
-          stopReason: this.mapFinishReason(choice?.finish_reason),
-          usage: {
-            inputTokens: response.usage?.prompt_tokens ?? 0,
-            outputTokens: response.usage?.completion_tokens ?? 0,
-          },
-          model: response.model,
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+          return {
+            id: response.id,
+            content: visibleChatText(choice?.message?.content),
+            stopReason: this.mapFinishReason(choice?.finish_reason),
+            usage: {
+              inputTokens: response.usage?.prompt_tokens ?? 0,
+              outputTokens: response.usage?.completion_tokens ?? 0,
+            },
+            model: response.model,
+          };
+        } catch (error) {
+          options?.signal?.throwIfAborted();
+          throw this.handleError(error);
+        }
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   /**
@@ -383,6 +436,7 @@ export class OpenAIProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
     if (this.modelNeedsResponsesApi(model)) {
@@ -391,62 +445,81 @@ export class OpenAIProvider implements LLMProvider {
 
     const tierCfg = getTierConfig(this.id, model);
 
-    return withRetry(async () => {
-      try {
-        const supportsTemp = this.supportsTemperature(model);
-        const extraBody = this.getExtraBody(model, options?.thinking);
-        const reasoningEffort = this.getChatCompletionsReasoningEffort(
-          model,
-          options?.thinking,
-          true,
-        );
+    return withRetry(
+      async () => {
+        try {
+          const supportsTemp = this.supportsTemperature(model, options?.thinking);
+          const extraBody = this.getExtraBody(model, options?.thinking);
+          const reasoningEffort = this.getChatCompletionsReasoningEffort(
+            model,
+            options?.thinking,
+            true,
+          );
 
-        // Build request params
-        const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
-        const tools = this.limitTools(options.tools, tierCfg.maxTools);
-        const requestParams: Record<string, unknown> = {
-          model,
-          ...buildMaxTokensParam(model, maxTokens),
-          messages: this.convertMessages(messages, options?.system),
-          tools: this.convertTools(tools),
-          tool_choice: this.convertToolChoice(options.toolChoice),
-          parallel_tool_calls: tierCfg.parallelToolCalls,
-        };
+          // Build request params
+          const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+          const tools = this.limitTools(options.tools, tierCfg.maxTools);
+          const requestParams: Record<string, unknown> = {
+            model,
+            ...buildMaxTokensParam(model, maxTokens),
+            messages: this.convertMessages(messages, options?.system, model),
+            tools: this.convertTools(tools),
+            tool_choice: this.convertToolChoice(options.toolChoice),
+            ...(!["minimax", "cerebras"].includes(this.id) && {
+              parallel_tool_calls: tierCfg.parallelToolCalls,
+            }),
+          };
 
-        if (supportsTemp) {
-          requestParams.temperature = options?.temperature ?? this.config.temperature ?? 0;
+          if (supportsTemp) {
+            requestParams.temperature = options?.temperature ?? this.config.temperature ?? 0;
+          }
+
+          if (reasoningEffort) {
+            requestParams.reasoning_effort = reasoningEffort;
+          }
+
+          if (extraBody) {
+            Object.assign(requestParams, extraBody);
+          }
+
+          const response = await this.client!.chat.completions.create(
+            requestParams as unknown as OpenAI.ChatCompletionCreateParamsNonStreaming,
+            this.getRequestOptions(options),
+          );
+
+          const choice = response.choices[0];
+          this.validateToolFinish(
+            choice?.finish_reason,
+            Boolean(choice?.message?.tool_calls?.length),
+          );
+          const toolCalls = this.validateCompletedToolCalls(
+            this.extractToolCalls(choice?.message?.tool_calls),
+          );
+
+          return {
+            id: response.id,
+            content: visibleChatText(choice?.message?.content),
+            stopReason: this.mapFinishReason(choice?.finish_reason),
+            usage: {
+              inputTokens: response.usage?.prompt_tokens ?? 0,
+              outputTokens: response.usage?.completion_tokens ?? 0,
+            },
+            model: response.model,
+            toolCalls: toolCalls.map((call) => ({
+              ...call,
+              ...(this.chatState(choice?.message, model)
+                ? { providerState: this.chatState(choice?.message, model) }
+                : {}),
+            })),
+          };
+        } catch (error) {
+          options?.signal?.throwIfAborted();
+          throw this.handleError(error);
         }
-
-        if (reasoningEffort) {
-          requestParams.reasoning_effort = reasoningEffort;
-        }
-
-        if (extraBody) {
-          Object.assign(requestParams, extraBody);
-        }
-
-        const response = await this.client!.chat.completions.create(
-          requestParams as unknown as OpenAI.ChatCompletionCreateParamsNonStreaming,
-        );
-
-        const choice = response.choices[0];
-        const toolCalls = this.extractToolCalls(choice?.message?.tool_calls);
-
-        return {
-          id: response.id,
-          content: choice?.message?.content ?? "",
-          stopReason: this.mapFinishReason(choice?.finish_reason),
-          usage: {
-            inputTokens: response.usage?.prompt_tokens ?? 0,
-            outputTokens: response.usage?.completion_tokens ?? 0,
-          },
-          model: response.model,
-          toolCalls,
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   /**
@@ -454,6 +527,7 @@ export class OpenAIProvider implements LLMProvider {
    */
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
     if (this.modelNeedsResponsesApi(model)) {
@@ -462,7 +536,8 @@ export class OpenAIProvider implements LLMProvider {
     }
 
     try {
-      const supportsTemp = this.supportsTemperature(model);
+      const supportsTemp = this.supportsTemperature(model, options?.thinking);
+      const extraBody = this.getExtraBody(model, options?.thinking);
 
       const maxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
       const reasoningEffort = this.getChatCompletionsReasoningEffort(
@@ -470,30 +545,42 @@ export class OpenAIProvider implements LLMProvider {
         options?.thinking,
         false,
       );
-      const stream = await this.client!.chat.completions.create({
-        model,
-        ...buildMaxTokensParam(model, maxTokens),
-        messages: this.convertMessages(messages, options?.system),
-        stream: true,
-        ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
-        ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-      } as OpenAI.ChatCompletionCreateParamsStreaming);
+      const stream = await this.client!.chat.completions.create(
+        {
+          model,
+          ...buildMaxTokensParam(model, maxTokens),
+          messages: this.convertMessages(messages, options?.system, model),
+          stream: true,
+          ...(supportsTemp && {
+            temperature: options?.temperature ?? this.config.temperature ?? 0,
+          }),
+          ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+          ...extraBody,
+        } as OpenAI.ChatCompletionCreateParamsStreaming,
+        this.getRequestOptions(options),
+      );
 
       let streamStopReason: StreamChunk["stopReason"];
 
       for await (const chunk of stream) {
+        options?.signal?.throwIfAborted();
         const delta = chunk.choices[0]?.delta;
         if (delta?.content) {
-          yield { type: "text", text: delta.content };
+          this.assertStreamActive(options);
+          const text = visibleChatText(delta.content);
+          if (text) yield { type: "text", text };
         }
         const finishReason = chunk.choices[0]?.finish_reason;
         if (finishReason) {
           streamStopReason = this.mapFinishReason(finishReason);
         }
       }
+      options?.signal?.throwIfAborted();
 
+      this.assertStreamActive(options);
       yield { type: "done", stopReason: streamStopReason };
     } catch (error) {
+      options?.signal?.throwIfAborted();
       throw this.handleError(error);
     }
   }
@@ -506,6 +593,7 @@ export class OpenAIProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
     if (this.modelNeedsResponsesApi(model)) {
@@ -516,7 +604,7 @@ export class OpenAIProvider implements LLMProvider {
     const tierCfg = getTierConfig(this.id, model);
     let timeoutTriggered = false;
     try {
-      const supportsTemp = this.supportsTemperature(model);
+      const supportsTemp = this.supportsTemperature(model, options?.thinking);
       const extraBody = this.getExtraBody(model, options?.thinking);
       const reasoningEffort = this.getChatCompletionsReasoningEffort(
         model,
@@ -530,10 +618,12 @@ export class OpenAIProvider implements LLMProvider {
       const requestParams: Record<string, unknown> = {
         model,
         ...buildMaxTokensParam(model, maxTokens),
-        messages: this.convertMessages(messages, options?.system),
+        messages: this.convertMessages(messages, options?.system, model),
         tools: this.convertTools(tools),
         tool_choice: this.convertToolChoice(options.toolChoice),
-        parallel_tool_calls: tierCfg.parallelToolCalls,
+        ...(!["minimax", "cerebras"].includes(this.id) && {
+          parallel_tool_calls: tierCfg.parallelToolCalls,
+        }),
         stream: true,
       };
 
@@ -551,20 +641,22 @@ export class OpenAIProvider implements LLMProvider {
 
       const stream = await this.client!.chat.completions.create(
         requestParams as unknown as OpenAI.ChatCompletionCreateParamsStreaming,
+        this.getRequestOptions(options),
       );
 
       const toolCallAssembler = new ChatToolCallAssembler();
+      let reasoningContent = "";
 
       // Activity-based timeout: abort the stream if no events for streamTimeout ms.
       // IMPORTANT: We use AbortController instead of throwing from setInterval,
       // because throw inside setInterval causes an unhandled exception that kills
       // the process instead of propagating to the async generator.
-      const streamTimeout = this.config.timeout ?? 120000;
+      const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
       const timeoutController = new AbortController();
 
       const timeoutInterval = setInterval(() => {
-        if (Date.now() - lastActivityTime > streamTimeout) {
+        if (streamTimeout > 0 && Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
           timeoutTriggered = true;
           timeoutController.abort();
@@ -577,10 +669,17 @@ export class OpenAIProvider implements LLMProvider {
       });
 
       try {
-        let streamStopReason: StreamChunk["stopReason"];
+        let hasToolCalls = false;
 
         for await (const chunk of stream) {
+          options?.signal?.throwIfAborted();
           const delta = chunk.choices[0]?.delta;
+          const reasoningDelta = (delta as { reasoning_content?: string } | undefined)
+            ?.reasoning_content;
+          if (reasoningDelta) {
+            reasoningContent += reasoningDelta;
+            lastActivityTime = Date.now();
+          }
 
           // Reset timeout on any activity (content, tool calls)
           if (delta?.content || delta?.tool_calls) {
@@ -589,11 +688,14 @@ export class OpenAIProvider implements LLMProvider {
 
           // Handle text content
           if (delta?.content) {
-            yield { type: "text", text: delta.content };
+            this.assertStreamActive(options, timeoutTriggered);
+            const text = visibleChatText(delta.content);
+            if (text) yield { type: "text", text };
           }
 
           // Handle tool calls
           if (delta?.tool_calls) {
+            if (delta.tool_calls.length > 0) hasToolCalls = true;
             for (const toolCallDelta of delta.tool_calls) {
               const consumed = toolCallAssembler.consume({
                 index: toolCallDelta.index,
@@ -605,6 +707,7 @@ export class OpenAIProvider implements LLMProvider {
               });
 
               if (consumed.started) {
+                this.assertStreamActive(options, timeoutTriggered);
                 yield {
                   type: "tool_use_start",
                   toolCall: {
@@ -614,6 +717,7 @@ export class OpenAIProvider implements LLMProvider {
                 };
               }
               if (consumed.argumentDelta) {
+                this.assertStreamActive(options, timeoutTriggered);
                 yield {
                   type: "tool_use_delta",
                   toolCall: {
@@ -626,54 +730,39 @@ export class OpenAIProvider implements LLMProvider {
             }
           }
 
-          // Finalize tool calls inline when finish_reason is received.
-          // This ensures tool_use_end events are yielded to the consumer
-          // while still inside the for-await loop — so they are never lost
-          // if the consumer breaks out of the generator early (e.g. on abort).
           const finishReason = chunk.choices[0]?.finish_reason;
           if (finishReason) {
-            streamStopReason = this.mapFinishReason(finishReason);
-          }
-          if (finishReason) {
-            for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
+            this.validateToolFinish(finishReason, hasToolCalls);
+            const calls = this.validateCompletedToolCalls(toolCallAssembler.finalizeAll(this.name));
+            for (const toolCall of calls) {
+              this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_end",
                 toolCall: {
-                  id: toolCall.id,
-                  name: toolCall.name,
-                  input: toolCall.input,
+                  ...toolCall,
+                  providerState: reasoningContent
+                    ? { provider: this.id, model, reasoningContent }
+                    : undefined,
                 },
               };
+              this.assertStreamActive(options, timeoutTriggered);
             }
+            this.assertStreamActive(options, timeoutTriggered);
+            yield { type: "done", stopReason: this.mapFinishReason(finishReason) };
+            this.assertStreamActive(options, timeoutTriggered);
+            return;
           }
         }
-
-        // Fallback: finalize any remaining tool calls not yet emitted.
-        // Handles providers that omit finish_reason in the last chunk.
-        for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
-          yield {
-            type: "tool_use_end",
-            toolCall: {
-              id: toolCall.id,
-              name: toolCall.name,
-              input: toolCall.input,
-            },
-          };
-        }
-
-        yield { type: "done", stopReason: streamStopReason };
+        this.assertStreamActive(options, timeoutTriggered);
+        throw new ResponseIntegrityError("Tool response ended without a terminal event", this.name);
       } finally {
         clearInterval(timeoutInterval);
       }
-
-      // If we exited the loop because of our timeout, throw a descriptive error
-      if (timeoutController.signal.aborted) {
-        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
-      }
     } catch (error) {
+      options?.signal?.throwIfAborted();
       if (timeoutTriggered) {
         throw new Error(
-          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+          `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
         );
       }
       throw this.handleError(error);
@@ -840,45 +929,60 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Check if provider is available
    */
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     if (!this.client) return false;
 
     try {
       // Try to list models first (standard OpenAI)
-      await this.client.models.list();
+      const listed = await this.client.models.list(this.getRequestOptions(options));
+      options?.signal?.throwIfAborted();
+      const model = this.config.model || DEFAULT_MODEL;
+      // A reachable endpoint does not prove access to the selected model.
+      if (listed.data?.some((entry) => entry.id === model)) return true;
+      return await this.probeSelectedModel(options);
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
+      return this.probeSelectedModel(options);
+    }
+  }
+
+  private async probeSelectedModel(options?: { signal?: AbortSignal }): Promise<boolean> {
+    try {
+      await this.chat([{ role: "user", content: "Reply OK." }], {
+        maxTokens: 64,
+        maxRetries: 0,
+        signal: options?.signal,
+      });
+      options?.signal?.throwIfAborted();
       return true;
-    } catch {
-      // Fallback: try a simple request
-      // This works better for OpenAI-compatible APIs like Kimi
-      try {
-        const model = this.config.model || DEFAULT_MODEL;
-        if (this.modelNeedsResponsesApi(model)) {
-          await (this.client as any).responses.create({
-            model,
-            input: [{ role: "user", content: [{ type: "input_text", text: "Hi" }] }],
-            max_output_tokens: 1,
-            store: false,
-          });
-        } else {
-          await this.client.chat.completions.create({
-            model,
-            messages: [{ role: "user", content: "Hi" }],
-            ...buildMaxTokensParam(model, 1),
-          } as OpenAI.ChatCompletionCreateParamsNonStreaming);
-        }
-        return true;
-      } catch {
-        // If we get a 401/403, the key is invalid
-        // If we get a 404, the model might not exist
-        // If we get other errors, provider might be down
-        return false;
-      }
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
+      return false;
     }
   }
 
   /**
    * Ensure client is initialized
    */
+  protected assertStreamActive(options?: ChatOptions, timedOut = false): void {
+    options?.signal?.throwIfAborted();
+    if (timedOut) {
+      throw new Error(
+        `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
+      );
+    }
+  }
+
+  protected getRequestOptions(options?: ChatOptions) {
+    return {
+      signal: options?.signal,
+      timeout: options?.timeout ?? this.config.timeout ?? 120000,
+      // Coco owns retries so SDK retries do not multiply attempts.
+      maxRetries: 0,
+    };
+  }
+
   protected ensureInitialized(): void {
     if (!this.client) {
       throw new ProviderError("Provider not initialized. Call initialize() first.", {
@@ -893,6 +997,7 @@ export class OpenAIProvider implements LLMProvider {
   private convertMessages(
     messages: Message[],
     systemPrompt?: string,
+    model = this.config.model,
   ): OpenAI.ChatCompletionMessageParam[] {
     const result: OpenAI.ChatCompletionMessageParam[] = [];
 
@@ -941,6 +1046,13 @@ export class OpenAIProvider implements LLMProvider {
               parts.push({ type: "text", text: block.text });
             } else if (block.type === "image") {
               const imgBlock = block as ImageContent;
+              if (
+                this.id === "cerebras" &&
+                !["image/png", "image/jpeg"].includes(imgBlock.source.media_type)
+              )
+                throw new ProviderError("Cerebras image input accepts PNG or JPEG only.", {
+                  provider: this.id,
+                });
               parts.push({
                 type: "image_url",
                 image_url: {
@@ -999,6 +1111,16 @@ export class OpenAIProvider implements LLMProvider {
           }
         }
 
+        const state = Array.isArray(msg.content)
+          ? msg.content.find(
+              (block) =>
+                block.type === "tool_use" &&
+                block.providerState?.provider === this.id &&
+                block.providerState?.model === model,
+            )
+          : undefined;
+        if (state?.type === "tool_use" && state.providerState?.reasoningContent !== undefined)
+          Object.assign(assistantMsg, { reasoning_content: state.providerState.reasoningContent });
         result.push(assistantMsg);
       }
     }
@@ -1042,7 +1164,8 @@ export class OpenAIProvider implements LLMProvider {
         name: tool.name,
         description: truncateToolDescription(tool.description),
         parameters: tool.input_schema,
-        strict: true,
+        // Preserve optional inputs; runtime tool validators enforce the full contract.
+        strict: false,
       },
     }));
   }
@@ -1065,6 +1188,40 @@ export class OpenAIProvider implements LLMProvider {
   /**
    * Extract tool calls from response
    */
+  private validateToolFinish(reason: string | null | undefined, hasCalls: boolean): void {
+    if (hasCalls ? reason !== "tool_calls" : reason !== "stop" && reason !== "length") {
+      throw new ResponseIntegrityError(
+        "Tool response did not finish with a valid terminal reason",
+        this.name,
+      );
+    }
+  }
+
+  private validateCompletedToolCalls(calls: ToolCall[]): ToolCall[] {
+    const byId = new Map<string, ToolCall>();
+    for (const call of calls) {
+      if (!call.id?.trim() || !call.name?.trim()) {
+        throw new ResponseIntegrityError("Completed tool call is missing its identity", this.name);
+      }
+      const existing = byId.get(call.id);
+      if (
+        existing &&
+        (existing.name !== call.name || !isDeepStrictEqual(existing.input, call.input))
+      ) {
+        throw new ResponseIntegrityError("Conflicting tool calls share an identity", this.name);
+      }
+      byId.set(call.id, call);
+    }
+    return [...byId.values()];
+  }
+
+  private chatState(message: unknown, model: string) {
+    const value = (message as { reasoning_content?: unknown } | undefined)?.reasoning_content;
+    return typeof value === "string"
+      ? { provider: this.id, model, reasoningContent: value }
+      : undefined;
+  }
+
   private extractToolCalls(toolCalls?: OpenAI.ChatCompletionMessageToolCall[]): ToolCall[] {
     if (!toolCalls) return [];
 
@@ -1076,16 +1233,7 @@ export class OpenAIProvider implements LLMProvider {
       .map((tc) => ({
         id: tc.id,
         name: tc.function.name,
-        input: (() => {
-          try {
-            return JSON.parse(tc.function.arguments || "{}");
-          } catch {
-            console.warn(
-              `[${this.name}] Failed to parse tool call arguments: ${tc.function.arguments?.slice(0, 100)}`,
-            );
-            return {};
-          }
-        })(),
+        input: parseToolCallArguments(tc.function.arguments, this.name),
       }));
   }
 
@@ -1109,6 +1257,10 @@ export class OpenAIProvider implements LLMProvider {
    * Handle API errors
    */
   protected handleError(error: unknown): never {
+    if (error instanceof ResponseIntegrityError) throw error;
+    if (error instanceof Error && ["AbortError", "APIUserAbortError"].includes(error.name)) {
+      throw error;
+    }
     if (error instanceof OpenAI.APIError) {
       // Determine if error is retryable based on status code and message
       const msg = error.message.toLowerCase();
@@ -1170,41 +1322,51 @@ export class OpenAIProvider implements LLMProvider {
     options?: ChatOptions,
   ): Promise<ChatResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
-    return withRetry(async () => {
-      try {
-        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-        const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-        const supportsTemp = this.supportsTemperature(model);
+    return withRetry(
+      async () => {
+        try {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+          const supportsTemp = this.supportsTemperature(model, options?.thinking);
 
-        const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
-        const response = await this.client!.responses.create({
-          model,
-          input,
-          instructions: instructions ?? undefined,
-          max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          ...(supportsTemp && {
-            temperature: options?.temperature ?? this.config.temperature ?? 0,
-          }),
-          // Responses API uses nested reasoning.effort (not top-level reasoning_effort)
-          ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
-          store: false,
-        });
+          const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
+          const response = await this.client!.responses.create(
+            {
+              model,
+              input,
+              instructions: instructions ?? undefined,
+              max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+              ...(supportsTemp && {
+                temperature: options?.temperature ?? this.config.temperature ?? 0,
+              }),
+              // Responses API uses nested reasoning.effort (not top-level reasoning_effort)
+              ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
+              store: false,
+              include: ["reasoning.encrypted_content"],
+            },
+            this.getRequestOptions(options),
+          );
 
-        return {
-          id: response.id,
-          content: response.output_text ?? "",
-          stopReason: response.status === "completed" ? "end_turn" : "max_tokens",
-          usage: {
-            inputTokens: response.usage?.input_tokens ?? 0,
-            outputTokens: response.usage?.output_tokens ?? 0,
-          },
-          model: String(response.model),
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+          return {
+            id: response.id,
+            content: response.output_text ?? "",
+            stopReason: response.status === "completed" ? "end_turn" : "max_tokens",
+            usage: {
+              inputTokens: response.usage?.input_tokens ?? 0,
+              outputTokens: response.usage?.output_tokens ?? 0,
+            },
+            model: String(response.model),
+          };
+        } catch (error) {
+          options?.signal?.throwIfAborted();
+          throw this.handleError(error);
+        }
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   /**
@@ -1215,66 +1377,94 @@ export class OpenAIProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
-    return withRetry(async () => {
-      try {
-        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-        const tierCfg = getTierConfig(this.id, model);
-        const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-        const tools = this.convertToolsForResponses(
-          this.limitTools(options.tools, tierCfg.maxTools),
-        );
-        const supportsTemp = this.supportsTemperature(model);
+    return withRetry(
+      async () => {
+        try {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const tierCfg = getTierConfig(this.id, model);
+          const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
+          const tools = this.convertToolsForResponses(
+            this.limitTools(options.tools, tierCfg.maxTools),
+          );
+          const supportsTemp = this.supportsTemperature(model, options?.thinking);
 
-        const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
-        const response = await this.client!.responses.create({
-          model,
-          input,
-          instructions: instructions ?? undefined,
-          tools,
-          max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-          ...(supportsTemp && {
-            temperature: options?.temperature ?? this.config.temperature ?? 0,
-          }),
-          ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
-          store: false,
-        });
+          const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
+          const response = await this.client!.responses.create(
+            {
+              model,
+              input,
+              instructions: instructions ?? undefined,
+              tools,
+              max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+              ...(supportsTemp && {
+                temperature: options?.temperature ?? this.config.temperature ?? 0,
+              }),
+              ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
+              store: false,
+              include: ["reasoning.encrypted_content"],
+            },
+            this.getRequestOptions(options),
+          );
 
-        // Extract text and tool calls from output
-        let content = "";
-        const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
-
-        for (const item of response.output) {
-          if (item.type === "message") {
-            for (const part of item.content) {
-              if (part.type === "output_text") {
-                content += part.text;
-              }
-            }
-          } else if (item.type === "function_call") {
-            toolCalls.push({
-              id: item.call_id,
-              name: item.name,
-              input: parseToolCallArguments(item.arguments, this.name),
-            });
+          if (
+            response.status !== "completed" ||
+            !Array.isArray(response.output) ||
+            response.output.some((item) => !item || typeof item !== "object")
+          ) {
+            throw new ResponseIntegrityError("Tool response did not complete", this.name);
           }
-        }
+          // Extract text and tool calls from output
+          let content = "";
+          const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
 
-        return {
-          id: response.id,
-          content,
-          stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
-          usage: {
-            inputTokens: response.usage?.input_tokens ?? 0,
-            outputTokens: response.usage?.output_tokens ?? 0,
-          },
-          model: String(response.model),
-          toolCalls,
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+          for (const item of response.output) {
+            if (item.type === "message") {
+              for (const part of item.content) {
+                if (part.type === "output_text") {
+                  content += part.text;
+                }
+              }
+            } else if (item.type === "function_call") {
+              toolCalls.push({
+                id: item.call_id,
+                name: item.name,
+                input: parseToolCallArguments(item.arguments, this.name),
+              });
+            }
+          }
+
+          return {
+            id: response.id,
+            content,
+            stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
+            usage: {
+              inputTokens: response.usage?.input_tokens ?? 0,
+              outputTokens: response.usage?.output_tokens ?? 0,
+            },
+            model: String(response.model),
+            toolCalls: this.validateCompletedToolCalls(toolCalls).map((call) => ({
+              ...call,
+              providerState: response.output.some((item) => item.type === "reasoning")
+                ? {
+                    provider: this.id,
+                    model,
+                    responseItems: response.output.filter(
+                      (item) => item.type === "reasoning",
+                    ) as unknown as Record<string, unknown>[],
+                  }
+                : undefined,
+            })),
+          };
+        } catch (error) {
+          options?.signal?.throwIfAborted();
+          throw this.handleError(error);
+        }
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   /**
@@ -1285,32 +1475,39 @@ export class OpenAIProvider implements LLMProvider {
     options?: ChatOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     let timeoutTriggered = false;
     try {
       const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
-      const supportsTemp = this.supportsTemperature(model);
+      const supportsTemp = this.supportsTemperature(model, options?.thinking);
 
       const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
-      const stream = await this.client!.responses.create({
-        model,
-        input,
-        instructions: instructions ?? undefined,
-        max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
-        ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
-        ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
-        store: false,
-        stream: true,
-      });
+      const stream = await this.client!.responses.create(
+        {
+          model,
+          input,
+          instructions: instructions ?? undefined,
+          max_output_tokens: options?.maxTokens ?? this.config.maxTokens ?? 8192,
+          ...(supportsTemp && {
+            temperature: options?.temperature ?? this.config.temperature ?? 0,
+          }),
+          ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
+          store: false,
+          include: ["reasoning.encrypted_content"],
+          stream: true,
+        },
+        this.getRequestOptions(options),
+      );
 
       // Activity-based timeout using AbortController (safe for async generators)
-      const streamTimeout = this.config.timeout ?? 120000;
+      const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
       const timeoutController = new AbortController();
 
       const timeoutInterval = setInterval(() => {
-        if (Date.now() - lastActivityTime > streamTimeout) {
+        if (streamTimeout > 0 && Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
           timeoutTriggered = true;
           timeoutController.abort();
@@ -1325,13 +1522,17 @@ export class OpenAIProvider implements LLMProvider {
 
       try {
         for await (const event of stream) {
+          options?.signal?.throwIfAborted();
           lastActivityTime = Date.now();
           if (event.type === "response.output_text.delta") {
+            this.assertStreamActive(options, timeoutTriggered);
             yield { type: "text", text: event.delta };
           } else if (event.type === "response.completed") {
+            this.assertStreamActive(options, timeoutTriggered);
             yield { type: "done", stopReason: "end_turn" };
           }
         }
+        options?.signal?.throwIfAborted();
       } finally {
         clearInterval(timeoutInterval);
       }
@@ -1340,9 +1541,10 @@ export class OpenAIProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      options?.signal?.throwIfAborted();
       if (timeoutTriggered) {
         throw new Error(
-          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+          `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
         );
       }
       throw this.handleError(error);
@@ -1361,6 +1563,7 @@ export class OpenAIProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     let timeoutTriggered = false;
     try {
@@ -1370,7 +1573,7 @@ export class OpenAIProvider implements LLMProvider {
       const limitedTools = this.limitTools(options.tools, tierCfg.maxTools);
       const tools =
         limitedTools.length > 0 ? this.convertToolsForResponses(limitedTools) : undefined;
-      const supportsTemp = this.supportsTemperature(model);
+      const supportsTemp = this.supportsTemperature(model, options?.thinking);
 
       const reasoningEffort = this.getResponsesReasoningEffort(model, options?.thinking);
       const requestParams: Record<string, unknown> = {
@@ -1381,6 +1584,7 @@ export class OpenAIProvider implements LLMProvider {
         ...(supportsTemp && { temperature: options?.temperature ?? this.config.temperature ?? 0 }),
         ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
         store: false,
+        include: ["reasoning.encrypted_content"],
         stream: true,
       };
 
@@ -1390,17 +1594,19 @@ export class OpenAIProvider implements LLMProvider {
 
       const stream = await this.client!.responses.create(
         requestParams as unknown as Responses.ResponseCreateParamsStreaming,
+        this.getRequestOptions(options),
       );
 
       const toolCallAssembler = new ResponsesToolCallAssembler();
+      const completedCalls: ToolCall[] = [];
 
       // Activity-based timeout using AbortController (safe for async generators)
-      const streamTimeout = this.config.timeout ?? 120000;
+      const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
       const timeoutController = new AbortController();
 
       const timeoutInterval = setInterval(() => {
-        if (Date.now() - lastActivityTime > streamTimeout) {
+        if (streamTimeout > 0 && Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
           timeoutTriggered = true;
           timeoutController.abort();
@@ -1415,10 +1621,12 @@ export class OpenAIProvider implements LLMProvider {
 
       try {
         for await (const event of stream) {
+          options?.signal?.throwIfAborted();
           lastActivityTime = Date.now();
 
           switch (event.type) {
             case "response.output_text.delta":
+              this.assertStreamActive(options, timeoutTriggered);
               yield { type: "text", text: event.delta };
               break;
 
@@ -1442,6 +1650,7 @@ export class OpenAIProvider implements LLMProvider {
                   },
                 });
                 if (!start) break;
+                this.assertStreamActive(options, timeoutTriggered);
                 yield {
                   type: "tool_use_start",
                   toolCall: { id: start.id, name: start.name },
@@ -1449,13 +1658,23 @@ export class OpenAIProvider implements LLMProvider {
               }
               break;
 
-            case "response.function_call_arguments.delta":
-              toolCallAssembler.onArgumentsDelta({
+            case "response.function_call_arguments.delta": {
+              const delta = toolCallAssembler.onArgumentsDelta({
                 item_id: event.item_id,
                 output_index: event.output_index,
                 delta: event.delta,
               });
+              if (delta?.text) {
+                this.assertStreamActive(options, timeoutTriggered);
+                yield {
+                  type: "tool_use_delta",
+                  toolCall: { id: delta.id, name: delta.name },
+                  text: delta.text,
+                };
+                this.assertStreamActive(options, timeoutTriggered);
+              }
               break;
+            }
 
             case "response.function_call_arguments.done":
               {
@@ -1467,80 +1686,60 @@ export class OpenAIProvider implements LLMProvider {
                   },
                   this.name,
                 );
-                if (toolCall) {
-                  yield {
-                    type: "tool_use_end",
-                    toolCall: {
-                      id: toolCall.id,
-                      name: toolCall.name,
-                      input: toolCall.input,
-                    },
-                  };
-                }
+                if (toolCall) completedCalls.push(toolCall);
               }
               break;
 
-            case "response.completed":
-              {
-                const emittedCallIds = new Set<string>();
+            case "response.incomplete":
+            case "response.failed":
+            case "error":
+              throw new ResponseIntegrityError("Tool response did not complete", this.name);
 
-                // Emit any remaining function calls not finalized via done events
-                for (const toolCall of toolCallAssembler.finalizeAll(this.name)) {
-                  if (toolCall.id) emittedCallIds.add(toolCall.id);
-                  yield {
-                    type: "tool_use_end",
-                    toolCall: {
-                      id: toolCall.id,
-                      name: toolCall.name,
-                      input: toolCall.input,
-                    },
-                  };
-                }
-
-                const outputItems =
-                  (event.response?.output as Array<{
-                    type?: string;
-                    call_id?: string;
-                    name?: string;
-                    arguments?: string;
-                  }>) ?? [];
-
-                // Fallback: some OpenAI-compatible providers only include
-                // function calls in response.completed.output and may omit
-                // fine-grained function_call_arguments.done events.
-                for (const item of outputItems) {
-                  if (item.type !== "function_call" || !item.call_id || !item.name) continue;
-                  if (emittedCallIds.has(item.call_id)) continue;
-                  yield {
-                    type: "tool_use_end",
-                    toolCall: {
-                      id: item.call_id,
-                      name: item.name,
-                      input: parseToolCallArguments(item.arguments ?? "{}", this.name),
-                    },
-                  };
-                }
-
-                const hasToolCalls = outputItems.some((i) => i.type === "function_call");
-                yield {
-                  type: "done",
-                  stopReason: hasToolCalls ? "tool_use" : "end_turn",
-                };
+            case "response.completed": {
+              if (
+                event.response?.status !== "completed" ||
+                !Array.isArray(event.response.output) ||
+                event.response.output.some((item) => !item || typeof item !== "object")
+              ) {
+                throw new ResponseIntegrityError(
+                  "Tool response has an inconsistent terminal status",
+                  this.name,
+                );
               }
-              break;
+              const calls = this.validateCompletedToolCalls(
+                toolCallAssembler.finalizeCompleted(
+                  this.name,
+                  event.response.output.filter((item) => item.type === "function_call"),
+                  completedCalls,
+                ),
+              );
+              const responseItems = event.response.output.filter(
+                (item) => item.type === "reasoning",
+              ) as unknown as Record<string, unknown>[];
+              for (const toolCall of calls) {
+                if (responseItems.length)
+                  toolCall.providerState = { provider: this.id, model, responseItems };
+                this.assertStreamActive(options, timeoutTriggered);
+                yield { type: "tool_use_end", toolCall };
+                this.assertStreamActive(options, timeoutTriggered);
+              }
+              this.assertStreamActive(options, timeoutTriggered);
+              yield { type: "done", stopReason: calls.length ? "tool_use" : "end_turn" };
+              this.assertStreamActive(options, timeoutTriggered);
+              return;
+            }
           }
         }
+        this.assertStreamActive(options, timeoutTriggered);
+        throw new ResponseIntegrityError("Tool response ended without a terminal event", this.name);
       } finally {
         clearInterval(timeoutInterval);
       }
-
-      if (timeoutController.signal.aborted) {
-        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
-      }
     } catch (error) {
+      options?.signal?.throwIfAborted();
       if (timeoutTriggered) {
         throw new Error(
-          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+          `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
         );
       }
       throw this.handleError(error);
@@ -1609,6 +1808,16 @@ export class OpenAIProvider implements LLMProvider {
           });
         }
       } else if (msg.role === "assistant") {
+        const state = Array.isArray(msg.content)
+          ? msg.content.find(
+              (b) =>
+                b.type === "tool_use" &&
+                b.providerState?.provider === this.id &&
+                b.providerState?.model === this.config.model,
+            )
+          : undefined;
+        if (state?.type === "tool_use" && state.providerState?.responseItems)
+          input.push(...(state.providerState.responseItems as unknown as Responses.ResponseInput));
         if (typeof msg.content === "string") {
           input.push({ role: "assistant", content: msg.content });
         } else if (Array.isArray(msg.content)) {
@@ -1651,7 +1860,8 @@ export class OpenAIProvider implements LLMProvider {
       name: tool.name,
       description: tool.description ? truncateToolDescription(tool.description) : undefined,
       parameters: tool.input_schema ?? null,
-      strict: true,
+      // Explicit opt-out prevents Responses from making optional properties required.
+      strict: false,
     }));
   }
 }

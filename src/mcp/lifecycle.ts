@@ -42,32 +42,9 @@ export interface HealthCheckResult {
 export class MCPServerManager {
   private connections = new Map<string, ServerConnection>();
   private logger = getLogger();
-  private static readonly STOP_TIMEOUT_MS = 5000;
-
-  /**
-   * Run an async operation with a timeout, always clearing timer resources.
-   */
-  private async runWithTimeout<T>(
-    operation: Promise<T>,
-    timeoutMs: number,
-    timeoutMessage: string,
-  ): Promise<T> {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-      if (typeof timeoutId.unref === "function") {
-        timeoutId.unref();
-      }
-    });
-
-    try {
-      return await Promise.race([operation, timeoutPromise]);
-    } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    }
-  }
+  private starting = new Map<string, Promise<ServerConnection>>();
+  private stopping = new Map<string, Promise<void>>();
+  private ready = new Set<string>();
 
   /**
    * Create transport for a server config
@@ -113,75 +90,97 @@ export class MCPServerManager {
    * Start a single server
    */
   async startServer(config: MCPServerConfig): Promise<ServerConnection> {
-    if (this.connections.has(config.name)) {
-      this.logger.warn(`Server '${config.name}' already connected`);
-      return this.connections.get(config.name)!;
+    const closing = this.stopping.get(config.name);
+    if (closing) {
+      await closing;
+      return this.startServer(config);
     }
-
-    this.logger.info(`Starting MCP server: ${config.name}`);
-
-    const transport = this.createTransport(config);
-    await transport.connect();
-
-    const client = new MCPClientImpl(transport);
-
-    // Initialize MCP protocol
-    await client.initialize({
-      protocolVersion: "2024-11-05",
-      capabilities: {},
-      clientInfo: { name: "coco-mcp-client", version: VERSION },
-    });
-
-    // Get tool count
-    let toolCount = 0;
+    const opening = this.starting.get(config.name);
+    if (opening) return opening;
+    const existing = this.connections.get(config.name);
+    if (existing) {
+      if (this.ready.has(config.name) && existing.transport.isConnected()) return existing;
+      existing.healthy = false;
+      this.ready.delete(config.name);
+      throw new MCPConnectionError(`Server '${config.name}' requires cleanup before restart`);
+    }
+    const operation = Promise.resolve().then(() => this.openServer(config));
+    this.starting.set(config.name, operation);
     try {
-      const { tools } = await client.listTools();
-      toolCount = tools.length;
-    } catch {
-      // Non-fatal: tools list might not be available
+      return await operation;
+    } finally {
+      if (this.starting.get(config.name) === operation) this.starting.delete(config.name);
     }
+  }
 
+  private async openServer(config: MCPServerConfig): Promise<ServerConnection> {
+    this.logger.info(`Starting MCP server: ${config.name}`);
+    const transport = this.createTransport(config);
+    const client = new MCPClientImpl(transport);
     const connection: ServerConnection = {
       name: config.name,
       client,
       transport,
       config,
       connectedAt: new Date(),
-      toolCount,
-      healthy: true,
+      toolCount: 0,
+      healthy: false,
     };
-
+    // Retain ownership before the first operation can fail or remain pending.
     this.connections.set(config.name, connection);
-    this.logger.info(`Server '${config.name}' started with ${toolCount} tools`);
-
-    return connection;
+    try {
+      await transport.connect();
+      await client.initialize({
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "coco-mcp-client", version: VERSION },
+      });
+      try {
+        const { tools } = await client.listTools({ timeout: 5000 });
+        connection.toolCount = tools.length;
+      } catch {
+        // Servers without tools/list remain usable for other protocol methods.
+      }
+      if (!transport.isConnected())
+        throw new MCPConnectionError("Server disconnected during startup");
+      connection.healthy = true;
+      this.ready.add(config.name);
+      this.logger.info(`Server '${config.name}' started with ${connection.toolCount} tools`);
+      return connection;
+    } catch (error) {
+      try {
+        await transport.disconnect();
+        this.connections.delete(config.name);
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `Server '${config.name}' startup and cleanup failed`,
+        );
+      }
+      throw error;
+    }
   }
 
-  /**
-   * Stop a single server
-   */
+  /** Stop retains ownership until the transport confirms closure. */
   async stopServer(name: string): Promise<void> {
-    const connection = this.connections.get(name);
-    if (!connection) {
-      this.logger.warn(`Server '${name}' not found`);
-      return;
-    }
-
-    this.logger.info(`Stopping MCP server: ${name}`);
-
+    const closing = this.stopping.get(name);
+    if (closing) return closing;
+    const opening = this.starting.get(name);
+    const operation = Promise.resolve().then(async () => {
+      if (opening) await opening.catch(() => {});
+      const connection = this.connections.get(name);
+      if (!connection) return;
+      connection.healthy = false;
+      this.ready.delete(name);
+      await connection.transport.disconnect();
+      if (this.connections.get(name) === connection) this.connections.delete(name);
+    });
+    this.stopping.set(name, operation);
     try {
-      await this.runWithTimeout(
-        connection.transport.disconnect(),
-        MCPServerManager.STOP_TIMEOUT_MS,
-        "MCP disconnect timeout",
-      );
-    } catch (error) {
-      this.logger.error(
-        `Error disconnecting server '${name}': ${error instanceof Error ? error.message : String(error)}`,
-      );
+      await operation;
+    } finally {
+      if (this.stopping.get(name) === operation) this.stopping.delete(name);
     }
-
-    this.connections.delete(name);
   }
 
   /**
@@ -195,9 +194,6 @@ export class MCPServerManager {
 
     const config = connection.config;
     await this.stopServer(name);
-
-    // Small delay before restart
-    await new Promise((resolve) => setTimeout(resolve, 500));
 
     return this.startServer(config);
   }
@@ -220,11 +216,15 @@ export class MCPServerManager {
     const startTime = performance.now();
 
     try {
-      const { tools } = await this.runWithTimeout(
-        connection.client.listTools(),
-        5000,
-        "Health check timeout",
-      );
+      const { tools } = await connection.client.listTools({ timeout: 5000 });
+      if (
+        this.connections.get(name) !== connection ||
+        !this.ready.has(name) ||
+        this.stopping.has(name) ||
+        !connection.transport.isConnected()
+      ) {
+        throw new MCPConnectionError("Server closed during health check");
+      }
 
       const latencyMs = performance.now() - startTime;
       connection.healthy = true;
@@ -276,10 +276,12 @@ export class MCPServerManager {
    * Stop all servers
    */
   async stopAll(): Promise<void> {
-    const names = Array.from(this.connections.keys());
-    for (const name of names) {
-      await this.stopServer(name);
-    }
+    const names = new Set([...this.connections.keys(), ...this.starting.keys()]);
+    const results = await Promise.allSettled([...names].map((name) => this.stopServer(name)));
+    const errors = results
+      .filter((result) => result.status === "rejected")
+      .map((result) => result.reason);
+    if (errors.length) throw new AggregateError(errors, "Some MCP servers could not be stopped");
   }
 
   /**

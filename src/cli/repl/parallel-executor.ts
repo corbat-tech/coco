@@ -4,7 +4,7 @@
  */
 
 import type { ToolCall } from "../../providers/types.js";
-import type { ToolRegistry, ToolResult } from "../../tools/registry.js";
+import type { ToolResult } from "../../tools/registry.js";
 import type { ExecutedToolCall } from "./types.js";
 import type {
   HookRegistryInterface,
@@ -13,6 +13,8 @@ import type {
   HookExecutionResult,
 } from "./hooks/index.js";
 import { isAbortError } from "./error-resilience.js";
+
+export type ToolDispatch = (toolCall: ToolCall, signal?: AbortSignal) => Promise<ToolResult>;
 
 /**
  * Options for parallel tool execution
@@ -84,13 +86,13 @@ export class ParallelToolExecutor {
    * while maintaining the order of results.
    *
    * @param toolCalls - Array of tool calls to execute
-   * @param registry - Tool registry for execution
+   * @param dispatch - Authorized execution boundary
    * @param options - Execution options
    * @returns Results of all executed tools
    */
   async executeParallel(
     toolCalls: ToolCall[],
-    registry: ToolRegistry,
+    dispatch: ToolDispatch,
     options: ParallelExecutorOptions = {},
   ): Promise<ParallelExecutionResult> {
     const {
@@ -180,7 +182,7 @@ export class ParallelToolExecutor {
                 task.toolCall,
                 task.index,
                 total,
-                registry,
+                dispatch,
                 options,
               ).then(({ executed, skipped: wasSkipped, reason }) => {
                 if (wasSkipped) {
@@ -194,7 +196,7 @@ export class ParallelToolExecutor {
                 task.toolCall,
                 task.index,
                 total,
-                registry,
+                dispatch,
                 onToolStart,
                 onToolEnd,
                 signal,
@@ -234,18 +236,29 @@ export class ParallelToolExecutor {
     // Wait for all to complete with a safety timeout
     // This prevents the flow from hanging indefinitely if a tool never resolves
     const TOOL_EXECUTION_TIMEOUT_MS = 300000; // 5 minutes max for all tools
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const clearSafetyTimeout = (): void => clearTimeout(timeoutId);
     const timeoutPromise = new Promise<never>((_, reject) => {
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         reject(new Error(`Tool execution timeout after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s`));
       }, TOOL_EXECUTION_TIMEOUT_MS);
       // Clean up timeout if signal is aborted
-      signal?.addEventListener("abort", () => {
-        clearTimeout(timeoutId);
-      });
+      signal?.addEventListener("abort", clearSafetyTimeout);
     });
 
+    // Completing a batch schedules more tasks. Promise.all snapshots its input,
+    // so drain every newly scheduled batch before declaring execution complete.
+    const drain = async (): Promise<void> => {
+      let awaitedCount = 0;
+      while (awaitedCount < processingPromises.length) {
+        const batch = processingPromises.slice(awaitedCount);
+        awaitedCount = processingPromises.length;
+        await Promise.all(batch);
+      }
+    };
+
     try {
-      await Promise.race([Promise.all(processingPromises), timeoutPromise]);
+      await Promise.race([drain(), timeoutPromise]);
     } catch (error) {
       // If timeout or other error, mark remaining tasks as failed
       for (const task of tasks) {
@@ -260,6 +273,9 @@ export class ParallelToolExecutor {
       if (isAbortError(error, signal)) {
         throw error;
       }
+    } finally {
+      clearSafetyTimeout();
+      signal?.removeEventListener("abort", clearSafetyTimeout);
     }
 
     // Collect executed results in order, filtering nulls
@@ -283,7 +299,7 @@ export class ParallelToolExecutor {
     toolCall: ToolCall,
     index: number,
     total: number,
-    registry: ToolRegistry,
+    dispatch: ToolDispatch,
     onToolStart?: (toolCall: ToolCall, index: number, total: number) => void,
     onToolEnd?: (result: ExecutedToolCall) => void,
     signal?: AbortSignal,
@@ -300,7 +316,7 @@ export class ParallelToolExecutor {
     let result: ToolResult;
 
     try {
-      result = await registry.execute(toolCall.name, toolCall.input, { signal });
+      result = await dispatch(toolCall, signal);
     } catch (error) {
       // Handle abort errors silently
       if (isAbortError(error, signal)) {
@@ -343,7 +359,7 @@ export class ParallelToolExecutor {
           // Retry the tool now that the path is authorized.
           // Wrap retry in try/catch so an unexpected registry error never propagates.
           try {
-            result = await registry.execute(toolCall.name, toolCall.input, { signal });
+            result = await dispatch(toolCall, signal);
           } catch (retryError) {
             if (isAbortError(retryError, signal)) return null;
             const msg = retryError instanceof Error ? retryError.message : String(retryError);
@@ -383,7 +399,7 @@ export class ParallelToolExecutor {
     toolCall: ToolCall,
     index: number,
     total: number,
-    registry: ToolRegistry,
+    dispatch: ToolDispatch,
     options: ParallelExecutorOptions,
   ): Promise<{ executed: ExecutedToolCall | null; skipped: boolean; reason?: string }> {
     const {
@@ -457,7 +473,7 @@ export class ParallelToolExecutor {
     const startTime = performance.now();
     let result: ToolResult;
     try {
-      result = await registry.execute(toolCall.name, toolCall.input, { signal });
+      result = await dispatch(toolCall, signal);
     } catch (error) {
       if (isAbortError(error, signal)) {
         return { executed: null, skipped: true, reason: "Operation cancelled" };

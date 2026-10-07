@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
+import { z } from "zod";
 import type { LLMProvider, Message, StreamChunk, ToolCall } from "../../providers/types.js";
 import type { ToolRegistry, ToolResult } from "../../tools/registry.js";
 import type { ReplSession } from "./types.js";
@@ -122,7 +123,16 @@ function createMockToolRegistry(): ToolRegistry {
     execute: vi.fn(),
     register: vi.fn(),
     unregister: vi.fn(),
-    get: vi.fn(),
+    get: vi.fn((name: string) =>
+      ["read_file", "write_file", "bash_exec"].includes(name)
+        ? {
+            name,
+            category: name === "bash_exec" ? "bash" : "file",
+            description: "Fixture",
+            parameters: z.record(z.string(), z.unknown()),
+          }
+        : undefined,
+    ),
     has: vi.fn(),
     getAll: vi.fn(),
     getByCategory: vi.fn(),
@@ -298,7 +308,7 @@ describe("REPL Integration Tests", () => {
               yield { type: "text", text: "Let me read that file." };
               yield { type: "tool_use_start", toolCall: { id: toolCall.id, name: toolCall.name } };
               yield { type: "tool_use_end", toolCall };
-              yield { type: "done" };
+              yield { type: "done", stopReason: "tool_use" };
             })(),
           );
         }
@@ -355,7 +365,7 @@ describe("REPL Integration Tests", () => {
                 yield { type: "tool_use_start", toolCall: { id: tc.id, name: tc.name } };
                 yield { type: "tool_use_end", toolCall: tc };
               }
-              yield { type: "done" };
+              yield { type: "done", stopReason: "tool_use" };
             })(),
           );
         }
@@ -401,7 +411,7 @@ describe("REPL Integration Tests", () => {
             (function* (): Generator<StreamChunk> {
               yield { type: "tool_use_start", toolCall: { id: toolCall.id, name: toolCall.name } };
               yield { type: "tool_use_end", toolCall };
-              yield { type: "done" };
+              yield { type: "done", stopReason: "tool_use" };
             })(),
           );
         }
@@ -452,7 +462,7 @@ describe("REPL Integration Tests", () => {
             (function* (): Generator<StreamChunk> {
               yield { type: "tool_use_start", toolCall: { id: toolCall.id, name: toolCall.name } };
               yield { type: "tool_use_end", toolCall };
-              yield { type: "done" };
+              yield { type: "done", stopReason: "tool_use" };
             })(),
           );
         }
@@ -656,7 +666,7 @@ describe("REPL Integration Tests", () => {
               yield { type: "text", text: "Reading the file..." };
               yield { type: "tool_use_start", toolCall: { id: toolCall.id, name: toolCall.name } };
               yield { type: "tool_use_end", toolCall };
-              yield { type: "done" };
+              yield { type: "done", stopReason: "tool_use" };
             })(),
           );
         }
@@ -717,7 +727,7 @@ describe("REPL Integration Tests", () => {
               yield { type: "tool_use_start", toolCall: { id: tc.id, name: tc.name } };
               yield { type: "tool_use_end", toolCall: tc };
             }
-            yield { type: "done" };
+            yield { type: "done", stopReason: "tool_use" };
           })(),
         );
       });

@@ -21,21 +21,24 @@ class MockOpenAIAPIError extends Error {
 
 vi.mock("openai", () => {
   return {
-    default: vi.fn().mockImplementation(function () {
-      return {
-        chat: {
-          completions: {
-            create: mockCreate,
+    default: Object.assign(
+      vi.fn().mockImplementation(function () {
+        return {
+          chat: {
+            completions: {
+              create: mockCreate,
+            },
           },
-        },
-        responses: {
-          create: mockResponsesCreate,
-        },
-        models: {
-          list: mockList,
-        },
-      };
-    }),
+          responses: {
+            create: mockResponsesCreate,
+          },
+          models: {
+            list: mockList,
+          },
+        };
+      }),
+      { APIError: MockOpenAIAPIError },
+    ),
     APIError: MockOpenAIAPIError,
   };
 });
@@ -152,7 +155,7 @@ describe("OpenAIProvider", () => {
     });
 
     it("should return true when API is reachable", async () => {
-      mockList.mockResolvedValue({ data: [] });
+      mockList.mockResolvedValue({ data: [{ id: "gpt-4o" }] });
 
       const { OpenAIProvider } = await import("./openai.js");
 
@@ -444,7 +447,10 @@ describe("streamWithTools regressions", () => {
         };
         yield {
           type: "response.completed",
-          response: { output: [{ type: "function_call" }] },
+          response: {
+            status: "completed",
+            output: [{ type: "function_call", call_id: "call_1", name: "write_file" }],
+          },
         };
       },
     };
@@ -490,7 +496,10 @@ describe("streamWithTools regressions", () => {
         };
         yield {
           type: "response.completed",
-          response: { output: [{ type: "function_call" }] },
+          response: {
+            status: "completed",
+            output: [{ type: "function_call", call_id: "call_1", name: "write_file" }],
+          },
         };
       },
     };
@@ -517,6 +526,7 @@ describe("streamWithTools regressions", () => {
         yield {
           type: "response.completed",
           response: {
+            status: "completed",
             output: [
               {
                 type: "function_call",
@@ -575,6 +585,7 @@ describe("message conversion", () => {
       expect.objectContaining({
         messages: expect.arrayContaining([expect.objectContaining({ role: "system" })]),
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -598,6 +609,7 @@ describe("message conversion", () => {
           expect.objectContaining({ role: "system", content: "You are helpful" }),
         ]),
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -650,6 +662,7 @@ describe("message conversion", () => {
           expect.objectContaining({ role: "tool", tool_call_id: "call_1" }),
         ]),
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -690,6 +703,7 @@ describe("message conversion", () => {
           }),
         ]),
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -735,6 +749,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: undefined,
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -759,6 +774,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: "auto",
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -783,6 +799,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: "required",
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -807,6 +824,7 @@ describe("tool choice conversion", () => {
       expect.objectContaining({
         tool_choice: { type: "function", function: { name: "readFile" } },
       }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 });
@@ -990,7 +1008,7 @@ describe("tool call extraction", () => {
     expect(response.toolCalls).toEqual([]);
   });
 
-  it("should handle tool calls with empty arguments", async () => {
+  it("should reject tool calls with empty arguments", async () => {
     mockCreate.mockResolvedValue({
       id: "chatcmpl-123",
       model: "gpt-4o",
@@ -1019,11 +1037,11 @@ describe("tool call extraction", () => {
     const provider = new OpenAIProvider();
     await provider.initialize({ apiKey: "test", model: "gpt-4o" });
 
-    const response = await provider.chatWithTools([{ role: "user", content: "Hello" }], {
-      tools: [],
-    });
-
-    expect(response.toolCalls[0]?.input).toEqual({});
+    await expect(
+      provider.chatWithTools([{ role: "user", content: "Hello" }], {
+        tools: [],
+      }),
+    ).rejects.toThrow(/Invalid tool arguments/);
   });
 });
 
@@ -1049,9 +1067,11 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
     expect(mockCreate).not.toHaveBeenCalledWith(
       expect.objectContaining({ max_tokens: expect.anything() }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -1064,6 +1084,7 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -1076,6 +1097,7 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -1086,9 +1108,13 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     await provider.chat([{ role: "user", content: "Hello" }]);
 
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ max_tokens: 8192 }));
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
+    );
     expect(mockCreate).not.toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: expect.anything() }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -1099,7 +1125,10 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     await provider.chat([{ role: "user", content: "Hello" }]);
 
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ max_tokens: 8192 }));
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
+    );
   });
 
   it("should send max_completion_tokens for chatgpt-4o-latest", async () => {
@@ -1111,6 +1140,7 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 
@@ -1128,6 +1158,7 @@ describe("max_tokens vs max_completion_tokens routing", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8192 }),
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
     );
   });
 });
@@ -1187,6 +1218,9 @@ describe("responses temperature compatibility", () => {
 
     await provider.chat([{ role: "user", content: "hi" }]);
 
+    expect(mockResponsesCreate.mock.calls.at(-1)?.[1]).toEqual(
+      expect.objectContaining({ maxRetries: 0, timeout: 120000 }),
+    );
     const req = mockResponsesCreate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(req).toBeDefined();
     expect(req).not.toHaveProperty("temperature");
@@ -1250,5 +1284,174 @@ describe("OpenAI-compatible provider compatibility", () => {
     const req = mockCreate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(req.tools).toBeDefined();
     expect(req.reasoning_effort).toBeUndefined();
+  });
+});
+
+describe("tool input contract preservation", () => {
+  it.each(["convertTools", "convertToolsForResponses"])(
+    "preserves optional constraints through %s without strict rewriting",
+    async (method) => {
+      const { OpenAIProvider } = await import("./openai.js");
+      const provider = new OpenAIProvider();
+      const input_schema = {
+        type: "object",
+        properties: { optional: { anyOf: [{ type: "integer", minimum: 2 }, { type: "null" }] } },
+        required: [],
+      };
+      const tools = [{ name: "contract", description: "Contract", input_schema }];
+      const converted = (
+        provider as unknown as Record<
+          string,
+          (
+            input: Array<{
+              name: string;
+              description: string;
+              input_schema: Record<string, unknown>;
+            }>,
+          ) => Array<Record<string, unknown>>
+        >
+      )[method]!(tools);
+      const definition =
+        method === "convertTools"
+          ? (converted[0]!.function as Record<string, unknown>)
+          : converted[0]!;
+      expect(definition.strict).toBe(false);
+      expect(definition.parameters).toEqual(input_schema);
+      expect(input_schema.required).toEqual([]);
+    },
+  );
+});
+
+describe("availability cancellation", () => {
+  it.each(["gpt-4o", "gpt-5"])(
+    "never starts fallback inference after a cancelled model probe (%s)",
+    async (model) => {
+      const { OpenAIProvider } = await import("./openai.js");
+      const provider = new OpenAIProvider();
+      await provider.initialize({ apiKey: "test", model });
+      mockCreate.mockClear();
+      mockResponsesCreate.mockClear();
+      const controller = new AbortController();
+      const reason = new Error("cancel availability");
+      mockList.mockImplementationOnce(async (options) => {
+        expect(options.signal).toBe(controller.signal);
+        expect(options.maxRetries).toBe(0);
+        controller.abort(reason);
+        throw new Error("late network failure");
+      });
+      await expect(provider.isAvailable({ signal: controller.signal })).rejects.toBe(reason);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockResponsesCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a late success after abort and does not start a fallback", async () => {
+    const { OpenAIProvider } = await import("./openai.js");
+    const provider = new OpenAIProvider();
+    await provider.initialize({ apiKey: "test" });
+    const controller = new AbortController();
+    const reason = new Error("cancel");
+    mockList.mockImplementationOnce(async () => {
+      controller.abort(reason);
+      return { data: [] };
+    });
+    await expect(provider.isAvailable({ signal: controller.signal })).rejects.toBe(reason);
+  });
+});
+
+describe("Ollama reasoning request contract", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each(["chat", "chatWithTools", "stream", "streamWithTools"] as const)(
+    "%s disables Qwen thinking only when explicitly requested",
+    async (method) => {
+      const { OpenAIProvider } = await import("./openai.js");
+      const provider = new OpenAIProvider("ollama", "Ollama");
+      await provider.initialize({
+        apiKey: "local",
+        model: "qwen3.5:4b",
+        baseUrl: "http://localhost:11434/v1",
+      });
+      if (method.startsWith("stream")) {
+        mockCreate.mockResolvedValueOnce(
+          (async function* () {
+            yield { choices: [{ delta: { content: "OK" }, finish_reason: null }] };
+            yield { choices: [{ delta: {}, finish_reason: "stop" }] };
+          })(),
+        );
+      } else {
+        mockCreate.mockResolvedValueOnce({
+          id: "local",
+          model: "qwen3.5:4b",
+          choices: [{ finish_reason: "stop", message: { content: "OK", tool_calls: [] } }],
+          usage: { prompt_tokens: 1, completion_tokens: 2 },
+        });
+      }
+      const messages = [{ role: "user" as const, content: "Reply OK" }];
+      const options = {
+        thinking: "off" as const,
+        maxTokens: 128,
+        tools: [
+          {
+            name: "read_file",
+            description: "Read file",
+            input_schema: { type: "object" as const, properties: {} },
+          },
+        ],
+      };
+      if (method === "stream" || method === "streamWithTools") {
+        const chunks = [];
+        for await (const chunk of provider[method](messages, options)) chunks.push(chunk);
+        expect(chunks.some((chunk) => chunk.type === "text" && chunk.text === "OK")).toBe(true);
+      } else {
+        expect((await provider[method](messages, options)).content).toBe("OK");
+      }
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+      expect(mockCreate.mock.calls[0]?.[0]).toMatchObject({
+        model: "qwen3.5:4b",
+        reasoning_effort: "none",
+        max_tokens: 128,
+      });
+      expect(mockResponsesCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["ollama", "qwen3:8b", undefined, undefined],
+    ["ollama", "qwen3.5:9b", "auto", undefined],
+    ["ollama", "qwen3:8b", "high", "high"],
+    ["ollama", "deepseek-r1:8b", "off", "none"],
+    ["ollama", "gpt-oss:20b", "off", undefined],
+    ["ollama", "gpt-oss:20b", "low", "low"],
+    ["ollama", "qwen3-coder:30b", "off", undefined],
+    ["ollama", "custom-model", "off", undefined],
+    ["lmstudio", "qwen3.5:4b", "off", undefined],
+    ["openrouter", "qwen3:8b", "high", undefined],
+  ] as const)(
+    "preserves %s/%s thinking=%s compatibility",
+    async (id, model, thinking, expected) => {
+      const { OpenAIProvider } = await import("./openai.js");
+      const provider = new OpenAIProvider(id, id);
+      await provider.initialize({ apiKey: "test", model });
+      mockCreate.mockResolvedValueOnce({
+        id: "local",
+        model,
+        choices: [{ finish_reason: "stop", message: { content: "OK" } }],
+        usage: { prompt_tokens: 1, completion_tokens: 2 },
+      });
+      await provider.chat([{ role: "user", content: "Reply OK" }], { thinking });
+      expect(mockCreate.mock.calls[0]?.[0].reasoning_effort).toBe(expected);
+    },
+  );
+
+  it("advertises only supported Ollama controls and keeps automatic defaults", async () => {
+    const { getThinkingCapability, mapToOllamaEffort } = await import("./thinking.js");
+    expect(getThinkingCapability("ollama", "qwen3.5:4b")).toMatchObject({
+      supported: true,
+      defaultMode: "auto",
+    });
+    expect(getThinkingCapability("ollama", "gpt-oss:20b").levels).not.toContain("off");
+    expect(getThinkingCapability("ollama", "qwen3-coder:30b").supported).toBe(false);
+    expect(mapToOllamaEffort({ budget: 8000 }, "qwen3:8b")).toBeUndefined();
   });
 });

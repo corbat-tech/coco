@@ -150,7 +150,7 @@ describe("getModelPricing", () => {
 
 describe("hasKnownPricing", () => {
   it("should return true for known models", () => {
-    expect(hasKnownPricing("claude-sonnet-4-20250514")).toBe(true);
+    expect(hasKnownPricing("claude-sonnet-5-5")).toBe(true);
     expect(hasKnownPricing("gpt-5.5")).toBe(true);
   });
 
@@ -183,7 +183,7 @@ describe("listModelsWithPricing", () => {
     const models = listModelsWithPricing();
     const modelNames = models.map((m) => m.model);
 
-    expect(modelNames).toContain("claude-sonnet-4-20250514");
+    expect(modelNames).toContain("claude-sonnet-5-5");
     expect(modelNames).toContain("gpt-5.5");
   });
 });

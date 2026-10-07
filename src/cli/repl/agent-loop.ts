@@ -1,3 +1,4 @@
+import { withFileCheckpoints } from "./checkpoints/capture.js";
 /**
  * Agentic loop for REPL
  * Handles tool calling iterations until task completion
@@ -12,6 +13,11 @@
  */
 
 import chalk from "chalk";
+import { isDeepStrictEqual } from "node:util";
+import { ResponseIntegrityError } from "../../providers/response-integrity.js";
+import { validateToolCallInput } from "../../providers/tool-call-normalizer.js";
+import { AgentRuntime } from "../../runtime/agent-runtime.js";
+import { createRuntimeToolDispatch } from "./runtime-tool-dispatch.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -33,7 +39,7 @@ import {
   saveDeniedTool,
   removeDeniedTool,
 } from "./session.js";
-import { requiresConfirmation, confirmToolExecutionWithFallback } from "./confirmation.js";
+import { confirmToolExecutionWithFallback } from "./confirmation.js";
 import { getTrustPattern } from "./bash-patterns.js";
 import { ParallelToolExecutor } from "./parallel-executor.js";
 import {
@@ -94,6 +100,21 @@ export async function executeAgentTurn(
   toolRegistry: ToolRegistry,
   options: AgentTurnOptions = {},
 ): Promise<AgentTurnResult> {
+  const mode = session.planMode ? "plan" : (session.agentMode ?? "build");
+  const runtime =
+    session.runtime ??
+    new AgentRuntime({
+      providerType: session.config.provider.type,
+      model: session.config.provider.model,
+      provider,
+      toolRegistry,
+    });
+  if (runtime.toolRegistry !== toolRegistry) {
+    throw new Error("REPL registry does not match its runtime execution boundary.");
+  }
+  session.runtime = runtime;
+  if (!runtime.getSession(session.id)) runtime.createSession({ id: session.id, mode });
+
   // Reset line buffer at start of each turn
   resetLineBuffer();
   session.runtime?.eventLog.record("turn.started", {
@@ -545,11 +566,16 @@ export async function executeAgentTurn(
           {
             id: string;
             name: string;
-            input: Record<string, unknown>;
+            completed?: ToolCall;
             geminiThoughtSignature?: string;
+            providerState?: import("../../providers/types.js").ProviderConversationState;
           }
         > = new Map();
 
+        let sawDone = false;
+        let sawToolChunk = false;
+        const invalidBatch = () =>
+          new ResponseIntegrityError("Invalid or incomplete tool call batch", provider.name);
         try {
           for await (const chunk of provider.streamWithTools(messages, {
             tools,
@@ -561,6 +587,8 @@ export async function executeAgentTurn(
             if (options.signal?.aborted) {
               break;
             }
+
+            if (chunk.type.startsWith("tool_use_")) sawToolChunk = true;
 
             // Wrap each chunk processing in try/catch to prevent single bad chunk from stopping flow
             try {
@@ -586,46 +614,91 @@ export async function executeAgentTurn(
                   options.onThinkingEnd?.();
                   thinkingEnded = true;
                 }
-                const id = chunk.toolCall.id ?? `tool_${toolCallBuilders.size}`;
-                const toolName = chunk.toolCall.name ?? "";
-                toolCallBuilders.set(id, {
-                  id,
-                  name: toolName,
-                  input: {},
-                  geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
-                });
+                const id = chunk.toolCall.id;
+                const toolName = chunk.toolCall.name;
+                if (
+                  (id !== undefined && typeof id !== "string") ||
+                  (toolName !== undefined && typeof toolName !== "string")
+                )
+                  throw invalidBatch();
+                // Some providers announce a tool before its ID/name fragments arrive.
+                // Such starts are advisory; only concrete final calls can execute.
+                if (id) {
+                  const existing = toolCallBuilders.get(id);
+                  if (existing?.name && toolName && existing.name !== toolName)
+                    throw invalidBatch();
+                  if (existing && !existing.name && toolName) existing.name = toolName;
+                  if (!existing)
+                    toolCallBuilders.set(id, {
+                      id,
+                      name: toolName ?? "",
+                      geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
+                      providerState: chunk.toolCall.providerState,
+                    });
+                }
                 // Notify that a tool is being prepared/parsed
                 if (toolName) {
                   options.onToolPreparing?.(toolName);
                 }
               }
 
+              // Deltas remain provisional, but explicit references cannot change identity.
+              if (chunk.type === "tool_use_delta" && chunk.toolCall) {
+                const { id, name } = chunk.toolCall;
+                if (typeof name !== "string" && name !== undefined) throw invalidBatch();
+                if (id !== undefined) {
+                  if (typeof id !== "string" || !id.trim()) throw invalidBatch();
+                  const builder = toolCallBuilders.get(id);
+                  if (builder) {
+                    if (builder.name && name && name !== builder.name) throw invalidBatch();
+                    if (!builder.name && name) builder.name = name;
+                  } else {
+                    // An ID can arrive after an advisory name-only start. Track it
+                    // provisionally; a complete end is still required for this ID.
+                    toolCallBuilders.set(id, { id, name: name ?? "" });
+                  }
+                }
+              }
+
               // Handle tool call end - finalize the tool call
               if (chunk.type === "tool_use_end" && chunk.toolCall) {
-                const id = chunk.toolCall.id ?? "";
+                const id = chunk.toolCall.id;
+                if (typeof id !== "string" || !id.trim()) throw invalidBatch();
                 const builder = toolCallBuilders.get(id);
-                if (builder) {
-                  const finalToolCall: ToolCall = {
-                    id: builder.id,
-                    name: chunk.toolCall.name ?? builder.name,
-                    input: chunk.toolCall.input ?? builder.input,
-                    geminiThoughtSignature:
-                      chunk.toolCall.geminiThoughtSignature ?? builder.geminiThoughtSignature,
-                  };
+                const name = chunk.toolCall.name ?? builder?.name;
+                if (
+                  typeof name !== "string" ||
+                  !name.trim() ||
+                  (builder?.name && name !== builder.name)
+                )
+                  throw invalidBatch();
+                const finalToolCall: ToolCall = {
+                  id,
+                  name,
+                  input: structuredClone(
+                    validateToolCallInput(chunk.toolCall.input, provider.name),
+                  ),
+                  geminiThoughtSignature:
+                    chunk.toolCall.geminiThoughtSignature ?? builder?.geminiThoughtSignature,
+                  providerState: chunk.toolCall.providerState ?? builder?.providerState,
+                };
+                if (builder?.completed) {
+                  if (!isDeepStrictEqual(builder.completed, finalToolCall)) throw invalidBatch();
+                } else {
+                  toolCallBuilders.set(id, { id, name, completed: finalToolCall });
                   collectedToolCalls.push(finalToolCall);
-                } else if (chunk.toolCall.id && chunk.toolCall.name) {
-                  // Direct tool call without builder
-                  collectedToolCalls.push({
-                    id: chunk.toolCall.id,
-                    name: chunk.toolCall.name,
-                    input: chunk.toolCall.input ?? {},
-                    geminiThoughtSignature: chunk.toolCall.geminiThoughtSignature,
-                  });
                 }
+              }
+              if (
+                (chunk.type === "tool_use_start" || chunk.type === "tool_use_end") &&
+                !chunk.toolCall
+              ) {
+                throw invalidBatch();
               }
 
               // Handle done
               if (chunk.type === "done") {
+                sawDone = true;
                 // Capture stopReason from the done chunk
                 if (chunk.stopReason) {
                   lastStopReason = chunk.stopReason;
@@ -638,6 +711,8 @@ export async function executeAgentTurn(
                 break;
               }
             } catch (chunkError) {
+              if (chunkError instanceof ResponseIntegrityError) throw chunkError;
+              if (chunk.type.startsWith("tool_use_")) throw invalidBatch();
               // Log chunk processing error but continue with next chunk
               // This prevents a single malformed chunk from stopping the entire flow
               const errorMsg =
@@ -646,8 +721,18 @@ export async function executeAgentTurn(
               // Continue to next chunk
             }
           }
+          if (!options.signal?.aborted && (sawToolChunk || lastStopReason === "tool_use")) {
+            if (
+              !sawDone ||
+              lastStopReason !== "tool_use" ||
+              collectedToolCalls.length === 0 ||
+              [...toolCallBuilders.values()].some((builder) => !builder.completed)
+            )
+              throw invalidBatch();
+          }
           break;
         } catch (streamError) {
+          if (streamError instanceof ResponseIntegrityError) throw streamError;
           const classification = classifyAgentLoopError(streamError, options.signal);
           if (classification.kind === "abort") {
             throw classification.original;
@@ -838,6 +923,7 @@ export async function executeAgentTurn(
     // Phase 1: Handle confirmations sequentially (user interaction required)
     // Build list of confirmed tools and declined/skipped tools
     const confirmedTools: ToolCall[] = [];
+    const approvedTools: ToolCall[] = [];
     const declinedTools: Map<string, string> = new Map(); // toolCall.id -> decline reason
 
     for (const toolCall of response.toolCalls) {
@@ -874,12 +960,19 @@ export async function executeAgentTurn(
       }
 
       // Check if confirmation is needed (skip if tool is trusted for session)
-      // Uses pattern-aware trust: "bash:git:commit" instead of just "bash_exec"
+      // Shell trust is bound to the complete invocation, never its first command.
       const trustPattern = getTrustPattern(toolCall.name, toolCall.input);
+      const definition = toolRegistry.get(toolCall.name);
+      const decision = definition
+        ? (runtime.permissionPolicy.canExecuteToolInput?.(mode, definition, toolCall.input) ??
+          runtime.permissionPolicy.canExecuteTool(mode, definition))
+        : undefined;
+      const trusted = session.trustedTools.has(trustPattern);
       const needsConfirmation =
+        decision?.allowed !== false &&
         !options.skipConfirmation &&
-        !session.trustedTools.has(trustPattern) &&
-        requiresConfirmation(toolCall.name, toolCall.input);
+        !trusted &&
+        decision?.requiresConfirmation === true;
 
       if (needsConfirmation) {
         // Notify UI to clear any spinners before showing confirmation
@@ -909,6 +1002,7 @@ export async function executeAgentTurn(
             input: { ...toolCall.input, command: confirmResult.newCommand },
           };
           confirmedTools.push(editedToolCall);
+          approvedTools.push(editedToolCall);
           continue;
         }
 
@@ -925,7 +1019,7 @@ export async function executeAgentTurn(
             continue;
 
           case "trust_project": {
-            // Trust this tool pattern for this project (e.g., "bash:git:commit")
+            // Trust this tool pattern for this project
             const projectPattern = getTrustPattern(toolCall.name, toolCall.input);
             session.trustedTools.add(projectPattern);
             saveTrustedTool(projectPattern, session.projectPath, false).catch(() => {});
@@ -933,7 +1027,7 @@ export async function executeAgentTurn(
           }
 
           case "trust_global": {
-            // Trust this tool pattern globally (e.g., "bash:git:commit")
+            // Trust this tool pattern globally
             const globalPattern = getTrustPattern(toolCall.name, toolCall.input);
             session.trustedTools.add(globalPattern);
             saveTrustedTool(globalPattern, null, true).catch(() => {});
@@ -947,55 +1041,51 @@ export async function executeAgentTurn(
         }
       }
 
-      // Tool is confirmed for execution
+      // Eligibility is distinct from authority: headless skipping UI grants nothing.
+      if (needsConfirmation || trusted) approvedTools.push(toolCall);
       confirmedTools.push(toolCall);
     }
 
     // Phase 2: Execute confirmed tools in parallel
     if (!turnAborted && confirmedTools.length > 0) {
       const executor = new ParallelToolExecutor();
-      const parallelResult = await executor.executeParallel(confirmedTools, toolRegistry, {
-        maxConcurrency: 5,
-        onToolStart: (toolCall, _index, _total) => {
-          // Adjust index to account for declined tools for accurate progress
-          const originalIndex = response.toolCalls.findIndex((tc) => tc.id === toolCall.id) + 1;
-          options.onToolStart?.(toolCall, originalIndex, totalTools);
-          session.runtime?.eventLog.record("tool.started", {
-            sessionId: session.id,
-            tool: toolCall.name,
-            toolCallId: toolCall.id,
-            index: originalIndex,
-            total: totalTools,
-          });
+      const parallelResult = await executor.executeParallel(
+        confirmedTools,
+        withFileCheckpoints(
+          createRuntimeToolDispatch(runtime, session.id, mode, approvedTools),
+          session.id,
+          session.projectPath,
+        ),
+        {
+          maxConcurrency: 5,
+          onToolStart: (toolCall, _index, _total) => {
+            // Adjust index to account for declined tools for accurate progress
+            const originalIndex = response.toolCalls.findIndex((tc) => tc.id === toolCall.id) + 1;
+            options.onToolStart?.(toolCall, originalIndex, totalTools);
+          },
+          onToolEnd: (result) => {
+            options.onToolEnd?.(result);
+          },
+          onToolSkipped: (toolCall, reason) => {
+            recordToolSkipped(toolCall, reason);
+          },
+          signal: options.signal,
+          onPathAccessDenied: async (dirPath: string) => {
+            if (options.skipConfirmation) return false;
+            // Clear spinner before showing interactive prompt
+            options.onBeforeConfirmation?.();
+            const result = await promptAllowPath(dirPath);
+            options.onAfterConfirmation?.();
+            return result;
+          },
+          // Pass hooks through so PreToolUse/PostToolUse hooks fire during execution
+          hookRegistry: options.hookRegistry,
+          hookExecutor: options.hookExecutor,
+          sessionId: session.id,
+          projectPath: session.projectPath,
+          onHookExecuted: options.onHookExecuted,
         },
-        onToolEnd: (result) => {
-          session.runtime?.eventLog.record("tool.completed", {
-            sessionId: session.id,
-            tool: result.name,
-            toolCallId: result.id,
-            success: result.result.success,
-            duration: result.duration,
-          });
-          options.onToolEnd?.(result);
-        },
-        onToolSkipped: (toolCall, reason) => {
-          recordToolSkipped(toolCall, reason);
-        },
-        signal: options.signal,
-        onPathAccessDenied: async (dirPath: string) => {
-          // Clear spinner before showing interactive prompt
-          options.onBeforeConfirmation?.();
-          const result = await promptAllowPath(dirPath);
-          options.onAfterConfirmation?.();
-          return result;
-        },
-        // Pass hooks through so PreToolUse/PostToolUse hooks fire during execution
-        hookRegistry: options.hookRegistry,
-        hookExecutor: options.hookExecutor,
-        sessionId: session.id,
-        projectPath: session.projectPath,
-        onHookExecuted: options.onHookExecuted,
-      });
+      );
 
       // Collect executed tools and apply side-effects
       for (const executed of parallelResult.executed) {
@@ -1063,6 +1153,7 @@ export async function executeAgentTurn(
         name: toolCall.name,
         input: toolCall.input,
         geminiThoughtSignature: toolCall.geminiThoughtSignature,
+        providerState: toolCall.providerState,
       });
 
       // Check if this tool was declined

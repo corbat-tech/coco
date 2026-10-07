@@ -15,6 +15,7 @@ vi.mock("../../config/env.js", () => ({
   getDefaultModel: vi.fn().mockReturnValue("claude-opus-4-6"),
   getLastUsedProvider: vi.fn().mockResolvedValue("anthropic"),
   getLastUsedModel: vi.fn().mockResolvedValue(undefined),
+  getLastUsedAuthMethod: vi.fn().mockResolvedValue(undefined),
   getLastUsedThinking: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -658,5 +659,19 @@ describe("COCO_SYSTEM_PROMPT — agent behaviour contracts", () => {
     // After injection the placeholder is replaced — the raw prompt before injection
     // is not accessible here, but the resulting prompt must reference tool names
     expect(agent.systemPrompt).toMatch(/bash_exec|write_file|read_file/i);
+  });
+});
+
+describe("explicit local thinking preference", () => {
+  it("retains persisted off in startup config so Ollama receives none", async () => {
+    const env = await import("../../config/env.js");
+    vi.mocked(env.getLastUsedProvider).mockResolvedValueOnce("ollama");
+    vi.mocked(env.getLastUsedModel).mockResolvedValueOnce("qwen3.5:4b");
+    vi.mocked(env.getLastUsedThinking).mockResolvedValueOnce("off");
+    const { createDefaultReplConfig } = await import("./session.js");
+    const { mapToOllamaEffort } = await import("../../providers/thinking.js");
+    const config = await createDefaultReplConfig();
+    expect(config.provider.thinking).toBe("off");
+    expect(mapToOllamaEffort(config.provider.thinking, config.provider.model)).toBe("none");
   });
 });

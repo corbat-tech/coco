@@ -1,3 +1,4 @@
+import { setupCloudProvider } from "../cloud-provider-setup.js";
 /**
  * /provider command - Change or view current provider
  * Interactive selection with arrow keys
@@ -329,6 +330,31 @@ async function switchProvider(
   let newApiKeyForSaving: string | null = null; // Track new API key entered, to persist it
   let vertexSettings: VertexSettings | undefined;
 
+  if (newProvider.id === "azure-openai" || newProvider.id === "bedrock") {
+    const result = await setupCloudProvider(newProvider.id);
+    if (!result) return false;
+    if ((await saveConfiguration(result)) === false) return false;
+    session.pendingProvider = {
+      instance: result.instance,
+      internalType: result.type,
+      userFacingType: result.type,
+      model: result.model,
+    };
+    session.config.provider = {
+      ...session.config.provider,
+      type: result.type,
+      model: result.model,
+      authMethod: result.authMethod,
+      cloudAuth: result.cloudAuth,
+      baseUrl: result.baseUrl,
+      deployment: result.deployment,
+      region: result.region,
+      awsProfile: result.awsProfile,
+    };
+    console.log(chalk.green(`✓ Switched to ${newProvider.name}: ${result.model}`));
+    return false;
+  }
+
   // Local providers use special setup flow (auto-detect models, no API key)
   if (newProvider.id === "lmstudio" || newProvider.id === "ollama") {
     const result =
@@ -338,8 +364,23 @@ async function switchProvider(
       return false;
     }
 
-    // Save configuration
-    await saveConfiguration(result);
+    const validated = await createProvider(result.type, {
+      model: result.model,
+      baseUrl: result.baseUrl,
+    });
+    if (!(await validated.isAvailable()))
+      throw new Error("Local provider unavailable; active provider unchanged");
+    // Persist before committing the live session; retain this validated adapter.
+    if ((await saveConfiguration({ ...result, authMethod: "none" })) === false) return false;
+    session.pendingProvider = {
+      instance: validated,
+      internalType: result.type,
+      userFacingType: result.type,
+      model: result.model,
+    };
+    session.config.provider.authMethod = "none";
+    delete session.config.provider.project;
+    delete session.config.provider.location;
 
     // Update session
     session.config.provider.type = result.type;
@@ -595,7 +636,6 @@ async function switchProvider(
           return false;
         }
 
-        process.env[newProvider.envVar] = key;
         selectedAuthMethod = "apikey";
         newApiKeyForSaving = key;
       }
@@ -721,8 +761,9 @@ async function switchProvider(
   spinner.start(`Connecting to ${newProvider.name}...`);
 
   try {
-    const testProvider = await createProvider(internalProviderId as ProviderType, {
+    let testProvider = await createProvider(internalProviderId as ProviderType, {
       model: newModel,
+      ...(newApiKeyForSaving ? { apiKey: newApiKeyForSaving } : {}),
       project: resolvedVertexProject,
       location: resolvedVertexLocation,
     });
@@ -736,12 +777,14 @@ async function switchProvider(
       for (const fallbackModel of fallbackModels) {
         const fallbackProvider = await createProvider(internalProviderId as ProviderType, {
           model: fallbackModel,
+          ...(newApiKeyForSaving ? { apiKey: newApiKeyForSaving } : {}),
           project: resolvedVertexProject,
           location: resolvedVertexLocation,
         });
         const fallbackAvailable = await fallbackProvider.isAvailable();
         if (fallbackAvailable) {
           newModel = fallbackModel;
+          testProvider = fallbackProvider;
           available = true;
           console.log(
             chalk.yellow(
@@ -762,6 +805,35 @@ async function switchProvider(
 
     spinner.stop(chalk.green("Connected!"));
 
+    // Save preferences and persist API key if a new one was entered
+    if (newApiKeyForSaving) {
+      // New API key entered: offer to persist it to ~/.coco/.env (same as onboarding)
+      const saved = await saveConfiguration({
+        type: userFacingProviderId as ProviderType,
+        model: newModel,
+        apiKey: newApiKeyForSaving,
+        authMethod: selectedAuthMethod,
+        project: resolvedVertexProject,
+        location: resolvedVertexLocation,
+      });
+      if (saved === false) return false;
+      process.env[newProvider.envVar] = newApiKeyForSaving;
+    } else {
+      // Using existing credentials (OAuth or pre-existing API key): just save provider/model
+      await saveProviderPreference(userFacingProviderId as ProviderType, newModel, {
+        authMethod: selectedAuthMethod,
+        project: resolvedVertexProject,
+        location: resolvedVertexLocation,
+      });
+    }
+
+    session.pendingProvider = {
+      instance: testProvider,
+      internalType: internalProviderId as ProviderType,
+      userFacingType: userFacingProviderId as ProviderType,
+      model: newModel,
+    };
+    session.config.provider.authMethod = selectedAuthMethod;
     // Update session - use user-facing provider name, not internal ID
     session.config.provider.type = userFacingProviderId as ProviderType;
     session.config.provider.model = newModel;
@@ -777,24 +849,6 @@ async function switchProvider(
     } else {
       delete session.config.provider.project;
       delete session.config.provider.location;
-    }
-
-    // Save preferences and persist API key if a new one was entered
-    if (newApiKeyForSaving) {
-      // New API key entered: offer to persist it to ~/.coco/.env (same as onboarding)
-      await saveConfiguration({
-        type: userFacingProviderId as ProviderType,
-        model: newModel,
-        apiKey: newApiKeyForSaving,
-        project: resolvedVertexProject,
-        location: resolvedVertexLocation,
-      });
-    } else {
-      // Using existing credentials (OAuth or pre-existing API key): just save provider/model
-      await saveProviderPreference(userFacingProviderId as ProviderType, newModel, {
-        project: resolvedVertexProject,
-        location: resolvedVertexLocation,
-      });
     }
 
     console.log(chalk.green(`\n✓ Switched to ${newProvider.emoji} ${newProvider.name}`));
@@ -918,7 +972,11 @@ async function setupGcloudADCForProvider(_provider: ProviderDefinition): Promise
   console.log(chalk.dim("\n   Authenticate manually in your terminal with:"));
   console.log(chalk.cyan("   $ gcloud auth application-default login"));
   if (adc.suggestion) {
-    console.log(chalk.dim(`\n   ${adc.suggestion}`));
+    console.log(
+      chalk.dim(
+        "\n   For OAuth scope issues, configure your client and retry ADC login with the scopes in docs/guides/PROVIDERS.md.",
+      ),
+    );
   }
   console.log();
 

@@ -4,15 +4,13 @@
  * Manages additional directories that the user has explicitly authorized
  * for file operations beyond the project root (process.cwd()).
  *
- * Security invariants preserved:
- * - System paths (/etc, /var, etc.) are NEVER allowed
- * - Sensitive file patterns (.env, .pem, etc.) still require confirmation
- * - Null byte injection is still blocked
- * - Symlink validation is still active
- * - Each path must be explicitly authorized by the user
+ * Stores canonical destinations authorized by the user. The synchronous
+ * membership helper is only a lexical lookup; file operations must also use
+ * the canonical path policy before performing an effect.
  */
 
 import path from "node:path";
+import { realpathSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
 import { CONFIG_PATHS } from "../config/paths.js";
 
@@ -56,7 +54,7 @@ let currentProjectPath: string = "";
  * Get current session allowed paths (for display/commands)
  */
 export function getAllowedPaths(): AllowedPathEntry[] {
-  return [...sessionAllowedPaths];
+  return sessionAllowedPaths.map((entry) => ({ ...entry }));
 }
 
 /**
@@ -88,11 +86,19 @@ export function isWithinAllowedPath(
 /**
  * Add an allowed path to the current session
  */
-export function addAllowedPathToSession(dirPath: string, level: "read" | "write"): void {
-  const absolute = path.resolve(dirPath);
+export function addAllowedPathToSession(
+  dirPath: string,
+  level: "read" | "write",
+  expectedDestination?: string,
+): void {
+  const absolute = canonicalizeAllowedDirectory(dirPath, expectedDestination);
+  addCanonicalGrant(absolute, level);
+}
 
-  // Don't add duplicates
-  if (sessionAllowedPaths.some((e) => path.normalize(e.path) === path.normalize(absolute))) {
+function addCanonicalGrant(absolute: string, level: "read" | "write"): void {
+  const existing = sessionAllowedPaths.find((e) => e.path === absolute);
+  if (existing) {
+    if (level === "write") existing.level = "write";
     return;
   }
 
@@ -119,6 +125,20 @@ export function removeAllowedPathFromSession(dirPath: string): boolean {
  */
 export function clearSessionAllowedPaths(): void {
   sessionAllowedPaths = [];
+  currentProjectPath = "";
+}
+
+/** Resolve before displaying a grant prompt, then retain this exact destination. */
+export function canonicalizeAllowedDirectory(
+  dirPath: string,
+  expectedDestination?: string,
+): string {
+  const canonical = realpathSync(path.resolve(dirPath));
+  if (expectedDestination !== undefined && canonical !== expectedDestination) {
+    throw new Error("Directory destination changed after confirmation; authorize it again.");
+  }
+  if (!statSync(canonical).isDirectory()) throw new Error(`Not a directory: ${dirPath}`);
+  return canonical;
 }
 
 // --- Persistence ---
@@ -127,34 +147,58 @@ export function clearSessionAllowedPaths(): void {
  * Load persisted allowed paths for a project into the session
  */
 export async function loadAllowedPaths(projectPath: string): Promise<void> {
-  currentProjectPath = path.resolve(projectPath);
+  const project = path.resolve(projectPath);
+  if (currentProjectPath !== project) sessionAllowedPaths = [];
+  currentProjectPath = project;
   const store = await loadStore();
-  const entries = store.projects[currentProjectPath] ?? [];
+  if (currentProjectPath !== project) return;
+  const entries = store.projects[project] ?? [];
 
   // Merge persisted paths into session (avoid duplicates)
   for (const entry of entries) {
-    addAllowedPathToSession(entry.path, entry.level);
+    if (!entry || typeof entry.path !== "string" || !["read", "write"].includes(entry.level))
+      continue;
+    try {
+      // Old aliases have no recorded destination. Require reauthorization instead
+      // of turning a retargeted link into a new grant when loading preferences.
+      const canonical = canonicalizeAllowedDirectory(entry.path);
+      if (canonical !== path.resolve(entry.path)) continue;
+      addCanonicalGrant(canonical, entry.level);
+    } catch {
+      // Missing/inaccessible stored directories grant no authority.
+    }
   }
 }
 
 /**
  * Persist an allowed path for the current project
  */
-export async function persistAllowedPath(dirPath: string, level: "read" | "write"): Promise<void> {
-  if (!currentProjectPath) return;
+export async function persistAllowedPath(
+  dirPath: string,
+  level: "read" | "write",
+  expectedDestination?: string,
+): Promise<void> {
+  const project = currentProjectPath;
+  if (!project) return;
 
-  const absolute = path.resolve(dirPath);
+  const absolute = canonicalizeAllowedDirectory(dirPath, expectedDestination);
   const store = await loadStore();
 
-  if (!store.projects[currentProjectPath]) {
-    store.projects[currentProjectPath] = [];
+  if (!store.projects[project]) {
+    store.projects[project] = [];
   }
 
-  const entries = store.projects[currentProjectPath]!;
+  const entries = store.projects[project]!;
   const normalized = path.normalize(absolute);
 
   // Don't add duplicates
-  if (entries.some((e) => path.normalize(e.path) === normalized)) {
+  const existing = entries.find((e) => path.normalize(e.path) === normalized);
+  if (existing) {
+    if (existing.level === "read" && level === "write") {
+      existing.level = "write";
+      existing.authorizedAt = new Date().toISOString();
+      await saveStore(store);
+    }
     return;
   }
 

@@ -269,14 +269,22 @@ describe("extractBashPattern", () => {
 });
 
 describe("getTrustPattern", () => {
-  it("should extract bash pattern for bash_exec", () => {
-    expect(getTrustPattern("bash_exec", { command: "git commit -m 'x'" })).toBe("bash:git:commit");
-    expect(getTrustPattern("bash_exec", { command: "curl google.com" })).toBe("bash:curl");
-    expect(getTrustPattern("bash_exec", { command: "npm install" })).toBe("bash:npm:install");
+  it("should fingerprint the complete invocation for bash_exec", () => {
+    expect(getTrustPattern("bash_exec", { command: "git commit -m 'x'" })).toBe(
+      "bash:exact:0621221e75b3d6be12ceb59aa597ac228fd5bd9ae3a5dcfe3c17259be970dca4",
+    );
+    expect(getTrustPattern("bash_exec", { command: "curl google.com" })).toBe(
+      "bash:exact:dacbdf997eae90d5670a61f13f68e7e656617bbab75abb41424348a20e489289",
+    );
+    expect(getTrustPattern("bash_exec", { command: "npm install" })).toBe(
+      "bash:exact:44ca85ac4601a31e7f0a80533a052138dbd4fda37e112c7bd587fd79b819c1a3",
+    );
   });
 
-  it("should extract bash pattern for bash_background", () => {
-    expect(getTrustPattern("bash_background", { command: "npm run dev" })).toBe("bash:npm:run");
+  it("should fingerprint the complete invocation for bash_background", () => {
+    expect(getTrustPattern("bash_background", { command: "npm run dev" })).toBe(
+      "bash:exact:c4e417be72446733fb6aa2f1ca0ef31e59a015af28acd11f193d1fb9381abad1",
+    );
   });
 
   it("should return tool name for non-bash tools", () => {
@@ -287,30 +295,39 @@ describe("getTrustPattern", () => {
   });
 
   it("should handle missing command input", () => {
-    expect(getTrustPattern("bash_exec")).toBe("bash_exec");
-    expect(getTrustPattern("bash_exec", {})).toBe("bash_exec");
-    expect(getTrustPattern("bash_exec", { command: 123 })).toBe("bash_exec");
+    expect(getTrustPattern("bash_exec")).toBe(
+      "bash:exact:52f29518ff7046741470668a616246abae789e96fcab53b229cedbb866531976",
+    );
+    expect(getTrustPattern("bash_exec", {})).toBe(
+      "bash:exact:f2882ff1c4ae76d2794f3008d2970f8a3f5b56b9302719c7dca3866312c54515",
+    );
+    expect(getTrustPattern("bash_exec", { command: 123 })).toBe(
+      "bash:exact:c5e05b0fac923d732f045f84982557bb9e27a4211f3a0dba4e6dd9e21f51b1ca",
+    );
   });
 });
 
 describe("isBashCommandTrusted", () => {
   it("should match exact patterns", () => {
-    const trusted = new Set(["bash:git:commit", "bash:curl"]);
+    const trusted = new Set([
+      getTrustPattern("bash_exec", { command: "git commit -m 'x'" }),
+      getTrustPattern("bash_exec", { command: "curl google.com" }),
+    ]);
     expect(isBashCommandTrusted("git commit -m 'x'", trusted)).toBe(true);
     expect(isBashCommandTrusted("curl google.com", trusted)).toBe(true);
   });
 
   it("should NOT match different subcommands", () => {
-    const trusted = new Set(["bash:git:commit"]);
+    const trusted = new Set([getTrustPattern("bash_exec", { command: "git commit -m 'x'" })]);
     expect(isBashCommandTrusted("git push origin main", trusted)).toBe(false);
     expect(isBashCommandTrusted("git rebase main", trusted)).toBe(false);
     expect(isBashCommandTrusted("git reset --hard", trusted)).toBe(false);
   });
 
-  it("should NOT match base-only when subcommand patterns exist (security)", () => {
+  it("should not authorize any command through legacy base-only trust", () => {
     const trusted = new Set(["bash:git"]);
-    // bash:git only matches "git --version" etc. (no subcommand)
-    expect(isBashCommandTrusted("git --version", trusted)).toBe(true);
+    // Legacy command-prefix grants no longer authorize shell invocations.
+    expect(isBashCommandTrusted("git --version", trusted)).toBe(false);
     // It should NOT match subcommand variants
     expect(isBashCommandTrusted("git push origin main", trusted)).toBe(false);
     expect(isBashCommandTrusted("git commit -m 'x'", trusted)).toBe(false);

@@ -119,7 +119,7 @@ describe("StyleAnalyzer", () => {
       expect(result.linterUsed).toBe("oxlint");
     });
 
-    it("should fallback to text parsing when oxlint JSON is invalid", async () => {
+    it("should reject invalid oxlint JSON rather than infer a score", async () => {
       const tempDir = await createTempProject();
       await writeFile(
         join(tempDir, "package.json"),
@@ -137,12 +137,7 @@ error[no-console]: Unexpected console statement`,
       } as any);
 
       const analyzer = new StyleAnalyzer(tempDir);
-      const result = await analyzer.analyze();
-
-      expect(result.errors).toBe(2);
-      expect(result.warnings).toBe(0);
-      // score = 100 - 2*5 = 90
-      expect(result.score).toBe(90);
+      await expect(analyzer.analyze()).rejects.toThrow();
     });
   });
 
@@ -349,6 +344,18 @@ error[no-console]: Unexpected console statement`,
     });
   });
 
+  it("does not turn ESLint exit 1 with an empty report into a perfect score", async () => {
+    const project = await createTempProject();
+    await writeFile(
+      join(project, "package.json"),
+      JSON.stringify({ devDependencies: { eslint: "^8.0.0" } }),
+    );
+    mockedExeca.mockResolvedValueOnce({ stdout: "[]", stderr: "", exitCode: 1 } as never);
+    await expect(new StyleAnalyzer(project).analyze()).rejects.toThrow(
+      "failure without diagnostics",
+    );
+  });
+
   describe("Score Clamping", () => {
     it("should clamp score to 0 when many errors exist", async () => {
       const tempDir = await createTempProject();
@@ -381,7 +388,7 @@ error[no-console]: Unexpected console statement`,
   });
 
   describe("Linter Execution Failure", () => {
-    it("should return 0 errors/warnings when execa throws (linter not installed)", async () => {
+    it("should reject execution failure rather than report no issues", async () => {
       const tempDir = await createTempProject();
       await writeFile(
         join(tempDir, "package.json"),
@@ -394,13 +401,7 @@ error[no-console]: Unexpected console statement`,
       mockedExeca.mockRejectedValueOnce(new Error("Command not found: npx"));
 
       const analyzer = new StyleAnalyzer(tempDir);
-      const result = await analyzer.analyze();
-
-      // When execa throws, fallback returns { errors: 0, warnings: 0 }
-      expect(result.linterUsed).toBe("oxlint");
-      expect(result.errors).toBe(0);
-      expect(result.warnings).toBe(0);
-      expect(result.score).toBe(100);
+      await expect(analyzer.analyze()).rejects.toThrow("Command not found");
     });
   });
 

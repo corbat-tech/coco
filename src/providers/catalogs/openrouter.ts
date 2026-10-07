@@ -1,0 +1,145 @@
+import type { ProviderCatalogEntry } from "../catalog.js";
+export const openrouterCatalog: ProviderCatalogEntry = {
+  id: "openrouter",
+  defaultModel: "anthropic/claude-sonnet-5.5",
+  models: [
+    {
+      id: "anthropic/claude-haiku-5.5",
+      name: "Anthropic: Claude Haiku 5.5",
+      contextWindow: 1000000,
+      maxOutputTokens: 128000,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "openai-chat", "vision"],
+      pricing: {
+        inputPerMillion: 0.09999999999999999,
+        outputPerMillion: 0.5,
+      },
+      source: {
+        name: "OpenRouter official Models API",
+        url: "https://openrouter.ai/api/v1/models",
+        verifiedAt: "2026-10-07",
+      },
+      reasoning: {
+        kind: "effort",
+        levels: ["max", "xhigh", "high", "medium", "low", "off"],
+        defaultMode: "medium",
+        mandatory: false,
+      },
+    },
+    {
+      id: "mistralai/mistral-large-4-0",
+      name: "Mistral: Mistral Large 4",
+      contextWindow: 524288,
+      maxOutputTokens: 262144,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "openai-chat", "vision"],
+      pricing: {
+        inputPerMillion: 0.6799999999999999,
+        outputPerMillion: 2.09,
+      },
+      source: {
+        name: "OpenRouter official Models API",
+        url: "https://openrouter.ai/api/v1/models",
+        verifiedAt: "2026-10-07",
+      },
+      reasoning: {
+        kind: "effort",
+        levels: ["high", "off"],
+        defaultMode: "high",
+        mandatory: false,
+      },
+    },
+    {
+      id: "openai/gpt-6.1-sol",
+      name: "OpenAI: GPT-6.1 Sol",
+      contextWindow: 1050000,
+      maxOutputTokens: 128000,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "openai-chat", "vision"],
+      pricing: {
+        inputPerMillion: 2,
+        outputPerMillion: 10,
+      },
+      source: {
+        name: "OpenRouter official Models API",
+        url: "https://openrouter.ai/api/v1/models",
+        verifiedAt: "2026-10-07",
+      },
+      reasoning: {
+        kind: "effort",
+        levels: ["max", "xhigh", "high", "medium", "low"],
+        defaultMode: "medium",
+        mandatory: true,
+      },
+    },
+    {
+      id: "anthropic/claude-sonnet-5.5",
+      name: "Anthropic: Claude Sonnet 5.5",
+      contextWindow: 1000000,
+      maxOutputTokens: 128000,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "openai-chat", "vision"],
+      pricing: {
+        inputPerMillion: 2,
+        outputPerMillion: 10,
+      },
+      source: {
+        name: "OpenRouter official Models API",
+        url: "https://openrouter.ai/api/v1/models",
+        verifiedAt: "2026-10-07",
+      },
+      reasoning: {
+        kind: "effort",
+        levels: ["max", "xhigh", "high", "medium", "low"],
+        defaultMode: "high",
+        mandatory: true,
+      },
+    },
+    {
+      id: "z-ai/glm-5.3-prime",
+      name: "Z.ai: GLM 5.3 Prime",
+      contextWindow: 1000000,
+      maxOutputTokens: 131072,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "openai-chat"],
+      pricing: {
+        inputPerMillion: 2.8,
+        outputPerMillion: 8.8,
+      },
+      source: {
+        name: "OpenRouter official Models API",
+        url: "https://openrouter.ai/api/v1/models",
+        verifiedAt: "2026-10-07",
+      },
+      reasoning: {
+        kind: "effort",
+        levels: ["max", "high", "low"],
+        defaultMode: "max",
+        mandatory: true,
+      },
+    },
+    {
+      id: "qwen/qwen3.8-max-prime",
+      name: "Qwen: Qwen3.8 Max Prime",
+      contextWindow: 1000000,
+      maxOutputTokens: 131072,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "openai-chat", "vision"],
+      pricing: {
+        inputPerMillion: 4,
+        outputPerMillion: 12,
+      },
+      source: {
+        name: "OpenRouter official Models API",
+        url: "https://openrouter.ai/api/v1/models",
+        verifiedAt: "2026-10-07",
+      },
+      reasoning: {
+        kind: "effort",
+        levels: ["xhigh", "high", "medium", "low"],
+        defaultMode: "xhigh",
+        mandatory: true,
+      },
+    },
+  ],
+};

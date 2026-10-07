@@ -5,6 +5,8 @@
  */
 
 import { z } from "zod";
+import { compileMCPInputSchema } from "./input-schema.js";
+import { getLogger } from "../utils/logger.js";
 import type {
   MCPTool,
   MCPWrappedTool,
@@ -13,7 +15,8 @@ import type {
   MCPCallToolResult,
 } from "./types.js";
 import type { ToolDefinition, ToolCategory } from "../tools/registry.js";
-import { MCPError, MCPTimeoutError } from "./errors.js";
+import { MCPError } from "./errors.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 
 /**
  * Default wrapper options
@@ -194,13 +197,7 @@ export function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodType {
  * Create Zod schema from MCP tool input schema
  */
 function createToolParametersSchema(tool: MCPTool): z.ZodSchema {
-  const schema = tool.inputSchema;
-
-  if (!schema || schema.type !== "object") {
-    return z.object({});
-  }
-
-  return jsonSchemaToZod(schema as Record<string, unknown>);
+  return compileMCPInputSchema(tool.inputSchema as Record<string, unknown>);
 }
 
 /**
@@ -255,26 +252,21 @@ export function wrapMCPTool(
     name: wrappedName,
     description: buildMcpToolDescription(serverName, tool),
     category: opts.category as ToolCategory,
+    provenance: { kind: "mcp", serverName, toolName: tool.name },
     parameters: parametersSchema,
-    execute: async (params: unknown) => {
-      const timeout = opts.requestTimeout;
-
+    inputSchema: structuredClone(tool.inputSchema) as Record<string, unknown>,
+    execute: async (params: unknown, context) => {
+      context?.signal?.throwIfAborted();
       try {
-        // Call the MCP tool
-        const result = await Promise.race([
-          client.callTool({
-            name: tool.name,
-            arguments: params as Record<string, unknown>,
-          }),
-          new Promise<never>((_, reject) => {
-            setTimeout(() => {
-              reject(new MCPTimeoutError(`Tool '${tool.name}' timed out after ${timeout}ms`));
-            }, timeout);
-          }),
-        ]);
+        const result = await client.callTool(
+          { name: tool.name, arguments: params as Record<string, unknown> },
+          { signal: context?.signal, timeout: opts.requestTimeout },
+        );
+        context?.signal?.throwIfAborted();
 
         return formatToolResult(result);
       } catch (error) {
+        rethrowCancellation(error, context?.signal);
         if (error instanceof MCPError) {
           throw error;
         }
@@ -308,9 +300,18 @@ export function wrapMCPTools(
   const wrappedTools: MCPWrappedTool[] = [];
 
   for (const tool of tools) {
-    const { tool: cocoTool, wrapped } = wrapMCPTool(tool, serverName, client, options);
-    cocoTools.push(cocoTool);
-    wrappedTools.push(wrapped);
+    try {
+      const { tool: cocoTool, wrapped } = wrapMCPTool(tool, serverName, client, options);
+      cocoTools.push(cocoTool);
+      wrappedTools.push(wrapped);
+    } catch (error) {
+      getLogger().warn(
+        `MCP tool '${serverName}/${tool.name}' unavailable: unsupported input schema`,
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
   }
 
   return { tools: cocoTools, wrapped: wrappedTools };

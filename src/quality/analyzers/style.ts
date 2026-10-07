@@ -3,7 +3,7 @@
  * Measures linter output (oxlint, eslint, or biome)
  */
 
-import { execa } from "execa";
+import { runQualityCommand as execa } from "../command.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -46,102 +46,65 @@ async function detectLinter(projectPath: string): Promise<LinterType> {
   }
 }
 
-/**
- * Run oxlint and parse output
- */
-async function runOxlint(projectPath: string): Promise<{ errors: number; warnings: number }> {
-  try {
-    const result = await execa("npx", ["oxlint", "src", "--format=json"], {
-      cwd: projectPath,
-      reject: false,
-      timeout: 60000,
-    });
-
-    try {
-      const output = JSON.parse(result.stdout);
-      const errors = Array.isArray(output)
-        ? output.filter((d: unknown) => {
-            const diag = d as Record<string, unknown>;
-            return diag.severity === 2 || diag.severity === "error";
-          }).length
-        : 0;
-      const warnings = Array.isArray(output)
-        ? output.filter((d: unknown) => {
-            const diag = d as Record<string, unknown>;
-            return diag.severity === 1 || diag.severity === "warning";
-          }).length
-        : 0;
-      return { errors, warnings };
-    } catch {
-      // Parse text output: count "error" and "warning" lines
-      const lines = (result.stdout + result.stderr).split("\n");
-      let errors = 0;
-      let warnings = 0;
-      for (const line of lines) {
-        if (/error\[/.test(line) || /✖.*error/.test(line)) errors++;
-        if (/warning\[/.test(line) || /⚠.*warning/.test(line)) warnings++;
-      }
-      return { errors, warnings };
-    }
-  } catch {
-    return { errors: 0, warnings: 0 };
+/** Parse supported machine-readable linter output; failures are never zero issues. */
+async function runLinter(
+  projectPath: string,
+  linter: Exclude<LinterType, null>,
+): Promise<{ errors: number; warnings: number }> {
+  const args =
+    linter === "biome"
+      ? ["--no-install", "@biomejs/biome", "lint", "src", "--reporter=json"]
+      : ["--no-install", linter, "src", "--format=json"];
+  const result = await execa("npx", args, { cwd: projectPath, reject: false, timeout: 120000 });
+  if (result.exitCode !== 0 && result.exitCode !== 1) throw new Error("Linter process failed");
+  const output = JSON.parse(result.stdout) as unknown;
+  if (linter === "eslint") {
+    if (
+      !Array.isArray(output) ||
+      !output.every(
+        (item) => typeof item.errorCount === "number" && typeof item.warningCount === "number",
+      )
+    )
+      throw new Error("Invalid ESLint report");
+    const errors = output.reduce((n, item) => n + item.errorCount, 0);
+    const warnings = output.reduce((n, item) => n + item.warningCount, 0);
+    if (
+      !Number.isInteger(errors) ||
+      !Number.isInteger(warnings) ||
+      errors < 0 ||
+      warnings < 0 ||
+      (result.exitCode === 1 && errors + warnings === 0)
+    )
+      throw new Error("Invalid ESLint counts or failure without diagnostics");
+    return { errors, warnings };
   }
-}
-
-/**
- * Run eslint and parse output
- */
-async function runEslint(projectPath: string): Promise<{ errors: number; warnings: number }> {
-  try {
-    const result = await execa("npx", ["eslint", "src", "--format=json"], {
-      cwd: projectPath,
-      reject: false,
-      timeout: 120000,
-    });
-
-    try {
-      const output = JSON.parse(result.stdout) as Array<{
-        errorCount: number;
-        warningCount: number;
-      }>;
-      const errors = output.reduce((sum, f) => sum + f.errorCount, 0);
-      const warnings = output.reduce((sum, f) => sum + f.warningCount, 0);
-      return { errors, warnings };
-    } catch {
-      return { errors: 0, warnings: 0 };
-    }
-  } catch {
-    return { errors: 0, warnings: 0 };
+  const diagnostics = Array.isArray(output)
+    ? output
+    : (output as { diagnostics?: unknown[] } | null)?.diagnostics;
+  if (!Array.isArray(diagnostics)) throw new Error("Invalid linter diagnostics report");
+  let errors = 0,
+    warnings = 0;
+  for (const diagnostic of diagnostics) {
+    if (!diagnostic || typeof diagnostic !== "object" || !("severity" in diagnostic))
+      throw new Error("Invalid linter diagnostic");
+    if (
+      diagnostic.severity === "error" ||
+      diagnostic.severity === "fatal" ||
+      diagnostic.severity === 2
+    )
+      errors++;
+    else if (
+      diagnostic.severity === "warning" ||
+      diagnostic.severity === "warn" ||
+      diagnostic.severity === 1
+    )
+      warnings++;
+    else if (diagnostic.severity !== "info" && diagnostic.severity !== "hint")
+      throw new Error("Unknown linter severity");
   }
-}
-
-/**
- * Run biome and parse output
- */
-async function runBiome(projectPath: string): Promise<{ errors: number; warnings: number }> {
-  try {
-    const result = await execa("npx", ["@biomejs/biome", "lint", "src", "--reporter=json"], {
-      cwd: projectPath,
-      reject: false,
-      timeout: 60000,
-    });
-
-    try {
-      const output = JSON.parse(result.stdout);
-      const diagnostics = output.diagnostics ?? [];
-      const errors = diagnostics.filter(
-        (d: unknown) => (d as Record<string, unknown>).severity === "error",
-      ).length;
-      const warnings = diagnostics.filter(
-        (d: unknown) => (d as Record<string, unknown>).severity === "warning",
-      ).length;
-      return { errors, warnings };
-    } catch {
-      return { errors: 0, warnings: 0 };
-    }
-  } catch {
-    return { errors: 0, warnings: 0 };
-  }
+  if (result.exitCode === 1 && errors + warnings === 0)
+    throw new Error("Linter failed without diagnostics");
+  return { errors, warnings };
 }
 
 /**
@@ -166,19 +129,7 @@ export class StyleAnalyzer {
       };
     }
 
-    let result: { errors: number; warnings: number };
-
-    switch (linter) {
-      case "oxlint":
-        result = await runOxlint(this.projectPath);
-        break;
-      case "eslint":
-        result = await runEslint(this.projectPath);
-        break;
-      case "biome":
-        result = await runBiome(this.projectPath);
-        break;
-    }
+    const result = await runLinter(this.projectPath, linter);
 
     // Score: start at 100, deduct for errors and warnings
     const score = Math.round(

@@ -16,6 +16,10 @@ export const clearCommand: SlashCommand = {
   usage: "/clear",
 
   async execute(_args: string[], session: ReplSession): Promise<boolean> {
+    if (session.runtime) {
+      await session.runtime.closeSession(session.id);
+      session.runtime.enableBackgroundJobs(session.id, session.projectPath);
+    }
     clearSession(session);
     // Clear terminal and repaint startup panel so the UI looks like a fresh launch.
     process.stdout.write("\x1b[2J\x1b[H");

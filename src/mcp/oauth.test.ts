@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../utils/logger.js", () => ({
   getLogger: () => ({
@@ -15,21 +15,32 @@ vi.mock("../auth/callback-server.js", () => ({
 }));
 
 vi.mock("node:child_process", () => ({
-  execFile: vi.fn((_cmd: string, _args: string[], cb: (err: Error | null) => void) => cb(null)),
+  execFile: vi.fn(
+    (_cmd: string, _args: string[], _options: unknown, cb: (err: Error | null) => void) => cb(null),
+  ),
 }));
 
-vi.mock("node:fs/promises", () => ({
-  default: {
+vi.mock("node:fs/promises", () => {
+  const fixture = {
     readFile: vi.fn(),
     writeFile: vi.fn(),
     mkdir: vi.fn(),
-  },
-}));
+    rename: vi.fn(),
+    unlink: vi.fn(),
+  };
+  return { ...fixture, default: fixture };
+});
 
 import fs from "node:fs/promises";
 import { createCallbackServer } from "../auth/callback-server.js";
 import { authenticateMcpOAuth } from "./oauth.js";
 
+const originalTTY = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+afterEach(() => {
+  vi.unstubAllGlobals();
+  if (originalTTY) Object.defineProperty(process.stdout, "isTTY", originalTTY);
+  else Reflect.deleteProperty(process.stdout, "isTTY");
+});
 describe("mcp oauth", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -41,13 +52,16 @@ describe("mcp oauth", () => {
   });
 
   it("stores oauth token file with secure permissions", async () => {
-    vi.mocked(fs.readFile).mockRejectedValue(new Error("not found"));
+    vi.mocked(fs.readFile).mockRejectedValue(
+      Object.assign(new Error("not found"), { code: "ENOENT" }),
+    );
     vi.mocked(fs.mkdir).mockResolvedValue(undefined);
     vi.mocked(fs.writeFile).mockResolvedValue(undefined);
     vi.mocked(createCallbackServer).mockResolvedValue({
       port: 1455,
       resultPromise: Promise.resolve({ code: "auth-code", state: "state" }),
-    } as any);
+      close: vi.fn().mockResolvedValue(undefined),
+    });
 
     vi.mocked(fetch)
       .mockResolvedValueOnce(
@@ -210,13 +224,16 @@ describe("mcp oauth", () => {
   });
 
   it("falls back to authorization-server metadata when protected-resource metadata is unavailable", async () => {
-    vi.mocked(fs.readFile).mockRejectedValue(new Error("not found"));
+    vi.mocked(fs.readFile).mockRejectedValue(
+      Object.assign(new Error("not found"), { code: "ENOENT" }),
+    );
     vi.mocked(fs.mkdir).mockResolvedValue(undefined);
     vi.mocked(fs.writeFile).mockResolvedValue(undefined);
     vi.mocked(createCallbackServer).mockResolvedValue({
       port: 1455,
       resultPromise: Promise.resolve({ code: "auth-code", state: "state" }),
-    } as any);
+      close: vi.fn().mockResolvedValue(undefined),
+    });
 
     vi.mocked(fetch).mockImplementation(async (input: string | URL | Request) => {
       const url =

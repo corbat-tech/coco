@@ -1,5 +1,8 @@
 # Coco Cookbook
 
+> Compatibility note (2026-09-16): legacy `coco build` and `coco resume` are not implemented and now exit with an error. Examples below using those commands describe a planned workflow, not supported execution or recovery. Use the interactive `coco` agent; it does not automatically execute legacy backlogs or restore phase checkpoints.
+
+
 Practical patterns for getting the most out of Coco day-to-day. This guide covers how to ask for things, how to use skills, MCP tools, and the workflows developers reach for most.
 
 ---

@@ -4,6 +4,57 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import type { QualityEvaluation } from "../../quality/types.js";
+
+const { mockEvaluate } = vi.hoisted(() => ({ mockEvaluate: vi.fn() }));
+vi.mock("../../quality/snapshot.js", () => ({
+  createQualitySnapshot: vi.fn(async () => ({ hash: "fixture-source", files: {} })),
+  isQualitySnapshotCurrent: vi.fn(async () => true),
+}));
+vi.mock("../../quality/evaluator.js", () => ({
+  QualityEvaluator: vi.fn().mockImplementation(function () {
+    return { evaluate: mockEvaluate };
+  }),
+}));
+
+// Explicit analyzer evidence, independent of the LLM review fixture.
+function measuredQuality(score: number, security = 100): QualityEvaluation {
+  return {
+    scores: {
+      overall: score,
+      dimensions: {
+        correctness: score,
+        completeness: score,
+        robustness: score,
+        readability: score,
+        maintainability: score,
+        complexity: score,
+        duplication: score,
+        testCoverage: score,
+        testQuality: score,
+        security,
+        documentation: score,
+        style: score,
+      },
+      evaluatedAt: new Date(0),
+      evaluationDurationMs: 1,
+    },
+    passed: score >= 85 && security === 100,
+    complete: true,
+    snapshotValid: true,
+    snapshot: { hash: "fixture-source", files: {} },
+    meetsMinimum: score >= 85 && security === 100,
+    meetsTarget: score >= 95 && security === 100,
+    converged: false,
+    issues: [],
+    suggestions: [],
+  };
+}
+
+beforeEach(() => {
+  mockEvaluate.mockReset().mockImplementation(async () => measuredQuality(90));
+});
+
 const mockLLM = {
   id: "test",
   name: "Test LLM",
@@ -86,13 +137,17 @@ describe("TaskIterator", () => {
     it("should execute task and return result", async () => {
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test Task", description: "Test", type: "feature", files: [] },
@@ -125,13 +180,17 @@ describe("TaskIterator", () => {
     it("should call onProgress callback when provided", async () => {
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test Task", description: "Test", type: "feature", files: [] },
@@ -164,13 +223,17 @@ describe("TaskIterator", () => {
     it("should work without onProgress callback", async () => {
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test Task", description: "Test", type: "feature", files: [] },
@@ -204,13 +267,17 @@ describe("TaskIterator", () => {
         chat: vi.fn().mockRejectedValue(new Error("LLM Error")),
       };
 
-      const iterator = new TaskIterator(failingLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        failingLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test", description: "Test", type: "feature", files: [] },
@@ -229,13 +296,17 @@ describe("TaskIterator", () => {
     it("should handle previous versions in context", async () => {
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test Task", description: "Test", type: "feature", files: [] },
@@ -548,13 +619,17 @@ describe("TaskIterator - real implementation coverage", () => {
         isAvailable: vi.fn().mockResolvedValue(true),
       };
 
-      const iterator = new TaskIterator(realLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 2,
-        minConvergenceIterations: 1,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        realLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 2,
+          minConvergenceIterations: 1,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: {
@@ -673,13 +748,17 @@ describe("TaskIterator - version creation and issue mapping", () => {
 
     const { TaskIterator } = await import("./iterator.js");
 
-    const iterator = new TaskIterator(mockLLM as any, {
-      minScore: 85,
-      minCoverage: 80,
-      maxIterations: 2,
-      minConvergenceIterations: 1,
-      convergenceThreshold: 2,
-    });
+    const iterator = new TaskIterator(
+      mockLLM as any,
+      {
+        minScore: 85,
+        minCoverage: 80,
+        maxIterations: 2,
+        minConvergenceIterations: 1,
+        convergenceThreshold: 2,
+      },
+      "/test",
+    );
 
     const context = {
       task: { id: "task-1", title: "Test Task", description: "Test", type: "feature", files: [] },
@@ -785,13 +864,17 @@ describe("TaskIterator - version creation and issue mapping", () => {
 
     const { TaskIterator } = await import("./iterator.js");
 
-    const iterator = new TaskIterator(mockLLM as any, {
-      minScore: 85,
-      minCoverage: 80,
-      maxIterations: 2,
-      minConvergenceIterations: 1,
-      convergenceThreshold: 2,
-    });
+    const iterator = new TaskIterator(
+      mockLLM as any,
+      {
+        minScore: 85,
+        minCoverage: 80,
+        maxIterations: 2,
+        minConvergenceIterations: 1,
+        convergenceThreshold: 2,
+      },
+      "/test",
+    );
 
     const context = {
       task: { id: "task-1", title: "Test", description: "Test", type: "feature", files: [] },
@@ -858,13 +941,17 @@ describe("TaskIterator - version creation and issue mapping", () => {
 
     const { TaskIterator } = await import("./iterator.js");
 
-    const iterator = new TaskIterator(mockLLM as any, {
-      minScore: 85,
-      minCoverage: 80,
-      maxIterations: 2,
-      minConvergenceIterations: 1,
-      convergenceThreshold: 2,
-    });
+    const iterator = new TaskIterator(
+      mockLLM as any,
+      {
+        minScore: 85,
+        minCoverage: 80,
+        maxIterations: 2,
+        minConvergenceIterations: 1,
+        convergenceThreshold: 2,
+      },
+      "/test",
+    );
 
     const context = {
       task: { id: "task-1", title: "Test", description: "Test", type: "feature", files: [] },
@@ -907,6 +994,7 @@ describe("TaskIterator - advanced scenarios", () => {
 
   describe("execute iterations", () => {
     it("should reach max iterations when quality never converges", async () => {
+      mockEvaluate.mockImplementation(async () => measuredQuality(70, 70));
       // Reset mocks with special behavior for this test
       vi.doMock("./reviewer.js", () => ({
         CodeReviewer: vi.fn().mockImplementation(function () {
@@ -929,13 +1017,17 @@ describe("TaskIterator - advanced scenarios", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 3, // Low limit for testing
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 3, // Low limit for testing
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test", description: "Test", type: "feature", files: [] },
@@ -965,13 +1057,17 @@ describe("TaskIterator - advanced scenarios", () => {
     it("should stop when quality passes threshold", async () => {
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test Task", description: "Test", type: "feature", files: [] },
@@ -1001,13 +1097,17 @@ describe("TaskIterator - advanced scenarios", () => {
     it("should build context with previous versions", async () => {
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test Task", description: "Test", type: "feature", files: [] },
@@ -1049,13 +1149,17 @@ describe("TaskIterator - advanced scenarios", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test", description: "Test", type: "feature", files: [] },
@@ -1075,13 +1179,17 @@ describe("TaskIterator - advanced scenarios", () => {
     it("should track file actions correctly (create, modify, delete)", async () => {
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test Task", description: "Test", type: "feature", files: [] },
@@ -1111,13 +1219,17 @@ describe("TaskIterator - advanced scenarios", () => {
     it("should map test failures to version analysis", async () => {
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-1", title: "Test Task", description: "Test", type: "feature", files: [] },
@@ -1150,46 +1262,62 @@ describe("TaskIterator - advanced scenarios", () => {
 
   describe("feedback building", () => {
     it("should build feedback with issues and suggestions", async () => {
-      vi.doMock("./reviewer.js", () => ({
-        CodeReviewer: vi.fn().mockImplementation(function () {
-          return {
-            review: vi.fn().mockResolvedValue({
-              passed: true,
-              scores: {
-                overall: 90,
-                dimensions: { testCoverage: 85 },
-              },
-              issues: [
-                { severity: "major", message: "Missing error handling" },
-                { severity: "minor", message: "Inconsistent naming" },
-                { severity: "info", message: "Consider adding comments" },
-                { severity: "critical", message: "Security issue" },
-                { severity: "major", message: "Performance concern" },
-                { severity: "minor", message: "Style issue" },
-              ],
-              suggestions: [
-                { priority: "high", description: "Add unit tests" },
-                { priority: "medium", description: "Improve docs" },
-                { priority: "low", description: "Refactor" },
-                { priority: "high", description: "Add validation" },
-              ],
-              testResults: { passed: 5, failed: 0, skipped: 0 },
-            }),
-            checkPassed: vi.fn().mockReturnValue(true),
-            getCriticalIssues: vi.fn().mockReturnValue([]),
-          };
+      mockEvaluate.mockImplementation(async () => measuredQuality(70, 70));
+      const reviewer = {
+        review: vi.fn().mockResolvedValue({
+          passed: true,
+          scores: {
+            overall: 90,
+            dimensions: { testCoverage: 85 },
+          },
+          issues: [
+            { severity: "major", message: "Missing error handling" },
+            { severity: "minor", message: "Inconsistent naming" },
+            { severity: "info", message: "Consider adding comments" },
+            { severity: "critical", message: "Security issue" },
+            { severity: "major", message: "Performance concern" },
+            { severity: "minor", message: "Style issue" },
+          ],
+          suggestions: [
+            { priority: "high", description: "Add unit tests" },
+            { priority: "medium", description: "Improve docs" },
+            { priority: "low", description: "Refactor" },
+            { priority: "high", description: "Add validation" },
+          ],
+          testResults: { passed: 5, failed: 0, skipped: 0 },
         }),
-      }));
+        checkPassed: vi.fn().mockReturnValue(true),
+        getCriticalIssues: vi.fn().mockReturnValue([]),
+      };
+      const mockImprove = vi.fn().mockResolvedValue({
+        files: [{ path: "src/test.ts", content: "improved code", action: "modify" }],
+        explanation: "Improved",
+        confidence: 85,
+      });
+      const generator = {
+        generate: vi.fn().mockResolvedValue({
+          files: [{ path: "src/test.ts", content: "code", action: "create" }],
+          explanation: "Generated",
+          confidence: 80,
+        }),
+        improve: mockImprove,
+      };
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 2,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
+      // Bind scenario dependencies to this instance without changing cached module factories.
+      Object.assign(iterator, { reviewer, generator });
 
       const context = {
         task: { id: "task-1", title: "Test", description: "Test", type: "feature", files: [] },
@@ -1213,7 +1341,17 @@ describe("TaskIterator - advanced scenarios", () => {
         vi.fn(),
       );
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      expect(mockImprove).toHaveBeenCalledTimes(1);
+      const feedback = mockImprove.mock.calls[0]![3].feedback as string;
+      expect(feedback).toContain("Overall Score: 70/100");
+      expect(feedback).toContain("Issues (6):");
+      expect(feedback).toContain("[critical] Security issue");
+      expect(feedback).toContain("[major] Missing error handling");
+      expect(feedback).toContain("Suggestions (4):");
+      expect(feedback).toContain("Add unit tests");
+      expect(feedback).toContain("Improve docs");
+      expect(feedback).toContain("Refactor");
     });
   });
 
@@ -1290,6 +1428,10 @@ describe("TaskIterator - comprehensive coverage", () => {
 
   describe("execute - iteration loop with improvement", () => {
     it("should iterate multiple times and call improve when quality does not pass", async () => {
+      mockEvaluate
+        .mockResolvedValueOnce(measuredQuality(70, 70))
+        .mockResolvedValueOnce(measuredQuality(70, 70))
+        .mockImplementation(async () => measuredQuality(90));
       let iterationCount = 0;
       const mockImprove = vi.fn().mockResolvedValue({
         files: [{ path: "src/improved.ts", content: "// improved code", action: "modify" }],
@@ -1353,13 +1495,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 5,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 5,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: {
@@ -1395,6 +1541,7 @@ describe("TaskIterator - comprehensive coverage", () => {
     });
 
     it("should reach max iterations and return failure with lastReview populated", async () => {
+      mockEvaluate.mockImplementation(async () => measuredQuality(70, 70));
       vi.doMock("./generator.js", () => ({
         CodeGenerator: vi.fn().mockImplementation(function () {
           return {
@@ -1435,13 +1582,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 2,
-        minConvergenceIterations: 1,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 2,
+          minConvergenceIterations: 1,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-max", title: "Test", description: "Test", type: "feature", files: [] },
@@ -1467,11 +1618,12 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       expect(result.converged).toBe(false);
       expect(result.iterations).toBe(2);
-      expect(result.error).toBe("Max iterations reached without convergence");
+      expect(result.error).toBe("Max iterations reached without verified quality acceptance");
       expect(result.finalScore).toBe(70);
     });
 
-    it("should return success=true when max iterations reached but lastReview passes", async () => {
+    it("should accept measured quality before convergence iterations are reached", async () => {
+      mockEvaluate.mockImplementation(async () => measuredQuality(85));
       vi.doMock("./generator.js", () => ({
         CodeGenerator: vi.fn().mockImplementation(function () {
           return {
@@ -1518,13 +1670,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 2,
-        minConvergenceIterations: 3, // Higher than maxIterations
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 2,
+          minConvergenceIterations: 3, // Higher than maxIterations
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-pass", title: "Test", description: "Test", type: "feature", files: [] },
@@ -1564,13 +1720,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-err", title: "Test", description: "Test", type: "feature", files: [] },
@@ -1670,13 +1830,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: {
@@ -1736,6 +1900,9 @@ describe("TaskIterator - comprehensive coverage", () => {
 
   describe("buildFeedback - truncation behavior", () => {
     it("should truncate issues to first 5 and suggestions to first 3", async () => {
+      mockEvaluate
+        .mockResolvedValueOnce(measuredQuality(70, 70))
+        .mockImplementation(async () => measuredQuality(92));
       vi.doMock("./generator.js", () => ({
         CodeGenerator: vi.fn().mockImplementation(function () {
           return {
@@ -1793,13 +1960,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 3,
-        minConvergenceIterations: 1,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 3,
+          minConvergenceIterations: 1,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: {
@@ -1870,13 +2041,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 5,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 5,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: {
@@ -1943,13 +2118,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-prev", title: "Test", description: "Test", type: "feature", files: [] },
@@ -2012,13 +2191,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 10,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 10,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: {
@@ -2053,7 +2236,10 @@ describe("TaskIterator - comprehensive coverage", () => {
   });
 
   describe("convergence - via convergence check in loop", () => {
-    it("should return converged when score stabilizes above threshold", async () => {
+    it("should accept measured quality without claiming convergence prematurely", async () => {
+      mockEvaluate
+        .mockResolvedValueOnce(measuredQuality(88))
+        .mockImplementation(async () => measuredQuality(89));
       let iterationCount = 0;
 
       vi.doMock("./generator.js", () => ({
@@ -2099,13 +2285,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 5,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 5,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: {
@@ -2135,7 +2325,9 @@ describe("TaskIterator - comprehensive coverage", () => {
         vi.fn(),
       );
 
-      expect(result.converged).toBe(true);
+      expect(result.success).toBe(true);
+      expect(result.iterations).toBe(1);
+      expect(result.converged).toBe(false);
     });
   });
 
@@ -2214,13 +2406,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 5,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 5,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-map", title: "Test", description: "Test", type: "feature", files: [] },
@@ -2263,6 +2459,9 @@ describe("TaskIterator - comprehensive coverage", () => {
 
   describe("filesToString - formatting", () => {
     it("should format multiple files correctly", async () => {
+      mockEvaluate
+        .mockResolvedValueOnce(measuredQuality(75, 75))
+        .mockImplementation(async () => measuredQuality(92));
       vi.doMock("./generator.js", () => ({
         CodeGenerator: vi.fn().mockImplementation(function () {
           return {
@@ -2323,13 +2522,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 3,
-        minConvergenceIterations: 1,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 3,
+          minConvergenceIterations: 1,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: {
@@ -2397,13 +2600,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 5,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 5,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: {
@@ -2620,13 +2827,17 @@ describe("TaskIterator - comprehensive coverage", () => {
 
       const { TaskIterator } = await import("./iterator.js");
 
-      const iterator = new TaskIterator(mockLLM as any, {
-        minScore: 85,
-        minCoverage: 80,
-        maxIterations: 5,
-        minConvergenceIterations: 2,
-        convergenceThreshold: 2,
-      });
+      const iterator = new TaskIterator(
+        mockLLM as any,
+        {
+          minScore: 85,
+          minCoverage: 80,
+          maxIterations: 5,
+          minConvergenceIterations: 2,
+          convergenceThreshold: 2,
+        },
+        "/test",
+      );
 
       const context = {
         task: { id: "task-cov", title: "Test", description: "Test", type: "feature", files: [] },

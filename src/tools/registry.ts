@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import type { ToolExecutionContext } from "./execution-context.js";
 import { getLogger } from "../utils/logger.js";
 import { humanizeError } from "../utils/error-humanizer.js";
 import { isCocoError } from "../utils/errors.js";
@@ -16,9 +17,13 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   name: string;
   description: string;
   category: ToolCategory;
+  /** Host-assigned origin; remote declarations never grant execution authority. */
+  provenance?: { kind: "mcp"; serverName: string; toolName: string };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   parameters: z.ZodType<TInput, any, any>;
-  execute: (params: TInput) => Promise<TOutput>;
+  /** Original JSON Schema for externally defined tools; parameters remains the runtime validator. */
+  inputSchema?: Record<string, unknown>;
+  execute: (params: TInput, context?: ToolExecutionContext) => Promise<TOutput>;
 }
 
 /**
@@ -73,6 +78,8 @@ export interface ProgressInfo {
  * Options for tool execution
  */
 export interface ExecuteOptions {
+  /** Trusted execution context, never parsed from model arguments. */
+  context?: ToolExecutionContext;
   /** Progress callback for long operations */
   onProgress?: ProgressCallback;
   /** Abort signal for cancellation */
@@ -157,8 +164,17 @@ export class ToolRegistry {
       };
     }
 
+    const signals = [options?.signal, options?.context?.signal].filter(
+      (signal): signal is AbortSignal => signal !== undefined,
+    );
+    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+    const context =
+      options?.context || signal
+        ? Object.freeze({ ...options?.context, ...(signal ? { signal } : {}) })
+        : undefined;
+
     // Check if already aborted
-    if (options?.signal?.aborted) {
+    if (signal?.aborted) {
       return {
         success: false,
         error: "Operation cancelled",
@@ -179,7 +195,9 @@ export class ToolRegistry {
 
       // Execute tool
       this.logger.debug(`Executing tool: ${name}`, { params: validatedParams });
-      const result = await tool.execute(validatedParams);
+      const result = context
+        ? await tool.execute(validatedParams, context)
+        : await tool.execute(validatedParams);
 
       const duration = performance.now() - startTime;
       this.logger.debug(`Tool '${name}' completed`, { duration: `${duration.toFixed(2)}ms` });
@@ -219,7 +237,7 @@ export class ToolRegistry {
         // Append the tool's JSON schema so the model can self-correct
         // (critical for mini-tier models that may not remember the schema)
         try {
-          const schema = zodToJsonSchema(tool.parameters);
+          const schema = tool.inputSchema ?? zodToJsonSchema(tool.parameters);
           errorMessage += `\n\nExpected schema for '${name}':\n${JSON.stringify(schema, null, 2)}`;
         } catch {
           // Schema serialization failed — skip the hint
@@ -243,7 +261,7 @@ export class ToolRegistry {
         if (error.suggestion && !hasRecoveryHint && !errorMessage.includes(error.suggestion)) {
           errorMessage += `\nSuggestion: ${error.suggestion}`;
         }
-      } else if (isAbortError(error, options?.signal)) {
+      } else if (isAbortError(error, signal)) {
         // Provider abort errors (e.g., "Request was aborted") should be handled gracefully
         errorMessage = "Operation cancelled by user or provider";
       } else {
@@ -276,67 +294,26 @@ export class ToolRegistry {
     description: string;
     input_schema: Record<string, unknown>;
   }> {
-    return this.getAll().map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      // Convert Zod schema to JSON schema
-      input_schema: zodToJsonSchema(tool.parameters),
-    }));
-  }
-}
-
-/**
- * Convert Zod schema to JSON schema (simplified)
- */
-function zodToJsonSchema(schema: z.ZodSchema): Record<string, unknown> {
-  // For now, use a basic conversion
-  // In production, use a library like zod-to-json-schema
-  try {
-    if (schema instanceof z.ZodObject) {
-      const shape = schema.shape;
-      const properties: Record<string, unknown> = {};
-      const required: string[] = [];
-
-      for (const [key, value] of Object.entries(shape)) {
-        const fieldSchema = value as z.ZodTypeAny;
-        properties[key] = zodFieldToJsonSchema(fieldSchema);
-
-        // Check if required (not optional)
-        if (!fieldSchema.isOptional()) {
-          required.push(key);
+    return this.getAll().flatMap((tool) => {
+      try {
+        const input_schema = tool.inputSchema ?? zodToJsonSchema(tool.parameters);
+        if (input_schema.type !== "object") {
+          throw new Error("Tool input must be an object schema");
         }
+        return [{ name: tool.name, description: tool.description, input_schema }];
+      } catch (error) {
+        this.logger.warn(`Tool '${tool.name}' unavailable to models: unsupported input schema`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return [];
       }
-
-      return {
-        type: "object",
-        properties,
-        required: required.length > 0 ? required : undefined,
-      };
-    }
-
-    return { type: "object" };
-  } catch {
-    return { type: "object" };
+    });
   }
 }
 
-/**
- * Convert a Zod field to JSON schema
- */
-function zodFieldToJsonSchema(field: z.ZodTypeAny): Record<string, unknown> {
-  if (field instanceof z.ZodString) return { type: "string" };
-  if (field instanceof z.ZodNumber) return { type: "number" };
-  if (field instanceof z.ZodBoolean) return { type: "boolean" };
-  if (field instanceof z.ZodArray) {
-    return { type: "array", items: zodFieldToJsonSchema(field.element as z.ZodTypeAny) };
-  }
-  if (field instanceof z.ZodOptional) return zodFieldToJsonSchema(field.unwrap() as z.ZodTypeAny);
-  if (field instanceof z.ZodDefault)
-    return zodFieldToJsonSchema(field.removeDefault() as z.ZodTypeAny);
-  if (field instanceof z.ZodEnum) {
-    return { type: "string", enum: field.options };
-  }
-  return {};
+/** Preserve the input contract; Zod remains authoritative when executing the tool. */
+function zodToJsonSchema(schema: z.ZodSchema): Record<string, unknown> {
+  return z.toJSONSchema(schema, { io: "input" });
 }
 
 /**

@@ -1,3 +1,4 @@
+import { resolveAgentType } from "./agent-type.js";
 import { getAgentMode, type AgentModeId } from "./agent-modes.js";
 import type { ToolDefinition } from "../tools/registry.js";
 import type { PermissionDecision, PermissionPolicy, RuntimeMode } from "./types.js";
@@ -7,6 +8,7 @@ const WRITE_CATEGORIES = new Set(["file", "git", "test", "build", "memory"]);
 const READ_ONLY_TOOL_NAMES = new Set([
   "glob",
   "read_file",
+  "file_exists",
   "list_dir",
   "tree",
   "grep",
@@ -28,10 +30,14 @@ const READ_ONLY_TOOL_NAMES = new Set([
   "list_memories",
   "list_checkpoints",
   "checkAgentCapability",
+  "background_list",
+  "background_status",
+  "background_read",
 ]);
-const WRITE_CAPABLE_TOOL_NAMES = new Set(["run_linter"]);
+const WRITE_CAPABLE_TOOL_NAMES = new Set(["run_linter", "background_cancel"]);
 const DESTRUCTIVE_TOOL_NAMES = new Set([
   "bash_exec",
+  "bash_background",
   "write_file",
   "edit_file",
   "delete_file",
@@ -41,8 +47,31 @@ const DESTRUCTIVE_TOOL_NAMES = new Set([
   "request_human_escalation",
 ]);
 
+// Shared across CLI, embedded runtime and delegated execution. These operations
+// need consent even when their risk is not destructive (e.g. network/secrets).
+const CONFIRMATION_REQUIRED_TOOLS = new Set([
+  "copy_file",
+  "move_file",
+  "git_pull",
+  "install_deps",
+  "make",
+  "run_script",
+  "http_fetch",
+  "http_json",
+  "get_env",
+  "read_image",
+  "read_audio",
+  "generate_image",
+  "manage_permissions",
+]);
+
 function riskForTool(tool: ToolDefinition): PermissionDecision["risk"] {
+  // Remote behavior is unknown: do not infer safety from names, categories or hints.
+  if (tool.provenance?.kind === "mcp") return "secrets-sensitive";
   if (READ_ONLY_TOOL_NAMES.has(tool.name)) return "read-only";
+  if (tool.name === "get_env") return "secrets-sensitive";
+  if (["http_fetch", "http_json", "read_image", "read_audio", "generate_image"].includes(tool.name))
+    return "network";
   if (DESTRUCTIVE_TOOL_NAMES.has(tool.name)) return "destructive";
   if (WRITE_CAPABLE_TOOL_NAMES.has(tool.name)) return "write";
   if (tool.category === "web") return "network";
@@ -57,7 +86,9 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
     const risk = riskForTool(tool);
 
     const readOnlyTool =
-      READ_ONLY_TOOL_NAMES.has(tool.name) || READ_ONLY_CATEGORIES.has(tool.category);
+      tool.provenance?.kind !== "mcp" &&
+      !["read_image", "read_audio", "generate_image"].includes(tool.name) &&
+      (READ_ONLY_TOOL_NAMES.has(tool.name) || READ_ONLY_CATEGORIES.has(tool.category));
 
     if (definition.readOnly && !readOnlyTool) {
       return {
@@ -67,11 +98,18 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
       };
     }
 
-    if (risk === "destructive") {
+    if (
+      tool.provenance?.kind === "mcp" ||
+      risk === "destructive" ||
+      CONFIRMATION_REQUIRED_TOOLS.has(tool.name)
+    ) {
       return {
         allowed: true,
         requiresConfirmation: true,
-        reason: `${tool.name} can change repository state and should be confirmed.`,
+        reason:
+          risk === "destructive"
+            ? `${tool.name} can change repository state and should be confirmed.`
+            : `${tool.name} requires explicit confirmation.`,
         risk,
       };
     }
@@ -84,13 +122,34 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
     tool: ToolDefinition,
     input: Record<string, unknown>,
   ): PermissionDecision {
-    if (tool.name === "spawnSimpleAgent") {
-      const risk = riskForSpawnedAgent(input);
+    if (tool.provenance?.kind === "mcp") return this.canExecuteTool(mode, tool);
+
+    if (
+      tool.name === "git_branch" &&
+      (input["create"] !== undefined || input["delete"] !== undefined)
+    ) {
+      const readOnly = getAgentMode(mode as AgentModeId).readOnly;
+      return {
+        allowed: !readOnly,
+        requiresConfirmation: true,
+        risk: "destructive",
+        reason: readOnly
+          ? "Branch mutation is forbidden in read-only mode."
+          : "Creating/checking out or deleting a branch requires confirmation.",
+      };
+    }
+
+    if (tool.name === "spawnSimpleAgent" || tool.name === "delegateTask") {
+      const roleInput =
+        tool.name === "spawnSimpleAgent"
+          ? { type: input["type"], role: input["role"] }
+          : { type: input["agentType"], role: input["agentRole"] };
+      const risk = riskForSpawnedAgent(roleInput);
       const definition = getAgentMode(mode as AgentModeId);
       if (definition.readOnly && risk !== "read-only" && risk !== "network") {
         return {
           allowed: false,
-          reason: `${definition.label} mode is read-only; spawnSimpleAgent with this role can perform ${risk} work.`,
+          reason: `${definition.label} mode is read-only; ${tool.name} with this role can perform ${risk} work.`,
           risk,
         };
       }
@@ -128,9 +187,7 @@ export function createPermissionPolicy(): PermissionPolicy {
 }
 
 function riskForSpawnedAgent(input: Record<string, unknown>): PermissionDecision["risk"] {
-  const type = typeof input["type"] === "string" ? input["type"] : undefined;
-  const role = typeof input["role"] === "string" ? input["role"] : undefined;
-  const resolved = type ?? role;
+  const resolved = resolveAgentType(input);
 
   switch (resolved) {
     case "explore":
@@ -138,22 +195,16 @@ function riskForSpawnedAgent(input: Record<string, unknown>): PermissionDecision
     case "review":
     case "architect":
     case "security":
-    case "docs":
-    case "researcher":
-    case "reviewer":
-    case "planner":
       return "read-only";
     case "database":
       return "secrets-sensitive";
     case "test":
     case "tdd":
     case "e2e":
-    case "tester":
       return "destructive";
+    case "docs":
     case "debug":
     case "refactor":
-    case "coder":
-    case "optimizer":
       return "write";
     default:
       return "read-only";

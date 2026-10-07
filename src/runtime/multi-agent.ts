@@ -1,6 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
+import { createRequestScope } from "../utils/request-scope.js";
+import { isCancellation } from "../utils/cancellation.js";
 import type { EventLog, RuntimeEvent } from "./types.js";
 import type { WorkflowRisk } from "./workflow-registry.js";
 
@@ -664,6 +667,7 @@ export function createAgentTraceContext(input: Partial<AgentTraceContext> = {}):
 }
 
 export interface AgentGraphNodeExecution {
+  signal?: AbortSignal;
   node: AgentGraphNode;
   task: AgentTask;
   attempt: number;
@@ -679,6 +683,7 @@ export type AgentGraphNodeExecutor = (
 ) => Promise<AgentRunResult>;
 
 export type AgentGateEvaluator = (input: {
+  signal?: AbortSignal;
   gate: AgentGateDefinition;
   node: AgentGraphNode;
   result: AgentRunResult;
@@ -698,6 +703,7 @@ export interface AgentGraphEngineOptions {
 }
 
 export interface AgentGraphRunInput {
+  signal?: AbortSignal;
   workflowRunId: string;
   graph: AgentGraphDefinition;
   input: Record<string, unknown>;
@@ -757,10 +763,12 @@ export class AgentGraphEngine {
     });
 
     try {
+      input.signal?.throwIfAborted();
       for (const level of validation.levels) {
         const batches = chunk(level, input.graph.parallelism ?? level.length);
         for (const batch of batches) {
-          const levelResults = await Promise.all(
+          input.signal?.throwIfAborted();
+          const levelResults = await Promise.allSettled(
             batch.map((nodeId) =>
               this.executeNode({
                 node: input.graph.nodes.find((candidate) => candidate.id === nodeId)!,
@@ -769,13 +777,36 @@ export class AgentGraphEngine {
                 input: input.input,
                 graphTrace,
                 nodeResults,
+                signal: input.signal,
               }),
             ),
           );
-          for (const result of levelResults) {
+          let batchFailure: string | undefined;
+          for (const [index, settled] of levelResults.entries()) {
+            const node = input.graph.nodes.find((candidate) => candidate.id === batch[index])!;
+            const now = new Date().toISOString();
+            const result =
+              settled.status === "fulfilled"
+                ? settled.value
+                : normalizeAgentRunResult({
+                    id: `${input.workflowRunId}-${node.id}-rejected`,
+                    taskId: node.id,
+                    role: graphNodeToTask(node, input.input).role,
+                    success: false,
+                    output: "",
+                    startedAt: now,
+                    completedAt: now,
+                    error:
+                      settled.reason instanceof Error
+                        ? settled.reason.message
+                        : String(settled.reason),
+                  });
             nodeResults.set(result.taskId, result);
-            artifacts.push(...result.artifacts.map(cloneArtifact));
+            if (result.success) artifacts.push(...result.artifacts.map(cloneArtifact));
+            else batchFailure ??= result.error ?? `Node '${node.id}' failed`;
           }
+          if (batchFailure) throw new Error(batchFailure);
+          input.signal?.throwIfAborted();
         }
       }
 
@@ -825,8 +856,11 @@ export class AgentGraphEngine {
     input: Record<string, unknown>;
     graphTrace: AgentTraceContext;
     nodeResults: Map<string, AgentRunResult>;
+    signal?: AbortSignal;
   }): Promise<AgentRunResult> {
-    const skipReason = shouldSkipNode(input.node, input.graph, input.input, input.nodeResults);
+    const skipReason = input.signal?.aborted
+      ? undefined
+      : shouldSkipNode(input.node, input.graph, input.input, input.nodeResults);
     if (skipReason) {
       const completedAt = new Date().toISOString();
       const task = graphNodeToTask(input.node, input.input);
@@ -862,26 +896,59 @@ export class AgentGraphEngine {
 
     const attempts = input.node.retryPolicy?.maxAttempts ?? 1;
     let lastResult: AgentRunResult | undefined;
+    const task = graphNodeToTask(input.node, input.input);
+    const failure = (
+      error: unknown,
+      status: AgentRunStatus,
+      startedAt: string,
+      attempt: number,
+      previous?: AgentRunResult,
+    ) =>
+      normalizeAgentRunResult({
+        ...previous,
+        id: `${input.workflowRunId}-${input.node.id}-attempt-${attempt}-${status}`,
+        taskId: task.id,
+        role: task.role,
+        success: false,
+        status,
+        output: previous?.output ?? "",
+        artifacts: [],
+        startedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - Date.parse(startedAt),
+        error: error instanceof Error ? error.message : String(error),
+        metadata: {
+          ...previous?.metadata,
+          workflowRunId: input.workflowRunId,
+          nodeId: input.node.id,
+        },
+      });
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
-      const task = graphNodeToTask(input.node, input.input);
+      const startedAt = new Date().toISOString();
       const trace = createAgentTraceContext({
         traceId: input.graphTrace.traceId,
         parentSpanId: input.graphTrace.spanId,
         workflowRunId: input.workflowRunId,
         taskId: task.id,
       });
-      this.eventLog?.record("agent.started", {
-        workflowRunId: input.workflowRunId,
-        nodeId: input.node.id,
-        taskId: task.id,
-        role: task.role,
-        attempt,
-        trace,
-      });
-
-      const result = await runWithOptionalTimeout(
-        this.nodeExecutor({
+      let scope: ReturnType<typeof createRequestScope> | undefined;
+      let result: AgentRunResult;
+      let returnedResult: AgentRunResult | undefined;
+      let gateStarted = false;
+      try {
+        scope = createRequestScope(input.signal, input.node.timeoutMs ?? 0);
+        scope.signal.throwIfAborted();
+        this.eventLog?.record("agent.started", {
+          workflowRunId: input.workflowRunId,
+          nodeId: input.node.id,
+          taskId: task.id,
+          role: task.role,
+          attempt,
+          trace,
+        });
+        // Cancellation requests termination; ownership remains until the executor settles.
+        result = await this.nodeExecutor({
           node: input.node,
           task,
           attempt,
@@ -890,84 +957,100 @@ export class AgentGraphEngine {
           dependencyResults: input.nodeResults,
           sharedState: this.sharedState,
           eventLog: this.eventLog ?? NULL_EVENT_LOG,
-        }),
-        input.node.timeoutMs,
-        () =>
-          normalizeAgentRunResult({
-            id: `${input.workflowRunId}-${input.node.id}-attempt-${attempt}-timeout`,
-            taskId: task.id,
-            role: task.role,
-            success: false,
-            status: "timeout",
-            output: "",
-            startedAt: new Date().toISOString(),
-            completedAt: new Date().toISOString(),
-            durationMs: input.node.timeoutMs ?? 0,
-            error: `Node '${input.node.id}' timed out after ${input.node.timeoutMs}ms.`,
-            metadata: {
+          signal: scope.signal,
+        });
+        returnedResult = result;
+        lastResult = result;
+        scope.signal.throwIfAborted();
+        if (result.status === "cancelled" || result.status === "timeout") {
+          result = { ...result, success: false };
+        }
+        if (result.success) {
+          gateStarted = true;
+          await this.evaluateNodeGates(
+            input.graph,
+            input.node,
+            result,
+            input.workflowRunId,
+            trace,
+            scope.signal,
+          );
+          scope.signal.throwIfAborted();
+          for (const artifact of result.artifacts) {
+            scope.signal.throwIfAborted();
+            const record = this.sharedState.write({
+              kind: "artifact",
+              key: artifact.id,
+              value: artifact,
+              provenance: {
+                workflowRunId: input.workflowRunId,
+                agentRunId: result.id,
+                nodeId: input.node.id,
+                taskId: task.id,
+                risk: input.node.risk,
+              },
+            });
+            this.eventLog?.record("shared_state.updated", {
               workflowRunId: input.workflowRunId,
               nodeId: input.node.id,
+              agentRunId: result.id,
+              recordId: record.id,
+              kind: record.kind,
+              key: record.key,
               trace,
-              timeoutMs: input.node.timeoutMs,
-            },
-          }),
-      );
-      lastResult = result;
+            });
+            this.eventLog?.record("agent.artifact.created", {
+              workflowRunId: input.workflowRunId,
+              nodeId: input.node.id,
+              agentRunId: result.id,
+              artifactId: artifact.id,
+              kind: artifact.kind,
+              trace,
+            });
+          }
 
-      for (const artifact of result.artifacts) {
-        const record = this.sharedState.write({
-          kind: "artifact",
-          key: artifact.id,
-          value: artifact,
-          provenance: {
+          scope.signal.throwIfAborted();
+          this.eventLog?.record("agent.completed", {
             workflowRunId: input.workflowRunId,
-            agentRunId: result.id,
             nodeId: input.node.id,
+            agentRunId: result.id,
             taskId: task.id,
-            risk: input.node.risk,
-          },
-        });
-        this.eventLog?.record("shared_state.updated", {
-          workflowRunId: input.workflowRunId,
-          nodeId: input.node.id,
-          agentRunId: result.id,
-          recordId: record.id,
-          kind: record.kind,
-          key: record.key,
-          trace,
-        });
-        this.eventLog?.record("agent.artifact.created", {
-          workflowRunId: input.workflowRunId,
-          nodeId: input.node.id,
-          agentRunId: result.id,
-          artifactId: artifact.id,
-          kind: artifact.kind,
-          trace,
-        });
+            role: result.role,
+            attempt,
+            trace,
+          });
+          this.eventLog?.record("checkpoint.created", {
+            workflowRunId: input.workflowRunId,
+            nodeId: input.node.id,
+            agentRunId: result.id,
+            taskId: task.id,
+            attempt,
+            trace,
+          });
+          return result;
+        }
+      } catch (error) {
+        const abortedSignal = scope?.signal.aborted ? scope.signal : input.signal;
+        const reason = abortedSignal?.aborted ? abortedSignal.reason : error;
+        // Cancellation determines status, but must not erase an independent failure
+        // (for example a credential save error discovered while stopping).
+        const diagnostic =
+          error !== reason && !isCancellation(error)
+            ? error
+            : returnedResult && !returnedResult.success && returnedResult.error
+              ? returnedResult.error
+              : reason;
+        const status: AgentRunStatus =
+          reason instanceof Error && reason.name === "TimeoutError"
+            ? "timeout"
+            : abortedSignal?.aborted || isCancellation(error)
+              ? "cancelled"
+              : "failed";
+        result = failure(diagnostic, status, startedAt, attempt, returnedResult);
+      } finally {
+        scope?.dispose();
       }
-
-      if (result.success) {
-        await this.evaluateNodeGates(input.graph, input.node, result, input.workflowRunId, trace);
-        this.eventLog?.record("agent.completed", {
-          workflowRunId: input.workflowRunId,
-          nodeId: input.node.id,
-          agentRunId: result.id,
-          taskId: task.id,
-          role: result.role,
-          attempt,
-          trace,
-        });
-        this.eventLog?.record("checkpoint.created", {
-          workflowRunId: input.workflowRunId,
-          nodeId: input.node.id,
-          agentRunId: result.id,
-          taskId: task.id,
-          attempt,
-          trace,
-        });
-        return result;
-      }
-
+      lastResult = result;
       this.eventLog?.record("agent.failed", {
         workflowRunId: input.workflowRunId,
         nodeId: input.node.id,
@@ -978,17 +1061,29 @@ export class AgentGraphEngine {
         error: result.error,
         trace,
       });
-
+      if (result.status === "cancelled" || result.status === "timeout" || gateStarted || !scope)
+        return result;
       if (attempt < attempts && input.node.retryPolicy?.backoffMs) {
-        await new Promise((resolve) => setTimeout(resolve, input.node.retryPolicy!.backoffMs));
+        try {
+          input.signal?.throwIfAborted();
+          await delay(input.node.retryPolicy.backoffMs, undefined, { signal: input.signal });
+          input.signal?.throwIfAborted();
+        } catch (error) {
+          const reason = input.signal?.aborted ? input.signal.reason : error;
+          return failure(
+            reason,
+            input.signal?.aborted ? "cancelled" : "failed",
+            startedAt,
+            attempt,
+            result,
+          );
+        }
       }
     }
-
-    throw new Error(
-      `Node '${input.node.id}' failed after ${attempts} attempt(s): ${
-        lastResult?.error ?? "unknown error"
-      }`,
-    );
+    return {
+      ...lastResult!,
+      error: `Node '${input.node.id}' failed after ${attempts} attempt(s): ${lastResult?.error ?? "unknown error"}`,
+    };
   }
 
   private async evaluateNodeGates(
@@ -997,11 +1092,14 @@ export class AgentGraphEngine {
     result: AgentRunResult,
     workflowRunId: string,
     trace: AgentTraceContext,
+    signal?: AbortSignal,
   ): Promise<void> {
     for (const gateId of node.gates ?? []) {
       const gate = graph.gates?.find((candidate) => candidate.id === gateId);
       if (!gate) continue;
+      signal?.throwIfAborted();
       const evaluation = await this.gateEvaluator({
+        signal,
         gate,
         node,
         result,
@@ -1010,6 +1108,7 @@ export class AgentGraphEngine {
         sharedState: this.sharedState,
         eventLog: this.eventLog ?? NULL_EVENT_LOG,
       });
+      signal?.throwIfAborted();
       const eventType = evaluation.passed ? "workflow.gate.passed" : "workflow.gate.failed";
       this.eventLog?.record(eventType, {
         workflowRunId,
@@ -1346,20 +1445,6 @@ function chunk<T>(items: T[], size: number): T[][] {
     result.push(items.slice(index, index + safeSize));
   }
   return result;
-}
-
-async function runWithOptionalTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number | undefined,
-  onTimeout: () => T,
-): Promise<T> {
-  if (!timeoutMs || timeoutMs <= 0) return promise;
-  return Promise.race([
-    promise,
-    new Promise<T>((resolve) => {
-      setTimeout(() => resolve(onTimeout()), timeoutMs);
-    }),
-  ]);
 }
 
 function shouldSkipNode(

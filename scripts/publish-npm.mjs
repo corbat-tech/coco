@@ -1,0 +1,207 @@
+#!/usr/bin/env node
+/** Linux release workflow: reconcile immutable versions before publishing. */
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
+
+const npm = (args, options = {}) =>
+  spawnSync("npm", args, { encoding: "utf8", shell: false, ...options });
+
+// Never echo npm output: messages may include credentials, URLs or configuration.
+const diagnostics = {
+  E401: "authentication rejected; renew the npm credential",
+  ENEEDAUTH: "authentication required; configure an npm publish credential",
+  E403: "publication forbidden; check package permissions and 2FA policy",
+  EOTP: "one-time password required; use an approved npm authentication flow",
+  EPUBLISHCONFLICT: "immutable version conflict; reconcile registry integrity",
+  E404: "registry resource not found; check package identity and access",
+  ETIMEDOUT: "registry request timed out",
+  ECONNRESET: "registry connection reset",
+  ENOTFOUND: "registry DNS lookup failed",
+  EAI_AGAIN: "registry DNS temporarily unavailable",
+};
+
+function npmCode(result) {
+  try {
+    const code = JSON.parse(result.stdout).error?.code;
+    if (Object.hasOwn(diagnostics, code)) return code;
+  } catch {
+    // npm versions may report the code on stderr instead of JSON stdout.
+  }
+  const match = String(result.stderr ?? "").match(
+    /(?:npm (?:error|ERR!) code) ([A-Z0-9_]+)(?:\s|$)/,
+  );
+  return match && Object.hasOwn(diagnostics, match[1]) ? match[1] : undefined;
+}
+
+function failure(stage, result) {
+  const code = npmCode(result);
+  const status = Number.isInteger(result.status) ? result.status : "unavailable";
+  return new Error(
+    `${stage}: ${code ? `${code}: ${diagnostics[code]}` : "unknown npm failure"} (exit ${status}). Outcome uncertain; reconcile registry before retrying`,
+  );
+}
+
+function verifyChannel(run, name, version, channel) {
+  const tags = run(["view", name, "dist-tags", "--json"]);
+  if (tags.error || tags.signal || tags.status !== 0)
+    throw failure("Channel verification failed", tags);
+  let matches = false;
+  try {
+    matches = JSON.parse(tags.stdout)?.[channel] === version;
+  } catch {
+    /* Unknown state. */
+  }
+  if (!matches)
+    throw new Error(
+      "Published version does not match requested dist-tag; reconcile manually without changing latest",
+    );
+}
+
+/** npm may acknowledge a submission before its scanning/indexing makes it visible. */
+async function waitForPublication(run, packed, integrity, channel, options) {
+  const timeout = options.visibilityTimeoutMs ?? 600000;
+  const interval = options.pollIntervalMs ?? 15000;
+  const now = options.now ?? (() => performance.now());
+  const wait = options.wait ?? delay;
+  const deadline = now() + timeout;
+  const expired = () =>
+    new Error(
+      "Publication acknowledged but registry visibility deadline expired; outcome uncertain. Reconcile registry without republishing or changing dist-tags",
+    );
+  const query = (args) => {
+    const remaining = deadline - now();
+    if (remaining <= 0) throw expired();
+    return run(args, { timeout: Math.max(1, Math.floor(remaining)), killSignal: "SIGKILL" });
+  };
+  while (true) {
+    const result = query(["view", `${packed.name}@${packed.version}`, "dist.integrity", "--json"]);
+    if (result.error || result.signal) throw failure("Registry verification failed", result);
+    if (result.status === 0) {
+      let actual;
+      try {
+        actual = JSON.parse(result.stdout);
+      } catch {
+        throw failure("Registry state unknown after submission", result);
+      }
+      if (typeof actual !== "string")
+        throw failure("Registry state unknown after submission", result);
+      if (actual !== integrity) throw new Error("Version already exists with different integrity");
+      const tags = query(["view", packed.name, "dist-tags", "--json"]);
+      if (tags.error || tags.signal) throw failure("Channel verification failed", tags);
+      if (tags.status === 0) {
+        let parsed;
+        try {
+          parsed = JSON.parse(tags.stdout);
+        } catch {
+          throw failure("Channel state unknown after submission", tags);
+        }
+        if (
+          !parsed ||
+          typeof parsed !== "object" ||
+          Array.isArray(parsed) ||
+          Object.values(parsed).some((value) => typeof value !== "string")
+        ) {
+          throw failure("Channel state unknown after submission", tags);
+        }
+        if (parsed[channel] === packed.version) return;
+      } else if (npmCode(tags) !== "E404") throw failure("Channel verification failed", tags);
+    } else if (npmCode(result) !== "E404") throw failure("Registry verification failed", result);
+    const remaining = deadline - now();
+    if (remaining <= 0) throw expired();
+    await wait(Math.min(interval, remaining));
+  }
+}
+
+export async function publishNpm(artifactDir, channel, run = npm, options = {}) {
+  for (const value of [options.visibilityTimeoutMs ?? 600000, options.pollIntervalMs ?? 15000]) {
+    if (!Number.isFinite(value) || value <= 0 || value > 2147483647) {
+      throw new Error("Publication polling durations must be positive bounded milliseconds");
+    }
+  }
+  const mode = options.authMode ?? "token";
+  const env = options.env ?? process.env;
+  if (!["token", "oidc"].includes(mode)) throw new Error("Unsupported publication auth mode");
+  if (mode === "oidc") {
+    if (
+      env.GITHUB_ACTIONS !== "true" ||
+      !env.ACTIONS_ID_TOKEN_REQUEST_URL ||
+      !env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
+    ) {
+      throw new Error("OIDC publication requires a GitHub Actions job with id-token: write");
+    }
+    if (env.NODE_AUTH_TOKEN || env.NPM_TOKEN) {
+      throw new Error("OIDC publication must not include npm token credentials");
+    }
+  }
+  if (!["next", "latest"].includes(channel)) throw new Error("Unsupported dist-tag");
+  const [packed] = JSON.parse(await readFile(path.join(artifactDir, "pack.json"), "utf8"));
+  if (packed.name !== "@corbat-tech/coco" || path.basename(packed.filename) !== packed.filename) {
+    throw new Error("Unexpected artifact identity/path");
+  }
+  const archive = path.resolve(artifactDir, packed.filename);
+  const integrity =
+    "sha512-" +
+    createHash("sha512")
+      .update(await readFile(archive))
+      .digest("base64");
+  if (integrity !== packed.integrity) throw new Error("Artifact changed after packing");
+  const query = run(["view", `${packed.name}@${packed.version}`, "dist.integrity", "--json"]);
+  if (query.error || query.signal)
+    throw failure("Registry state unknown; publication stopped", query);
+  if (query.status === 0) {
+    let publishedIntegrity;
+    try {
+      publishedIntegrity = JSON.parse(query.stdout);
+    } catch {
+      throw failure("Registry state unknown; publication stopped", query);
+    }
+    if (publishedIntegrity !== integrity)
+      throw new Error("Version already exists with different integrity");
+    verifyChannel(run, packed.name, packed.version, channel);
+    console.log(
+      "Identical version already published; continuing verification without republishing.",
+    );
+    return "already-published";
+  }
+  let code;
+  try {
+    code = JSON.parse(query.stdout).error?.code;
+  } catch {
+    // An unparseable response is not evidence that the version is absent.
+  }
+  if (code !== "E404") throw failure("Registry lookup failed; publication stopped", query);
+  // npm whoami only authenticates tokens; npm publish exchanges the CI OIDC identity.
+  if (mode === "token") {
+    const auth = run(["whoami", "--json"]);
+    if (auth.error || auth.signal || auth.status !== 0)
+      throw failure("Authentication preflight failed; no publish attempted", auth);
+  }
+  const result = run([
+    "publish",
+    archive,
+    "--json",
+    "--ignore-scripts",
+    "--access",
+    "public",
+    "--tag",
+    channel,
+  ]);
+  if (result.error || result.signal || result.status !== 0) {
+    throw failure("Publication failed", result);
+  }
+  await waitForPublication(run, packed, integrity, channel, options);
+  console.log(
+    "Published tarball integrity and channel verified; clean installation is still required.",
+  );
+  return "published";
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await publishNpm(process.argv[2] ?? "artifacts", process.argv[3], npm, {
+    authMode: process.env.COCO_NPM_AUTH_MODE ?? "token",
+  });
+}

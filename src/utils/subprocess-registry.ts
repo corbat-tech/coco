@@ -21,7 +21,7 @@ export interface TrackedProcess {
   then(onFulfilled: () => void, onRejected: () => void): unknown;
 }
 
-const activeSubprocesses = new Set<TrackedProcess>();
+const activeSubprocesses = new Map<TrackedProcess, Promise<void>>();
 let cleanupRegistered = false;
 
 /**
@@ -29,11 +29,17 @@ let cleanupRegistered = false;
  * Returns the subprocess unchanged (fluent usage).
  */
 export function trackSubprocess<T extends TrackedProcess>(proc: T): T {
-  activeSubprocesses.add(proc);
-  // Use .then(onFulfilled, onRejected) so the cleanup always runs but the
-  // returned Promise always fulfills — avoids an unhandled rejection when the
-  // subprocess fails and the caller already catches the original `proc`.
-  const cleanup = () => activeSubprocesses.delete(proc);
+  if (activeSubprocesses.has(proc)) return proc;
+  let finish!: () => void;
+  const completion = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  activeSubprocesses.set(proc, completion);
+  // Signal delivery (proc.killed) is not evidence of process termination.
+  const cleanup = () => {
+    activeSubprocesses.delete(proc);
+    finish();
+  };
   proc.then(cleanup, cleanup);
   return proc;
 }
@@ -45,76 +51,45 @@ export function trackSubprocess<T extends TrackedProcess>(proc: T): T {
 export async function killAllSubprocesses(
   signal: "SIGTERM" | "SIGKILL" = "SIGTERM",
 ): Promise<void> {
-  const kills = Array.from(activeSubprocesses).map(async (proc) => {
-    try {
-      if (!proc.killed) {
+  // Snapshot ownership: new processes registered while waiting belong to a later cleanup.
+  const owned = Array.from(activeSubprocesses.entries());
+  await Promise.allSettled(
+    owned.map(async ([proc, completion]) => {
+      if (!activeSubprocesses.has(proc)) return;
+      try {
         proc.kill(signal);
-        if (signal === "SIGTERM") {
-          // Escalate to SIGKILL after 3 s if still running
-          await new Promise<void>((resolve) => setTimeout(resolve, 3000));
-          if (!proc.killed) {
-            try {
-              proc.kill("SIGKILL");
-            } catch {
-              // Already exited between the check and the kill
-            }
-          }
+      } catch {
+        // A failed signal does not prove the process has exited.
+      }
+      if (signal === "SIGKILL" || !activeSubprocesses.has(proc)) return;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          completion,
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, 3000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (activeSubprocesses.has(proc)) {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          // Keep tracking until settlement; neither signal delivery nor failure proves exit.
         }
       }
-    } catch {
-      // Process may have already exited
-    }
-  });
-
-  await Promise.allSettled(kills);
-  activeSubprocesses.clear();
+    }),
+  );
 }
 
 /**
- * Attempt to find and kill orphaned vitest/jest worker processes
- * that survived a previous crash.
- *
- * Returns the number of processes signaled.
+ * @deprecated Process names cannot establish ownership. Kept as a harmless
+ * compatibility shim; only explicitly tracked subprocesses may be cleaned up.
  */
 export async function killOrphanedTestProcesses(): Promise<number> {
-  if (process.platform === "win32") {
-    // Windows: skip — tasklist doesn't expose command-line args easily
-    return 0;
-  }
-
-  let killed = 0;
-  try {
-    const { execa } = await import("execa");
-    const result = await execa("pgrep", ["-f", "vitest|jest.*--worker"], {
-      reject: false,
-    });
-
-    const pids = result.stdout
-      .split("\n")
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((pid) => !isNaN(pid) && pid !== process.pid && pid !== process.ppid);
-
-    for (const pid of pids) {
-      try {
-        process.kill(pid, "SIGTERM");
-        killed++;
-        // Escalate after 3 s
-        setTimeout(() => {
-          try {
-            process.kill(pid, "SIGKILL");
-          } catch {
-            // Already dead
-          }
-        }, 3000);
-      } catch {
-        // Process already gone
-      }
-    }
-  } catch {
-    // pgrep not available or other error — silently skip
-  }
-
-  return killed;
+  return 0;
 }
 
 /**
@@ -138,9 +113,9 @@ export function registerGlobalCleanup(): void {
 
   // Synchronous best-effort SIGKILL on final exit (no await possible here)
   process.on("exit", () => {
-    for (const proc of activeSubprocesses) {
+    for (const proc of activeSubprocesses.keys()) {
       try {
-        if (!proc.killed) proc.kill("SIGKILL");
+        proc.kill("SIGKILL");
       } catch {
         // Ignore
       }

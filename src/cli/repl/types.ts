@@ -2,10 +2,11 @@
  * REPL types for Corbat-Coco
  */
 
-import type { Message, ToolCall, StreamChunk } from "../../providers/types.js";
+import type { Message, ToolCall, StreamChunk, LLMProvider } from "../../providers/types.js";
 import type { ProviderType } from "../../providers/index.js";
 import type { ThinkingMode } from "../../providers/thinking.js";
 import type { AgentModeId } from "./modes.js";
+import type { CompactOptions, CompactionResult } from "./context/compactor.js";
 import type { ContextManager } from "./context/manager.js";
 import type { ProgressTracker } from "./progress/tracker.js";
 import type { MemoryContext } from "./memory/types.js";
@@ -26,6 +27,10 @@ export interface ReplSession {
   trustedTools: Set<string>;
   /** Context window manager for tracking token usage */
   contextManager?: ContextManager;
+  /** Host-bound compaction action; refreshed when the active provider changes. */
+  compactContext?: (
+    options?: Pick<CompactOptions, "signal" | "focusTopic">,
+  ) => Promise<CompactionResult | null>;
   /** Progress tracker for todo-like task tracking */
   progressTracker?: ProgressTracker;
   /** Memory context from COCO.md/CLAUDE.md files */
@@ -44,6 +49,13 @@ export interface ReplSession {
   agentMode?: AgentModeId;
   /** Reusable runtime facade for provider/tools/permissions/observability */
   runtime?: AgentRuntime;
+  /** Validated live adapter passed from /provider to its host, never persisted. */
+  pendingProvider?: {
+    instance: LLMProvider;
+    internalType: ProviderType;
+    userFacingType: ProviderType;
+    model: string;
+  };
 }
 
 /**
@@ -51,11 +63,17 @@ export interface ReplSession {
  */
 export interface ReplConfig {
   provider: {
+    authMethod?: "apikey" | "oauth" | "gcloud" | "none";
     type: ProviderType;
     model: string;
     maxTokens: number;
     project?: string;
     location?: string;
+    baseUrl?: string;
+    deployment?: string;
+    region?: string;
+    awsProfile?: string;
+    cloudAuth?: "identity" | "api-key";
     /** Active thinking/reasoning mode (undefined = not supported or use model default) */
     thinking?: ThinkingMode;
     /** Optional cheap model for background tasks (compaction, summarization) */

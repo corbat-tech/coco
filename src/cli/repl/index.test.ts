@@ -177,6 +177,9 @@ vi.mock("../../runtime/index.js", () => ({
         count: vi.fn().mockResolvedValue(0),
       },
       updateProvider: vi.fn(),
+      createSession: vi.fn(),
+      enableBackgroundJobs: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
       getSnapshot: vi.fn(() => ({})),
       providerRegistry: {},
       sessionStore: {},
@@ -493,6 +496,49 @@ describe("REPL index", () => {
       expect(mockInputHandler.close).toHaveBeenCalled();
       expect(setAgentProvider).toHaveBeenCalledWith(mockProvider);
       expect(setAgentToolRegistry).toHaveBeenCalledWith(mockRegistry);
+    });
+
+    it("closes runtime ownership and removes listeners when input fails outside the turn", async () => {
+      const { createProvider } = await import("../../providers/index.js");
+      const { createSession } = await import("./session.js");
+      const { createInputHandler } = await import("./input/handler.js");
+      const { createAgentRuntime } = await import("../../runtime/index.js");
+      vi.mocked(createProvider).mockResolvedValue({
+        isAvailable: vi.fn().mockResolvedValue(true),
+        chat: vi.fn(),
+        chatWithTools: vi.fn(),
+      } as unknown as LLMProvider);
+      vi.mocked(createSession).mockReturnValue({
+        id: "cleanup-session",
+        projectPath: "/test",
+        config: {
+          provider: { type: "anthropic", model: "claude-3", maxTokens: 4096 },
+          autoConfirm: false,
+          trustedTools: new Set<string>(),
+          maxIterations: 10,
+        },
+        messages: [],
+        startTime: new Date(),
+        tokenUsage: { input: 0, output: 0 },
+      });
+      const input = {
+        prompt: vi.fn().mockRejectedValue(new Error("input transport failed")),
+        close: vi.fn(),
+        resume: vi.fn(),
+        pause: vi.fn(),
+      };
+      vi.mocked(createInputHandler).mockReturnValue(input);
+      const before = {
+        exit: process.listenerCount("exit"),
+        term: process.listenerCount("SIGTERM"),
+      };
+      const { startRepl } = await import("./index.js");
+      await expect(startRepl()).rejects.toThrow("input transport failed");
+      const runtime = await vi.mocked(createAgentRuntime).mock.results.at(-1)!.value;
+      expect(runtime.close).toHaveBeenCalledOnce();
+      expect(input.close).toHaveBeenCalledOnce();
+      expect(process.listenerCount("exit")).toBe(before.exit);
+      expect(process.listenerCount("SIGTERM")).toBe(before.term);
     });
 
     it("should skip empty input", async () => {

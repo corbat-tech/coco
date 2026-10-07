@@ -1,11 +1,11 @@
 /**
  * Provider pricing and cost estimation
  *
- * Prices are in USD per million tokens (as of 2025)
+ * Prices are in USD per million tokens; catalog entries carry verification dates.
  */
 
 import type { ProviderType } from "./index.js";
-import { getCatalogModelPricingMap } from "./catalog.js";
+import { getCatalogModel, getCatalogModelPricingMap } from "./catalog.js";
 
 /**
  * Model pricing info
@@ -14,6 +14,7 @@ export interface ModelPricing {
   inputPerMillion: number;
   outputPerMillion: number;
   contextWindow: number;
+  longContext?: { threshold: number; inputPerMillion: number; outputPerMillion: number };
 }
 
 /**
@@ -25,6 +26,15 @@ export const MODEL_PRICING: Record<string, ModelPricing> = getCatalogModelPricin
  * Default pricing per provider (used when model not found)
  */
 export const DEFAULT_PRICING: Record<ProviderType, ModelPricing> = {
+  xai: { inputPerMillion: Number.NaN, outputPerMillion: Number.NaN, contextWindow: 1048576 },
+  minimax: { inputPerMillion: Number.NaN, outputPerMillion: Number.NaN, contextWindow: 1000000 },
+  cerebras: { inputPerMillion: Number.NaN, outputPerMillion: Number.NaN, contextWindow: 131072 },
+  "azure-openai": {
+    inputPerMillion: Number.NaN,
+    outputPerMillion: Number.NaN,
+    contextWindow: 1048576,
+  },
+  bedrock: { inputPerMillion: Number.NaN, outputPerMillion: Number.NaN, contextWindow: 1000000 },
   anthropic: { inputPerMillion: 3, outputPerMillion: 15, contextWindow: 200000 },
   openai: { inputPerMillion: 2.5, outputPerMillion: 10, contextWindow: 128000 },
   codex: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 128000 }, // ChatGPT Plus/Pro subscription
@@ -40,7 +50,7 @@ export const DEFAULT_PRICING: Record<ProviderType, ModelPricing> = {
   mistral: { inputPerMillion: 0.25, outputPerMillion: 0.75, contextWindow: 32768 },
   deepseek: { inputPerMillion: 0.14, outputPerMillion: 0.28, contextWindow: 128000 }, // Very cheap
   together: { inputPerMillion: 0.2, outputPerMillion: 0.2, contextWindow: 32768 },
-  huggingface: { inputPerMillion: 0, outputPerMillion: 0, contextWindow: 32768 }, // Free tier
+  huggingface: { inputPerMillion: Number.NaN, outputPerMillion: Number.NaN, contextWindow: 32768 }, // Routing and account dependent
   qwen: { inputPerMillion: 0.3, outputPerMillion: 1.2, contextWindow: 131072 }, // qwen-coder-plus pricing
 };
 
@@ -66,8 +76,9 @@ export function estimateCost(
   outputTokens: number,
   provider?: ProviderType,
 ): CostEstimate {
+  const base = getModelPricing(model, provider);
   const pricing =
-    MODEL_PRICING[model] ?? (provider ? DEFAULT_PRICING[provider] : DEFAULT_PRICING.anthropic);
+    base.longContext && inputTokens > base.longContext.threshold ? base.longContext : base;
 
   const inputCost = (inputTokens / 1_000_000) * pricing.inputPerMillion;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
@@ -87,6 +98,7 @@ export function estimateCost(
  * Format cost as string
  */
 export function formatCost(cost: number): string {
+  if (!Number.isFinite(cost)) return "Unknown";
   if (cost < 0.0001) {
     return "<$0.0001";
   }
@@ -100,7 +112,20 @@ export function formatCost(cost: number): string {
  * Get pricing for a model
  */
 export function getModelPricing(model: string, provider?: ProviderType): ModelPricing {
-  return MODEL_PRICING[model] ?? (provider ? DEFAULT_PRICING[provider] : DEFAULT_PRICING.anthropic);
+  if (provider) {
+    if (["codex", "copilot", "kimi-code", "ollama", "lmstudio"].includes(provider))
+      return DEFAULT_PRICING[provider];
+    const entry = getCatalogModel(provider, model);
+    if (entry?.pricing) return { ...entry.pricing, contextWindow: entry.contextWindow };
+    if (entry)
+      return {
+        inputPerMillion: Number.NaN,
+        outputPerMillion: Number.NaN,
+        contextWindow: entry.contextWindow,
+      };
+    return DEFAULT_PRICING[provider];
+  }
+  return MODEL_PRICING[model] ?? DEFAULT_PRICING.anthropic;
 }
 
 /**

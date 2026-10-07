@@ -1,11 +1,18 @@
+import { resolveModelMigration } from "../providers/model-lifecycle.js";
+import { createProvider } from "../providers/index.js";
+import { getCatalogDefaultModel, getCatalogModel } from "../providers/catalog.js";
+import { PROVIDER_IDS } from "../providers/provider-types.js";
+import type { ProviderType } from "../providers/provider-types.js";
 /**
  * Image Understanding tool for Corbat-Coco
  * Analyze images using vision-capable LLM providers
  */
 
 import { z } from "zod";
+import { constants } from "node:fs";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 
 const fs = await import("node:fs/promises");
 const path = await import("node:path");
@@ -51,12 +58,13 @@ export const readImageTool: ToolDefinition<
   {
     path: string;
     prompt?: string;
-    provider?: "anthropic" | "openai" | "gemini";
+    provider?: ProviderType;
+    model?: string;
   },
   ImageReadOutput
 > = defineTool({
   name: "read_image",
-  description: `Analyze an image using a vision-capable AI model. Useful for UI screenshots, design mockups, architecture diagrams, and error screenshots.
+  description: `Upload an image to the selected cloud vision provider using its API key (default: Anthropic). Requires network authorization and may incur provider charges. Useful for UI screenshots, design mockups, architecture diagrams, and error screenshots.
 
 Examples:
 - Describe image: { "path": "screenshot.png" }
@@ -70,12 +78,18 @@ Examples:
       .optional()
       .default("Describe this image in detail. If it's code or a UI, identify the key elements.")
       .describe("Analysis prompt"),
-    provider: z
-      .enum(["anthropic", "openai", "gemini"])
+    model: z
+      .string()
       .optional()
-      .describe("LLM provider to use (default: auto-detect from config)"),
+      .describe("Vision-capable model; defaults to the selected provider catalog default"),
+    provider: z
+      .enum(PROVIDER_IDS)
+      .optional()
+      .describe("Cloud provider to upload the image to (default: anthropic)"),
   }),
-  async execute({ path: filePath, prompt, provider }) {
+  async execute({ path: filePath, prompt, provider, model: requestedModel }, context) {
+    const signal = context?.signal;
+    signal?.throwIfAborted();
     const startTime = performance.now();
     const effectivePrompt =
       prompt ?? "Describe this image in detail. If it's code or a UI, identify the key elements.";
@@ -99,32 +113,40 @@ Examples:
       );
     }
 
-    // Check file exists and size
+    // Canonical containment before reading bytes or consulting cloud credentials.
+    let imageBuffer: Buffer;
     try {
-      const stat = await fs.stat(absPath);
-      if (!stat.isFile()) {
-        throw new ToolError(`Path is not a file: ${absPath}`, {
+      const root = await fs.realpath(cwd);
+      const canonical = await fs.realpath(absPath);
+      if (!canonical.startsWith(root + path.sep)) {
+        throw new ToolError("Path traversal denied: image resolves outside the project directory", {
           tool: "read_image",
         });
       }
-      if (stat.size > MAX_IMAGE_SIZE) {
-        throw new ToolError(
-          `Image too large (${Math.round(stat.size / 1024 / 1024)}MB, max ${MAX_IMAGE_SIZE / 1024 / 1024}MB)`,
-          { tool: "read_image" },
-        );
+      const handle = await fs.open(canonical, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        const stat = await handle.stat();
+        if (!stat.isFile() || stat.nlink !== 1) {
+          throw new ToolError(`Path must be a regular image file with one link: ${absPath}`, {
+            tool: "read_image",
+          });
+        }
+        if (stat.size > MAX_IMAGE_SIZE)
+          throw new ToolError("Image too large (max 20MB)", { tool: "read_image" });
+        signal?.throwIfAborted();
+        imageBuffer = await handle.readFile({ signal });
+        if (imageBuffer.length > MAX_IMAGE_SIZE)
+          throw new ToolError("Image too large (max 20MB)", { tool: "read_image" });
+      } finally {
+        await handle.close();
       }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new ToolError(`File not found: ${absPath}`, {
-          tool: "read_image",
-        });
-      }
-      if (error instanceof ToolError) throw error;
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        throw new ToolError(`File not found: ${absPath}`, { tool: "read_image" });
       throw error;
     }
 
-    // Read image as base64
-    const imageBuffer = await fs.readFile(absPath);
+    signal?.throwIfAborted();
     const base64 = imageBuffer.toString("base64");
     const mimeType = MIME_TYPES[ext] ?? "image/png";
 
@@ -134,114 +156,32 @@ Examples:
     let model: string;
 
     try {
-      if (selectedProvider === "anthropic") {
-        model = "claude-sonnet-4-20250514";
-
-        // Use Anthropic SDK
-        const { default: Anthropic } = await import("@anthropic-ai/sdk");
-        const client = new Anthropic();
-
-        const response = await client.messages.create({
-          model,
-          max_tokens: 4096,
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "image",
-                  source: {
-                    type: "base64",
-                    media_type: mimeType as "image/png" | "image/jpeg" | "image/gif" | "image/webp",
-                    data: base64,
-                  },
-                },
-                {
-                  type: "text",
-                  text: effectivePrompt,
-                },
-              ],
-            },
-          ],
-        });
-
-        description =
-          response.content
-            .filter((block) => block.type === "text")
-            .map((block) => (block as { type: "text"; text: string }).text)
-            .join("\n") || "No description generated";
-      } else if (selectedProvider === "openai") {
-        model = "gpt-4o";
-
-        const { default: OpenAI } = await import("openai");
-        const client = new OpenAI();
-
-        // OpenAI vision API - use type assertion for image_url content part
-        const openaiMessages = [
-          {
-            role: "user" as const,
-            content: [
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64}`,
-                },
-              },
-              {
-                type: "text",
-                text: effectivePrompt,
-              },
-            ],
-          },
-        ];
-
-        const response = (await client.chat.completions.create({
-          model,
-          max_tokens: 4096,
-          messages: openaiMessages,
-        } as Parameters<typeof client.chat.completions.create>[0])) as unknown as {
-          choices: Array<{ message: { content: string | null } }>;
-        };
-
-        description = response.choices[0]?.message?.content ?? "No description generated";
-      } else if (selectedProvider === "gemini") {
-        model = "gemini-2.0-flash";
-
-        const { GoogleGenAI } = await import("@google/genai");
-        const apiKey = process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-          throw new ToolError(
-            "GOOGLE_API_KEY or GEMINI_API_KEY environment variable required for Gemini",
-            { tool: "read_image" },
-          );
-        }
-
-        const genAI = new GoogleGenAI({ apiKey });
-        const result = await genAI.models.generateContent({
-          model,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: effectivePrompt },
-                {
-                  inlineData: {
-                    data: base64,
-                    mimeType,
-                  },
-                },
-              ],
-            },
-          ],
-        });
-
-        description = result.text ?? "No description generated";
-      } else {
-        throw new ToolError(`Unsupported provider: ${selectedProvider}`, {
+      const migration = resolveModelMigration(
+        selectedProvider,
+        requestedModel ?? getCatalogDefaultModel(selectedProvider),
+      );
+      model = migration.model;
+      if (migration.warning) console.warn(migration.warning);
+      if (!getCatalogModel(selectedProvider, model)?.capabilities.includes("vision"))
+        throw new ToolError(`Model ${selectedProvider}/${model} is not verified for image input.`, {
           tool: "read_image",
         });
-      }
+      const adapter = await createProvider(selectedProvider, { model });
+      const response = await adapter.chat(
+        [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mimeType, data: base64 } },
+              { type: "text", text: effectivePrompt },
+            ],
+          },
+        ],
+        { maxTokens: 4096, signal },
+      );
+      description = response.content;
     } catch (error) {
+      rethrowCancellation(error, signal);
       if (error instanceof ToolError) throw error;
 
       // Check for missing SDK
@@ -266,6 +206,7 @@ Examples:
       );
     }
 
+    signal?.throwIfAborted();
     return {
       description,
       provider: selectedProvider,

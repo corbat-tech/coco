@@ -1,9 +1,11 @@
+import { isDeepStrictEqual } from "node:util";
+import { ResponseIntegrityError } from "./response-integrity.js";
 /**
  * Anthropic Claude provider for Corbat-Coco
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { jsonrepair } from "jsonrepair";
+import { parseToolCallArguments, validateToolCallInput } from "./tool-call-normalizer.js";
 import type {
   LLMProvider,
   ProviderConfig,
@@ -22,8 +24,8 @@ import type {
   ToolResultContent,
 } from "./types.js";
 import { ProviderError } from "../utils/errors.js";
-import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
-import { getLogger } from "../utils/logger.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
+import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import { mapToAnthropic, mapToAnthropicEffort } from "./thinking.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
 
@@ -76,6 +78,8 @@ function getAnthropicTemperature(
   thinkingParam: ReturnType<typeof mapToAnthropic>,
   configuredTemperature: number | undefined,
 ): number | undefined {
+  if (thinkingParam && ["adaptive", "disabled", "between_tools"].includes(thinkingParam.type))
+    return undefined;
   if (thinkingParam?.type === "enabled") return 1;
   return configuredTemperature;
 }
@@ -83,7 +87,7 @@ function getAnthropicTemperature(
 function getAnthropicOutputConfig(
   mode: ChatOptions["thinking"],
   model: string,
-): { effort: "low" | "medium" | "high" } | undefined {
+): { effort: "low" | "medium" | "high" | "xhigh" | "max" } | undefined {
   const effort = mapToAnthropicEffort(mode, model);
   return effort ? { effort } : undefined;
 }
@@ -121,6 +125,7 @@ export class AnthropicProvider implements LLMProvider {
       apiKey,
       baseURL: config.baseUrl,
       timeout: config.timeout ?? 120000,
+      maxRetries: 0,
     });
   }
 
@@ -129,42 +134,51 @@ export class AnthropicProvider implements LLMProvider {
    */
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
-    return withRetry(async () => {
-      try {
-        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-        const thinkingParam = mapToAnthropic(options?.thinking, model);
-        const outputConfig = getAnthropicOutputConfig(options?.thinking, model);
-        const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+    return withRetry(
+      async () => {
+        try {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const thinkingParam = mapToAnthropic(options?.thinking, model);
+          const outputConfig = getAnthropicOutputConfig(options?.thinking, model);
+          const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
 
-        const response = await this.client!.messages.create({
-          model,
-          max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
-          temperature: getAnthropicTemperature(
-            thinkingParam,
-            options?.temperature ?? this.config.temperature ?? 0,
-          ),
-          system: this.extractSystem(messages, options?.system),
-          messages: this.convertMessages(messages),
-          stop_sequences: options?.stopSequences,
-          ...(thinkingParam && { thinking: thinkingParam }),
-          ...(outputConfig && { output_config: outputConfig }),
-        });
+          const response = await this.client!.messages.create(
+            {
+              model,
+              max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
+              temperature: getAnthropicTemperature(
+                thinkingParam,
+                options?.temperature ?? this.config.temperature ?? 0,
+              ),
+              system: this.extractSystem(messages, options?.system),
+              messages: this.convertMessages(messages, model),
+              stop_sequences: options?.stopSequences,
+              ...(thinkingParam && { thinking: thinkingParam }),
+              ...(outputConfig && { output_config: outputConfig }),
+            },
+            this.getRequestOptions(options),
+          );
 
-        return {
-          id: response.id,
-          content: this.extractTextContent(response.content),
-          stopReason: this.mapStopReason(response.stop_reason),
-          usage: {
-            inputTokens: response.usage.input_tokens,
-            outputTokens: response.usage.output_tokens,
-          },
-          model: response.model,
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+          return {
+            id: response.id,
+            content: this.extractTextContent(response.content),
+            stopReason: this.mapStopReason(response.stop_reason),
+            usage: {
+              inputTokens: response.usage.input_tokens,
+              outputTokens: response.usage.output_tokens,
+            },
+            model: response.model,
+          };
+        } catch (error) {
+          rethrowCancellation(error, options?.signal);
+          throw this.handleError(error);
+        }
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   /**
@@ -175,46 +189,86 @@ export class AnthropicProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
-    return withRetry(async () => {
-      try {
-        const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
-        const thinkingParam = mapToAnthropic(options?.thinking, model);
-        const outputConfig = getAnthropicOutputConfig(options?.thinking, model);
-        const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
+    return withRetry(
+      async () => {
+        try {
+          const model = options?.model ?? this.config.model ?? DEFAULT_MODEL;
+          const thinkingParam = mapToAnthropic(options?.thinking, model);
+          const outputConfig = getAnthropicOutputConfig(options?.thinking, model);
+          const baseMaxTokens = options?.maxTokens ?? this.config.maxTokens ?? 8192;
 
-        const response = await this.client!.messages.create({
-          model,
-          max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
-          temperature: getAnthropicTemperature(
-            thinkingParam,
-            options?.temperature ?? this.config.temperature ?? 0,
-          ),
-          system: this.extractSystem(messages, options?.system),
-          messages: this.convertMessages(messages),
-          tools: this.convertTools(options.tools),
-          tool_choice: options.toolChoice ? this.convertToolChoice(options.toolChoice) : undefined,
-          ...(thinkingParam && { thinking: thinkingParam }),
-          ...(outputConfig && { output_config: outputConfig }),
-        });
+          const response = await this.client!.messages.create(
+            {
+              model,
+              max_tokens: getAnthropicMaxTokens(baseMaxTokens, thinkingParam),
+              temperature: getAnthropicTemperature(
+                thinkingParam,
+                options?.temperature ?? this.config.temperature ?? 0,
+              ),
+              system: this.extractSystem(messages, options?.system),
+              messages: this.convertMessages(messages, model),
+              tools: this.convertTools(options.tools),
+              tool_choice: options.toolChoice
+                ? this.convertToolChoice(options.toolChoice)
+                : undefined,
+              ...(thinkingParam && { thinking: thinkingParam }),
+              ...(outputConfig && { output_config: outputConfig }),
+            },
+            this.getRequestOptions(options),
+          );
 
-        const toolCalls = this.extractToolCalls(response.content);
+          if (
+            !Array.isArray(response.content) ||
+            response.content.some(
+              (block) => !block || typeof block !== "object" || typeof block.type !== "string",
+            )
+          ) {
+            throw new ResponseIntegrityError("Invalid response content blocks", this.name);
+          }
+          this.validateToolStopReason(
+            response.stop_reason,
+            response.content.some((block) => block.type === "tool_use"),
+          );
+          const toolCalls = this.validateCompletedToolCalls(
+            this.extractToolCalls(response.content),
+          );
 
-        return {
-          id: response.id,
-          content: this.extractTextContent(response.content),
-          stopReason: this.mapStopReason(response.stop_reason),
-          usage: {
-            inputTokens: response.usage.input_tokens,
-            outputTokens: response.usage.output_tokens,
-          },
-          model: response.model,
-          toolCalls,
-        };
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }, this.retryConfig);
+          return {
+            id: response.id,
+            content: this.extractTextContent(response.content),
+            stopReason: this.mapStopReason(response.stop_reason),
+            usage: {
+              inputTokens: response.usage.input_tokens,
+              outputTokens: response.usage.output_tokens,
+            },
+            model: response.model,
+            toolCalls: toolCalls.map((call) => ({
+              ...call,
+              ...(response.content.some(
+                (block) => block.type === "thinking" || block.type === "redacted_thinking",
+              )
+                ? {
+                    providerState: {
+                      provider: this.id,
+                      model,
+                      anthropicBlocks: response.content.filter(
+                        (block) => block.type === "thinking" || block.type === "redacted_thinking",
+                      ) as unknown as Record<string, unknown>[],
+                    },
+                  }
+                : {}),
+            })),
+          };
+        } catch (error) {
+          rethrowCancellation(error, options?.signal);
+          throw this.handleError(error);
+        }
+      },
+      resolveRetryConfig(this.retryConfig, options?.maxRetries),
+      options?.signal,
+    );
   }
 
   /**
@@ -222,6 +276,7 @@ export class AnthropicProvider implements LLMProvider {
    */
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     let timeoutTriggered = false;
     try {
@@ -239,23 +294,23 @@ export class AnthropicProvider implements LLMProvider {
             options?.temperature ?? this.config.temperature ?? 0,
           ),
           system: this.extractSystem(messages, options?.system),
-          messages: this.convertMessages(messages),
+          messages: this.convertMessages(messages, model),
           ...(thinkingParam && { thinking: thinkingParam }),
           ...(outputConfig && { output_config: outputConfig }),
         },
-        { signal: options?.signal },
+        this.getRequestOptions(options),
       );
 
       // Activity-based timeout: abort the stream if no events for streamTimeout ms.
       // IMPORTANT: We use AbortController instead of throwing from setInterval,
       // because throw inside setInterval causes an unhandled exception that kills
       // the process instead of propagating to the async generator.
-      const streamTimeout = this.config.timeout ?? 120000;
+      const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
       const timeoutController = new AbortController();
 
       const timeoutInterval = setInterval(() => {
-        if (Date.now() - lastActivityTime > streamTimeout) {
+        if (streamTimeout > 0 && Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
           timeoutTriggered = true;
           timeoutController.abort();
@@ -271,12 +326,15 @@ export class AnthropicProvider implements LLMProvider {
         let streamStopReason: StreamChunk["stopReason"];
 
         for await (const event of stream) {
+          this.assertStreamActive(options, timeoutTriggered);
           lastActivityTime = Date.now();
 
           if (event.type === "content_block_delta") {
             const delta = event.delta as { type: string; text?: string };
             if (delta.type === "text_delta" && delta.text) {
+              this.assertStreamActive(options, timeoutTriggered);
               yield { type: "text", text: delta.text };
+              this.assertStreamActive(options, timeoutTriggered);
             }
           } else if (event.type === "message_delta") {
             const delta = event.delta as { stop_reason?: string };
@@ -285,8 +343,9 @@ export class AnthropicProvider implements LLMProvider {
             }
           }
         }
-
+        this.assertStreamActive(options, timeoutTriggered);
         yield { type: "done", stopReason: streamStopReason };
+        this.assertStreamActive(options, timeoutTriggered);
       } finally {
         clearInterval(timeoutInterval);
       }
@@ -296,9 +355,10 @@ export class AnthropicProvider implements LLMProvider {
         throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
       }
     } catch (error) {
+      rethrowCancellation(error, options?.signal);
       if (timeoutTriggered) {
         throw new Error(
-          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+          `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
         );
       }
       throw this.handleError(error);
@@ -313,6 +373,7 @@ export class AnthropicProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    options?.signal?.throwIfAborted();
 
     let timeoutTriggered = false;
     try {
@@ -330,27 +391,41 @@ export class AnthropicProvider implements LLMProvider {
             options?.temperature ?? this.config.temperature ?? 0,
           ),
           system: this.extractSystem(messages, options?.system),
-          messages: this.convertMessages(messages),
+          messages: this.convertMessages(messages, model),
           tools: this.convertTools(options.tools),
           tool_choice: options.toolChoice ? this.convertToolChoice(options.toolChoice) : undefined,
           ...(thinkingParam && { thinking: thinkingParam }),
           ...(outputConfig && { output_config: outputConfig }),
         },
-        { signal: options?.signal },
+        this.getRequestOptions(options),
       );
 
       // Track current tool call being built
-      let currentToolCall: Partial<ToolCall> | null = null;
-      let currentToolInputJson = "";
+      type PendingTool = {
+        id: string;
+        name: string;
+        initialInput: unknown;
+        json: string;
+        hasDelta: boolean;
+      };
+      const reasoningBlocks: Record<string, unknown>[] = [];
+      let openBlock: {
+        index: number;
+        type: string;
+        tool?: PendingTool;
+        reasoning?: Record<string, unknown>;
+      } | null = null;
+      const usedIndices = new Set<number>();
+      const pendingTools: PendingTool[] = [];
 
       // Activity-based timeout: abort the stream if no events for streamTimeout ms.
       // Uses AbortController to safely break the for-await loop (see stream() comment).
-      const streamTimeout = this.config.timeout ?? 120000;
+      const streamTimeout = options?.timeout ?? this.config.timeout ?? 120000;
       let lastActivityTime = Date.now();
       const timeoutController = new AbortController();
 
       const timeoutInterval = setInterval(() => {
-        if (Date.now() - lastActivityTime > streamTimeout) {
+        if (streamTimeout > 0 && Date.now() - lastActivityTime > streamTimeout) {
           clearInterval(timeoutInterval);
           timeoutTriggered = true;
           timeoutController.abort();
@@ -362,117 +437,151 @@ export class AnthropicProvider implements LLMProvider {
       });
 
       try {
-        let streamStopReason: StreamChunk["stopReason"];
-
+        let terminalReason: string | undefined;
         for await (const event of stream) {
+          this.assertStreamActive(options, timeoutTriggered);
           lastActivityTime = Date.now();
-
           if (event.type === "message_delta") {
-            const delta = event.delta as { stop_reason?: string };
-            if (delta.stop_reason) {
-              streamStopReason = this.mapStopReason(delta.stop_reason);
+            const reason = event.delta.stop_reason;
+            if (reason) {
+              if (terminalReason && terminalReason !== reason) {
+                throw new ResponseIntegrityError("Conflicting message terminal reasons", this.name);
+              }
+              terminalReason = reason;
             }
           } else if (event.type === "content_block_start") {
-            const contentBlock = event.content_block as {
-              type: string;
-              id?: string;
-              name?: string;
-            };
+            if (
+              openBlock ||
+              terminalReason ||
+              !Number.isInteger(event.index) ||
+              event.index < 0 ||
+              usedIndices.has(event.index)
+            ) {
+              throw new ResponseIntegrityError("Invalid or unclosed content block", this.name);
+            }
+            usedIndices.add(event.index);
+            const contentBlock = event.content_block;
+            if (
+              !contentBlock ||
+              typeof contentBlock !== "object" ||
+              typeof contentBlock.type !== "string"
+            ) {
+              throw new ResponseIntegrityError("Invalid response content block", this.name);
+            }
+            openBlock = { index: event.index, type: contentBlock.type };
+            if (contentBlock.type === "thinking" || contentBlock.type === "redacted_thinking")
+              openBlock.reasoning = { ...contentBlock };
             if (contentBlock.type === "tool_use") {
-              // Guard: if a previous tool call was never closed (missing content_block_stop),
-              // finalize it now to prevent argument data bleeding into the next tool call.
-              if (currentToolCall) {
-                getLogger().warn(
-                  `[Anthropic] content_block_stop missing for tool '${currentToolCall.name}' — finalizing early to prevent data bleed.`,
-                );
-                try {
-                  currentToolCall.input = currentToolInputJson
-                    ? JSON.parse(currentToolInputJson)
-                    : {};
-                } catch {
-                  currentToolCall.input = {};
-                }
-                yield {
-                  type: "tool_use_end",
-                  toolCall: { ...currentToolCall } as ToolCall,
-                };
+              if (!contentBlock.id?.trim() || !contentBlock.name?.trim()) {
+                throw new ResponseIntegrityError("Tool call is missing its identity", this.name);
               }
-              currentToolCall = {
+              openBlock.tool = {
                 id: contentBlock.id,
                 name: contentBlock.name,
+                initialInput: contentBlock.input,
+                json: "",
+                hasDelta: false,
               };
-              currentToolInputJson = "";
+              this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_start",
-                toolCall: { ...currentToolCall },
+                toolCall: { id: contentBlock.id, name: contentBlock.name },
               };
+              this.assertStreamActive(options, timeoutTriggered);
             }
           } else if (event.type === "content_block_delta") {
-            const delta = event.delta as {
-              type: string;
-              text?: string;
-              partial_json?: string;
-            };
-            if (delta.type === "text_delta" && delta.text) {
-              yield { type: "text", text: delta.text };
-            } else if (delta.type === "input_json_delta" && delta.partial_json) {
-              currentToolInputJson += delta.partial_json;
+            const delta = event.delta;
+            if (terminalReason || (openBlock && event.index !== openBlock.index)) {
+              throw new ResponseIntegrityError(
+                "Content delta has a mismatched block owner",
+                this.name,
+              );
+            }
+            if (delta.type === "thinking_delta" && openBlock?.reasoning)
+              openBlock.reasoning.thinking =
+                String(openBlock.reasoning.thinking ?? "") + delta.thinking;
+            if (delta.type === "signature_delta" && openBlock?.reasoning)
+              openBlock.reasoning.signature =
+                String(openBlock.reasoning.signature ?? "") + delta.signature;
+            if (delta.type === "input_json_delta") {
+              if (!openBlock?.tool || event.index !== openBlock.index) {
+                throw new ResponseIntegrityError(
+                  "Tool argument delta has no matching block",
+                  this.name,
+                );
+              }
+              openBlock.tool.hasDelta = true;
+              openBlock.tool.json += delta.partial_json;
+              this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_delta",
-                toolCall: {
-                  ...currentToolCall,
-                },
+                toolCall: { id: openBlock.tool.id, name: openBlock.tool.name },
                 text: delta.partial_json,
               };
+              this.assertStreamActive(options, timeoutTriggered);
+            } else if (delta.type === "text_delta" && delta.text) {
+              if (openBlock?.tool)
+                throw new ResponseIntegrityError("Text delta belongs to a tool block", this.name);
+              this.assertStreamActive(options, timeoutTriggered);
+              yield { type: "text", text: delta.text };
+              this.assertStreamActive(options, timeoutTriggered);
             }
           } else if (event.type === "content_block_stop") {
-            if (currentToolCall) {
-              // Parse the accumulated JSON input
-              try {
-                currentToolCall.input = currentToolInputJson
-                  ? JSON.parse(currentToolInputJson)
-                  : {};
-              } catch {
-                // Try to repair malformed JSON (e.g. unescaped newlines/quotes in content)
-                let repaired = false;
-                if (currentToolInputJson) {
-                  try {
-                    currentToolCall.input = JSON.parse(jsonrepair(currentToolInputJson));
-                    repaired = true;
-                    getLogger().debug(`Repaired JSON for tool ${currentToolCall.name}`);
-                  } catch {
-                    // repair also failed — fall through
-                  }
-                }
-                if (!repaired) {
-                  getLogger().warn(
-                    `Failed to parse tool call arguments for ${currentToolCall.name}: ${currentToolInputJson?.slice(0, 300)}`,
-                  );
-                  currentToolCall.input = {};
-                }
-              }
+            if (!openBlock || event.index !== openBlock.index) {
+              throw new ResponseIntegrityError(
+                "Content block closed without its matching owner",
+                this.name,
+              );
+            }
+            if (openBlock.reasoning) reasoningBlocks.push(openBlock.reasoning);
+            if (openBlock.tool) pendingTools.push(openBlock.tool);
+            openBlock = null;
+          } else if (event.type === "message_stop") {
+            if (openBlock)
+              throw new ResponseIntegrityError(
+                "Message ended with an unclosed content block",
+                this.name,
+              );
+            this.validateToolStopReason(terminalReason, pendingTools.length > 0);
+            // Parse and validate the whole batch before publishing the first executable call.
+            const calls = this.validateCompletedToolCalls(
+              pendingTools.map((tool) => ({
+                id: tool.id,
+                name: tool.name,
+                input: tool.hasDelta
+                  ? parseToolCallArguments(tool.json, this.name)
+                  : validateToolCallInput(tool.initialInput, this.name),
+              })),
+            );
+            for (const toolCall of calls) {
+              this.assertStreamActive(options, timeoutTriggered);
               yield {
                 type: "tool_use_end",
-                toolCall: { ...currentToolCall } as ToolCall,
+                toolCall: {
+                  ...toolCall,
+                  providerState: reasoningBlocks.length
+                    ? { provider: this.id, model, anthropicBlocks: reasoningBlocks }
+                    : undefined,
+                },
               };
-              currentToolCall = null;
-              currentToolInputJson = "";
+              this.assertStreamActive(options, timeoutTriggered);
             }
+            this.assertStreamActive(options, timeoutTriggered);
+            yield { type: "done", stopReason: this.mapStopReason(terminalReason!) };
+            this.assertStreamActive(options, timeoutTriggered);
+            return;
           }
         }
-
-        yield { type: "done", stopReason: streamStopReason };
+        this.assertStreamActive(options, timeoutTriggered);
+        throw new ResponseIntegrityError("Tool response ended without message_stop", this.name);
       } finally {
         clearInterval(timeoutInterval);
       }
-
-      if (timeoutController.signal.aborted) {
-        throw new Error(`Stream timeout: No response from LLM for ${streamTimeout / 1000}s`);
-      }
     } catch (error) {
+      rethrowCancellation(error, options?.signal);
       if (timeoutTriggered) {
         throw new Error(
-          `Stream timeout: No response from LLM for ${(this.config.timeout ?? 120000) / 1000}s`,
+          `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
         );
       }
       throw this.handleError(error);
@@ -540,18 +649,24 @@ export class AnthropicProvider implements LLMProvider {
   /**
    * Check if provider is available
    */
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     if (!this.client) return false;
 
     try {
       // Try a minimal request
-      await this.client.messages.create({
-        model: this.config.model ?? DEFAULT_MODEL,
-        max_tokens: 1,
-        messages: [{ role: "user", content: "hi" }],
-      });
+      await this.client.messages.create(
+        {
+          model: this.config.model ?? DEFAULT_MODEL,
+          max_tokens: 1,
+          messages: [{ role: "user", content: "hi" }],
+        },
+        this.getRequestOptions(options),
+      );
+      options?.signal?.throwIfAborted();
       return true;
-    } catch {
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
       return false;
     }
   }
@@ -559,6 +674,22 @@ export class AnthropicProvider implements LLMProvider {
   /**
    * Ensure client is initialized
    */
+  private assertStreamActive(options?: ChatOptions, timedOut = false): void {
+    options?.signal?.throwIfAborted();
+    if (timedOut)
+      throw new Error(
+        `Stream timeout: No response from LLM for ${(options?.timeout ?? this.config.timeout ?? 120000) / 1000}s`,
+      );
+  }
+
+  private getRequestOptions(options?: ChatOptions) {
+    return {
+      signal: options?.signal,
+      timeout: options?.timeout ?? this.config.timeout ?? 120000,
+      maxRetries: 0,
+    };
+  }
+
   private ensureInitialized(): void {
     if (!this.client) {
       throw new ProviderError("Provider not initialized. Call initialize() first.", {
@@ -592,12 +723,28 @@ export class AnthropicProvider implements LLMProvider {
   /**
    * Convert messages to Anthropic format
    */
-  private convertMessages(messages: Message[]): Anthropic.MessageParam[] {
+  private convertMessages(messages: Message[], model: string): Anthropic.MessageParam[] {
     return messages
       .filter((m) => m.role !== "system") // System is handled separately
       .map((m) => ({
         role: m.role as "user" | "assistant",
-        content: this.convertContent(m.content),
+        content: (() => {
+          const converted = this.convertContent(m.content);
+          if (!Array.isArray(m.content) || !Array.isArray(converted)) return converted;
+          const state = m.content.find(
+            (block) =>
+              block.type === "tool_use" &&
+              block.providerState?.provider === this.id &&
+              block.providerState.model === model,
+          );
+          return state?.type === "tool_use"
+            ? [
+                ...((state.providerState?.anthropicBlocks ??
+                  []) as unknown as Anthropic.ContentBlockParam[]),
+                ...converted,
+              ]
+            : converted;
+        })(),
       }));
   }
 
@@ -688,13 +835,44 @@ export class AnthropicProvider implements LLMProvider {
   /**
    * Extract tool calls from response
    */
+  private validateToolStopReason(reason: string | null | undefined, hasCalls: boolean): void {
+    if (
+      hasCalls
+        ? reason !== "tool_use"
+        : !["end_turn", "stop_sequence", "max_tokens", "refusal"].includes(reason ?? "")
+    ) {
+      throw new ResponseIntegrityError(
+        "Tool response did not finish with a valid terminal reason",
+        this.name,
+      );
+    }
+  }
+
+  private validateCompletedToolCalls(calls: ToolCall[]): ToolCall[] {
+    const byId = new Map<string, ToolCall>();
+    for (const call of calls) {
+      if (!call.id?.trim() || !call.name?.trim()) {
+        throw new ResponseIntegrityError("Tool call is missing its identity", this.name);
+      }
+      const existing = byId.get(call.id);
+      if (
+        existing &&
+        (existing.name !== call.name || !isDeepStrictEqual(existing.input, call.input))
+      ) {
+        throw new ResponseIntegrityError("Conflicting tool calls share an identity", this.name);
+      }
+      byId.set(call.id, call);
+    }
+    return [...byId.values()];
+  }
+
   private extractToolCalls(content: Anthropic.ContentBlock[]): ToolCall[] {
     return content
       .filter((block): block is Anthropic.ToolUseBlock => block.type === "tool_use")
       .map((block) => ({
         id: block.id,
         name: block.name,
-        input: block.input as Record<string, unknown>,
+        input: validateToolCallInput(block.input, this.name),
       }));
   }
 
@@ -704,6 +882,7 @@ export class AnthropicProvider implements LLMProvider {
   private mapStopReason(reason: string | null): ChatResponse["stopReason"] {
     switch (reason) {
       case "end_turn":
+      case "refusal":
         return "end_turn";
       case "max_tokens":
         return "max_tokens";
@@ -720,6 +899,7 @@ export class AnthropicProvider implements LLMProvider {
    * Handle API errors
    */
   private handleError(error: unknown): never {
+    if (error instanceof ResponseIntegrityError) throw error;
     if (error instanceof Anthropic.APIError) {
       const msg = error.message.toLowerCase();
       let retryable = error.status === 429 || error.status >= 500;

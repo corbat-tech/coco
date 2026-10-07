@@ -8,7 +8,9 @@ import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { LLMProvider, StreamChunk, ToolCall } from "../../providers/types.js";
-import { createEventLog } from "../../runtime/event-log.js";
+import { AgentRuntime } from "../../runtime/agent-runtime.js";
+import { z } from "zod";
+import { getTrustPattern } from "./bash-patterns.js";
 
 /**
  * Create async iterable from generator
@@ -61,12 +63,41 @@ function createToolStreamMock(
           yield { type: "tool_use_start", toolCall: { id: tc.id, name: tc.name } };
           yield { type: "tool_use_end", toolCall: tc };
         }
-        yield { type: "done" };
+        yield { type: "done", stopReason: "tool_use" };
       })(),
     );
 }
-import type { ToolRegistry, ToolResult } from "../../tools/registry.js";
+import type {
+  ToolRegistry,
+  ToolResult,
+  ToolDefinition,
+  ToolCategory,
+} from "../../tools/registry.js";
 import type { ReplSession, ExecutedToolCall } from "./types.js";
+
+// Real policy metadata; execution stays mocked so loop fixtures cannot touch disk or network.
+function fixtureTool(name: string): ToolDefinition | undefined {
+  const categories: Record<string, ToolCategory> = {
+    read_file: "file",
+    write_file: "file",
+    bash_exec: "bash",
+    get_env: "config",
+    http_fetch: "web",
+    mcp_list_servers: "config",
+    mcp_atlassian_browse: "deploy",
+    mcp_atlassian_browse_issue: "deploy",
+  };
+  const category = categories[name];
+  return category
+    ? {
+        name,
+        category,
+        description: `Fixture ${name}`,
+        parameters: z.object({}).passthrough(),
+        execute: async () => ({}),
+      }
+    : undefined;
+}
 
 // Mock chalk to simplify output testing
 vi.mock("chalk", () => ({
@@ -130,9 +161,9 @@ describe("executeAgentTurn", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
@@ -160,9 +191,11 @@ describe("executeAgentTurn", () => {
         },
       },
       trustedTools: new Set<string>(),
-      runtime: {
-        eventLog: createEventLog(),
-      } as ReplSession["runtime"],
+      runtime: new AgentRuntime({
+        providerType: "anthropic",
+        model: "fixture-model",
+        toolRegistry: mockToolRegistry,
+      }),
     };
 
     // Setup default mocks
@@ -177,6 +210,128 @@ describe("executeAgentTurn", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  describe("tool batch integrity", () => {
+    const call: ToolCall = { id: "integrity-1", name: "read_file", input: {} };
+    const end = (toolCall: Partial<ToolCall>): StreamChunk => ({ type: "tool_use_end", toolCall });
+    const done: StreamChunk = { type: "done", stopReason: "tool_use" };
+    const cases: Array<[string, StreamChunk[]]> = [
+      ["missing terminal", [end(call)]],
+      ["terminal missing reason", [end(call), { type: "done" }]],
+      ["contradictory terminal", [end(call), { type: "done", stopReason: "end_turn" }]],
+      ["truncated terminal", [end(call), { type: "done", stopReason: "max_tokens" }]],
+      ["missing arguments", [end({ id: call.id, name: call.name }), done]],
+      ["missing identity", [end({ name: call.name, input: {} }), done]],
+      [
+        "invalid second input",
+        [
+          end(call),
+          end({ ...call, id: "second", input: [] as unknown as Record<string, unknown> }),
+          done,
+        ],
+      ],
+      [
+        "conflicting repeated identity",
+        [end(call), end({ ...call, input: { path: "secret-marker" } }), done],
+      ],
+      [
+        "changed name",
+        [{ type: "tool_use_start", toolCall: call }, end({ ...call, name: "write_file" }), done],
+      ],
+      [
+        "unclosed second call",
+        [
+          end(call),
+          { type: "tool_use_start", toolCall: { id: "second", name: "read_file" } },
+          done,
+        ],
+      ],
+      [
+        "delta ID never completed",
+        [
+          { type: "tool_use_start", toolCall: call },
+          { type: "tool_use_delta", toolCall: { id: "unknown" } },
+          end(call),
+          done,
+        ],
+      ],
+      [
+        "delta conflicting name",
+        [
+          { type: "tool_use_start", toolCall: call },
+          { type: "tool_use_delta", toolCall: { id: call.id, name: "write_file" } },
+          end(call),
+          done,
+        ],
+      ],
+      ["orphan delta", [{ type: "tool_use_delta", text: "{}" }]],
+      ["empty tool terminal", [done]],
+    ];
+    it.each(cases)("rejects %s without effects or replay", async (_name, chunks) => {
+      const { executeAgentTurn } = await import("./agent-loop.js");
+      mockSession.config.agent.recoveryV2 = true;
+      vi.mocked(mockProvider.streamWithTools).mockImplementation(() =>
+        toAsyncIterable(
+          (function* () {
+            yield* chunks;
+          })(),
+        ),
+      );
+      const result = await executeAgentTurn(mockSession, "Read", mockProvider, mockToolRegistry);
+      expect(result.error).toBeTruthy();
+      expect(result.error).not.toContain("secret-marker");
+      expect(result.quality?.hadError).toBe(true);
+      expect(result.toolCalls).toEqual([]);
+      expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+      expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(1);
+    });
+    it("accepts a name-only start then concrete delta and explicit empty arguments", async () => {
+      const { executeAgentTurn } = await import("./agent-loop.js");
+      vi.mocked(mockToolRegistry.execute).mockResolvedValue({
+        success: true,
+        data: "ok",
+        duration: 1,
+      });
+      vi.mocked(mockProvider.streamWithTools)
+        .mockImplementationOnce(() =>
+          toAsyncIterable(
+            (function* () {
+              yield { type: "tool_use_start", toolCall: { name: call.name } };
+              yield {
+                type: "tool_use_delta",
+                toolCall: { id: call.id, name: call.name },
+                text: "{}",
+              };
+              yield end(call);
+              yield end(call);
+              yield done;
+            })(),
+          ),
+        )
+        .mockImplementation(createTextStreamMock("Finished", "end_turn"));
+      await executeAgentTurn(mockSession, "Read", mockProvider, mockToolRegistry);
+      expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(mockToolRegistry.execute).mock.calls[0]?.[1]).toEqual({});
+    });
+    it("preserves cancellation of a provisional batch", async () => {
+      const { executeAgentTurn } = await import("./agent-loop.js");
+      const controller = new AbortController();
+      vi.mocked(mockProvider.streamWithTools).mockImplementation(() =>
+        toAsyncIterable(
+          (function* () {
+            yield end(call);
+            controller.abort(new Error("cancel fixture"));
+            yield done;
+          })(),
+        ),
+      );
+      const result = await executeAgentTurn(mockSession, "Read", mockProvider, mockToolRegistry, {
+        signal: controller.signal,
+      });
+      expect(result.aborted).toBe(true);
+      expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+    });
   });
 
   it("should process a simple message without tool calls", async () => {
@@ -201,6 +356,7 @@ describe("executeAgentTurn", () => {
   });
 
   it("deduplicates repeated identical tool calls in the same streamed turn", async () => {
+    mockSession.trustedTools.add("get_env");
     const { executeAgentTurn } = await import("./agent-loop.js");
 
     let providerCalls = 0;
@@ -587,6 +743,17 @@ describe("executeAgentTurn", () => {
     expect(onToolEnd).toHaveBeenCalledWith(
       expect.objectContaining({ id: "tool-1", name: "read_file", result: expect.any(Object) }),
     );
+    const toolEvents = mockSession
+      .runtime!.eventLog.list()
+      .filter((event) => event.type === "tool.started" || event.type === "tool.completed");
+    expect(toolEvents.map((event) => event.type)).toEqual(["tool.started", "tool.completed"]);
+    for (const event of toolEvents) {
+      expect(event.data).toMatchObject({
+        sessionId: mockSession.id,
+        toolCallId: toolCall.id,
+        tool: toolCall.name,
+      });
+    }
   });
 
   it("should call onThinkingStart and onThinkingEnd callbacks", async () => {
@@ -729,11 +896,17 @@ describe("executeAgentTurn", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
+
+    mockSession.runtime = new AgentRuntime({
+      providerType: "anthropic",
+      model: "fixture-model",
+      toolRegistry: mockToolRegistry,
+    });
 
     const genericFetch: ToolCall = {
       id: "tool-1",
@@ -762,6 +935,77 @@ describe("executeAgentTurn", () => {
   });
 
   describe("confirmation handling", () => {
+    it.each([true, false])(
+      "path denial respects skipConfirmation=%s without retrying or granting access",
+      async (skipConfirmation) => {
+        const { executeAgentTurn } = await import("./agent-loop.js");
+        const { promptAllowPath } = await import("./allow-path-prompt.js");
+        vi.mocked(promptAllowPath).mockResolvedValue(false);
+        const call: ToolCall = {
+          id: "path-denied",
+          name: "read_file",
+          input: { path: "/outside/file.txt" },
+        };
+        vi.mocked(mockProvider.streamWithTools!)
+          .mockImplementationOnce(createToolStreamMock("", [call]))
+          .mockImplementation(createTextStreamMock("Access was denied."));
+        vi.mocked(mockToolRegistry.execute).mockResolvedValue({
+          success: false,
+          error:
+            "Reading files outside project directory is not allowed. Use /allow-path /outside to grant access.",
+          duration: 0,
+        });
+        const beforeConfirmation = vi.fn();
+        const result = await executeAgentTurn(
+          mockSession,
+          "Read fixture",
+          mockProvider,
+          mockToolRegistry,
+          { skipConfirmation, onBeforeConfirmation: beforeConfirmation },
+        );
+        expect(promptAllowPath).toHaveBeenCalledTimes(skipConfirmation ? 0 : 1);
+        expect(beforeConfirmation).toHaveBeenCalledTimes(skipConfirmation ? 0 : 1);
+        expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
+        expect(result.toolCalls).toEqual([
+          expect.objectContaining({
+            result: expect.objectContaining({
+              success: false,
+              error: expect.stringContaining("outside project"),
+            }),
+          }),
+        ]);
+      },
+    );
+
+    it.each([
+      { command: "git status", legacy: true, allowed: false },
+      { command: "git status > output.txt", legacy: false, allowed: false },
+      { command: "git status; echo unexpected", legacy: false, allowed: false },
+      { command: "git status", legacy: false, allowed: true },
+    ])(
+      "shell trust $command legacy=$legacy allowed=$allowed",
+      async ({ command, legacy, allowed }) => {
+        const { executeAgentTurn } = await import("./agent-loop.js");
+        const { confirmToolExecutionWithFallback } = await import("./confirmation.js");
+        vi.mocked(confirmToolExecutionWithFallback).mockResolvedValue("no");
+        mockSession.trustedTools.add(
+          legacy ? "bash:git:status" : getTrustPattern("bash_exec", { command: "git status" }),
+        );
+        const call: ToolCall = { id: "trust-regression", name: "bash_exec", input: { command } };
+        vi.mocked(mockProvider.streamWithTools!)
+          .mockImplementationOnce(createToolStreamMock("", [call]))
+          .mockImplementation(createTextStreamMock("Finished fixture."));
+        vi.mocked(mockToolRegistry.execute).mockResolvedValue({
+          success: true,
+          data: {},
+          duration: 0,
+        });
+        await executeAgentTurn(mockSession, "Run fixture", mockProvider, mockToolRegistry);
+        expect(mockToolRegistry.execute).toHaveBeenCalledTimes(allowed ? 1 : 0);
+        expect(confirmToolExecutionWithFallback).toHaveBeenCalledTimes(allowed ? 0 : 1);
+      },
+    );
+
     it("should skip confirmation for trusted tools", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
       const { requiresConfirmation, confirmToolExecutionWithFallback } =
@@ -797,9 +1041,10 @@ describe("executeAgentTurn", () => {
 
       // Should not prompt for confirmation
       expect(confirmToolExecutionWithFallback).not.toHaveBeenCalled();
+      expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
     });
 
-    it("should skip confirmation when skipConfirmation option is true", async () => {
+    it("should skip prompts without granting authority when skipConfirmation is true", async () => {
       const { executeAgentTurn } = await import("./agent-loop.js");
       const { requiresConfirmation, confirmToolExecutionWithFallback } =
         await import("./confirmation.js");
@@ -832,6 +1077,7 @@ describe("executeAgentTurn", () => {
       });
 
       expect(confirmToolExecutionWithFallback).not.toHaveBeenCalled();
+      expect(mockToolRegistry.execute).not.toHaveBeenCalled();
     });
 
     it("should prompt for confirmation for destructive tools", async () => {
@@ -980,8 +1226,10 @@ describe("executeAgentTurn", () => {
 
       await executeAgentTurn(mockSession, "Run command", mockProvider, mockToolRegistry);
 
-      // Pattern-aware: bash_exec + {command: "ls"} → "bash:ls"
-      expect(mockSession.trustedTools.has("bash:ls")).toBe(true);
+      // Remember only the complete invocation that the user approved.
+      expect(mockSession.trustedTools.has(getTrustPattern(toolCall.name, toolCall.input))).toBe(
+        true,
+      );
     });
 
     it("should trust tool globally when user chooses trust_global", async () => {
@@ -1048,9 +1296,9 @@ describe("Error loop recovery: final LLM turn", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
@@ -1166,9 +1414,9 @@ describe("Safety net: placeholder injection for missing tool results", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
@@ -1381,9 +1629,9 @@ describe("max_tokens auto-continue", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
@@ -1506,7 +1754,7 @@ describe("max_tokens auto-continue", () => {
     expect(result.aborted).toBe(false);
   });
 
-  it("should recover when stopReason is tool_use but no tool calls were reconstructed", async () => {
+  it("fails without replay when tool_use has no reconstructed calls", async () => {
     const { executeAgentTurn } = await import("./agent-loop.js");
 
     let callCount = 0;
@@ -1528,8 +1776,10 @@ describe("max_tokens auto-continue", () => {
 
     const result = await executeAgentTurn(mockSession, "Hazlo", mockProvider, mockToolRegistry);
 
-    expect(callCount).toBeGreaterThanOrEqual(2);
-    expect(result.toolCalls.length).toBeGreaterThan(0);
+    expect(callCount).toBe(1);
+    expect(result.toolCalls).toEqual([]);
+    expect(result.error).toBeTruthy();
+    expect(mockToolRegistry.execute).not.toHaveBeenCalled();
     expect(result.aborted).toBe(false);
   });
 
@@ -1642,9 +1892,9 @@ describe("iteration limit notice", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 
@@ -1897,9 +2147,9 @@ describe("streaming text suppression during tool iterations", () => {
       execute: vi.fn(),
       register: vi.fn(),
       unregister: vi.fn(),
-      get: vi.fn(),
+      get: vi.fn(fixtureTool),
       has: vi.fn(),
-      getAll: vi.fn(),
+      getAll: vi.fn(() => []),
       getByCategory: vi.fn(),
     } as unknown as ToolRegistry;
 

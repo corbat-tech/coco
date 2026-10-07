@@ -1,3 +1,4 @@
+import { cancellationCheckpoint } from "../utils/interactive-cancellation.js";
 /**
  * Google Cloud Application Default Credentials (ADC) Support
  *
@@ -10,12 +11,13 @@
  * ADC and otherwise point the user to manual setup.
  */
 
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * ADC token response
@@ -70,11 +72,13 @@ function getADCPath(): string {
 /**
  * Check if gcloud CLI is installed
  */
-export async function isGcloudInstalled(): Promise<boolean> {
+export async function isGcloudInstalled(signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   try {
-    await execAsync("gcloud --version");
+    await cancellationCheckpoint(execAsync("gcloud --version", { signal, timeout: 10000 }), signal);
     return true;
   } catch {
+    signal?.throwIfAborted();
     return false;
   }
 }
@@ -97,11 +101,21 @@ export async function hasADCCredentials(): Promise<boolean> {
  * Get access token from gcloud CLI
  * Uses: gcloud auth application-default print-access-token
  */
-export async function inspectADC(): Promise<ADCCheckResult> {
+export async function inspectADC(signal?: AbortSignal): Promise<ADCCheckResult> {
+  signal?.throwIfAborted();
   try {
-    const { stdout } = await execAsync(PRINT_ACCESS_TOKEN_COMMAND, {
-      timeout: 10000,
-    });
+    const options = { timeout: 10000, signal };
+    // Windows installations expose gcloud.cmd, which requires the command shell.
+    // This branch runs only a fixed command: no user input is interpolated.
+    const { stdout } =
+      process.platform === "win32"
+        ? await execAsync(PRINT_ACCESS_TOKEN_COMMAND, options)
+        : await execFileAsync(
+            "gcloud",
+            ["auth", "application-default", "print-access-token"],
+            options,
+          );
+    signal?.throwIfAborted();
 
     const accessToken = stdout.trim();
     if (!accessToken) {
@@ -124,6 +138,7 @@ export async function inspectADC(): Promise<ADCCheckResult> {
       },
     };
   } catch (error) {
+    signal?.throwIfAborted();
     const message = error instanceof Error ? error.message : String(error);
 
     if (message.includes("scope is required but not consented")) {
@@ -165,8 +180,8 @@ export async function inspectADC(): Promise<ADCCheckResult> {
  * Get access token from gcloud CLI
  * Uses: gcloud auth application-default print-access-token
  */
-export async function getADCAccessToken(): Promise<ADCToken | null> {
-  const result = await inspectADC();
+export async function getADCAccessToken(signal?: AbortSignal): Promise<ADCToken | null> {
+  const result = await inspectADC(signal);
   return result.token;
 }
 
@@ -200,21 +215,29 @@ export async function isADCConfigured(): Promise<boolean> {
  * Run gcloud auth application-default login
  * Opens browser for user to authenticate with Google account
  */
-export async function runGcloudADCLogin(): Promise<boolean> {
+export async function runGcloudADCLogin(signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   try {
     // Prefer browser-based flow first for smoother UX.
-    await execAsync(ADC_LOGIN_COMMAND, {
-      timeout: 300000, // 5 minutes for interactive auth
-    });
+    await cancellationCheckpoint(
+      execAsync(ADC_LOGIN_COMMAND, {
+        signal,
+        timeout: 300000, // 5 minutes for interactive auth
+      }),
+      signal,
+    );
     return true;
   } catch {
+    signal?.throwIfAborted();
     try {
       // Fallback for headless environments where browser launch is unavailable.
-      await execAsync(`${ADC_LOGIN_COMMAND} --no-launch-browser`, {
-        timeout: 300000,
-      });
+      await cancellationCheckpoint(
+        execAsync(`${ADC_LOGIN_COMMAND} --no-launch-browser`, { signal, timeout: 300000 }),
+        signal,
+      );
       return true;
     } catch {
+      signal?.throwIfAborted();
       return false;
     }
   }
@@ -224,14 +247,17 @@ export async function runGcloudADCLogin(): Promise<boolean> {
  * Revoke gcloud Application Default Credentials for the current machine user.
  * Useful when user wants to switch to a different Google account.
  */
-export async function runGcloudADCRevoke(): Promise<boolean> {
+export async function runGcloudADCRevoke(signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   try {
-    await execAsync(ADC_REVOKE_COMMAND, {
-      timeout: 120000,
-    });
+    await cancellationCheckpoint(
+      execAsync(ADC_REVOKE_COMMAND, { signal, timeout: 120000 }),
+      signal,
+    );
     clearADCCache();
     return true;
   } catch (error) {
+    signal?.throwIfAborted();
     const message = error instanceof Error ? error.message : String(error);
     // Treat "already revoked / not found" style outcomes as success.
     if (
@@ -265,14 +291,17 @@ let cachedToken: ADCToken | null = null;
  * Get cached or fresh ADC token
  * Refreshes automatically when expired
  */
-export async function getCachedADCToken(): Promise<ADCToken | null> {
+export async function getCachedADCToken(signal?: AbortSignal): Promise<ADCToken | null> {
+  signal?.throwIfAborted();
   // Check if cached token is still valid
   if (cachedToken && cachedToken.expiresAt && Date.now() < cachedToken.expiresAt) {
     return cachedToken;
   }
 
   // Get fresh token
-  cachedToken = await getADCAccessToken();
+  const token = await getADCAccessToken(signal);
+  signal?.throwIfAborted();
+  cachedToken = token;
   return cachedToken;
 }
 

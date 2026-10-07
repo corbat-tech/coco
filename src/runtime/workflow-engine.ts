@@ -34,6 +34,7 @@ import {
 export type WorkflowRunStatus = "completed" | "failed";
 
 export interface WorkflowRunInput {
+  signal?: AbortSignal;
   workflowId: string;
   input: Record<string, unknown>;
   plan?: WorkflowPlan;
@@ -52,6 +53,7 @@ export interface WorkflowRunResult {
 }
 
 export interface WorkflowRunContext {
+  signal?: AbortSignal;
   workflow: WorkflowDefinition;
   plan: WorkflowPlan;
   eventLog: EventLog;
@@ -136,10 +138,12 @@ export class WorkflowEngine {
       trace,
     });
 
+    let graphResult: AgentGraphRunResult | undefined;
     try {
+      request.signal?.throwIfAborted();
       const graph = workflowToAgentGraph(workflow);
       assertWorkflowAllowedByRuntimePolicy(graph, this.runtimePolicy);
-      const graphResult = handler
+      graphResult = handler
         ? undefined
         : await new AgentGraphEngine({
             eventLog: this.eventLog,
@@ -150,6 +154,7 @@ export class WorkflowEngine {
             workflowRunId: runId,
             graph,
             input: request.input,
+            signal: request.signal,
           });
       const output =
         graphResult ??
@@ -157,10 +162,12 @@ export class WorkflowEngine {
           workflow,
           plan,
           eventLog: this.eventLog,
+          signal: request.signal,
         }));
       if (graphResult?.status === "failed") {
         throw new Error(graphResult.error ?? "Workflow graph failed");
       }
+      request.signal?.throwIfAborted();
       const completedAt = new Date().toISOString();
       const result: WorkflowRunResult = {
         id: runId,
@@ -193,7 +200,8 @@ export class WorkflowEngine {
         id: runId,
         workflowId: request.workflowId,
         status: "failed",
-        output: null,
+        output: graphResult ?? null,
+        graphResult,
         startedAt,
         completedAt,
         error: message,

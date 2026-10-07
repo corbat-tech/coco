@@ -1,122 +1,161 @@
-/**
- * Tests for subprocess-registry.ts
- */
-
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+/** Lifecycle regressions: sending a signal is distinct from process settlement. */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  trackSubprocess,
-  killAllSubprocesses,
   _activeSubprocessCount,
+  killAllSubprocesses,
+  killOrphanedTestProcesses,
+  trackSubprocess,
+  type TrackedProcess,
 } from "./subprocess-registry.js";
 
-// Minimal mock of an execa subprocess
-function makeMockProc(killed = false): {
-  killed: boolean;
-  kill: ReturnType<typeof vi.fn>;
-  then: ReturnType<typeof vi.fn>;
-} {
-  const proc = {
+const external = vi.hoisted(() => ({ execa: vi.fn() }));
+vi.mock("execa", () => ({ execa: external.execa }));
+
+const fixtures: Array<{ finish: () => void }> = [];
+function processFixture(killed = false) {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const completion = new Promise<void>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  // This thenable models execa; only settlement means execution has finished.
+  const proc: TrackedProcess & { kill: ReturnType<typeof vi.fn> } = {
     killed,
-    kill: vi.fn<[string?], boolean>(() => {
+    kill: vi.fn((_signal?: string) => {
       proc.killed = true;
       return true;
     }),
-    // eslint-disable-next-line unicorn/no-thenable -- intentional mock of a thenable subprocess
-    then: vi.fn((onFulfilled: () => void, _onRejected: () => void) => {
-      // Store the callback so tests can trigger cleanup
-      (proc as unknown as { _resolve: () => void })._resolve = onFulfilled;
-      return proc;
-    }),
+    // eslint-disable-next-line unicorn/no-thenable -- models the execa subprocess contract
+    then: completion.then.bind(completion),
   };
-  return proc;
+  fixtures.push({ finish: resolve });
+  return { proc, finish: resolve, fail: () => reject(new Error("fixture process failed")) };
 }
 
-beforeEach(async () => {
-  // Reset by killing all (no-op if set is empty)
-  await killAllSubprocesses("SIGKILL");
+beforeEach(() => {
+  vi.useFakeTimers();
+  external.execa.mockClear();
+  expect(_activeSubprocessCount()).toBe(0);
 });
 
 afterEach(async () => {
-  await killAllSubprocesses("SIGKILL");
+  // Settle every fixture, including assertion-failure paths, before draining timers.
+  for (const fixture of fixtures.splice(0)) fixture.finish();
+  await Promise.resolve();
+  await vi.runAllTimersAsync();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
-describe("trackSubprocess", () => {
-  it("adds process to active set", () => {
-    const before = _activeSubprocessCount();
-    const proc = makeMockProc();
-    trackSubprocess(proc);
-    expect(_activeSubprocessCount()).toBe(before + 1);
-  });
-
-  it("returns the subprocess unchanged", () => {
-    const proc = makeMockProc();
-    const result = trackSubprocess(proc);
-    expect(result).toBe(proc);
-  });
-
-  it("removes process from set when it completes", () => {
-    const proc = makeMockProc();
-    trackSubprocess(proc);
-    const before = _activeSubprocessCount();
-
-    // Simulate process completion — call the onFulfilled callback
-    const trackedProc = proc as unknown as { _resolve: () => void };
-    trackedProc._resolve?.();
-
-    expect(_activeSubprocessCount()).toBe(before - 1);
-  });
-});
-
-describe("killAllSubprocesses", () => {
-  it("kills all tracked processes with SIGTERM by default", async () => {
-    const proc1 = makeMockProc();
-    const proc2 = makeMockProc();
-    trackSubprocess(proc1);
-    trackSubprocess(proc2);
-
-    // Simulate quick exit after SIGTERM
-    proc1.kill.mockImplementation(() => {
-      proc1.killed = true;
-      return true;
-    });
-    proc2.kill.mockImplementation(() => {
-      proc2.killed = true;
-      return true;
-    });
-
-    await killAllSubprocesses("SIGTERM");
-
-    expect(proc1.kill).toHaveBeenCalledWith("SIGTERM");
-    expect(proc2.kill).toHaveBeenCalledWith("SIGTERM");
+describe("trackSubprocess completion ownership", () => {
+  it("returns the process unchanged and tracks it until fulfillment", async () => {
+    const { proc, finish } = processFixture();
+    expect(trackSubprocess(proc)).toBe(proc);
+    expect(_activeSubprocessCount()).toBe(1);
+    finish();
+    await Promise.resolve();
     expect(_activeSubprocessCount()).toBe(0);
   });
 
-  it("does not kill processes that are already killed", async () => {
-    const proc = makeMockProc(true); // already killed
+  it("removes rejected subprocesses without leaving an unhandled cleanup rejection", async () => {
+    const { proc, fail } = processFixture();
     trackSubprocess(proc);
-
-    await killAllSubprocesses("SIGTERM");
-
+    fail();
+    await Promise.resolve();
+    expect(_activeSubprocessCount()).toBe(0);
     expect(proc.kill).not.toHaveBeenCalled();
   });
+});
 
-  it("clears the active set after killing", async () => {
-    const proc = makeMockProc();
+describe("killAllSubprocesses tracks termination rather than signal delivery", () => {
+  it.each([false, true])(
+    "escalates a pending process even when killed was %s before cleanup",
+    async (alreadySignaled) => {
+      const { proc, finish } = processFixture(alreadySignaled);
+      trackSubprocess(proc);
+      const cleanup = killAllSubprocesses("SIGTERM");
+      expect(proc.kill).toHaveBeenCalledWith("SIGTERM");
+      expect(proc.killed).toBe(true);
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(proc.kill).not.toHaveBeenCalledWith("SIGKILL");
+      await vi.advanceTimersByTimeAsync(1);
+      await cleanup;
+      expect(proc.kill.mock.calls.map(([signal]) => signal)).toEqual(["SIGTERM", "SIGKILL"]);
+      expect(_activeSubprocessCount()).toBe(1);
+      finish();
+      await Promise.resolve();
+      expect(_activeSubprocessCount()).toBe(0);
+    },
+  );
+
+  it("finishes promptly and cancels escalation when the process exits during the grace period", async () => {
+    const { proc, finish } = processFixture();
     trackSubprocess(proc);
-
-    await killAllSubprocesses("SIGKILL");
-
+    const cleanup = killAllSubprocesses();
+    await vi.advanceTimersByTimeAsync(50);
+    finish();
+    await cleanup;
+    expect(proc.kill.mock.calls.map(([signal]) => signal)).toEqual(["SIGTERM"]);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(proc.kill).toHaveBeenCalledTimes(1);
     expect(_activeSubprocessCount()).toBe(0);
   });
 
-  it("handles kill errors gracefully", async () => {
-    const proc = makeMockProc();
+  it("preserves new processes registered while an earlier snapshot is being terminated", async () => {
+    const original = processFixture();
+    trackSubprocess(original.proc);
+    const cleanup = killAllSubprocesses();
+    const newcomer = processFixture();
+    trackSubprocess(newcomer.proc);
+    await vi.advanceTimersByTimeAsync(3000);
+    await cleanup;
+    expect(newcomer.proc.kill).not.toHaveBeenCalled();
+    expect(_activeSubprocessCount()).toBe(2);
+    original.finish();
+    await Promise.resolve();
+    expect(_activeSubprocessCount()).toBe(1);
+    expect(newcomer.proc.kill).not.toHaveBeenCalled();
+    newcomer.finish();
+    await Promise.resolve();
+    expect(_activeSubprocessCount()).toBe(0);
+  });
+
+  it("does not mistake a kill error for confirmed exit or erase its registry entry", async () => {
+    const { proc, finish } = processFixture();
     proc.kill.mockImplementation(() => {
-      throw new Error("ESRCH: no such process");
+      throw new Error("fixture signal error");
     });
     trackSubprocess(proc);
+    const cleanup = killAllSubprocesses();
+    await vi.advanceTimersByTimeAsync(3000);
+    await expect(cleanup).resolves.toBeUndefined();
+    expect(_activeSubprocessCount()).toBe(1);
+    finish();
+    await Promise.resolve();
+    expect(_activeSubprocessCount()).toBe(0);
+  });
 
-    // Should not throw
-    await expect(killAllSubprocesses("SIGTERM")).resolves.not.toThrow();
+  it("SIGKILL sends a signal but retains ownership until subprocess settlement", async () => {
+    const { proc, finish } = processFixture(true);
+    trackSubprocess(proc);
+    await killAllSubprocesses("SIGKILL");
+    expect(proc.kill).toHaveBeenCalledWith("SIGKILL");
+    expect(_activeSubprocessCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+    finish();
+    await Promise.resolve();
+    expect(_activeSubprocessCount()).toBe(0);
+  });
+});
+
+describe("deprecated orphan discovery", () => {
+  it("returns zero without invoking execa, signaling any PID, or scheduling delayed kills", async () => {
+    const signal = vi.spyOn(process, "kill").mockReturnValue(true);
+    await expect(killOrphanedTestProcesses()).resolves.toBe(0);
+    expect(external.execa).not.toHaveBeenCalled();
+    expect(signal).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

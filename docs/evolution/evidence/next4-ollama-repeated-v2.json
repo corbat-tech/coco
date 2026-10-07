@@ -1,0 +1,545 @@
+{
+  "note": "Two repeats/model, code checks 20/20, full success at most 19/20. Evaluator v2 failed to reject exhausted runtime budgets. Corrected conservatively from stored final answers; original values preserved. v3 records terminal reason and pending tools on every turn. Not a general benchmark.",
+  "results": [
+    {
+      "id": "bug",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:4b",
+      "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "calls": 4,
+      "seconds": 22.095845666000002,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 9124,
+        "outputTokens": 850
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "The fix is complete and tested:\n\n**Original bug:** `values.slice(0,-1).reduce(...)` - this dropped the last element before summing\n\n**Fixed:** `values.reduce((a,b)=>a+b,0)` - now includes every number\n\n**Test results:**\n- Empty array \u2192 0 \u2713\n- `[1,2,3]` \u2192 6 \u2713  \n- `[5]` \u2192 5 \u2713\n\nThe exported API is preserved and the sum function now correctly sums all numbers in the array.",
+      "sourceHash": "b4b3044dea1a66462020e8f89446dc8b8bb70843aff81a3bcf0fd3f6e426ca74",
+      "before": "export const sum = values => values.slice(0,-1).reduce((a,b)=>a+b,0);\n",
+      "after": "export const sum = values => values.reduce((a,b)=>a+b,0);\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-4b-r1"
+    },
+    {
+      "id": "feature",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:4b",
+      "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "calls": 4,
+      "seconds": 17.856202125,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 9316,
+        "outputTokens": 811
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "The `slugify` function has been implemented in `main.mjs`. Here's what it does:\n\n1. **Trims whitespace** - removes leading/trailing spaces\n2. **Lowercases ASCII text** - converts to lowercase\n3. **Replaces consecutive spaces with a single hyphen** - multiple spaces become `-`\n4. **Preserves existing hyphens** - they're kept as-is (not removed)\n\nTest results:\n- `\"  Hello World  \"` \u2192 `\"hello-world\"` \u2713\n- `\"HELLO WORLD\"` \u2192 `\"hello-world\"` \u2713  \n- `\"Hello   World\"` \u2192 `\"hello-world\"` \u2713\n- `\"Hello-World\"` \u2192 `\"hello-world\"` \u2713 (hyphen preserved)\n- `\"\"` \u2192 `\"\"` \u2713\n- `null/undefined` \u2192 `\"\"` \u2713",
+      "sourceHash": "03743ce657c0cffecbc18e3dec1a53b47d6fe33d1c27e8b33d100a06bd788644",
+      "before": "export const slugify = text => text;\n",
+      "after": "export const slugify = text => {\n  if (!text) return '';\n  // Trim whitespace\n  let result = text.trim();\n  // Lowercase ASCII text\n  result = result.toLowerCase();\n  // Replace consecutive spaces with a single hyphen\n  result = result.replace(/ +/g, '-');\n  return result;\n};\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-4b-r1"
+    },
+    {
+      "id": "refactor",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:4b",
+      "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "calls": 10,
+      "seconds": 33.395537790999995,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 32673,
+        "outputTokens": 1287
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "0c36d91c24fc3e11f43e3f73282e1cfa2136d46134574a14128fa3341354b58f",
+      "before": "export function summarize(xs){let total=0;for(const x of xs){total+=x.amount;}let count=0;for(const x of xs){count++;}return {total,count};}\n",
+      "after": "export function summarize(xs){let total=0;let count=0;for(const x of xs){total+=x.amount;count++;}return {total,count};}\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-4b-r1"
+    },
+    {
+      "id": "recovery",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:4b",
+      "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "calls": 5,
+      "seconds": 22.44827962500001,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 11602,
+        "outputTokens": 857
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "**Recovery Complete**\n\nThe file `missing.mjs` does not exist. I fixed `main.mjs`:\n\n| Test Case | Result |\n|-----------|--------|\n| `isEven(0)` | \u2705 true |\n| `isEven(2)` | \u2705 true |\n| `isEven(-2)` | \u2705 true |\n| `isEven(1)` | \u2705 false |\n| `isEven(-1)` | \u2705 false |\n\nThe fix changes `n % 2 === 1` to `n % 2 === 0`, which correctly identifies even numbers for all integers (positive, negative, and zero).",
+      "sourceHash": "bde69a82ffceeaa06eb231ab175b3a3df1a81c5a1fe83ccc189f9244c20b9d0b",
+      "before": "export const isEven = n => n % 2 === 1;\n",
+      "after": "export const isEven = n => n % 2 === 0;\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-4b-r1"
+    },
+    {
+      "id": "session",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:4b",
+      "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "calls": 12,
+      "seconds": 74.19607683299999,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 35909,
+        "outputTokens": 3039
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "All tests pass. Here's a summary:\n\n**Changes made to main.mjs:**\n- Modified `greet` function to trim whitespace around the name\n- Empty, null, undefined, or whitespace-only input now returns `\"Hello friend\"`\n- Normal names with surrounding spaces are properly trimmed (e.g., `\" Bob \"` \u2192 `\"Hello Bob\"`)\n\n**Constraints verified:**\n1. \u2705 **\"Hello\" prefix preserved** - All outputs start with \"Hello \"\n2. \u2705 **USER_NOTE.txt unchanged** - Still contains exactly: `Do not modify this user-owned file.`\n\n**Test results:**\n| Input | Output |\n|-------|--------|\n| `\"Alice\"` | `\"Hello Alice\"` |\n| `\" Bob\"` | `\"Hello Bob\"` |\n| `\"Bob \"` | `\"Hello Bob\"` |\n| `\" Bob \"` | `\"Hello Bob\"` |\n| `\"\"` | `\"Hello friend\"` |\n| `\"   \"` | `\"Hello friend\"` |\n| `null`/`undefined` | `\"Hello friend\"` |",
+      "sourceHash": "95e82b3ee9b87a0e117b77bfe9dcc18f347603312979109d28ebaced837c8a66",
+      "before": "export const greet = name => \"Hello \" + name;\n",
+      "after": "export const greet = name => {\n  const trimmed = (name || \"\").trim();\n  return trimmed ? \"Hello \" + trimmed : \"Hello friend\";\n};\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-4b-r1"
+    },
+    {
+      "id": "bug",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:4b",
+      "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "calls": 4,
+      "seconds": 24.849839250000002,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 9089,
+        "outputTokens": 795
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "b4b3044dea1a66462020e8f89446dc8b8bb70843aff81a3bcf0fd3f6e426ca74",
+      "before": "export const sum = values => values.slice(0,-1).reduce((a,b)=>a+b,0);\n",
+      "after": "export const sum = values => values.reduce((a,b)=>a+b,0);\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-4b-r2"
+    },
+    {
+      "id": "feature",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:4b",
+      "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "calls": 4,
+      "seconds": 26.312199708000005,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 9316,
+        "outputTokens": 829
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "The `slugify` function has been implemented in `main.mjs`. Here's what it does:\n\n1. **Trims whitespace** - removes leading/trailing spaces\n2. **Lowercases ASCII text** - converts to lowercase\n3. **Replaces consecutive spaces with a single hyphen** - multiple spaces become `-`\n4. **Preserves existing hyphens** - they're kept as-is (not removed)\n\nTest results:\n- `\"  Hello World  \"` \u2192 `\"hello-world\"` \u2713\n- `\"HELLO WORLD\"` \u2192 `\"hello-world\"` \u2713  \n- `\"Hello   World\"` \u2192 `\"hello-world\"` \u2713\n- `\"Hello-World\"` \u2192 `\"hello-world\"` \u2713 (hyphen preserved)\n- `\"\"` \u2192 `\"\"` \u2713\n- `null/undefined` \u2192 `\"\"` \u2713\n\nAll tests pass. The implementation uses only native JavaScript methods with no dependencies.",
+      "sourceHash": "03743ce657c0cffecbc18e3dec1a53b47d6fe33d1c27e8b33d100a06bd788644",
+      "before": "export const slugify = text => text;\n",
+      "after": "export const slugify = text => {\n  if (!text) return '';\n  // Trim whitespace\n  let result = text.trim();\n  // Lowercase ASCII text\n  result = result.toLowerCase();\n  // Replace consecutive spaces with a single hyphen\n  result = result.replace(/ +/g, '-');\n  return result;\n};\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-4b-r2"
+    },
+    {
+      "id": "refactor",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:4b",
+      "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "calls": 30,
+      "seconds": 161.021487292,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 191997,
+        "outputTokens": 4822
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "The tool-calling runtime reached its maximum tool iteration budget.",
+      "sourceHash": "0c36d91c24fc3e11f43e3f73282e1cfa2136d46134574a14128fa3341354b58f",
+      "before": "export function summarize(xs){let total=0;for(const x of xs){total+=x.amount;}let count=0;for(const x of xs){count++;}return {total,count};}\n",
+      "after": "export function summarize(xs){let total=0;let count=0;for(const x of xs){total+=x.amount;count++;}return {total,count};}\n",
+      "originalEvaluatorPassed": true,
+      "passed": false,
+      "completionEvidence": "budget exhausted; full success rejected",
+      "run": "baseline-v2-4b-r2"
+    },
+    {
+      "id": "recovery",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:4b",
+      "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "calls": 4,
+      "seconds": 19.004142542000015,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 8908,
+        "outputTokens": 549
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "bde69a82ffceeaa06eb231ab175b3a3df1a81c5a1fe83ccc189f9244c20b9d0b",
+      "before": "export const isEven = n => n % 2 === 1;\n",
+      "after": "export const isEven = n => n % 2 === 0;\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-4b-r2"
+    },
+    {
+      "id": "session",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:4b",
+      "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+      "calls": 6,
+      "seconds": 34.54878787500001,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 14154,
+        "outputTokens": 1076
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "5155a325249876bfae0beea5d5ea92cd3c80fe1ce1f4462c574f1d8ef34700e5",
+      "before": "export const greet = name => \"Hello \" + name;\n",
+      "after": "export const greet = name => {\n  const trimmedName = name.trim();\n  if (trimmedName === \"\") {\n    return \"Hello friend\";\n  }\n  return \"Hello \" + trimmedName;\n};\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-4b-r2"
+    },
+    {
+      "id": "bug",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "calls": 4,
+      "seconds": 26.24979575,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 9069,
+        "outputTokens": 577
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "b4b3044dea1a66462020e8f89446dc8b8bb70843aff81a3bcf0fd3f6e426ca74",
+      "before": "export const sum = values => values.slice(0,-1).reduce((a,b)=>a+b,0);\n",
+      "after": "export const sum = values => values.reduce((a,b)=>a+b,0);\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "ollama-baseline9b-v2"
+    },
+    {
+      "id": "feature",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "calls": 5,
+      "seconds": 29.990375334,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 11696,
+        "outputTokens": 832
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "2ea848070b7df51e55d4da4111cf2b47e8039dcf544d8c6106d2b7bd21515345",
+      "before": "export const slugify = text => text;\n",
+      "after": "export const slugify = text => {\n  // Trim whitespace from both ends\n  let result = text.trim();\n  \n  // Lowercase ASCII text\n  result = result.toLowerCase();\n  \n  // Replace consecutive spaces with a single hyphen\n  // First, replace multiple spaces with a single space\n  result = result.replace(/ +/g, ' ');\n  \n  // Then replace spaces with hyphens\n  result = result.replace(/ /g, '-');\n  \n  return result;\n};\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "ollama-baseline9b-v2"
+    },
+    {
+      "id": "refactor",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "calls": 4,
+      "seconds": 21.889012708000003,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 9222,
+        "outputTokens": 573
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "fad7c75687a83355be10e1cf73bf548352eb2bb759eeee4908c297761ca7288f",
+      "before": "export function summarize(xs){let total=0;for(const x of xs){total+=x.amount;}let count=0;for(const x of xs){count++;}return {total,count};}\n",
+      "after": "export function summarize(xs){let total=0, count=0;for(const x of xs){total+=x.amount;count++;}return {total,count};}\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "ollama-baseline9b-v2"
+    },
+    {
+      "id": "recovery",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "calls": 6,
+      "seconds": 27.042280457999993,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 13880,
+        "outputTokens": 757
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "bde69a82ffceeaa06eb231ab175b3a3df1a81c5a1fe83ccc189f9244c20b9d0b",
+      "before": "export const isEven = n => n % 2 === 1;\n",
+      "after": "export const isEven = n => n % 2 === 0;\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "ollama-baseline9b-v2"
+    },
+    {
+      "id": "session",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "calls": 6,
+      "seconds": 37.462016667,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 14222,
+        "outputTokens": 1074
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "d45d1bcded30d5510b8eec16792911fc553b3d1d09e6fb228440f6bd3ca2b79f",
+      "before": "export const greet = name => \"Hello \" + name;\n",
+      "after": "export const greet = name => \"Hello \" + (name?.trim() || \"friend\");\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "ollama-baseline9b-v2"
+    },
+    {
+      "id": "bug",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "calls": 5,
+      "seconds": 52.538496542000004,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 12067,
+        "outputTokens": 895
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "The fix has been applied and tested successfully. \n\n**What was wrong:** The original code used `values.slice(0,-1)` which excluded the last element before summing, causing incorrect results for arrays with one or two elements.\n\n**The fix:** Changed to `values.reduce((a,b)=>a+b,0)` which:\n- Sums all elements in the array (no slicing)\n- Returns 0 for an empty array (the default initial value of reduce)\n\n**Test results:**\n- Empty array `[]` \u2192 returns `0` \u2713\n- `[1,2,3]` \u2192 returns `6` \u2713\n- `[5]` \u2192 returns `5` \u2713\n- `[0]` \u2192 returns `0` \u2713\n\nThe exported API is preserved (still exports the `sum` function).",
+      "sourceHash": "b4b3044dea1a66462020e8f89446dc8b8bb70843aff81a3bcf0fd3f6e426ca74",
+      "before": "export const sum = values => values.slice(0,-1).reduce((a,b)=>a+b,0);\n",
+      "after": "export const sum = values => values.reduce((a,b)=>a+b,0);\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-9b-r2"
+    },
+    {
+      "id": "feature",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "calls": 5,
+      "seconds": 68.271919333,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 11596,
+        "outputTokens": 1260
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "4d70399cc6275285cfbaeab64f5b69849482853e3f2f33b0a4d6c15023a01670",
+      "before": "export const slugify = text => text;\n",
+      "after": "export const slugify = text => {\n  let result = text.trim().toLowerCase();\n  result = result.replace(/ +/g, '-');\n  return result;\n};\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-9b-r2"
+    },
+    {
+      "id": "refactor",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "calls": 4,
+      "seconds": 32.375836625,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 9331,
+        "outputTokens": 682
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "fad7c75687a83355be10e1cf73bf548352eb2bb759eeee4908c297761ca7288f",
+      "before": "export function summarize(xs){let total=0;for(const x of xs){total+=x.amount;}let count=0;for(const x of xs){count++;}return {total,count};}\n",
+      "after": "export function summarize(xs){let total=0, count=0;for(const x of xs){total+=x.amount;count++;}return {total,count};}\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-9b-r2"
+    },
+    {
+      "id": "recovery",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "calls": 6,
+      "seconds": 33.88248720899998,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 13903,
+        "outputTokens": 785
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "bde69a82ffceeaa06eb231ab175b3a3df1a81c5a1fe83ccc189f9244c20b9d0b",
+      "before": "export const isEven = n => n % 2 === 1;\n",
+      "after": "export const isEven = n => n % 2 === 0;\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-9b-r2"
+    },
+    {
+      "id": "session",
+      "version": "2.42.0-next.4",
+      "model": "qwen3.5:9b",
+      "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+      "calls": 7,
+      "seconds": 60.291879625,
+      "verification": {
+        "status": 0,
+        "stderr": "",
+        "preservedUserFile": true
+      },
+      "usage": {
+        "inputTokens": 17102,
+        "outputTokens": 1280
+      },
+      "scope": "runtime-tools-six; session case has two turns, not long-context stress",
+      "corpusRevision": 2,
+      "answer": "",
+      "sourceHash": "d45d1bcded30d5510b8eec16792911fc553b3d1d09e6fb228440f6bd3ca2b79f",
+      "before": "export const greet = name => \"Hello \" + name;\n",
+      "after": "export const greet = name => \"Hello \" + (name?.trim() || \"friend\");\n",
+      "originalEvaluatorPassed": true,
+      "passed": true,
+      "completionEvidence": "historical final answer only; provider terminal reason not captured",
+      "run": "baseline-v2-9b-r2"
+    }
+  ]
+}

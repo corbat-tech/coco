@@ -125,3 +125,12 @@ describe("getTierConfig", () => {
     expect(config.supportsCoT).toBe(true);
   });
 });
+
+it.each([
+  ["openai", "gpt-6.1-sol", "advanced"],
+  ["azure-openai", "gpt-6-astra", "advanced"],
+  ["openai", "gpt-6-luna", "mini"],
+  ["openai", "gpt-5.6-terra", "standard"],
+])("classifies current %s/%s models", (provider, model, tier) => {
+  expect(getModelTier(provider!, model!)).toBe(tier);
+});

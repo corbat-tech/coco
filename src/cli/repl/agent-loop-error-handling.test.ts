@@ -180,7 +180,7 @@ describe("agent-loop error handling", () => {
       expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(2);
     });
 
-    it("should continue processing when a single chunk is malformed", async () => {
+    it("returns an explicit failure without effects or replay for a malformed tool chunk", async () => {
       const session = createMockSession();
       const chunks: Array<{ type: string; text?: string; toolCall?: unknown }> = [
         { type: "text", text: "First part" },
@@ -211,10 +211,13 @@ describe("agent-loop error handling", () => {
         mockToolRegistry,
       );
 
-      // Should complete successfully despite malformed chunks
       expect(result.aborted).toBe(false);
-      expect(result.error).toBeUndefined();
-      expect(result.content).toBe("First partSecond partFinal part");
+      expect(result.error).toBe("Invalid or incomplete tool call batch");
+      expect(result.content).toBe("First part");
+      expect(result.quality?.hadError).toBe(true);
+      expect(result.toolCalls).toEqual([]);
+      expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+      expect(mockProvider.streamWithTools).toHaveBeenCalledTimes(1);
     });
   });
 

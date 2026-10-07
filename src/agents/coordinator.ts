@@ -7,10 +7,13 @@ import type { AgentExecutor, AgentDefinition, AgentTask, AgentResult } from "./e
 import { createResourceAwareSemaphore } from "../utils/resource-semaphore.js";
 import { getMaxSafeAgents } from "../utils/resource-monitor.js";
 import { getLogger } from "../utils/logger.js";
+import { createRequestScope } from "../utils/request-scope.js";
 
 export interface CoordinationOptions {
   maxParallelAgents?: number;
+  /** Total coordination deadline; 0 (default) disables the local timer. */
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface CoordinationResult {
@@ -142,71 +145,100 @@ export class AgentCoordinator {
   ): Promise<CoordinationResult> {
     const startTime = Date.now();
     const maxParallel = options?.maxParallelAgents ?? getMaxSafeAgents();
-    const resourceSem = createResourceAwareSemaphore({
-      maxConcurrency: maxParallel,
-      minConcurrency: 1,
-    });
+    if (!Number.isInteger(maxParallel) || maxParallel < 1) {
+      throw new RangeError("maxParallelAgents must be a positive integer");
+    }
+    const scope = createRequestScope(options?.signal, options?.timeoutMs ?? 0);
+    try {
+      const resourceSem = createResourceAwareSemaphore({
+        maxConcurrency: maxParallel,
+        minConcurrency: 1,
+      });
 
-    // Build dependency graph
-    const graph = this.buildDependencyGraph(tasks);
+      // Build dependency graph
+      const graph = this.buildDependencyGraph(tasks);
 
-    // Topological sort to get execution levels
-    const levels = this.topologicalSort(tasks, graph);
+      // Topological sort to get execution levels
+      const levels = this.topologicalSort(tasks, graph);
 
-    const results = new Map<string, AgentResult>();
-    let totalAgentsExecuted = 0;
+      const results = new Map<string, AgentResult>();
+      let totalAgentsExecuted = 0;
 
-    // Execute level by level (parallel within level, sequential across levels)
-    for (let levelIdx = 0; levelIdx < levels.length; levelIdx++) {
-      const level = levels[levelIdx];
+      // Execute level by level (parallel within level, sequential across levels)
+      for (let levelIdx = 0; levelIdx < levels.length; levelIdx++) {
+        const level = levels[levelIdx];
 
-      getLogger().debug(
-        `[Coordinator] Executing level ${levelIdx + 1}/${levels.length} with ${level?.length || 0} agents`,
-      );
-
-      // Split level into batches based on max parallel
-      if (!level || level.length === 0) continue;
-      const batches = this.createBatches(level, maxParallel);
-
-      for (const batch of batches) {
-        // Execute batch in parallel, gated by resource-aware semaphore
-        const batchResults = await Promise.all(
-          batch.map((task) =>
-            resourceSem.withSemaphore(async () => {
-              // Build context from dependency results
-              const context = this.buildContext(task, results);
-
-              // Get agent definition for this task
-              const agentDef = this.getAgentForTask(task);
-
-              // Execute agent
-              const result = await this.executor.execute(agentDef, {
-                ...task,
-                context,
-              });
-
-              totalAgentsExecuted++;
-
-              return { taskId: task.id, result };
-            }),
-          ),
+        getLogger().debug(
+          `[Coordinator] Executing level ${levelIdx + 1}/${levels.length} with ${level?.length || 0} agents`,
         );
 
-        // Store results
-        for (const { taskId, result } of batchResults) {
-          results.set(taskId, result);
+        // Split level into batches based on max parallel
+        if (!level || level.length === 0) continue;
+        const batches = this.createBatches(level, maxParallel);
+
+        for (const batch of batches) {
+          scope.signal.throwIfAborted();
+          let firstFailure: { error: unknown } | undefined;
+          // Execute batch in parallel, gated by resource-aware semaphore
+          const batchResults = await Promise.allSettled(
+            batch.map((task) =>
+              resourceSem.withSemaphore(async () => {
+                try {
+                  scope.signal.throwIfAborted();
+                  // Build context from dependency results
+                  const context = this.buildContext(task, results);
+
+                  // Get agent definition for this task
+                  const agentDef = this.getAgentForTask(task);
+
+                  // Execute agent
+                  const result = await this.executor.execute(
+                    agentDef,
+                    {
+                      ...task,
+                      context,
+                    },
+                    { signal: scope.signal },
+                  );
+                  scope.signal.throwIfAborted();
+
+                  totalAgentsExecuted++;
+
+                  return { taskId: task.id, result };
+                } catch (error) {
+                  firstFailure ??= { error };
+                  // Abort siblings but retain ownership until every batch member settles.
+                  scope.dispose();
+                  throw error;
+                }
+              }),
+            ),
+          );
+
+          if (firstFailure) throw firstFailure.error;
+          const rejected = batchResults.find((outcome) => outcome.status === "rejected");
+          if (rejected?.status === "rejected") throw rejected.reason;
+          scope.signal.throwIfAborted();
+          // Store only a fully settled successful batch.
+          for (const outcome of batchResults) {
+            if (outcome.status === "fulfilled")
+              results.set(outcome.value.taskId, outcome.value.result);
+          }
         }
       }
+
+      scope.signal.throwIfAborted();
+      const parallelismAchieved = levels.length > 0 ? totalAgentsExecuted / levels.length : 0;
+
+      return {
+        results,
+        totalDuration: Date.now() - startTime,
+        levelsExecuted: levels.length,
+        parallelismAchieved,
+      };
+    } finally {
+      scope.dispose();
     }
-
-    const parallelismAchieved = levels.length > 0 ? totalAgentsExecuted / levels.length : 0;
-
-    return {
-      results,
-      totalDuration: Date.now() - startTime,
-      levelsExecuted: levels.length,
-      parallelismAchieved,
-    };
   }
 
   /**

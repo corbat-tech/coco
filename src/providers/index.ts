@@ -1,3 +1,6 @@
+import { AzureOpenAIProvider } from "./azure.js";
+import { BedrockProvider } from "./bedrock.js";
+import { resolveModelMigration } from "./model-lifecycle.js";
 /**
  * Provider exports for Corbat-Coco
  */
@@ -122,24 +125,8 @@ function normalizeOptional(value: string | undefined): string | undefined {
 /**
  * Supported provider types
  */
-export type ProviderType =
-  | "anthropic"
-  | "openai"
-  | "codex"
-  | "copilot"
-  | "gemini"
-  | "vertex"
-  | "kimi"
-  | "kimi-code"
-  | "lmstudio"
-  | "ollama"
-  | "groq"
-  | "openrouter"
-  | "mistral"
-  | "deepseek"
-  | "together"
-  | "huggingface"
-  | "qwen";
+export type { ProviderType } from "./provider-types.js";
+import type { ProviderType } from "./provider-types.js";
 
 /**
  * Create a provider by type
@@ -152,9 +139,19 @@ export async function createProvider(
 
   // Merge config with environment defaults
   const mergedConfig: ProviderConfig = {
-    apiKey: config.apiKey ?? getApiKey(type),
+    apiKey:
+      ["bedrock", "azure-openai"].includes(type) &&
+      (config.cloudAuth ??
+        process.env[type === "bedrock" ? "AWS_BEDROCK_AUTH_MODE" : "AZURE_OPENAI_AUTH_MODE"]) ===
+        "identity"
+        ? ""
+        : (config.apiKey ?? getApiKey(type)),
+    cloudAuth: config.cloudAuth,
     baseUrl: config.baseUrl ?? getBaseUrl(type),
     model: normalizeProviderModel(config.model) ?? getDefaultModel(type),
+    deployment: config.deployment ?? process.env["AZURE_OPENAI_DEPLOYMENT"],
+    region: config.region ?? process.env["AWS_REGION"] ?? process.env["AWS_DEFAULT_REGION"],
+    awsProfile: config.awsProfile ?? process.env["AWS_PROFILE"],
     maxTokens: config.maxTokens,
     temperature: config.temperature,
     timeout: config.timeout,
@@ -174,7 +171,25 @@ export async function createProvider(
         : undefined),
   };
 
+  const migration = resolveModelMigration(type, mergedConfig.model!);
+  mergedConfig.model = migration.model;
+  if (migration.warning) console.warn(migration.warning);
+
   switch (type) {
+    case "xai":
+    case "minimax":
+    case "cerebras":
+      provider = new OpenAIProvider(
+        type,
+        { xai: "xAI Grok", minimax: "MiniMax", cerebras: "Cerebras" }[type],
+      );
+      break;
+    case "azure-openai":
+      provider = new AzureOpenAIProvider();
+      break;
+    case "bedrock":
+      provider = new BedrockProvider();
+      break;
     case "anthropic":
       provider = new AnthropicProvider();
       break;
@@ -249,7 +264,7 @@ export async function createProvider(
 
     case "huggingface":
       provider = new OpenAIProvider("huggingface", "HuggingFace Inference");
-      mergedConfig.baseUrl = mergedConfig.baseUrl ?? "https://api-inference.huggingface.co/v1";
+      mergedConfig.baseUrl = mergedConfig.baseUrl ?? "https://router.huggingface.co/v1";
       break;
 
     case "qwen":
@@ -293,6 +308,16 @@ export function listProviders(): Array<{
   configured: boolean;
 }> {
   return [
+    ...(["xai", "minimax", "cerebras", "azure-openai", "bedrock"] as const).map((id) => ({
+      id,
+      name: id,
+      configured:
+        id === "bedrock"
+          ? !!(process.env["AWS_PROFILE"] || process.env["AWS_ACCESS_KEY_ID"] || getApiKey(id))
+          : id === "azure-openai"
+            ? !!getBaseUrl(id)
+            : !!getApiKey(id),
+    })),
     { id: "anthropic", name: "Anthropic Claude", configured: !!getApiKey("anthropic") },
     { id: "openai", name: "OpenAI (API Key)", configured: !!getApiKey("openai") },
     {
@@ -335,3 +360,7 @@ export function listProviders(): Array<{
     { id: "ollama", name: "Ollama (Local)", configured: true },
   ];
 }
+
+export { AzureOpenAIProvider } from "./azure.js";
+export { BedrockProvider } from "./bedrock.js";
+export { resolveModelMigration, MODEL_RETIREMENTS } from "./model-lifecycle.js";

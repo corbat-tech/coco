@@ -9,6 +9,7 @@
  * - HALF-OPEN: Testing if provider has recovered
  */
 
+import { rethrowCancellation } from "../utils/cancellation.js";
 import { ProviderError } from "../utils/errors.js";
 
 /**
@@ -150,7 +151,8 @@ export class CircuitBreaker {
    * @throws CircuitOpenError if circuit is open
    * @throws Original error if function fails
    */
-  async execute<T>(fn: () => Promise<T>): Promise<T> {
+  async execute<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    signal?.throwIfAborted();
     this.checkStateTransition();
 
     if (this.state === "open") {
@@ -161,9 +163,11 @@ export class CircuitBreaker {
 
     try {
       const result = await fn();
+      signal?.throwIfAborted();
       this.recordSuccess();
       return result;
     } catch (error) {
+      rethrowCancellation(error, signal);
       this.recordFailure();
       throw error;
     }

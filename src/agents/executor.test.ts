@@ -157,7 +157,11 @@ describe("AgentExecutor", () => {
       expect(result.output).toBe("I have read the file and completed the task.");
       expect(result.tokensUsed).toBe(300);
       expect(mockProvider.chatWithTools).toHaveBeenCalledTimes(2);
-      expect(mockToolRegistry.execute).toHaveBeenCalledWith("read_file", { path: "/src/main.ts" });
+      expect(mockToolRegistry.execute).toHaveBeenCalledWith(
+        "read_file",
+        { path: "/src/main.ts" },
+        { signal: undefined, context: { executeDelegatedTool: expect.any(Function) } },
+      );
     });
 
     it("should return failure when max turns is reached", async () => {
@@ -184,7 +188,7 @@ describe("AgentExecutor", () => {
       expect(mockProvider.chatWithTools).toHaveBeenCalledTimes(2);
     });
 
-    it("should continue the loop with is_error tool_result when tool execution throws", async () => {
+    it("should report a read-only denial to an unbound agent without executing the tool", async () => {
       // Turn 1: LLM requests a tool call
       vi.mocked(mockProvider.chatWithTools).mockResolvedValueOnce(
         makeChatResponse({
@@ -225,7 +229,7 @@ describe("AgentExecutor", () => {
       expect(toolResults[0].type).toBe("tool_result");
       expect(toolResults[0].tool_use_id).toBe("call-err");
       expect(toolResults[0].is_error).toBe(true);
-      expect(toolResults[0].content).toContain("should be confirmed");
+      expect(toolResults[0].content).toContain("Ask mode is read-only");
       expect(mockToolRegistry.execute).not.toHaveBeenCalled();
     });
 

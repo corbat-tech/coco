@@ -72,6 +72,10 @@ const ANTHROPIC_TIERS: Array<{ prefix: string; tier: ModelTier }> = [
 
 /** OpenAI / Codex / Copilot model tier table */
 const OPENAI_TIERS: Array<{ prefix: string; tier: ModelTier }> = [
+  { prefix: "gpt-6-luna", tier: "mini" },
+  { prefix: "gpt-5.6-luna", tier: "mini" },
+  { prefix: "gpt-5.6-terra", tier: "standard" },
+  { prefix: "gpt-6", tier: "advanced" },
   // Mini models
   { prefix: "gpt-4o-mini", tier: "mini" },
   { prefix: "gpt-5-mini", tier: "mini" },
@@ -166,7 +170,7 @@ export function getModelTier(provider: string, model: string): ModelTier {
     return matchTier(model, KIMI_TIERS) ?? matchTier(model, ANTHROPIC_TIERS) ?? "standard";
   }
 
-  if (p === "openai" || p === "copilot" || p === "codex") {
+  if (p === "openai" || p === "azure-openai" || p === "copilot" || p === "codex") {
     // Copilot uses dot-notation model names (claude-sonnet-4.6) — map to Anthropic tier
     if (model.startsWith("claude-")) {
       return matchTier(model, ANTHROPIC_TIERS) ?? "standard";

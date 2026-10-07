@@ -27,7 +27,8 @@ describe("ParallelToolExecutor.executeSingleTool — unexpected error handling",
       toolCall,
       1,
       1,
-      registry,
+      (call: { name: string; input: Record<string, unknown> }, signal?: AbortSignal) =>
+        registry.execute(call.name, call.input, { signal }),
       undefined,
       undefined,
       undefined,
@@ -56,7 +57,8 @@ describe("ParallelToolExecutor.executeSingleTool — unexpected error handling",
       toolCall,
       1,
       1,
-      registry,
+      (call: { name: string; input: Record<string, unknown> }, signal?: AbortSignal) =>
+        registry.execute(call.name, call.input, { signal }),
       undefined,
       undefined,
       undefined,
@@ -84,7 +86,9 @@ describe("ParallelToolExecutor.executeParallel — flow never breaks on tool err
     ];
 
     // Should NOT throw
-    const result = await executor.executeParallel(toolCalls, registry);
+    const result = await executor.executeParallel(toolCalls, (call, signal) =>
+      registry.execute(call.name, call.input, { signal }),
+    );
 
     // Both tools produce error results (or are skipped) — flow continues
     expect(result.aborted).toBe(false);

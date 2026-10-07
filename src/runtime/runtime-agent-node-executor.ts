@@ -104,6 +104,7 @@ export class RuntimeAgentNodeExecutor {
     }
 
     const input: AgentRunnerExecutionInput = {
+      signal: execution.signal,
       task: {
         ...execution.task,
         context: {

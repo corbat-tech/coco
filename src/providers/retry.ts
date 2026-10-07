@@ -2,6 +2,7 @@
  * Retry utility with exponential backoff for Corbat-Coco providers
  */
 
+import { isCancellation } from "../utils/cancellation.js";
 import { ProviderError } from "../utils/errors.js";
 
 /**
@@ -31,11 +32,36 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   jitterFactor: 0.1,
 };
 
+/** Resolve the host's per-call budget without changing a provider's defaults. */
+export function resolveRetryConfig(
+  config: RetryConfig,
+  maxRetries = config.maxRetries,
+): RetryConfig {
+  if (!Number.isSafeInteger(maxRetries) || maxRetries < 0) {
+    throw new RangeError("maxRetries must be a non-negative safe integer");
+  }
+  return { ...config, maxRetries };
+}
+
 /**
  * Sleep for a given number of milliseconds
  */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export function waitForRetry(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
 }
 
 /**
@@ -52,6 +78,7 @@ function calculateDelay(baseDelay: number, jitterFactor: number, maxDelay: numbe
  * Check if an error is retryable
  */
 export function isRetryableError(error: unknown): boolean {
+  if (isCancellation(error)) return false;
   // Check ProviderError recoverable flag
   if (error instanceof ProviderError) {
     return error.recoverable;
@@ -96,15 +123,20 @@ export function isRetryableError(error: unknown): boolean {
 export async function withRetry<T>(
   fn: () => Promise<T>,
   config: Partial<RetryConfig> = {},
+  signal?: AbortSignal,
 ): Promise<T> {
-  const fullConfig: RetryConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
+  const fullConfig = resolveRetryConfig({ ...DEFAULT_RETRY_CONFIG, ...config });
   let lastError: unknown;
   let delay = fullConfig.initialDelayMs;
 
   for (let attempt = 0; attempt <= fullConfig.maxRetries; attempt++) {
+    signal?.throwIfAborted();
     try {
-      return await fn();
+      const result = await fn();
+      signal?.throwIfAborted();
+      return result;
     } catch (error) {
+      signal?.throwIfAborted();
       lastError = error;
 
       // Check if we should retry
@@ -116,7 +148,7 @@ export async function withRetry<T>(
       const actualDelay = calculateDelay(delay, fullConfig.jitterFactor, fullConfig.maxDelayMs);
 
       // Wait before retry
-      await sleep(actualDelay);
+      await waitForRetry(actualDelay, signal);
 
       // Increase delay for next attempt
       delay = Math.min(delay * fullConfig.backoffMultiplier, fullConfig.maxDelayMs);

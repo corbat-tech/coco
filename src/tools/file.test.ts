@@ -2,7 +2,7 @@
  * Tests for file tools
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 const mockHandle = {
   read: vi.fn().mockResolvedValue({ bytesRead: 100, buffer: Buffer.from("truncated content") }),
@@ -36,6 +36,10 @@ vi.mock("glob", () => ({
   glob: vi.fn().mockResolvedValue([]),
 }));
 
+// The mocked filesystem has one project root; it grants no external paths.
+const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/test");
+afterAll(() => cwdSpy.mockRestore());
+
 describe("readFileTool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -67,7 +71,7 @@ describe("readFileTool", () => {
 
     const { readFileTool } = await import("./file.js");
 
-    await expect(readFileTool.execute({ path: "/missing/file.txt" })).rejects.toThrow();
+    await expect(readFileTool.execute({ path: "/test/missing/file.txt" })).rejects.toThrow();
   });
 
   it("should validate parameters", async () => {
@@ -165,7 +169,7 @@ describe("writeFileTool", () => {
     const { writeFileTool } = await import("./file.js");
 
     await writeFileTool.execute({
-      path: "/deep/nested/path/file.txt",
+      path: "/test/deep/nested/path/file.txt",
       content: "content",
       createDirs: true,
     });
@@ -428,10 +432,10 @@ describe("globTool", () => {
 
     await globTool.execute({
       pattern: "*.ts",
-      cwd: "/project/src",
+      cwd: "/test/src",
     });
 
-    expect(glob).toHaveBeenCalledWith("*.ts", expect.objectContaining({ cwd: "/project/src" }));
+    expect(glob).toHaveBeenCalledWith("*.ts", expect.objectContaining({ cwd: "/test/src" }));
   });
 
   it("should handle no matches", async () => {
@@ -506,18 +510,18 @@ describe("fileExistsTool", () => {
 
     const { fileExistsTool } = await import("./file.js");
 
-    const result = await fileExistsTool.execute({ path: "/existing/file.txt" });
+    const result = await fileExistsTool.execute({ path: "/test/existing/file.txt" });
 
     expect(result.exists).toBe(true);
     expect(result.isFile).toBe(true);
   });
 
   it("should return false for non-existing file", async () => {
-    mockFs.stat.mockRejectedValueOnce(new Error("ENOENT"));
+    mockFs.stat.mockRejectedValueOnce(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
 
     const { fileExistsTool } = await import("./file.js");
 
-    const result = await fileExistsTool.execute({ path: "/missing/file.txt" });
+    const result = await fileExistsTool.execute({ path: "/test/missing/file.txt" });
 
     expect(result.exists).toBe(false);
   });
@@ -531,7 +535,7 @@ describe("fileExistsTool", () => {
 
     const { fileExistsTool } = await import("./file.js");
 
-    const result = await fileExistsTool.execute({ path: "/existing/directory" });
+    const result = await fileExistsTool.execute({ path: "/test/existing/directory" });
 
     expect(result.exists).toBe(true);
     expect(result.isFile).toBe(false);
@@ -561,7 +565,7 @@ describe("listDirTool", () => {
 
     const { listDirTool } = await import("./file.js");
 
-    const result = await listDirTool.execute({ path: "/project" });
+    const result = await listDirTool.execute({ path: "/test/project" });
 
     expect(result.entries).toHaveLength(3);
   });
@@ -575,7 +579,7 @@ describe("listDirTool", () => {
 
     const { listDirTool } = await import("./file.js");
 
-    const result = await listDirTool.execute({ path: "/project" });
+    const result = await listDirTool.execute({ path: "/test/project" });
 
     expect(result.entries[0].type).toBe("file");
     expect(result.entries[1].type).toBe("directory");
@@ -594,7 +598,7 @@ describe("listDirTool", () => {
 
     const { listDirTool } = await import("./file.js");
 
-    const result = await listDirTool.execute({ path: "/project", recursive: true });
+    const result = await listDirTool.execute({ path: "/test/project", recursive: true });
 
     expect(result.entries).toHaveLength(3);
     expect(result.entries.some((e) => e.name === "subdir")).toBe(true);
@@ -607,7 +611,7 @@ describe("listDirTool", () => {
 
     const { listDirTool } = await import("./file.js");
 
-    await expect(listDirTool.execute({ path: "/forbidden" })).rejects.toThrow(
+    await expect(listDirTool.execute({ path: "/test/forbidden" })).rejects.toThrow(
       /Failed to list directory/,
     );
   });
@@ -629,7 +633,7 @@ describe("listDirTool", () => {
 
     const { listDirTool } = await import("./file.js");
 
-    const result = await listDirTool.execute({ path: "/project" });
+    const result = await listDirTool.execute({ path: "/test/project" });
 
     // Socket should be skipped
     expect(result.entries).toHaveLength(2);
@@ -649,7 +653,7 @@ describe("deleteFileTool", () => {
   it("should require confirmation", async () => {
     const { deleteFileTool } = await import("./file.js");
 
-    await expect(deleteFileTool.execute({ path: "/file/to/delete.txt" })).rejects.toThrow(
+    await expect(deleteFileTool.execute({ path: "/test/file/to/delete.txt" })).rejects.toThrow(
       "Deletion requires explicit confirmation",
     );
   });
@@ -657,7 +661,10 @@ describe("deleteFileTool", () => {
   it("should delete file with confirmation", async () => {
     const { deleteFileTool } = await import("./file.js");
 
-    const result = await deleteFileTool.execute({ path: "/file/to/delete.txt", confirm: true });
+    const result = await deleteFileTool.execute({
+      path: "/test/file/to/delete.txt",
+      confirm: true,
+    });
 
     expect(result.deleted).toBe(true);
     expect(mockFs.unlink).toHaveBeenCalled();
@@ -670,7 +677,7 @@ describe("deleteFileTool", () => {
 
     const { deleteFileTool } = await import("./file.js");
 
-    const result = await deleteFileTool.execute({ path: "/missing.txt", confirm: true });
+    const result = await deleteFileTool.execute({ path: "/test/missing.txt", confirm: true });
 
     expect(result.deleted).toBe(false);
   });
@@ -684,7 +691,7 @@ describe("deleteFileTool", () => {
     const { deleteFileTool } = await import("./file.js");
 
     const result = await deleteFileTool.execute({
-      path: "/dir/to/delete",
+      path: "/test/dir/to/delete",
       recursive: true,
       confirm: true,
     });
@@ -703,7 +710,7 @@ describe("deleteFileTool", () => {
 
     await expect(
       deleteFileTool.execute({
-        path: "/dir/to/delete",
+        path: "/test/dir/to/delete",
         recursive: false,
         confirm: true,
       }),
@@ -722,7 +729,7 @@ describe("deleteFileTool", () => {
 
     await expect(
       deleteFileTool.execute({
-        path: "/dir/to/delete",
+        path: "/test/dir/to/delete",
         recursive: true,
         confirm: true,
       }),
@@ -788,7 +795,7 @@ describe("Security - Path validation", () => {
   it("should block paths with null bytes", async () => {
     const { readFileTool } = await import("./file.js");
 
-    await expect(readFileTool.execute({ path: "/project/file.txt\0.jpg" })).rejects.toThrow(
+    await expect(readFileTool.execute({ path: "/test/file.txt\0.jpg" })).rejects.toThrow(
       /invalid characters/i,
     );
   });
@@ -797,11 +804,11 @@ describe("Security - Path validation", () => {
     const { writeFileTool } = await import("./file.js");
 
     await expect(
-      writeFileTool.execute({ path: "/project/.env", content: "SECRET=value" }),
+      writeFileTool.execute({ path: "/test/.env", content: "SECRET=value" }),
     ).rejects.toThrow(/sensitive file.*confirmation/i);
 
     await expect(
-      writeFileTool.execute({ path: "/project/credentials.json", content: "{}" }),
+      writeFileTool.execute({ path: "/test/credentials.json", content: "{}" }),
     ).rejects.toThrow(/sensitive file.*confirmation/i);
   });
 
@@ -809,7 +816,7 @@ describe("Security - Path validation", () => {
     const { deleteFileTool } = await import("./file.js");
 
     await expect(
-      deleteFileTool.execute({ path: "/project/.env.local", confirm: true }),
+      deleteFileTool.execute({ path: "/test/.env.local", confirm: true }),
     ).rejects.toThrow(/sensitive file.*confirmation/i);
   });
 
@@ -817,7 +824,7 @@ describe("Security - Path validation", () => {
     const { readFileTool } = await import("./file.js");
 
     // These should resolve and be checked
-    await expect(readFileTool.execute({ path: "/project/../../../etc/passwd" })).rejects.toThrow(
+    await expect(readFileTool.execute({ path: "/test/../../../etc/passwd" })).rejects.toThrow(
       /system path.*not allowed/i,
     );
   });
@@ -835,7 +842,7 @@ describe("Security - Encoding validation", () => {
 
     // UTF-8 should work
     await expect(
-      readFileTool.execute({ path: "/project/file.txt", encoding: "utf-8" }),
+      readFileTool.execute({ path: "/test/file.txt", encoding: "utf-8" }),
     ).resolves.toBeDefined();
   });
 
@@ -844,7 +851,7 @@ describe("Security - Encoding validation", () => {
 
     // Mixed case should work
     await expect(
-      readFileTool.execute({ path: "/project/file.txt", encoding: "UTF-8" }),
+      readFileTool.execute({ path: "/test/file.txt", encoding: "UTF-8" }),
     ).resolves.toBeDefined();
   });
 });
@@ -861,7 +868,8 @@ describe("Security - Home directory access", () => {
   });
 
   afterEach(() => {
-    process.env.HOME = originalHome;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
   });
 
   it("should block reading non-allowed files outside project directory in home", async () => {
@@ -962,7 +970,7 @@ describe("Security - Additional sensitive patterns", () => {
     const { writeFileTool } = await import("./file.js");
 
     await expect(
-      writeFileTool.execute({ path: "/project/.env.production", content: "SECRET=x" }),
+      writeFileTool.execute({ path: "/test/.env.production", content: "SECRET=x" }),
     ).rejects.toThrow(/sensitive file/i);
   });
 
@@ -970,7 +978,7 @@ describe("Security - Additional sensitive patterns", () => {
     const { writeFileTool } = await import("./file.js");
 
     await expect(
-      writeFileTool.execute({ path: "/project/secret.yaml", content: "key: value" }),
+      writeFileTool.execute({ path: "/test/secret.yaml", content: "key: value" }),
     ).rejects.toThrow(/sensitive file/i);
   });
 
@@ -978,7 +986,7 @@ describe("Security - Additional sensitive patterns", () => {
     const { writeFileTool } = await import("./file.js");
 
     await expect(
-      writeFileTool.execute({ path: "/project/private.pem", content: "-----BEGIN" }),
+      writeFileTool.execute({ path: "/test/private.pem", content: "-----BEGIN" }),
     ).rejects.toThrow(/sensitive file/i);
   });
 
@@ -986,7 +994,7 @@ describe("Security - Additional sensitive patterns", () => {
     const { writeFileTool } = await import("./file.js");
 
     await expect(
-      writeFileTool.execute({ path: "/project/server.key", content: "-----BEGIN" }),
+      writeFileTool.execute({ path: "/test/server.key", content: "-----BEGIN" }),
     ).rejects.toThrow(/sensitive file/i);
   });
 
@@ -994,7 +1002,7 @@ describe("Security - Additional sensitive patterns", () => {
     const { writeFileTool } = await import("./file.js");
 
     await expect(
-      writeFileTool.execute({ path: "/project/id_rsa", content: "-----BEGIN" }),
+      writeFileTool.execute({ path: "/test/id_rsa", content: "-----BEGIN" }),
     ).rejects.toThrow(/sensitive file/i);
   });
 
@@ -1003,7 +1011,7 @@ describe("Security - Additional sensitive patterns", () => {
 
     await expect(
       writeFileTool.execute({
-        path: "/project/.npmrc",
+        path: "/test/.npmrc",
         content: "//registry.npmjs.org/:_authToken=xxx",
       }),
     ).rejects.toThrow(/sensitive file/i);
@@ -1013,7 +1021,7 @@ describe("Security - Additional sensitive patterns", () => {
     const { writeFileTool } = await import("./file.js");
 
     await expect(
-      writeFileTool.execute({ path: "/project/.pypirc", content: "[pypi]" }),
+      writeFileTool.execute({ path: "/test/.pypirc", content: "[pypi]" }),
     ).rejects.toThrow(/sensitive file/i);
   });
 
@@ -1170,6 +1178,7 @@ describe("Edge cases and error handling", () => {
     const result = await readFileTool.execute({ path: "./test.txt" });
     expect(result.content).toBeDefined();
 
-    process.env.HOME = originalHome;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
   });
 });

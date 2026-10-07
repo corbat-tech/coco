@@ -1,0 +1,127 @@
+import type { ProviderCatalogEntry } from "../catalog.js";
+
+export const kimiCatalog: ProviderCatalogEntry = {
+  id: "kimi",
+  defaultModel: "kimi-k3",
+  models: [
+    {
+      id: "kimi-k3",
+      name: "kimi-k3",
+      contextWindow: 1048576,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "vision", "openai-chat", "reasoning-effort"],
+      source: {
+        name: "kimi official documentation",
+        url: "https://platform.kimi.ai/docs/api/models-overview",
+        verifiedAt: "2026-10-07",
+      },
+      reasoning: {
+        kind: "effort",
+        levels: ["low", "high", "max"],
+        defaultMode: "max",
+        mandatory: true,
+      },
+      recommended: true,
+    },
+    {
+      id: "kimi-k2.7-code",
+      name: "kimi-k2.7-code",
+      contextWindow: 262144,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "vision", "openai-chat", "reasoning-effort"],
+      source: {
+        name: "kimi official documentation",
+        url: "https://platform.kimi.ai/docs/api/models-overview",
+        verifiedAt: "2026-10-07",
+      },
+      reasoning: {
+        kind: "effort",
+        levels: ["auto"],
+        defaultMode: "auto",
+        mandatory: true,
+      },
+    },
+    {
+      id: "kimi-k2.7-code-highspeed",
+      name: "kimi-k2.7-code-highspeed",
+      contextWindow: 262144,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "vision", "openai-chat", "reasoning-effort"],
+      source: {
+        name: "kimi official documentation",
+        url: "https://platform.kimi.ai/docs/api/models-overview",
+        verifiedAt: "2026-10-07",
+      },
+      reasoning: {
+        kind: "effort",
+        levels: ["auto"],
+        defaultMode: "auto",
+        mandatory: true,
+      },
+    },
+    {
+      id: "kimi-k2.6",
+      name: "kimi-k2.6",
+      contextWindow: 262144,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "vision", "openai-chat", "reasoning-effort"],
+      source: {
+        name: "kimi official documentation",
+        url: "https://platform.kimi.ai/docs/api/models-overview",
+        verifiedAt: "2026-10-07",
+      },
+      reasoning: {
+        kind: "effort",
+        levels: ["off", "auto"],
+        defaultMode: "auto",
+        mandatory: false,
+      },
+    },
+    {
+      id: "kimi-k2.5",
+      name: "Kimi K2.5",
+      description: "Moonshot model for coding and agentic work",
+      contextWindow: 262144,
+      maxOutputTokens: 32000,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "openai-chat"],
+      source: {
+        name: "Moonshot AI docs",
+        url: "https://platform.moonshot.ai/docs",
+        verifiedAt: "2026-06-18",
+      },
+    },
+    {
+      id: "kimi-k2-thinking",
+      name: "Kimi K2 Thinking",
+      description: "Reasoning variant",
+      contextWindow: 262144,
+      maxOutputTokens: 32000,
+      status: "current",
+      capabilities: ["streaming", "tool-use", "openai-chat"],
+      source: {
+        name: "Moonshot AI docs",
+        url: "https://platform.moonshot.ai/docs",
+        verifiedAt: "2026-06-18",
+      },
+    },
+    {
+      id: "moonshot-v1-128k",
+      name: "Moonshot v1 128K",
+      description: "Legacy long-context Moonshot model",
+      contextWindow: 131072,
+      maxOutputTokens: 8192,
+      status: "legacy",
+      capabilities: ["streaming", "tool-use", "openai-chat"],
+      pricing: {
+        inputPerMillion: 6,
+        outputPerMillion: 6,
+      },
+      source: {
+        name: "Moonshot AI docs",
+        url: "https://platform.moonshot.ai/docs",
+        verifiedAt: "2026-06-18",
+      },
+    },
+  ],
+};

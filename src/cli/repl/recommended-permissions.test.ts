@@ -188,6 +188,11 @@ describe("project preference helpers", () => {
 });
 
 describe("RECOMMENDED_GLOBAL and RECOMMENDED_PROJECT", () => {
+  it("never grants command-prefix authority to shell", () => {
+    expect(
+      [...RECOMMENDED_GLOBAL, ...RECOMMENDED_PROJECT].some((entry) => entry.startsWith("bash")),
+    ).toBe(false);
+  });
   it("should have tools in RECOMMENDED_GLOBAL", () => {
     expect(RECOMMENDED_GLOBAL.length).toBeGreaterThan(0);
     expect(RECOMMENDED_GLOBAL).toContain("read_file");

@@ -304,6 +304,26 @@ describe("CorrectnessAnalyzer", () => {
     });
   });
 
+  it.each([
+    { numPassedTests: 10, numFailedTests: -1, numPendingTests: 0 },
+    { numPassedTests: 10.5, numFailedTests: 0, numPendingTests: 0 },
+    { numPassedTests: "10", numFailedTests: 0, numPendingTests: 0 },
+    { numPassedTests: 10, numFailedTests: 0, numPendingTests: 0, numTotalTests: 11 },
+    { numPassedTests: 10, numFailedTests: 0, numPendingTests: 0, numTotalTests: -1 },
+  ])("never certifies malformed JSON reporter counts %j", async (report) => {
+    mockedDetectTestFramework.mockResolvedValue("jest");
+    mockedExeca.mockResolvedValue({
+      stdout: JSON.stringify(report),
+      stderr: "",
+      exitCode: 0,
+    } as never);
+    const analyzer = new CorrectnessAnalyzer("/fake/project");
+    getMockedBuildVerifier().verifyTypes.mockResolvedValue({ success: true, errors: [] });
+    const result = await analyzer.analyze();
+    expect(result.testsTotal).toBe(0);
+    expect(result.score).toBeLessThan(85);
+  });
+
   describe("edge cases", () => {
     it("should handle execa throwing an error gracefully", async () => {
       mockedDetectTestFramework.mockResolvedValue("vitest");
@@ -313,12 +333,7 @@ describe("CorrectnessAnalyzer", () => {
       const bv = getMockedBuildVerifier();
       bv.verifyTypes.mockResolvedValue({ success: true, errors: [] });
 
-      const result = await analyzer.analyze();
-
-      // execa error -> tests parse to all zeros -> total = 0 -> build passes
-      expect(result.score).toBe(30);
-      expect(result.testsTotal).toBe(0);
-      expect(result.buildSuccess).toBe(true);
+      await expect(analyzer.analyze()).rejects.toThrow("Correctness test execution failed");
     });
 
     it("should handle build verifier throwing an error gracefully", async () => {

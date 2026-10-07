@@ -35,11 +35,11 @@ describe("provider catalog", () => {
     }
   });
 
-  it("keeps deprecated models available without recommending them", () => {
+  it("removes retired models from the selectable catalog", () => {
     const sonnet4 = getCatalogModel("anthropic", "claude-sonnet-4-20250514");
 
-    expect(sonnet4?.status).toBe("deprecated");
-    expect(getCatalogRecommendedModel("anthropic").id).toBe("claude-sonnet-4-6");
+    expect(sonnet4).toBeUndefined();
+    expect(getCatalogRecommendedModel("anthropic").id).toBe("claude-sonnet-5-5");
   });
 
   it("resolves context windows from the catalog", () => {

@@ -31,6 +31,9 @@ export type CheckpointType = "file" | "conversation" | "combined";
  * tool (write, edit, delete) executes, allowing users to revert changes.
  */
 export interface FileCheckpoint {
+  /** Version 2 evidence: missing fields make legacy snapshots read-only. */
+  originalExists?: boolean;
+  newExists?: boolean;
   /**
    * Unique identifier for this file checkpoint.
    * Format: `file_<timestamp>_<random>`
@@ -203,6 +206,9 @@ export interface Checkpoint {
  * rewinding to a previous state.
  */
 export interface RewindOptions {
+  /** Host scope required for restoration; never inferred from checkpoint contents. */
+  sessionId?: string;
+  projectPath?: string;
   /**
    * ID of the checkpoint to rewind to.
    */

@@ -3,13 +3,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ToolRegistry, ToolResult } from "../../tools/registry.js";
+import type { ToolResult } from "../../tools/registry.js";
 import type { ToolCall } from "../../providers/types.js";
 // Mock the registry module
 const mockExecute = vi.fn();
-const mockRegistry = {
-  execute: mockExecute,
-} as unknown as ToolRegistry;
+const mockDispatch = (call: ToolCall, signal?: AbortSignal) =>
+  mockExecute(call.name, call.input, { signal });
 
 describe("ParallelToolExecutor", () => {
   beforeEach(() => {
@@ -32,7 +31,7 @@ describe("ParallelToolExecutor", () => {
         { id: "call-1", name: "test_tool", input: { param: "value" } },
       ];
 
-      const result = await executor.executeParallel(toolCalls, mockRegistry);
+      const result = await executor.executeParallel(toolCalls, mockDispatch);
 
       expect(result.executed.length).toBe(1);
       expect(result.skipped.length).toBe(0);
@@ -66,7 +65,7 @@ describe("ParallelToolExecutor", () => {
         { id: "call-3", name: "tool_c", input: {} },
       ];
 
-      const result = await executor.executeParallel(toolCalls, mockRegistry, {
+      const result = await executor.executeParallel(toolCalls, mockDispatch, {
         maxConcurrency: 5,
       });
 
@@ -105,7 +104,7 @@ describe("ParallelToolExecutor", () => {
         { id: "call-5", name: "tool_5", input: {} },
       ];
 
-      await executor.executeParallel(toolCalls, mockRegistry, {
+      await executor.executeParallel(toolCalls, mockDispatch, {
         maxConcurrency: 2,
       });
 
@@ -137,7 +136,7 @@ describe("ParallelToolExecutor", () => {
         { id: "call-3", name: "another_working_tool", input: {} },
       ];
 
-      const result = await executor.executeParallel(toolCalls, mockRegistry);
+      const result = await executor.executeParallel(toolCalls, mockDispatch);
 
       expect(result.executed.length).toBe(3);
       expect(result.executed[0].result.success).toBe(true);
@@ -169,7 +168,7 @@ describe("ParallelToolExecutor", () => {
       // Abort after starting
       setTimeout(() => controller.abort(), 10);
 
-      const result = await executor.executeParallel(toolCalls, mockRegistry, {
+      const result = await executor.executeParallel(toolCalls, mockDispatch, {
         signal: controller.signal,
         maxConcurrency: 1, // Serial execution to test abort between tasks
       });
@@ -196,7 +195,7 @@ describe("ParallelToolExecutor", () => {
         { id: "call-2", name: "tool_b", input: {} },
       ];
 
-      await executor.executeParallel(toolCalls, mockRegistry, {
+      await executor.executeParallel(toolCalls, mockDispatch, {
         onToolStart,
         onToolEnd,
       });
@@ -251,7 +250,7 @@ describe("ParallelToolExecutor", () => {
         { id: "call-3", name: "tool_c", input: {} },
       ];
 
-      const result = await executor.executeParallel(toolCalls, mockRegistry, {
+      const result = await executor.executeParallel(toolCalls, mockDispatch, {
         maxConcurrency: 5,
       });
 
@@ -269,7 +268,7 @@ describe("ParallelToolExecutor", () => {
       const { ParallelToolExecutor } = await import("./parallel-executor.js");
 
       const executor = new ParallelToolExecutor();
-      const result = await executor.executeParallel([], mockRegistry);
+      const result = await executor.executeParallel([], mockDispatch);
 
       expect(result.executed.length).toBe(0);
       expect(result.skipped.length).toBe(0);
@@ -289,7 +288,7 @@ describe("ParallelToolExecutor", () => {
         { id: "call-2", name: "tool_b", input: {} },
       ];
 
-      const result = await executor.executeParallel(toolCalls, mockRegistry, {
+      const result = await executor.executeParallel(toolCalls, mockDispatch, {
         signal: controller.signal,
         onToolSkipped,
       });
@@ -315,7 +314,7 @@ describe("ParallelToolExecutor", () => {
       const executor = new ParallelToolExecutor();
       const toolCalls: ToolCall[] = [{ id: "call-1", name: "tool_a", input: {} }];
 
-      const result = await executor.executeParallel(toolCalls, mockRegistry);
+      const result = await executor.executeParallel(toolCalls, mockDispatch);
 
       expect(result.executed[0].duration).toBeGreaterThan(0);
     });
@@ -357,7 +356,7 @@ describe("ParallelToolExecutor hooks integration", () => {
       { id: "call-1", name: "test_tool", input: { param: "value" } },
     ];
 
-    const result = await executor.executeParallel(toolCalls, mockRegistry, {
+    const result = await executor.executeParallel(toolCalls, mockDispatch, {
       hookRegistry,
       hookExecutor,
       sessionId: "test-session",
@@ -390,7 +389,7 @@ describe("ParallelToolExecutor hooks integration", () => {
       { id: "call-1", name: "dangerous_tool", input: {} },
     ];
 
-    const result = await executor.executeParallel(toolCalls, mockRegistry, {
+    const result = await executor.executeParallel(toolCalls, mockDispatch, {
       hookRegistry,
       hookExecutor,
       onToolSkipped,
@@ -435,7 +434,7 @@ describe("ParallelToolExecutor hooks integration", () => {
       { id: "call-1", name: "read_file", input: { path: "/original/path.ts" } },
     ];
 
-    const result = await executor.executeParallel(toolCalls, mockRegistry, {
+    const result = await executor.executeParallel(toolCalls, mockDispatch, {
       hookRegistry,
       hookExecutor,
     });
@@ -464,7 +463,7 @@ describe("ParallelToolExecutor hooks integration", () => {
     ];
 
     // No hookRegistry / hookExecutor provided
-    const result = await executor.executeParallel(toolCalls, mockRegistry);
+    const result = await executor.executeParallel(toolCalls, mockDispatch);
 
     expect(result.executed).toHaveLength(1);
     expect(mockExecute).toHaveBeenCalledOnce();
@@ -489,7 +488,7 @@ describe("ParallelToolExecutor hooks integration", () => {
     const executor = new ParallelToolExecutor();
     const result = await executor.executeParallel(
       [{ id: "call-1", name: "test_tool", input: {} }],
-      mockRegistry,
+      mockDispatch,
       {
         hookRegistry,
         hookExecutor,
@@ -522,7 +521,7 @@ describe("ParallelToolExecutor hooks integration", () => {
     const executor = new ParallelToolExecutor();
     const result = await executor.executeParallel(
       [{ id: "call-1", name: "test_tool", input: {} }],
-      mockRegistry,
+      mockDispatch,
       {
         hookRegistry,
         hookExecutor,
@@ -547,7 +546,7 @@ describe("ParallelToolExecutor hooks integration", () => {
     const executor = new ParallelToolExecutor();
     const result = await executor.executeParallel(
       [{ id: "call-1", name: "unstable_tool", input: {} }],
-      mockRegistry,
+      mockDispatch,
       {
         hookRegistry,
         hookExecutor,

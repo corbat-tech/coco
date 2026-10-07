@@ -76,6 +76,30 @@ describe("clearCommand", () => {
   });
 
   describe("execute", () => {
+    it("waits for background cleanup before clearing conversation", async () => {
+      const { clearSession } = await import("../session.js");
+      vi.mocked(clearSession).mockClear();
+      let finish!: () => void;
+      const closeSession = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const enableBackgroundJobs = vi.fn();
+      mockSession.runtime = {
+        closeSession,
+        enableBackgroundJobs,
+      } as unknown as ReplSession["runtime"];
+      const pending = clearCommand.execute([], mockSession);
+      expect(clearSession).not.toHaveBeenCalled();
+      finish();
+      await pending;
+      expect(closeSession).toHaveBeenCalledWith(mockSession.id);
+      expect(enableBackgroundJobs).toHaveBeenCalledWith(mockSession.id, mockSession.projectPath);
+      expect(clearSession).toHaveBeenCalledWith(mockSession);
+    });
+
     it("should call clearSession", async () => {
       const { clearSession } = await import("../session.js");
 

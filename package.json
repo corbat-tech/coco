@@ -1,7 +1,7 @@
 {
   "name": "@corbat-tech/coco",
-  "version": "2.41.0",
-  "description": "Autonomous Coding Agent with Self-Review, Quality Convergence, and Production-Ready Output",
+  "version": "2.42.0-rc.3",
+  "description": "CLI coding agent and reusable runtime with tools, permissions, and review workflows",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -36,7 +36,8 @@
     "test": "NODE_OPTIONS='--max-old-space-size=4096' vitest run",
     "test:watch": "NODE_OPTIONS='--max-old-space-size=4096' vitest",
     "test:coverage": "NODE_OPTIONS='--max-old-space-size=4096' vitest run --coverage",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e": "NODE_OPTIONS='--max-old-space-size=4096' vitest run test/e2e",
+    "test:repl": "NODE_OPTIONS='--max-old-space-size=4096' vitest run --config vitest.repl.config.ts",
     "check:release": "node scripts/release-gate.mjs",
     "benchmark": "tsx test/benchmarks/quality-benchmark.ts",
     "docs": "typedoc",
@@ -65,11 +66,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/corbat/corbat-coco.git"
+    "url": "https://github.com/corbat-tech/coco.git"
   },
-  "homepage": "https://github.com/corbat/corbat-coco#readme",
+  "homepage": "https://github.com/corbat-tech/coco#readme",
   "bugs": {
-    "url": "https://github.com/corbat/corbat-coco/issues"
+    "url": "https://github.com/corbat-tech/coco/issues"
   },
   "author": "Corbat",
   "license": "MIT",
@@ -79,21 +80,31 @@
   "packageManager": "pnpm@10.0.0",
   "pnpm": {
     "overrides": {
-      "brace-expansion": "^5.0.6",
+      "brace-expansion": "^5.0.12",
       "esbuild": "^0.28.1",
-      "markdown-it": "^14.2.0",
+      "markdown-it": "^14.3.1",
       "picomatch": "^4.0.4",
       "protobufjs": "^7.6.3",
       "vite": "^8.0.16",
-      "ws": "^8.21.0"
+      "ws": "^8.21.0",
+      "linkify-it": "^5.0.2",
+      "postcss": "^8.5.23",
+      "nanoid@<3.3.18": "^3.3.18",
+      "source-map-js": "^1.2.2",
+      "tinypool": "^2.1.2"
     }
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.115.0",
+    "@anthropic-ai/sdk": "^0.132.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1147.0",
+    "@aws-sdk/credential-providers": "^3.1147.0",
+    "@azure/identity": "^4.13.3",
     "@clack/prompts": "^1.1.0",
-    "@google/genai": "^1.49.0",
+    "@google/genai": "2.27.0",
     "@typescript-eslint/parser": "^8.56.1",
     "@typescript-eslint/typescript-estree": "^8.56.1",
+    "ajv": "^8",
+    "ajv-formats": "^3",
     "ansi-escapes": "^7.3.0",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
@@ -106,19 +117,20 @@
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
     "minimatch": "^10.2.4",
-    "openai": "^6.27.0",
+    "openai": "^7.30.0",
     "ora": "^9.3.0",
-    "simple-git": "^3.32.3",
+    "simple-git": "^4.0.2",
     "string-width": "^8.2.0",
     "tslog": "^4.10.2",
-    "undici": "^7.28.0",
+    "undici": "^7.30.0",
+    "wrap-ansi": "10.0.1",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/marked-terminal": "^6.1.1",
     "@types/node": "^25.3.5",
-    "@vitest/coverage-v8": "^4.1.3",
+    "@vitest/coverage-v8": "^4.1.11",
     "oxfmt": "^0.61.0",
     "oxlint": "^1.51.0",
     "tsup": "^8.5.1",
@@ -126,6 +138,6 @@
     "typedoc": "^0.28.18",
     "typescript": "^6.0.3",
     "vite": "^8.0.7",
-    "vitest": "^4.1.3"
+    "vitest": "^4.1.11"
   }
 }

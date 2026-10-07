@@ -33,6 +33,8 @@ vi.mock("node:fs/promises", () => ({
   default: {
     mkdir: vi.fn().mockResolvedValue(undefined),
     writeFile: vi.fn().mockResolvedValue(undefined),
+    rename: vi.fn().mockResolvedValue(undefined),
+    rm: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -326,4 +328,128 @@ describe("runSpecInterview — cancellation", () => {
     expect(exitSpy).not.toHaveBeenCalled();
     exitSpy.mockRestore();
   });
+});
+
+describe("runSpecInterview — host cancellation", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const clack = await import("@clack/prompts");
+    vi.mocked(clack.isCancel).mockReturnValue(false);
+    vi.mocked(clack.text).mockResolvedValue("scope");
+    vi.mocked(clack.confirm).mockResolvedValue(true);
+  });
+
+  it("rejects before any interaction for a pre-aborted host", async () => {
+    const controller = new AbortController();
+    const reason = new Error("host stopped");
+    controller.abort(reason);
+    const provider = makeMockProvider([]);
+    await expect(
+      runSpecInterview("app", provider, "/tmp/out", { signal: controller.signal }),
+    ).rejects.toBe(reason);
+    expect(provider.chat).not.toHaveBeenCalled();
+  });
+
+  it("passes a cancellable signal to the provider and rejects its late success without prompts or writes", async () => {
+    const controller = new AbortController();
+    const reason = new Error("host stopped");
+    const provider = makeMockProvider([]);
+    vi.mocked(provider.chat).mockImplementationOnce(async (_messages, options) => {
+      expect(options?.signal?.aborted).toBe(false);
+      controller.abort(reason);
+      expect(options?.signal?.aborted).toBe(true);
+      return { content: '{"questions":[]}' } as ChatResponse;
+    });
+    await expect(
+      runSpecInterview("app", provider, "/tmp/out", { signal: controller.signal }),
+    ).rejects.toBe(reason);
+    const clack = await import("@clack/prompts");
+    const fs = await import("node:fs/promises");
+    expect(clack.text).not.toHaveBeenCalled();
+    expect(fs.default.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("cancels a waiting prompt and never starts plan generation", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("host stopped", "AbortError");
+    const provider = makeMockProvider(['{"questions":[]}']);
+    const clack = await import("@clack/prompts");
+    vi.mocked(clack.text).mockImplementationOnce(async (options) => {
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+      controller.abort(reason);
+      return Symbol("cancel");
+    });
+    await expect(
+      runSpecInterview("app", provider, "/tmp/out", { signal: controller.signal }),
+    ).rejects.toBe(reason);
+    expect(provider.chat).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not write the backlog if cancellation arrives while creating its directory", async () => {
+    const controller = new AbortController();
+    const reason = new Error("host stopped");
+    const provider = makeMockProvider(['{"questions":[]}', MOCK_BACKLOG_RESPONSE]);
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.mkdir).mockImplementationOnce(async () => {
+      controller.abort(reason);
+      return undefined;
+    });
+    await expect(
+      runSpecInterview("app", provider, "/tmp/out", {
+        signal: controller.signal,
+        skipConfirmation: true,
+      }),
+    ).rejects.toBe(reason);
+    expect(fs.default.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("enforces its optional total deadline while a provider request is pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const provider = makeMockProvider([]);
+      vi.mocked(provider.chat).mockImplementationOnce(
+        (_messages, options) =>
+          new Promise((_resolve, reject) => {
+            options!.signal!.addEventListener("abort", () => reject(options!.signal!.reason), {
+              once: true,
+            });
+          }),
+      );
+      const pending = runSpecInterview("app", provider, "/tmp/out", { timeoutMs: 50 });
+      const assertion = expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+      await vi.advanceTimersByTimeAsync(50);
+      await assertion;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+it("preserves the previous backlog when cancellation interrupts the temporary write", async () => {
+  vi.clearAllMocks();
+  const clack = await import("@clack/prompts");
+  vi.mocked(clack.isCancel).mockReturnValue(false);
+  vi.mocked(clack.text).mockResolvedValue("scope");
+  const fs = await import("node:fs/promises");
+  const controller = new AbortController();
+  const reason = new DOMException("stop during write", "AbortError");
+  const files = new Map<string, string>([["/tmp/out/.coco/backlog.json", "old valid backlog"]]);
+  vi.mocked(fs.default.writeFile).mockImplementationOnce(async (file) => {
+    files.set(String(file), "partial temporary output");
+    controller.abort(reason);
+    throw reason;
+  });
+  vi.mocked(fs.default.rm).mockImplementationOnce(async (file) => {
+    files.delete(String(file));
+  });
+  const provider = makeMockProvider(['{"questions":[]}', MOCK_BACKLOG_RESPONSE]);
+  await expect(
+    runSpecInterview("app", provider, "/tmp/out", {
+      signal: controller.signal,
+      skipConfirmation: true,
+    }),
+  ).rejects.toBe(reason);
+  expect(fs.default.rename).not.toHaveBeenCalled();
+  expect([...files]).toEqual([["/tmp/out/.coco/backlog.json", "old valid backlog"]]);
 });

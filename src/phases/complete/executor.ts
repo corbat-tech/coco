@@ -21,6 +21,7 @@ import type {
   TestExecutionResult,
   GeneratedFile,
 } from "./types.js";
+import { saveGeneratedFiles } from "./file-writer.js";
 import { DEFAULT_COMPLETE_CONFIG } from "./types.js";
 import type { Task, Sprint, Backlog } from "../../types/task.js";
 import { TaskIterator, createTaskIterator } from "./iterator.js";
@@ -506,19 +507,8 @@ export class CompleteExecutor implements PhaseExecutor {
       return this.runTests(context, task);
     };
 
-    const saveFiles = async (files: GeneratedFile[]): Promise<void> => {
-      for (const file of files) {
-        const filePath = path.join(context.projectPath, file.path);
-        const dir = path.dirname(filePath);
-        await fs.mkdir(dir, { recursive: true });
-
-        if (file.action === "delete") {
-          await fs.unlink(filePath).catch(() => {});
-        } else {
-          await fs.writeFile(filePath, file.content, "utf-8");
-        }
-      }
-    };
+    const saveFiles = (files: GeneratedFile[]): Promise<void> =>
+      saveGeneratedFiles(context.projectPath, files);
 
     const onProgress = (iteration: number, score: number) => {
       this.reportProgress({

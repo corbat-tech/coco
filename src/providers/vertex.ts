@@ -13,17 +13,21 @@ import type {
   ChatWithToolsOptions,
   ChatWithToolsResponse,
   StreamChunk,
-  ToolCall,
   ToolDefinition,
   MessageContent,
   ImageContent,
   ToolResultContent,
   ToolUseContent,
 } from "./types.js";
+import { createRequestScope } from "../utils/request-scope.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 import { ProviderError } from "../utils/errors.js";
 import { getCachedADCToken } from "../auth/gcloud.js";
-import { withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
+import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG } from "./retry.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
+
+import { GoogleToolBatch } from "./google-tool-integrity.js";
+import { ResponseIntegrityError } from "./response-integrity.js";
 
 const DEFAULT_MODEL = getCatalogDefaultModel("vertex");
 const DEFAULT_BASE_URL = "https://aiplatform.googleapis.com/v1";
@@ -46,6 +50,7 @@ interface VertexInlineData {
 }
 
 interface VertexFunctionCall {
+  id?: string;
   name: string;
   args?: Record<string, unknown>;
   thoughtSignature?: string;
@@ -53,6 +58,7 @@ interface VertexFunctionCall {
 }
 
 interface VertexFunctionResponse {
+  id?: string;
   name: string;
   response: Record<string, unknown>;
 }
@@ -105,23 +111,6 @@ function extractSseEventData(rawEvent: string): string | null {
   return dataLines.join("\n");
 }
 
-function getToolCallFingerprint(part: VertexPart): string {
-  const name = part.functionCall?.name ?? "unknown_function";
-  let argsSerialized = "{}";
-  try {
-    argsSerialized = JSON.stringify(part.functionCall?.args ?? {});
-  } catch {
-    argsSerialized = "{}";
-  }
-  const thoughtSignature =
-    part.thoughtSignature ??
-    part.thought_signature ??
-    part.functionCall?.thoughtSignature ??
-    part.functionCall?.thought_signature ??
-    "";
-  return `${name}:${argsSerialized}:${thoughtSignature}`;
-}
-
 export class VertexProvider implements LLMProvider {
   readonly id = "vertex";
   readonly name = "Google Vertex AI Gemini";
@@ -158,22 +147,43 @@ export class VertexProvider implements LLMProvider {
       return;
     }
 
-    const token = await getCachedADCToken();
-    if (!token) {
-      throw new ProviderError(
-        "Vertex AI authentication is not configured. Set VERTEX_API_KEY (or GOOGLE_API_KEY), or run `gcloud auth application-default login`.",
-        { provider: this.id },
-      );
+    const scope = createRequestScope(undefined, config.timeout ?? 120000);
+    try {
+      const token = await getCachedADCToken(scope.signal);
+      scope.signal.throwIfAborted();
+      if (!token) {
+        throw new ProviderError(
+          "Vertex AI authentication is not configured. Set VERTEX_API_KEY (or GOOGLE_API_KEY), or run `gcloud auth application-default login`.",
+          { provider: this.id },
+        );
+      }
+    } finally {
+      scope.dispose();
     }
   }
 
   async chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse> {
     this.ensureInitialized();
-
-    return withRetry(async () => {
-      const response = await this.generateContent(messages, options);
-      return this.parseResponse(response, options?.model);
-    }, this.retryConfig);
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? 120000,
+    );
+    options = { ...options, signal: scope.signal };
+    try {
+      return await withRetry(
+        async () => {
+          const response = await this.generateContent(messages, options);
+          return this.parseResponse(response, options?.model);
+        },
+        resolveRetryConfig(this.retryConfig, options?.maxRetries),
+        options?.signal,
+      );
+    } catch (error) {
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
   }
 
   async chatWithTools(
@@ -181,36 +191,69 @@ export class VertexProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): Promise<ChatWithToolsResponse> {
     this.ensureInitialized();
-
-    return withRetry(async () => {
-      const response = await this.generateContent(
-        messages,
-        options,
-        options.tools,
-        options.toolChoice,
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? 120000,
+    );
+    options = { ...options, signal: scope.signal };
+    try {
+      return await withRetry(
+        async () => {
+          const response = await this.generateContent(
+            messages,
+            options,
+            options.tools,
+            options.toolChoice,
+          );
+          return this.parseResponseWithTools(response, options.model);
+        },
+        resolveRetryConfig(this.retryConfig, options?.maxRetries),
+        options?.signal,
       );
-      return this.parseResponseWithTools(response, options.model);
-    }, this.retryConfig);
+    } catch (error) {
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
   }
 
   async *stream(messages: Message[], options?: ChatOptions): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? 120000,
+    );
+    options = { ...options, signal: scope.signal };
+    try {
+      const stream = await this.streamGenerateContent(messages, options);
+      let stopReason: StreamChunk["stopReason"] = "end_turn";
 
-    const stream = await this.streamGenerateContent(messages, options);
-    let stopReason: StreamChunk["stopReason"] = "end_turn";
-
-    for await (const chunk of stream) {
-      const candidate = chunk.candidates?.[0];
-      const parts = candidate?.content?.parts ?? [];
-      for (const part of parts) {
-        if (part.text) {
-          yield { type: "text", text: part.text };
+      for await (const chunk of stream) {
+        scope.signal.throwIfAborted();
+        const candidate = chunk.candidates?.[0];
+        const parts = candidate?.content?.parts ?? [];
+        for (const part of parts) {
+          if (part.text) {
+            scope.signal.throwIfAborted();
+            yield { type: "text", text: part.text };
+            scope.signal.throwIfAborted();
+          }
         }
+        stopReason = this.mapFinishReason(candidate?.finishReason);
       }
-      stopReason = this.mapFinishReason(candidate?.finishReason);
-    }
 
-    yield { type: "done", stopReason };
+      scope.signal.throwIfAborted();
+
+      yield { type: "done", stopReason };
+
+      scope.signal.throwIfAborted();
+    } catch (error) {
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
   }
 
   async *streamWithTools(
@@ -218,62 +261,51 @@ export class VertexProvider implements LLMProvider {
     options: ChatWithToolsOptions,
   ): AsyncIterable<StreamChunk> {
     this.ensureInitialized();
-
-    const stream = await this.streamGenerateContent(
-      messages,
-      options,
-      options.tools,
-      options.toolChoice,
+    const scope = createRequestScope(
+      options?.signal,
+      options?.timeout ?? this.config.timeout ?? 120000,
     );
-    let stopReason: StreamChunk["stopReason"] = "end_turn";
-    let streamToolCallCounter = 0;
-    const emittedToolFingerprints = new Set<string>();
-
-    for await (const chunk of stream) {
-      const candidate = chunk.candidates?.[0];
-      const parts = candidate?.content?.parts ?? [];
-      for (const part of parts) {
-        if (part.text) {
-          yield { type: "text", text: part.text };
-        }
-        if (part.functionCall) {
-          const fingerprint = getToolCallFingerprint(part);
-          if (emittedToolFingerprints.has(fingerprint)) {
-            continue;
+    options = { ...options, signal: scope.signal };
+    try {
+      const stream = await this.streamGenerateContent(
+        messages,
+        options,
+        options.tools,
+        options.toolChoice,
+      );
+      const batch = new GoogleToolBatch("vertex");
+      for await (const chunk of stream) {
+        scope.signal.throwIfAborted();
+        if (chunk.error)
+          throw new ResponseIntegrityError("Vertex stream reported failure", this.id);
+        const candidate = chunk.candidates?.[0];
+        const parts = candidate?.content?.parts ?? [];
+        batch.add(parts, candidate?.finishReason);
+        for (const part of parts) {
+          if (part.text) {
+            yield { type: "text", text: part.text };
+            scope.signal.throwIfAborted();
           }
-          emittedToolFingerprints.add(fingerprint);
-          streamToolCallCounter++;
-          const geminiThoughtSignature =
-            part.thoughtSignature ??
-            part.thought_signature ??
-            part.functionCall.thoughtSignature ??
-            part.functionCall.thought_signature;
-          yield {
-            type: "tool_use_start",
-            toolCall: {
-              id: `vertex_call_${streamToolCallCounter}`,
-              name: part.functionCall.name,
-              input: part.functionCall.args ?? {},
-              geminiThoughtSignature,
-            },
-          };
-          yield {
-            type: "tool_use_end",
-            toolCall: {
-              id: `vertex_call_${streamToolCallCounter}`,
-              name: part.functionCall.name,
-              input: part.functionCall.args ?? {},
-              geminiThoughtSignature,
-            },
-          };
         }
       }
-      stopReason = parts.some((part) => part.functionCall)
-        ? "tool_use"
-        : this.mapFinishReason(candidate?.finishReason);
-    }
+      scope.signal.throwIfAborted();
+      const { toolCalls, stopReason } = batch.complete();
+      for (const toolCall of toolCalls) {
+        scope.signal.throwIfAborted();
+        yield { type: "tool_use_start", toolCall };
+        scope.signal.throwIfAborted();
+        yield { type: "tool_use_end", toolCall };
+      }
+      scope.signal.throwIfAborted();
+      yield { type: "done", stopReason };
 
-    yield { type: "done", stopReason };
+      scope.signal.throwIfAborted();
+    } catch (error) {
+      rethrowCancellation(error, scope.signal);
+      throw error;
+    } finally {
+      scope.dispose();
+    }
   }
 
   countTokens(text: string): number {
@@ -289,11 +321,18 @@ export class VertexProvider implements LLMProvider {
     return CONTEXT_WINDOWS[model] ?? 1048576;
   }
 
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(options?: { signal?: AbortSignal }): Promise<boolean> {
+    options?.signal?.throwIfAborted();
     try {
-      await this.generateContent([{ role: "user", content: "hi" }], { maxTokens: 8 });
+      await this.chat([{ role: "user", content: "hi" }], {
+        maxTokens: 8,
+        maxRetries: 0,
+        signal: options?.signal,
+      });
+      options?.signal?.throwIfAborted();
       return true;
-    } catch {
+    } catch (error) {
+      rethrowCancellation(error, options?.signal);
       return false;
     }
   }
@@ -327,7 +366,7 @@ export class VertexProvider implements LLMProvider {
     return `${this.getResolvedBaseUrl()}/projects/${encodeURIComponent(this.project)}/locations/${encodeURIComponent(this.location)}/publishers/google/models/${encodeURIComponent(this.getModel(model))}:${action}`;
   }
 
-  private async getHeaders(): Promise<Record<string, string>> {
+  private async getHeaders(signal?: AbortSignal): Promise<Record<string, string>> {
     if (this.apiKey?.trim()) {
       return {
         "Content-Type": "application/json",
@@ -336,7 +375,8 @@ export class VertexProvider implements LLMProvider {
       };
     }
 
-    const token = await getCachedADCToken();
+    const token = await getCachedADCToken(signal);
+    signal?.throwIfAborted();
     if (!token) {
       throw new ProviderError(
         "Vertex AI token is unavailable. Re-authenticate with gcloud or configure VERTEX_API_KEY.",
@@ -391,6 +431,7 @@ export class VertexProvider implements LLMProvider {
               const toolResult = block as ToolResultContent;
               functionResponses.push({
                 functionResponse: {
+                  id: toolResult.tool_use_id,
                   name: toolNameByUseId.get(toolResult.tool_use_id) ?? toolResult.tool_use_id,
                   response: { result: toolResult.content },
                 },
@@ -429,6 +470,7 @@ export class VertexProvider implements LLMProvider {
         const thoughtSignature = toolUse.geminiThoughtSignature ?? SKIP_THOUGHT_SIGNATURE_VALIDATOR;
         parts.push({
           functionCall: {
+            id: toolUse.id,
             name: toolUse.name,
             args: toolUse.input,
           },
@@ -445,7 +487,7 @@ export class VertexProvider implements LLMProvider {
     functionDeclarations: Array<{
       name: string;
       description: string;
-      parameters: Record<string, unknown>;
+      parametersJsonSchema: Record<string, unknown>;
     }>;
   }> {
     return [
@@ -453,7 +495,7 @@ export class VertexProvider implements LLMProvider {
         functionDeclarations: tools.map((tool) => ({
           name: tool.name,
           description: tool.description,
-          parameters: tool.input_schema,
+          parametersJsonSchema: tool.input_schema,
         })),
       },
     ];
@@ -512,9 +554,12 @@ export class VertexProvider implements LLMProvider {
     tools?: ToolDefinition[],
     toolChoice?: ChatWithToolsOptions["toolChoice"],
   ): Promise<VertexGenerateContentResponse> {
+    options?.signal?.throwIfAborted();
+    const headers = await this.getHeaders(options?.signal);
+    options?.signal?.throwIfAborted();
     const response = await fetch(this.buildEndpoint(options?.model), {
       method: "POST",
-      headers: await this.getHeaders(),
+      headers,
       body: JSON.stringify(this.buildRequestBody(messages, options, tools, toolChoice)),
       signal: options?.signal,
     });
@@ -539,9 +584,12 @@ export class VertexProvider implements LLMProvider {
     tools?: ToolDefinition[],
     toolChoice?: ChatWithToolsOptions["toolChoice"],
   ): AsyncIterable<VertexGenerateContentResponse> {
+    options?.signal?.throwIfAborted();
+    const headers = await this.getHeaders(options?.signal);
+    options?.signal?.throwIfAborted();
     const response = await fetch(this.buildEndpoint(options?.model, true), {
       method: "POST",
-      headers: await this.getHeaders(),
+      headers,
       body: JSON.stringify(this.buildRequestBody(messages, options, tools, toolChoice)),
       signal: options?.signal,
     });
@@ -560,38 +608,60 @@ export class VertexProvider implements LLMProvider {
     const decoder = new TextDecoder();
     let buffer = "";
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
+    try {
       while (true) {
-        const boundaryMatch = /\r?\n\r?\n/.exec(buffer);
-        if (!boundaryMatch || boundaryMatch.index === undefined) break;
+        options?.signal?.throwIfAborted();
+        const { value, done } = await reader.read();
+        options?.signal?.throwIfAborted();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
 
-        const rawEvent = buffer.slice(0, boundaryMatch.index);
-        buffer = buffer.slice(boundaryMatch.index + boundaryMatch[0].length);
-        const data = extractSseEventData(rawEvent);
+        while (true) {
+          const boundaryMatch = /\r?\n\r?\n/.exec(buffer);
+          if (!boundaryMatch || boundaryMatch.index === undefined) break;
 
-        if (!data || data === "[DONE]") {
-          if (data === "[DONE]") return;
-          continue;
-        }
+          const rawEvent = buffer.slice(0, boundaryMatch.index);
+          buffer = buffer.slice(boundaryMatch.index + boundaryMatch[0].length);
+          const data = extractSseEventData(rawEvent);
 
-        try {
-          yield JSON.parse(data) as VertexGenerateContentResponse;
-        } catch {
-          continue;
+          if (!data || data === "[DONE]") {
+            if (data === "[DONE]") return;
+            continue;
+          }
+
+          let parsed: VertexGenerateContentResponse;
+          try {
+            parsed = JSON.parse(data) as VertexGenerateContentResponse;
+          } catch {
+            if (tools) throw new ResponseIntegrityError("Invalid Vertex stream event", this.id);
+            continue;
+          }
+          options?.signal?.throwIfAborted();
+          yield parsed;
+          options?.signal?.throwIfAborted();
         }
       }
-    }
 
-    const trailingData = extractSseEventData(buffer.trim());
-    if (trailingData && trailingData !== "[DONE]") {
+      const trailingData = extractSseEventData(buffer.trim());
+      if (trailingData && trailingData !== "[DONE]") {
+        let parsed: VertexGenerateContentResponse;
+        try {
+          parsed = JSON.parse(trailingData) as VertexGenerateContentResponse;
+        } catch {
+          if (tools) throw new ResponseIntegrityError("Incomplete Vertex stream event", this.id);
+          return;
+        }
+        options?.signal?.throwIfAborted();
+        yield parsed;
+        options?.signal?.throwIfAborted();
+      }
+    } finally {
       try {
-        yield JSON.parse(trailingData) as VertexGenerateContentResponse;
+        await reader.cancel();
       } catch {
-        // Ignore incomplete trailing fragments.
+        /* Preserve the original transport failure. */
+      } finally {
+        reader.releaseLock();
       }
     }
   }
@@ -621,33 +691,15 @@ export class VertexProvider implements LLMProvider {
   ): ChatWithToolsResponse {
     const candidate = response.candidates?.[0];
     const parts = candidate?.content?.parts ?? [];
-    const toolCalls: ToolCall[] = [];
-    let textContent = "";
-    let toolIndex = 0;
-
-    for (const part of parts) {
-      if (part.text) {
-        textContent += part.text;
-      }
-      if (part.functionCall) {
-        toolIndex++;
-        toolCalls.push({
-          id: `vertex_call_${toolIndex}`,
-          name: part.functionCall.name,
-          input: part.functionCall.args ?? {},
-          geminiThoughtSignature:
-            part.thoughtSignature ??
-            part.thought_signature ??
-            part.functionCall.thoughtSignature ??
-            part.functionCall.thought_signature,
-        });
-      }
-    }
+    const batch = new GoogleToolBatch("vertex");
+    batch.add(parts, candidate?.finishReason);
+    const { toolCalls, stopReason } = batch.complete();
+    const textContent = parts.map((part) => part.text ?? "").join("");
 
     return {
       id: `vertex-${Date.now()}`,
       content: textContent,
-      stopReason: toolCalls.length > 0 ? "tool_use" : this.mapFinishReason(candidate?.finishReason),
+      stopReason,
       usage: {
         inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
         outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,

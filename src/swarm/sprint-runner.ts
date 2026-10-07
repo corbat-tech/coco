@@ -21,6 +21,8 @@ import { runTestsTool } from "../tools/test.js";
 import { createFullToolRegistry } from "../tools/index.js";
 import { getMaxSafeAgents } from "../utils/resource-monitor.js";
 import type { BacklogSpec, BacklogTask, BuildResult, SprintResult } from "./backlog-spec.js";
+import { createRequestScope } from "../utils/request-scope.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,13 +45,33 @@ export interface SprintRunnerOptions {
   spec: BacklogSpec;
   provider: LLMProvider;
   onProgress: (message: string) => void;
+  signal?: AbortSignal;
+  /** Total run deadline; 0 (default) leaves the deadline to the host. */
+  timeoutMs?: number;
 }
 
 /**
  * Execute all sprints in a BacklogSpec and return a BuildResult.
  */
 export async function runSprints(options: SprintRunnerOptions): Promise<BuildResult> {
-  const { spec, provider, onProgress } = options;
+  const scope = createRequestScope(options.signal, options.timeoutMs ?? 0);
+  try {
+    return await executeSprints(options, scope.signal);
+  } finally {
+    scope.dispose();
+  }
+}
+
+async function executeSprints(
+  options: SprintRunnerOptions,
+  signal: AbortSignal,
+): Promise<BuildResult> {
+  const { spec, provider } = options;
+  const onProgress = (message: string) => {
+    signal.throwIfAborted();
+    options.onProgress(message);
+    signal.throwIfAborted();
+  };
   const startTime = Date.now();
   const sprintResults: SprintResult[] = [];
 
@@ -64,9 +86,12 @@ export async function runSprints(options: SprintRunnerOptions): Promise<BuildRes
   const coordinator = createAgentCoordinator(executor, agentDefsMap);
 
   // Ensure output directory exists
+  signal.throwIfAborted();
   await fs.mkdir(spec.outputPath, { recursive: true });
+  signal.throwIfAborted();
   const sprintsDir = path.join(spec.outputPath, ".coco", "sprints");
   await fs.mkdir(sprintsDir, { recursive: true });
+  signal.throwIfAborted();
 
   // ------------------------------------------------------------------
   // Execute each sprint
@@ -95,8 +120,11 @@ export async function runSprints(options: SprintRunnerOptions): Promise<BuildRes
       try {
         await coordinator.coordinateAgents(agentTasks, {
           maxParallelAgents: getMaxSafeAgents(),
+          signal,
         });
+        signal.throwIfAborted();
       } catch (err) {
+        rethrowCancellation(err, signal);
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`Coordinator error (iter ${iteration}): ${msg}`);
         onProgress(`  ${sprint.id} iter ${iteration}: coordinator error — ${msg}`);
@@ -106,10 +134,12 @@ export async function runSprints(options: SprintRunnerOptions): Promise<BuildRes
       onProgress(`  ${sprint.id} iter ${iteration}: running tests…`);
       let testResult: Awaited<ReturnType<typeof runTestsTool.execute>> | null = null;
       try {
-        testResult = await runTestsTool.execute({ cwd: spec.outputPath });
+        testResult = await runTestsTool.execute({ cwd: spec.outputPath }, { signal });
+        signal.throwIfAborted();
         lastTestsTotal = testResult.total;
         lastTestsPassing = testResult.passed;
-      } catch {
+      } catch (error) {
+        rethrowCancellation(error, signal);
         // If tests can't run (no test framework yet), treat as 0 tests passing
         lastTestsTotal = 0;
         lastTestsPassing = 0;
@@ -144,7 +174,9 @@ export async function runSprints(options: SprintRunnerOptions): Promise<BuildRes
         spec.outputPath,
         sprint.id,
         iteration,
+        signal,
       );
+      signal.throwIfAborted();
       lastQualityScore = qualityScore;
 
       if (qualityScore >= spec.qualityThreshold) {
@@ -181,16 +213,17 @@ export async function runSprints(options: SprintRunnerOptions): Promise<BuildRes
     };
 
     sprintResults.push(result);
-    await saveSprintResult(sprintsDir, result);
+    await saveSprintResult(sprintsDir, result, signal);
   }
 
   // ------------------------------------------------------------------
   // Integration sprint
   // ------------------------------------------------------------------
   onProgress("Running integration sprint…");
-  const integrationResult = await runIntegrationSprint(coordinator, spec, onProgress);
+  const integrationResult = await runIntegrationSprint(coordinator, spec, onProgress, signal);
+  signal.throwIfAborted();
   sprintResults.push(integrationResult);
-  await saveSprintResult(sprintsDir, integrationResult);
+  await saveSprintResult(sprintsDir, integrationResult, signal);
 
   // ------------------------------------------------------------------
   // Aggregate — exclude integration sprint from totalTests to avoid
@@ -293,6 +326,7 @@ async function runQualityCheck(
   projectPath: string,
   sprintId: string,
   iteration: number,
+  signal: AbortSignal,
 ): Promise<number> {
   const safePath = sanitizeForPrompt(projectPath);
   try {
@@ -309,8 +343,10 @@ async function runQualityCheck(
 
     const coordResult = await coordinator.coordinateAgents([reviewTask], {
       maxParallelAgents: 1,
+      signal,
     });
 
+    signal.throwIfAborted();
     const result = coordResult.results.get(reviewTask.id);
     if (!result) return 65; // Reviewer produced no output — conservative default
 
@@ -325,7 +361,8 @@ async function runQualityCheck(
     // Do NOT return a passing score here: a reviewer that omits the score should
     // not silently pass the quality gate.
     return 65;
-  } catch {
+  } catch (error) {
+    rethrowCancellation(error, signal);
     return 65; // Default under error — conservative
   }
 }
@@ -338,6 +375,7 @@ async function runIntegrationSprint(
   coordinator: ReturnType<typeof createAgentCoordinator>,
   spec: BacklogSpec,
   onProgress: (msg: string) => void,
+  signal: AbortSignal,
 ): Promise<SprintResult> {
   const startTime = Date.now();
   const safePath = sanitizeForPrompt(spec.outputPath);
@@ -370,7 +408,8 @@ async function runIntegrationSprint(
 
   try {
     onProgress("  Integration: running integration tests + global review…");
-    const coordResult = await coordinator.coordinateAgents(tasks, { maxParallelAgents: 2 });
+    const coordResult = await coordinator.coordinateAgents(tasks, { maxParallelAgents: 2, signal });
+    signal.throwIfAborted();
 
     // Try to parse test results from tester output
     const testOut = coordResult.results.get("integration-test");
@@ -391,6 +430,7 @@ async function runIntegrationSprint(
       // If no score found, conservative default (65) is already set
     }
   } catch (err) {
+    rethrowCancellation(err, signal);
     const msg = err instanceof Error ? err.message : String(err);
     errors.push(`Integration sprint error: ${msg}`);
   }
@@ -407,7 +447,13 @@ async function runIntegrationSprint(
   };
 }
 
-async function saveSprintResult(sprintsDir: string, result: SprintResult): Promise<void> {
+async function saveSprintResult(
+  sprintsDir: string,
+  result: SprintResult,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
   const filePath = path.join(sprintsDir, `${result.sprintId}.json`);
-  await fs.writeFile(filePath, JSON.stringify(result, null, 2), "utf-8");
+  await fs.writeFile(filePath, JSON.stringify(result, null, 2), { encoding: "utf-8", signal });
+  signal.throwIfAborted();
 }

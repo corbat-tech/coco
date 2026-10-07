@@ -12,12 +12,6 @@ export default defineConfig({
     globals: true,
     environment: "node",
     pool: "forks",
-    poolOptions: {
-      forks: {
-        // Each test file gets its own fork to limit memory pressure
-        singleFork: false,
-      },
-    },
     include: ["src/cli/repl/index.test.ts"],
     testTimeout: 30000,
     hookTimeout: 30000,

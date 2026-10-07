@@ -73,49 +73,42 @@ At the prompt, describe what you want built:
 > Add input validation to the registration form
 ```
 
-Coco runs through four phases automatically:
+For a plan before editing, start with `/plan` and review the result. When ready, ask Coco to implement it and run the relevant tests. Ordinary coding sessions may change files and execute tools.
 
-```
-  ◆ Converging on requirements...
-  ◆ Designing architecture — 2 tasks planned
+Enable iterative self-review with `/quality on`. This requests tests and review through the agent; it does **not** certify a numerical score or guarantee all checks passed. Inspect the actual tool output, changed files and remaining failures. Missing evidence must remain explicitly unverified.
 
-  Task 1/2  Validate registration fields (email, password strength, required fields)
-  ·  iter 1  ──  score 61  no tests, missing error messages
-  ·  iter 2  ──  score 83  tests added, messages improved
-  ·  iter 3  ──  score 91  ✓ converged
-
-  Task 2/2  Unit tests for validation helpers
-  ·  iter 1  ──  score 94  ✓ converged first try
-
-  ╭───────────── Quality Report ─────────────╮
-  │  Correctness      94   ████████████████  │
-  │  Security         96   ████████████████  │
-  │  Test Coverage    88   ██████████████░░  │
-  │  Documentation    82   █████████████░░░  │
-  │  ─────────────────────────────────────  │
-  │  Overall          91   ████████████████  │
-  ╰──────────────────────────────────────────╯
-
-  2 files written · 14 tests · 88% coverage · 0 vulnerabilities
+```text
+/plan Add input validation to the registration form
+# Review the plan, then request implementation and tests.
+/quality on
+/diff
 ```
 
-Coco writes the files, runs your test suite, scores the result across 12 quality dimensions, and iterates until the score reaches the threshold (default: **85/100**).
+## Measured quality checks
 
----
+Run `coco check --help` from your shell to see the separate project quality-analysis options. Those tools collect measurements where supported; the REPL's self-review text is a different source of evidence.
 
-## Adjust quality threshold
+Project thresholds belong in `.coco.config.json`, for example:
 
-If the default threshold is too strict for a prototype, lower it:
-
+```json
+{
+  "quality": { "minScore": 85, "maxIterations": 8 }
+}
 ```
-/config quality.minScore 75
+
+There is no built-in `/config quality.minScore` slash command. Configuration and measured acceptance remain subject to the selected workflow and available analyzers; changing a threshold does not supply missing evidence.
+
+## Headless execution
+
+After configuring your provider, discover automation options with `coco chat --help`:
+
+```bash
+coco chat --print "Inspect the project and summarize its structure" --output json
 ```
 
-Or raise it for production-critical code:
+Headless execution can use coding tools without interactive confirmation. Run it in a trusted checkout with suitable host permissions. JSON success means the turn completed; verify tests and changes separately.
 
-```
-/config quality.minScore 92
-```
+The install command uses stable `latest`; use `npm install -g @corbat-tech/coco@next` only when intentionally evaluating a preview.
 
 ---
 

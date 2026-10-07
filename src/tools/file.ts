@@ -6,10 +6,11 @@
 import { z } from "zod";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { glob } from "glob";
+import { scopedGlob } from "./scoped-glob.js";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { FileSystemError, ToolError } from "../utils/errors.js";
-import { isWithinAllowedPath } from "./allowed-paths.js";
+import { resolvePathSecurely } from "./file-path-policy.js";
+export { resolvePathSecurely } from "./file-path-policy.js";
 import {
   suggestSimilarFilesDeep,
   suggestSimilarDirsDeep,
@@ -18,49 +19,12 @@ import {
 import { levenshtein } from "../skills/matcher.js";
 
 /**
- * Sensitive file patterns that should be protected
- */
-const SENSITIVE_PATTERNS = [
-  /\.env(?:\.\w+)?$/, // .env, .env.local, etc.
-  /credentials\.\w+$/i, // credentials.json, etc.
-  /secrets?\.\w+$/i, // secret.json, secrets.yaml
-  /\.pem$/, // Private keys
-  /\.key$/, // Private keys
-  /id_rsa(?:\.pub)?$/, // SSH keys
-  /\.npmrc$/, // npm auth
-  /\.pypirc$/, // PyPI auth
-];
-
-/**
- * System paths that should be blocked
- */
-const BLOCKED_PATHS = ["/etc", "/var", "/usr", "/root", "/sys", "/proc", "/boot"];
-const SAFE_COCO_HOME_READ_FILES = new Set([
-  "mcp.json",
-  "config.json",
-  "COCO.md",
-  "AGENTS.md",
-  "CLAUDE.md",
-  "projects.json",
-  "trusted-tools.json",
-  "allowed-paths.json",
-]);
-const SAFE_COCO_HOME_READ_DIR_PREFIXES = ["skills", "memories", "logs", "checkpoints", "sessions"];
-
-/**
  * Validate encoding is safe
  */
 const SAFE_ENCODINGS = new Set(["utf-8", "utf8", "ascii", "latin1", "binary", "hex", "base64"]);
 
 function isEncodingSafe(encoding: string): boolean {
   return SAFE_ENCODINGS.has(encoding.toLowerCase());
-}
-
-/**
- * Check for null bytes in path (security)
- */
-function hasNullByte(str: string): boolean {
-  return str.includes("\0");
 }
 
 /**
@@ -85,167 +49,6 @@ function normalizePath(filePath: string): string {
 
 function resolveUserPath(filePath: string): string {
   return path.resolve(normalizePath(filePath));
-}
-
-function isWithinDirectory(targetPath: string, baseDir: string): boolean {
-  const normalizedTarget = path.normalize(targetPath);
-  const normalizedBase = path.normalize(baseDir);
-  return (
-    normalizedTarget === normalizedBase || normalizedTarget.startsWith(normalizedBase + path.sep)
-  );
-}
-
-function isSafeCocoHomeReadPath(absolutePath: string, homeDir: string): boolean {
-  const cocoHome = path.join(homeDir, ".coco");
-  if (!isWithinDirectory(absolutePath, cocoHome)) {
-    return false;
-  }
-
-  const relativePath = path.relative(cocoHome, absolutePath);
-  if (!relativePath || relativePath.startsWith("..")) {
-    return false;
-  }
-
-  const segments = relativePath.split(path.sep).filter(Boolean);
-  const firstSegment = segments[0];
-  if (!firstSegment) {
-    return false;
-  }
-
-  if (firstSegment === "tokens" || firstSegment === ".env") {
-    return false;
-  }
-
-  if (segments.length === 1 && SAFE_COCO_HOME_READ_FILES.has(firstSegment)) {
-    return true;
-  }
-
-  return SAFE_COCO_HOME_READ_DIR_PREFIXES.includes(firstSegment);
-}
-
-/**
- * Check if a path is allowed for file operations
- */
-function isPathAllowed(
-  filePath: string,
-  operation: "read" | "write" | "delete",
-): { allowed: boolean; reason?: string } {
-  // Check for null bytes (path injection)
-  if (hasNullByte(filePath)) {
-    return { allowed: false, reason: "Path contains invalid characters" };
-  }
-
-  const normalized = normalizePath(filePath);
-  const absolute = resolveUserPath(normalized);
-  const cwd = process.cwd();
-
-  // Check for system paths (use normalized comparison)
-  for (const blocked of BLOCKED_PATHS) {
-    const normalizedBlocked = path.normalize(blocked);
-    // Check both exact match and prefix with separator
-    if (absolute === normalizedBlocked || absolute.startsWith(normalizedBlocked + path.sep)) {
-      return { allowed: false, reason: `Access to system path '${blocked}' is not allowed` };
-    }
-  }
-
-  // Check home directory access (only allow within project or explicitly allowed paths)
-  const home = process.env.HOME;
-  if (home) {
-    const normalizedHome = path.normalize(home);
-    const normalizedCwd = path.normalize(cwd);
-    if (absolute.startsWith(normalizedHome) && !absolute.startsWith(normalizedCwd)) {
-      // Check if path is within user-authorized allowed paths
-      if (isWithinAllowedPath(absolute, operation)) {
-        // Path is explicitly authorized — continue to sensitive file checks below
-      } else if (operation === "read") {
-        if (isSafeCocoHomeReadPath(absolute, normalizedHome)) {
-          return { allowed: true };
-        }
-
-        // Allow reading common config files in home (but NOT sensitive ones)
-        const allowedHomeReads = [".gitconfig", ".zshrc", ".bashrc"];
-        const basename = path.basename(absolute);
-        // Block .npmrc, .pypirc as they may contain auth tokens
-        if (!allowedHomeReads.includes(basename)) {
-          const targetDir = path.dirname(absolute);
-          return {
-            allowed: false,
-            reason: `Reading files outside project directory is not allowed. Use /allow-path ${targetDir} to grant access.`,
-          };
-        }
-      } else {
-        const targetDir = path.dirname(absolute);
-        return {
-          allowed: false,
-          reason: `${operation} operations outside project directory are not allowed. Use /allow-path ${targetDir} to grant access.`,
-        };
-      }
-    }
-  }
-
-  // Check for sensitive files on write/delete
-  if (operation === "write" || operation === "delete") {
-    const basename = path.basename(absolute);
-    for (const pattern of SENSITIVE_PATTERNS) {
-      if (pattern.test(basename)) {
-        return {
-          allowed: false,
-          reason: `Operation on sensitive file '${basename}' requires explicit confirmation`,
-        };
-      }
-    }
-  }
-
-  return { allowed: true };
-}
-
-/**
- * Resolve path safely, following symlinks and verifying final destination
- * @internal Reserved for future use with symlink validation
- */
-export async function resolvePathSecurely(
-  filePath: string,
-  operation: "read" | "write" | "delete",
-): Promise<string> {
-  const normalized = normalizePath(filePath);
-  const absolute = resolveUserPath(normalized);
-
-  // First check the requested path
-  const preCheck = isPathAllowed(absolute, operation);
-  if (!preCheck.allowed) {
-    throw new ToolError(preCheck.reason ?? "Path not allowed", { tool: `file_${operation}` });
-  }
-
-  // For existing files, resolve symlinks and check the real path
-  try {
-    const realPath = await fs.realpath(absolute);
-    if (realPath !== absolute) {
-      // Path was a symlink - verify the target is also allowed
-      const postCheck = isPathAllowed(realPath, operation);
-      if (!postCheck.allowed) {
-        throw new ToolError(`Symlink target '${realPath}' is not allowed: ${postCheck.reason}`, {
-          tool: `file_${operation}`,
-        });
-      }
-    }
-    return realPath;
-  } catch (error) {
-    // File doesn't exist yet (for write operations) - use the absolute path
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return absolute;
-    }
-    throw error;
-  }
-}
-
-/**
- * Validate path and throw if not allowed (sync version for simple checks)
- */
-function validatePath(filePath: string, operation: "read" | "write" | "delete"): void {
-  const result = isPathAllowed(filePath, operation);
-  if (!result.allowed) {
-    throw new ToolError(result.reason ?? "Path not allowed", { tool: `file_${operation}` });
-  }
 }
 
 /**
@@ -307,7 +110,7 @@ export const readFileTool: ToolDefinition<
   { content: string; lines: number; size: number; truncated: boolean }
 > = defineTool({
   name: "read_file",
-  description: `Read the full text content of a file at the given path and return it as a string. Use this when you need the actual source code, configuration values, or text content of a specific file you already know the path to. Do NOT use this to list files in a directory (use list_directory), to check if a file exists (use file_exists), or to search for files by name pattern (use find_files). Returns an error if the path does not exist or is not a readable text file.
+  description: `Read the full text content of a file at the given path and return it as a string. Use this when you need the actual source code, configuration values, or text content of a specific file you already know the path to. Do NOT use this to list files in a directory (use list_dir), to check if a file exists (use file_exists), or to search for files by name pattern (use find_files). Returns an error if the path does not exist or is not a readable text file.
 
 Examples:
 - Read config: { "path": "package.json" }
@@ -320,9 +123,8 @@ Examples:
     maxSize: z.number().optional().describe("Maximum bytes to read (default: 10MB)"),
   }),
   async execute({ path: filePath, encoding, maxSize }) {
-    validatePath(filePath, "read");
+    const absolutePath = await resolvePathSecurely(filePath, "read");
     try {
-      const absolutePath = resolveUserPath(filePath);
       const stats = await fs.stat(absolutePath);
       const maxBytes = maxSize ?? DEFAULT_MAX_FILE_SIZE;
       let truncated = false;
@@ -397,10 +199,8 @@ Examples:
       .describe("Preview operation without making changes"),
   }),
   async execute({ path: filePath, content, createDirs, dryRun }) {
-    validatePath(filePath, "write");
+    const absolutePath = await resolvePathSecurely(filePath, "write");
     try {
-      const absolutePath = resolveUserPath(filePath);
-
       // Check if file exists
       let wouldCreate = false;
       try {
@@ -473,9 +273,8 @@ Examples:
     dryRun: z.boolean().optional().default(false).describe("Preview changes without applying"),
   }),
   async execute({ path: filePath, oldText, newText, all, dryRun }) {
-    validatePath(filePath, "write");
+    const absolutePath = await resolvePathSecurely(filePath, "write");
     try {
-      const absolutePath = resolveUserPath(filePath);
       let content = await fs.readFile(absolutePath, "utf-8");
 
       // Count replacements
@@ -560,7 +359,7 @@ export const globTool: ToolDefinition<
   { files: string[]; count: number }
 > = defineTool({
   name: "glob",
-  description: `Find files whose paths match a glob pattern and return their relative paths as a list. Use this when you know the file extension or naming convention but not the exact path (e.g. find all TypeScript test files, all JSON configs). Do NOT use this to search inside file contents — use grep or search for that. Returns an empty list when nothing matches; does not throw an error for zero results. node_modules, .git, and dist directories are excluded by default.
+  description: `Find files whose paths match a glob pattern and return their absolute paths as a list. Use this when you know the file extension or naming convention but not the exact path (e.g. find all TypeScript test files, all JSON configs). Do NOT use this to search inside file contents — use grep or search for that. Returns an empty list when nothing matches; does not throw an error for zero results. node_modules and .git directories are excluded by default. The entire query fails if it encounters a path outside the authorized scope; use a narrower pattern or request access.
 
 Examples:
 - All TypeScript: { "pattern": "**/*.ts" }
@@ -574,17 +373,18 @@ Examples:
   }),
   async execute({ pattern, cwd, ignore }) {
     try {
-      const files = await glob(pattern, {
-        cwd: cwd ?? process.cwd(),
-        ignore: ignore ?? ["**/node_modules/**", "**/.git/**"],
-        absolute: true,
-      });
+      const files = await scopedGlob(
+        pattern,
+        cwd ?? process.cwd(),
+        ignore ?? ["**/node_modules/**", "**/.git/**"],
+      );
 
       return {
         files,
         count: files.length,
       };
     } catch (error) {
+      if (error instanceof ToolError) throw error;
       if (isENOENT(error) && cwd) {
         const enriched = await enrichDirENOENT(cwd);
         throw new FileSystemError(`Glob search failed — ${enriched}`, {
@@ -610,7 +410,7 @@ export const fileExistsTool: ToolDefinition<
   { exists: boolean; isFile: boolean; isDirectory: boolean }
 > = defineTool({
   name: "file_exists",
-  description: `Check whether a path exists on disk and whether it is a file or directory. Use this before attempting to read or write a path when you are unsure it exists — it never throws, always returning { exists: false } for missing paths. Do NOT use this to read file contents (use read_file) or to list directory contents (use list_directory). Returns isFile and isDirectory flags so you can distinguish files from directories in a single call.
+  description: `Check whether a path exists on disk and whether it is a file or directory. Use this before attempting to read or write a path when you are unsure it exists — it returns { exists: false } for missing paths and reports permission or I/O failures. Do NOT use this to read file contents (use read_file) or to list directory contents (use list_dir). Returns isFile and isDirectory flags so you can distinguish files from directories in a single call.
 
 Examples:
 - Check file: { "path": "package.json" } → { "exists": true, "isFile": true, "isDirectory": false }
@@ -621,8 +421,8 @@ Examples:
     path: z.string().describe("Path to check"),
   }),
   async execute({ path: filePath }) {
+    const absolutePath = await resolvePathSecurely(filePath, "read");
     try {
-      const absolutePath = resolveUserPath(filePath);
       const stats = await fs.stat(absolutePath);
 
       return {
@@ -630,7 +430,8 @@ Examples:
         isFile: stats.isFile(),
         isDirectory: stats.isDirectory(),
       };
-    } catch {
+    } catch (error) {
+      if (!isENOENT(error)) throw error;
       return {
         exists: false,
         isFile: false,
@@ -660,8 +461,8 @@ Examples:
     recursive: z.boolean().optional().default(false).describe("List recursively"),
   }),
   async execute({ path: dirPath, recursive }) {
+    const absolutePath = await resolvePathSecurely(dirPath, "read");
     try {
-      const absolutePath = resolveUserPath(dirPath);
       const entries: Array<{ name: string; type: "file" | "directory"; size?: number }> = [];
 
       async function listDir(dir: string, prefix: string = "") {
@@ -733,10 +534,9 @@ Examples:
       );
     }
 
-    validatePath(filePath, "delete");
+    const absolutePath = await resolvePathSecurely(filePath, "delete");
 
     try {
-      const absolutePath = resolveUserPath(filePath);
       const stats = await fs.stat(absolutePath);
 
       if (stats.isDirectory()) {
@@ -786,12 +586,9 @@ Examples:
     overwrite: z.boolean().optional().default(false).describe("Overwrite if destination exists"),
   }),
   async execute({ source, destination, overwrite }) {
-    validatePath(source, "read");
-    validatePath(destination, "write");
+    const srcPath = await resolvePathSecurely(source, "read");
+    const destPath = await resolvePathSecurely(destination, "write");
     try {
-      const srcPath = resolveUserPath(source);
-      const destPath = resolveUserPath(destination);
-
       // Check if destination exists
       if (!overwrite) {
         try {
@@ -861,12 +658,9 @@ Examples:
     overwrite: z.boolean().optional().default(false).describe("Overwrite if destination exists"),
   }),
   async execute({ source, destination, overwrite }) {
-    validatePath(source, "delete");
-    validatePath(destination, "write");
+    const srcPath = await resolvePathSecurely(source, "delete");
+    const destPath = await resolvePathSecurely(destination, "write", { followLeaf: false });
     try {
-      const srcPath = resolveUserPath(source);
-      const destPath = resolveUserPath(destination);
-
       // Check if destination exists
       if (!overwrite) {
         try {
@@ -976,8 +770,8 @@ Examples:
     dirsOnly: z.boolean().optional().default(false).describe("Show only directories"),
   }),
   async execute({ path: dirPath, depth, showHidden, dirsOnly }) {
+    const absolutePath = await resolvePathSecurely(dirPath ?? ".", "read");
     try {
-      const absolutePath = resolveUserPath(dirPath ?? ".");
       let totalFiles = 0;
       let totalDirs = 0;
       const lines: string[] = [path.basename(absolutePath) + "/"];

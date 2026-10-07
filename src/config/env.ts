@@ -1,3 +1,4 @@
+import { PROVIDER_IDS } from "../providers/provider-types.js";
 /**
  * Environment configuration for Corbat-Coco
  *
@@ -56,44 +57,10 @@ function loadGlobalCocoEnv(): void {
 /**
  * Supported provider types
  */
-export type ProviderType =
-  | "anthropic"
-  | "openai"
-  | "codex"
-  | "copilot"
-  | "gemini"
-  | "vertex"
-  | "kimi"
-  | "kimi-code"
-  | "lmstudio"
-  | "ollama"
-  | "groq"
-  | "openrouter"
-  | "mistral"
-  | "deepseek"
-  | "together"
-  | "huggingface"
-  | "qwen";
+export type { ProviderType } from "../providers/provider-types.js";
+import type { ProviderType } from "../providers/provider-types.js";
 
-const VALID_PROVIDERS: ProviderType[] = [
-  "anthropic",
-  "openai",
-  "codex",
-  "copilot",
-  "gemini",
-  "vertex",
-  "kimi",
-  "kimi-code",
-  "lmstudio",
-  "ollama",
-  "groq",
-  "openrouter",
-  "mistral",
-  "deepseek",
-  "together",
-  "huggingface",
-  "qwen",
-];
+const VALID_PROVIDERS: readonly ProviderType[] = PROVIDER_IDS;
 
 /**
  * Authentication method types
@@ -103,7 +70,12 @@ export type AuthMethod = "apikey" | "oauth" | "gcloud" | "none";
 /**
  * Get the internal provider ID (maps aliases to canonical IDs)
  */
-export function getInternalProviderId(provider: ProviderType): ProviderType {
+export function getInternalProviderId(
+  provider: ProviderType,
+  authMethod?: AuthMethod,
+): ProviderType {
+  if (provider === "openai" && authMethod !== undefined)
+    return authMethod === "oauth" ? "codex" : "openai";
   // Map openai to codex when using OAuth (ChatGPT subscription)
   // This ensures the correct provider is used for OAuth authentication
   if (provider === "openai") {
@@ -166,6 +138,16 @@ export async function clearAuthMethod(provider: ProviderType): Promise<void> {
  */
 export function getApiKey(provider: ProviderType): string | undefined {
   switch (provider) {
+    case "xai":
+      return process.env["XAI_API_KEY"];
+    case "minimax":
+      return process.env["MINIMAX_API_KEY"];
+    case "cerebras":
+      return process.env["CEREBRAS_API_KEY"];
+    case "azure-openai":
+      return process.env["AZURE_OPENAI_API_KEY"];
+    case "bedrock":
+      return process.env["AWS_BEARER_TOKEN_BEDROCK"];
     case "anthropic":
       return process.env["ANTHROPIC_API_KEY"];
     case "openai":
@@ -244,7 +226,7 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
     case "together":
       return process.env["TOGETHER_BASE_URL"] ?? "https://api.together.xyz/v1";
     case "huggingface":
-      return process.env["HF_BASE_URL"] ?? "https://api-inference.huggingface.co/v1";
+      return process.env["HF_BASE_URL"] ?? "https://router.huggingface.co/v1";
     case "qwen":
       // Default: international endpoint (modelstudio.console.alibabacloud.com)
       // China domestic users override with: DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
@@ -252,6 +234,14 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
         process.env["DASHSCOPE_BASE_URL"] ??
         "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
       );
+    case "xai":
+      return process.env["XAI_BASE_URL"] ?? "https://api.x.ai/v1";
+    case "minimax":
+      return process.env["MINIMAX_BASE_URL"] ?? "https://api.minimax.io/v1";
+    case "cerebras":
+      return process.env["CEREBRAS_BASE_URL"] ?? "https://api.cerebras.ai/v1";
+    case "azure-openai":
+      return process.env["AZURE_OPENAI_ENDPOINT"];
     default:
       return undefined;
   }
@@ -263,6 +253,16 @@ export function getBaseUrl(provider: ProviderType): string | undefined {
  */
 export function getDefaultModel(provider: ProviderType): string {
   switch (provider) {
+    case "xai":
+      return process.env["XAI_MODEL"] ?? getCatalogDefaultModel(provider);
+    case "minimax":
+      return process.env["MINIMAX_MODEL"] ?? getCatalogDefaultModel(provider);
+    case "cerebras":
+      return process.env["CEREBRAS_MODEL"] ?? getCatalogDefaultModel(provider);
+    case "azure-openai":
+      return process.env["AZURE_OPENAI_MODEL"] ?? getCatalogDefaultModel(provider);
+    case "bedrock":
+      return process.env["BEDROCK_MODEL"] ?? getCatalogDefaultModel(provider);
     case "anthropic":
       return process.env["ANTHROPIC_MODEL"] ?? getCatalogDefaultModel(provider);
     case "openai":
@@ -431,10 +431,21 @@ export async function saveThinkingPreference(
  * Save provider and model preference to global config
  * This is the single source of truth for user preferences
  */
+/** Explicit authentication preference; absent values preserve legacy detection. */
+export async function getLastUsedAuthMethod(
+  provider: ProviderType,
+): Promise<AuthMethod | undefined> {
+  try {
+    return (await loadConfig(CONFIG_PATHS.config)).providerAuthMethods?.[provider];
+  } catch {
+    return undefined;
+  }
+}
+
 export async function saveProviderPreference(
   provider: ProviderType,
   model?: string,
-  options?: { project?: string; location?: string },
+  options?: { project?: string; location?: string; authMethod?: AuthMethod },
 ): Promise<void> {
   // Load current global config
   let config: CocoConfig;
@@ -468,6 +479,9 @@ export async function saveProviderPreference(
       },
     };
   }
+
+  if (options?.authMethod !== undefined)
+    config.providerAuthMethods = { ...config.providerAuthMethods, [provider]: options.authMethod };
 
   // Update provider and model
   config.provider.type = provider;

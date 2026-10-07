@@ -73,7 +73,7 @@ async function runInit(projectPath: string, options: InitOptions): Promise<void>
       chalk.dim(" - Run discovery and create a development plan"),
   );
   console.log(
-    chalk.dim("  2. ") + chalk.cyan("coco build") + chalk.dim(" - Start building the project"),
+    chalk.dim("  2. ") + chalk.cyan("coco") + chalk.dim(" - Open the interactive coding agent"),
   );
   console.log(
     chalk.dim("  3. ") + chalk.cyan("coco status") + chalk.dim(" - Check current progress"),

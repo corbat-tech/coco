@@ -179,7 +179,9 @@ export class ProgressTracker {
 
       try {
         await onInterrupt();
-        console.log("✅ Checkpoint saved. Resume with `coco resume`");
+        console.log(
+          "✅ Checkpoint saved. Automatic phase resume is unavailable; inspect saved state before restarting.",
+        );
       } catch (error) {
         console.error("❌ Failed to save checkpoint:", error);
       }

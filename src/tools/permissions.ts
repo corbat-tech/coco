@@ -16,6 +16,7 @@
  */
 
 import { z } from "zod";
+import { ToolError } from "../utils/errors.js";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import {
   RECOMMENDED_GLOBAL,
@@ -65,6 +66,13 @@ export function getEffectDescription(
   pattern: string,
   scope?: "global" | "project",
 ): string {
+  if (
+    (pattern.startsWith("bash:") && !pattern.startsWith("bash:exact:")) ||
+    pattern === "bash_exec" ||
+    pattern === "bash_background"
+  ) {
+    return "Legacy shell prefix grants are inactive; only exact call approvals authorize shell execution";
+  }
   const scopeLabel = scope === "global" ? " (all projects)" : " (this project)";
   switch (action) {
     case "allow":
@@ -122,21 +130,19 @@ Scope:
 
 Pattern format:
 - Coco tools: "write_file", "edit_file", "git_push", "delete_file"
-- Bash commands: "bash:curl", "bash:rm", "bash:wget"
-- Bash subcommands: "bash:git:push", "bash:npm:install", "bash:docker:run"
-- Bash deep subcommands: "bash:gh:pr:list", "bash:aws:s3:ls"
+- Shell approvals can only be created by confirming the visible shell call. This tool can revoke them with deny/ask using their bash:exact:<fingerprint> keys.
+- Legacy bash command/subcommand prefixes no longer authorize shell execution. Approve the exact call in its confirmation prompt.
 
 Examples:
-- Block git push for this project: { "action": "deny", "patterns": ["bash:git:push"], "scope": "project" }
-- Allow npm install globally: { "action": "allow", "patterns": ["bash:npm:install"], "scope": "global" }
-- Block destructive git for this project: { "action": "deny", "patterns": ["bash:git:push", "bash:git:rebase", "bash:git:reset"], "reason": "Protect git history" }`,
+- Ask before native git push: { "action": "ask", "patterns": ["git_push"], "scope": "project" }
+- Allow native edits in this project: { "action": "allow", "patterns": ["edit_file"], "scope": "project" }`,
   category: "config",
   parameters: z.object({
     action: z.enum(["allow", "deny", "ask"]).describe("What to do with these patterns"),
     patterns: z
       .array(z.string().min(1))
       .min(1)
-      .describe("Tool patterns to modify (e.g. 'bash:git:push', 'write_file')"),
+      .describe("Tool patterns to modify (e.g. 'git_push', 'write_file')"),
     scope: z
       .enum(["global", "project"])
       .default("project")
@@ -145,6 +151,18 @@ Examples:
   }),
   async execute({ action, patterns, scope, reason }) {
     const effectiveScope = scope ?? "project";
+    if (
+      action === "allow" &&
+      patterns.some(
+        (pattern) =>
+          pattern.startsWith("bash:") || pattern === "bash_exec" || pattern === "bash_background",
+      )
+    ) {
+      throw new ToolError(
+        "Shell permissions can only be granted in the confirmation prompt for the visible command.",
+        { tool: "manage_permissions" },
+      );
+    }
 
     // Validate and assess risk for each pattern
     const changes: PermissionChange[] = patterns.map((pattern) => ({
@@ -159,7 +177,7 @@ Examples:
     const scopeLabel = effectiveScope === "global" ? " (global)" : " (project)";
     const patternList = patterns.join(", ");
     const reasonSuffix = reason ? ` — ${reason}` : "";
-    const summary = `Will ${verb}: ${patternList}${scopeLabel}${reasonSuffix}`;
+    const summary = `Will ${verb}: ${patternList}${scopeLabel}${reasonSuffix}. ${changes.map((change) => change.effect).join("; ")}`;
 
     return { changes, summary };
   },

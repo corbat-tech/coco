@@ -1,3 +1,5 @@
+import { realpath } from "node:fs/promises";
+import type { Message } from "../../../providers/types.js";
 /**
  * /resume command - Resume a previous session
  *
@@ -209,20 +211,49 @@ async function resumeSession(
     return false;
   }
 
-  // Restore messages to current session
-  currentSession.messages = [...loadedSession.messages];
-
-  // Restore config if compatible
-  if (loadedSession.config.provider.type === currentSession.config.provider.type) {
-    currentSession.config.provider.model = loadedSession.config.provider.model;
-  }
-
-  // Restore trusted tools
-  if (loadedSession.trustedTools) {
-    for (const tool of loadedSession.trustedTools) {
-      currentSession.trustedTools.add(tool);
+  // Stored conversation is data, never authority to switch projects or restore consent.
+  let currentRoot: string;
+  try {
+    currentRoot = await realpath(currentSession.projectPath);
+    if (
+      (await realpath(loadedSession.projectPath)) !== currentRoot ||
+      (await realpath(targetSession.projectPath)) !== currentRoot
+    ) {
+      console.log(chalk.red("Session belongs to another project. Open that project to resume it."));
+      return false;
     }
+  } catch {
+    console.log(chalk.red("Cannot verify the session project; nothing was restored."));
+    return false;
   }
+  if (loadedSession.id !== targetSession.id) {
+    console.log(chalk.red("Session identity mismatch; nothing was restored."));
+    return false;
+  }
+  const messages = markInterruptedToolCalls(loadedSession.messages);
+  const runtime = currentSession.runtime;
+  if (runtime) {
+    await runtime.closeSession(currentSession.id);
+    if (loadedSession.id !== currentSession.id) await runtime.closeSession(loadedSession.id);
+    const existing = runtime.getSession(loadedSession.id);
+    if (existing)
+      runtime.runtimeSessionStore.update({
+        ...existing,
+        messages,
+        updatedAt: new Date().toISOString(),
+      });
+    else
+      runtime.createSession({
+        id: loadedSession.id,
+        messages,
+        mode: currentSession.agentMode ?? "build",
+      });
+    runtime.enableBackgroundJobs(loadedSession.id, currentRoot);
+  }
+  currentSession.id = loadedSession.id;
+  currentSession.startedAt = loadedSession.startedAt;
+  currentSession.messages = messages;
+  // Runtime/model configuration and current project consent remain host-controlled.
 
   // Display confirmation
   console.log();
@@ -241,6 +272,31 @@ async function resumeSession(
   console.log();
 
   return false;
+}
+
+/** Fill interrupted calls with an explicit unknown outcome; never execute persisted calls. */
+export function markInterruptedToolCalls(messages: Message[]): Message[] {
+  const restored = structuredClone(messages);
+  const pending = new Set<string>();
+  for (const message of restored) {
+    if (!Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (block.type === "tool_use") pending.add(block.id);
+      if (block.type === "tool_result") pending.delete(block.tool_use_id);
+    }
+  }
+  if (pending.size)
+    restored.push({
+      role: "user",
+      content: [...pending].map((id) => ({
+        type: "tool_result" as const,
+        tool_use_id: id,
+        is_error: true,
+        content:
+          "Interrupted session: operation outcome is unknown. Do not repeat automatically; inspect current state before deciding any further action.",
+      })),
+    });
+  return restored;
 }
 
 // =============================================================================

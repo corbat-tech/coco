@@ -12,7 +12,6 @@ import {
   jsonSchemaToZod,
 } from "./tools.js";
 import type { MCPTool, MCPClient, MCPCallToolResult } from "./types.js";
-import { MCPTimeoutError } from "./errors.js";
 
 describe("wrapMCPTool", () => {
   const mockClient: MCPClient = {
@@ -135,10 +134,10 @@ describe("wrapMCPTool", () => {
     const { tool } = wrapMCPTool(mcpTool, "filesystem", mockClient);
     const result = await tool.execute({ path: "/test.txt" });
 
-    expect(mockClient.callTool).toHaveBeenCalledWith({
-      name: "read_file",
-      arguments: { path: "/test.txt" },
-    });
+    expect(mockClient.callTool).toHaveBeenCalledWith(
+      { name: "read_file", arguments: { path: "/test.txt" } },
+      { signal: undefined, timeout: 60000 },
+    );
     expect(result).toBe("file content");
   });
 
@@ -173,21 +172,26 @@ describe("wrapMCPTool", () => {
     await expect(tool.execute({})).rejects.toThrow("Tool execution failed");
   });
 
-  it("should timeout on slow execution", async () => {
+  it("should delegate the custom timeout and execution signal to the client", async () => {
     const mcpTool: MCPTool = {
       name: "slow_tool",
       inputSchema: { type: "object" },
     };
 
-    vi.mocked(mockClient.callTool).mockImplementation(
-      () => new Promise((resolve) => setTimeout(resolve, 1000)),
-    );
+    const controller = new AbortController();
+    vi.mocked(mockClient.callTool).mockResolvedValue({
+      content: [{ type: "text", text: "completed" }],
+    });
 
     const { tool } = wrapMCPTool(mcpTool, "filesystem", mockClient, {
       requestTimeout: 50,
     });
 
-    await expect(tool.execute({})).rejects.toThrow(MCPTimeoutError);
+    await expect(tool.execute({}, { signal: controller.signal })).resolves.toBe("completed");
+    expect(mockClient.callTool).toHaveBeenCalledWith(
+      { name: "slow_tool", arguments: {} },
+      { signal: controller.signal, timeout: 50 },
+    );
   });
 
   it("should format image content", async () => {

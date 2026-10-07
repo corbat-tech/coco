@@ -1,5 +1,7 @@
 # Plan: Mejoras de Coco inspiradas en Codex y Claude Code
 
+> Histórico. Para la evolución iniciada el 2026-09-16, seguir [COCO_EVOLUTION_PLAN.md](COCO_EVOLUTION_PLAN.md). Las marcas de esta hoja de ruta no prueban paridad ni funcionamiento actual; revalidar cada capacidad sobre el código antes de ampliarla.
+
 ## Status Tracker
 
 ### 2026-06-18 Implementation Update

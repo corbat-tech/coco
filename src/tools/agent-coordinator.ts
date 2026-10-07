@@ -1,3 +1,4 @@
+import { AGENT_TYPES, resolveAgentType } from "../runtime/agent-type.js";
 /**
  * Agent Coordinator - Enhanced multi-agent coordination
  * Supports task delegation, parallel execution strategies, and result aggregation
@@ -275,17 +276,6 @@ export const createAgentPlanTool = defineTool({
 });
 
 /**
- * Legacy role → AgentType mapping for backward compatibility
- */
-const LEGACY_ROLE_TO_TYPE: Record<string, AgentType> = {
-  researcher: "explore",
-  coder: "debug",
-  reviewer: "review",
-  tester: "test",
-  optimizer: "refactor",
-};
-
-/**
  * Tool: Delegate task to specialized sub-agent via AgentManager
  */
 export const delegateTaskTool = defineTool({
@@ -295,23 +285,7 @@ export const delegateTaskTool = defineTool({
   parameters: z.object({
     taskId: z.string(),
     task: z.string().describe("Description of the task for the agent to execute"),
-    agentType: z
-      .enum([
-        "explore",
-        "plan",
-        "test",
-        "debug",
-        "review",
-        "architect",
-        "security",
-        "tdd",
-        "refactor",
-        "e2e",
-        "docs",
-        "database",
-      ])
-      .optional()
-      .describe("Specialized agent type to use"),
+    agentType: z.enum(AGENT_TYPES).optional().describe("Specialized agent type to use"),
     agentRole: z
       .enum(["researcher", "coder", "reviewer", "tester", "optimizer"])
       .optional()
@@ -320,7 +294,7 @@ export const delegateTaskTool = defineTool({
     maxTurns: z.number().default(10),
   }),
 
-  async execute(input) {
+  async execute(input, executionContext) {
     const typedInput = input as {
       taskId: string;
       task: string;
@@ -346,9 +320,7 @@ export const delegateTaskTool = defineTool({
     }
 
     // Resolve type: prefer agentType, fall back to legacy agentRole mapping
-    const agentType: AgentType =
-      typedInput.agentType ??
-      (typedInput.agentRole ? (LEGACY_ROLE_TO_TYPE[typedInput.agentRole] ?? "explore") : "explore");
+    const agentType = resolveAgentType({ type: typedInput.agentType, role: typedInput.agentRole });
 
     const taskDescription = typedInput.context
       ? `${typedInput.task}\n\nAdditional context: ${typedInput.context}`
@@ -356,6 +328,8 @@ export const delegateTaskTool = defineTool({
 
     const startTime = Date.now();
     const result = await manager.spawn(agentType, taskDescription, {
+      executionContext,
+      signal: executionContext?.signal,
       timeout: typedInput.maxTurns * 60_000,
     });
 

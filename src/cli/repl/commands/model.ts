@@ -1,3 +1,5 @@
+import { discoverAggregatorModels } from "../../../providers/model-discovery.js";
+import { resolveModelMigration } from "../../../providers/model-lifecycle.js";
 /**
  * /model command - Change or view current model
  * Interactive selection with arrow keys
@@ -357,6 +359,13 @@ function reconcileThinkingAfterModelChange(session: ReplSession, newModel: strin
     return;
   }
 
+  if (typeof current === "string" && !cap.levels.includes(current)) {
+    session.config.provider.thinking = cap.defaultMode;
+    console.log(
+      chalk.dim(`  Thinking changed to ${cap.defaultMode}: previous setting is unsupported.`),
+    );
+  }
+
   // Set sensible default if model now supports thinking and none was set
   if (current === undefined) {
     const def = resolveDefaultThinking(provider, newModel);
@@ -388,8 +397,8 @@ async function promptThinkingForInteractiveModelChange(
     return;
   }
 
-  session.config.provider.thinking = selected === "off" ? undefined : selected;
   await saveThinkingPreference(provider, selected);
+  session.config.provider.thinking = selected;
 
   console.log(chalk.green(`✓ Thinking: ${formatThinkingMode(selected)}\n`));
 }
@@ -429,7 +438,13 @@ export const modelCommand: SlashCommand = {
           modelsForSelection = providerDef.models;
         }
       } else {
-        modelsForSelection = providerDef.models;
+        const discovered = await discoverAggregatorModels(currentProvider);
+        modelsForSelection = discovered.length
+          ? discovered.map((model) => ({
+              ...model,
+              ...providerDef.models.find((known) => known.id === model.id),
+            }))
+          : providerDef.models;
       }
 
       if (modelsForSelection.length === 0) {
@@ -466,7 +481,9 @@ export const modelCommand: SlashCommand = {
     }
 
     // Direct model specification via argument
-    const newModel = args[0]!;
+    const migration = resolveModelMigration(currentProvider, args[0]!);
+    const newModel = migration.model;
+    if (migration.warning) console.log(chalk.yellow(migration.warning));
 
     // Check if already using this model
     if (newModel === session.config.provider.model) {
@@ -476,7 +493,10 @@ export const modelCommand: SlashCommand = {
 
     // Find model in current provider or any provider
     let foundInProvider: string | null = null;
-    for (const provider of getAllProviders()) {
+    for (const provider of [
+      providerDef,
+      ...getAllProviders().filter((p) => p.id !== currentProvider),
+    ]) {
       if (provider.models.some((m) => m.id === newModel)) {
         foundInProvider = provider.id;
         break;

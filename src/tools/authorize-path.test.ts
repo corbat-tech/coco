@@ -8,7 +8,6 @@ import { authorizePathTool } from "./authorize-path.js";
 // Mock allowed-paths module
 vi.mock("./allowed-paths.js", () => ({
   getAllowedPaths: vi.fn(() => []),
-  isWithinAllowedPath: vi.fn(() => false),
 }));
 
 // Mock the allow-path-prompt (dynamic import)
@@ -20,14 +19,16 @@ vi.mock("../cli/repl/allow-path-prompt.js", () => ({
 vi.mock("node:fs/promises", () => ({
   default: {
     stat: vi.fn(async () => ({ isDirectory: () => true })),
+    realpath: vi.fn(async (entry: string) => entry),
   },
 }));
 
-import { isWithinAllowedPath, getAllowedPaths } from "./allowed-paths.js";
+import { getAllowedPaths } from "./allowed-paths.js";
 
 describe("authorize_path tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getAllowedPaths).mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -40,12 +41,14 @@ describe("authorize_path tool", () => {
   });
 
   it("should return already authorized if path is in allowed paths", async () => {
-    vi.mocked(isWithinAllowedPath).mockReturnValueOnce(true);
+    vi.mocked(getAllowedPaths).mockReturnValue([
+      { path: "/tmp/test-dir", level: "read", authorizedAt: "fixture" },
+    ]);
 
     const result = await authorizePathTool.execute({ path: "/tmp/test-dir" });
 
     expect(result.authorized).toBe(true);
-    expect(result.message).toContain("already authorized");
+    expect(result.message).toContain("already accessible");
   });
 
   it("should block system paths", async () => {
@@ -73,23 +76,24 @@ describe("authorize_path tool", () => {
     const result = await authorizePathTool.execute({ path: testPath });
 
     expect(result.authorized).toBe(true);
-    expect(result.message).toContain("already authorized");
+    expect(result.message).toContain("already accessible");
   });
 
-  it("should include reason in success message", async () => {
-    const result = await authorizePathTool.execute({
-      path: "/home/test/other-project",
-      reason: "Need shared types",
-    });
-
-    if (result.authorized) {
-      expect(result.message).toContain("Need shared types");
-    }
+  it("reports missing authority with reason and canonical grant request without prompting", async () => {
+    const { promptAllowPath } = await import("../cli/repl/allow-path-prompt.js");
+    await expect(
+      authorizePathTool.execute({ path: "/home/test/other-project", reason: "Need shared types" }),
+    ).rejects.toThrow(
+      "Reason: Need shared types. Use /allow-path /home/test/other-project to grant access",
+    );
+    expect(promptAllowPath).not.toHaveBeenCalled();
   });
 
   it("should handle non-existent directories", async () => {
     const fs = await import("node:fs/promises");
-    vi.mocked(fs.default.stat).mockRejectedValueOnce(new Error("ENOENT"));
+    vi.mocked(fs.default.stat).mockRejectedValueOnce(
+      Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
+    );
 
     const result = await authorizePathTool.execute({ path: "/nonexistent/path" });
 

@@ -9,7 +9,9 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { defineTool, type ToolDefinition } from "./registry.js";
 import { ToolError } from "../utils/errors.js";
-import { trackSubprocess } from "../utils/subprocess-registry.js";
+import { rethrowCancellation } from "../utils/cancellation.js";
+import { createRequestScope } from "../utils/request-scope.js";
+import { ownShell } from "./utils/owned-shell.js";
 
 /**
  * Test result interface
@@ -170,9 +172,12 @@ Examples:
     watch: z.boolean().optional().default(false).describe("Watch mode"),
     args: z.array(z.string()).optional().describe("Extra arguments (e.g. Maven -pl module)"),
   }),
-  async execute({ cwd, pattern, coverage, framework, watch, args: extraArgs }) {
+  async execute({ cwd, pattern, coverage, framework, watch, args: extraArgs }, executionContext) {
+    const signal = executionContext?.signal;
+    signal?.throwIfAborted();
     const projectDir = cwd ?? process.cwd();
     const detectedFramework = framework ?? (await detectTestFramework(projectDir));
+    signal?.throwIfAborted();
 
     if (!detectedFramework) {
       throw new ToolError(
@@ -234,26 +239,54 @@ Examples:
           });
       }
 
-      const proc = execa(command, args, {
-        cwd: projectDir,
-        reject: false,
-        timeout: 300000, // 5 minute timeout
-        cleanup: true, // kill process tree on parent exit
-      });
-      trackSubprocess(proc);
-      const result = await proc;
-
-      const duration = performance.now() - startTime;
-
-      // Parse results based on framework
-      return parseTestResults(
-        detectedFramework,
-        result.stdout ?? "",
-        result.stderr ?? "",
-        result.exitCode ?? 0,
-        duration,
-      );
+      signal?.throwIfAborted();
+      const scope = createRequestScope(signal, 300000);
+      try {
+        const proc = execa(command, args, {
+          cwd: projectDir,
+          reject: false,
+          timeout: 0, // The scope owns the deadline and the complete process group.
+          detached: process.platform !== "win32",
+          encoding: "buffer", // execa otherwise counts characters rather than wire bytes.
+          maxBuffer: 16 * 1024 * 1024, // Per stream; overflow fails instead of parsing partial JSON.
+          ...(process.platform === "win32"
+            ? { cancelSignal: scope.signal, forceKillAfterDelay: 3000 }
+            : {}),
+        });
+        const result = await ownShell(proc, scope.signal);
+        scope.signal.throwIfAborted();
+        if (
+          result.timedOut ||
+          result.isCanceled ||
+          result.isMaxBuffer ||
+          result.signal ||
+          typeof result.exitCode !== "number"
+        ) {
+          throw new Error(
+            result.isMaxBuffer
+              ? "Test output exceeds the 16 MiB per-stream limit"
+              : "Test process terminated without a normal exit status",
+          );
+        }
+        const parsed = parseTestResults(
+          detectedFramework,
+          result.stdout instanceof Uint8Array
+            ? Buffer.from(result.stdout).toString("utf8")
+            : String(result.stdout ?? ""),
+          result.stderr instanceof Uint8Array
+            ? Buffer.from(result.stderr).toString("utf8")
+            : String(result.stderr ?? ""),
+          result.exitCode,
+          performance.now() - startTime,
+        );
+        // A valid report cannot override a failed process exit (e.g. teardown failure).
+        parsed.success = parsed.success && result.exitCode === 0;
+        return parsed;
+      } finally {
+        scope.dispose();
+      }
     } catch (error) {
+      rethrowCancellation(error, signal);
       const msg = error instanceof Error ? error.message : String(error);
       throw new ToolError(
         `Test execution failed: ${msg}. Use command_exists to verify the test framework is installed, or run_script with a custom command.`,

@@ -3,8 +3,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 vi.mock("execa", () => ({
   execa: vi.fn().mockResolvedValue({
@@ -76,20 +74,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 vi.mock("glob", () => ({
   glob: vi.fn().mockResolvedValue(["/test/src/file.ts"]),
 }));
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Regression test: Fix #2 — calculate_quality uses createQualityEvaluatorWithRegistry
-// ──────────────────────────────────────────────────────────────────────────────
-describe("calculateQualityTool — uses registry-aware evaluator (Fix #2)", () => {
-  it("quality.ts source imports createQualityEvaluatorWithRegistry, not createQualityEvaluator", () => {
-    // Read source to confirm the correct factory is imported.
-    const qualityTsPath = fileURLToPath(new URL("./quality.ts", import.meta.url));
-    const source = readFileSync(qualityTsPath, "utf-8");
-    expect(source).toContain("createQualityEvaluatorWithRegistry");
-    // The old plain factory must NOT be imported
-    expect(source).not.toMatch(/import[^;]*createQualityEvaluator[^W]/);
-  });
-});
 
 describe("runLinterTool", () => {
   beforeEach(() => {
@@ -198,29 +182,32 @@ describe("analyzeComplexityTool", () => {
   });
 });
 
-describe("calculateQualityTool", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("should calculate comprehensive quality scores", async () => {
+describe("calculateQualityTool evidence", () => {
+  it("returns explicit incomplete evidence without certifying acceptance", async () => {
+    const { QualityEvaluator } = await import("../quality/evaluator.js");
     const { calculateQualityTool } = await import("./quality.js");
-
-    const result = await calculateQualityTool.execute({ cwd: "/test" });
-
-    expect(result.overall).toBeGreaterThanOrEqual(0);
-    expect(result.overall).toBeLessThanOrEqual(100);
-    expect(result.dimensions).toBeDefined();
-  });
-
-  it("should include all quality dimensions", async () => {
-    const { calculateQualityTool } = await import("./quality.js");
-
-    const result = await calculateQualityTool.execute({ cwd: "/test" });
-
-    expect(result.dimensions).toBeDefined();
-    // Check that dimensions object has properties
-    expect(Object.keys(result.dimensions).length).toBeGreaterThan(0);
+    const evaluation = {
+      scores: { overall: 70, dimensions: {}, evaluatedAt: new Date(), evaluationDurationMs: 1 },
+      complete: false,
+      passed: false,
+      meetsMinimum: false,
+      meetsTarget: false,
+      converged: false,
+      measurements: { style: { state: "unavailable", score: null } },
+      issues: [],
+      suggestions: [],
+    };
+    const spy = vi
+      .spyOn(QualityEvaluator.prototype, "evaluate")
+      .mockResolvedValue(evaluation as never);
+    try {
+      const result = await calculateQualityTool.execute({ cwd: "/test" });
+      expect(result.overall).toBe(70);
+      expect(result.passed).toBe(false);
+      expect(result.measurements?.style.state).toBe("unavailable");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -233,35 +220,6 @@ describe("qualityTools", () => {
     expect(qualityTools.some((t) => t.name === "run_linter")).toBe(true);
     expect(qualityTools.some((t) => t.name === "analyze_complexity")).toBe(true);
     expect(qualityTools.some((t) => t.name === "calculate_quality")).toBe(true);
-  });
-});
-
-describe("calculateQualityTool error handling", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("should handle coverage tool errors gracefully", async () => {
-    // The coverage tool throws an error - should still return valid result
-    const { calculateQualityTool } = await import("./quality.js");
-
-    const result = await calculateQualityTool.execute({ cwd: "/test" });
-
-    // Should succeed even if coverage fails
-    expect(result.overall).toBeGreaterThanOrEqual(0);
-    expect(result.dimensions.testCoverage).toBe(0); // Default when coverage unavailable
-  });
-
-  it("should throw ToolError when quality calculation fails", async () => {
-    // Force an error by making glob fail
-    const { glob } = await import("glob");
-    vi.mocked(glob).mockRejectedValueOnce(new Error("Glob failed"));
-
-    const { calculateQualityTool } = await import("./quality.js");
-
-    await expect(calculateQualityTool.execute({ cwd: "/nonexistent" })).rejects.toThrow(
-      /Quality calculation failed/,
-    );
   });
 });
 

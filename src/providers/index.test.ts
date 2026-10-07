@@ -276,8 +276,13 @@ describe("Providers module exports", () => {
 
     it("should return list of providers", () => {
       const providers = ProviderExports.listProviders();
-      expect(providers).toHaveLength(17);
+      expect(providers).toHaveLength(22);
       expect(providers.map((p) => p.id)).toEqual([
+        "xai",
+        "minimax",
+        "cerebras",
+        "azure-openai",
+        "bedrock",
         "anthropic",
         "openai",
         "codex",

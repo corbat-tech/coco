@@ -49,10 +49,10 @@ export default defineConfig({
         "src/swarm/**",
       ],
       thresholds: {
-        lines: 66,
+        lines: 80,
         functions: 72,
         branches: 57,
-        statements: 65,
+        statements: 80,
       },
     },
     testTimeout: 30000,

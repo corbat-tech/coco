@@ -1,3 +1,4 @@
+import { BackgroundJobOwner } from "../tools/utils/background-jobs.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { evaluateRuntimeToolPolicy, type RuntimePolicy } from "./context.js";
 import { createEventLog } from "./event-log.js";
@@ -16,9 +17,16 @@ export interface RuntimeToolExecutorOptions {
   permissionPolicy?: PermissionPolicy;
   mode?: RuntimeMode;
   runtimePolicy?: RuntimePolicy;
+  /** Preserve the public runtime API event contract when used by its facade. */
+  eventProfile?: "agent" | "runtime-api";
 }
 
 export interface RuntimeToolExecutorInput {
+  /** Provider call ID for correlating parallel tool attempts. */
+  toolCallId?: string;
+  /** Cancellation forwarded to the registry without changing tool authority. */
+  signal?: AbortSignal;
+  sessionId?: string;
   toolName: string;
   input: Record<string, unknown>;
   mode?: RuntimeMode;
@@ -27,27 +35,72 @@ export interface RuntimeToolExecutorInput {
   metadata?: Record<string, unknown>;
 }
 
+interface AuthorityCeiling {
+  readonly mode: RuntimeMode;
+  readonly allowedTools?: ReadonlySet<string>;
+}
+
 export class RuntimeToolExecutor {
+  private readonly backgroundOwners = new Map<string, BackgroundJobOwner>();
+
+  /** Host-only opt-in: pair with closeSession on every session exit. */
+  enableBackgroundJobs(sessionId: string, projectRoot: string): void {
+    if (this.backgroundOwners.has(sessionId))
+      throw new Error("Background owner already configured");
+    this.backgroundOwners.set(sessionId, new BackgroundJobOwner(projectRoot));
+  }
+
+  async closeSession(sessionId: string): Promise<void> {
+    const owner = this.backgroundOwners.get(sessionId);
+    if (owner) await owner.close();
+    // Removing the capability also rejects late launches and releases retained output.
+    if (this.backgroundOwners.get(sessionId) === owner) this.backgroundOwners.delete(sessionId);
+  }
+
+  async close(): Promise<void> {
+    await Promise.all(
+      [...this.backgroundOwners.keys()].map((sessionId) => this.closeSession(sessionId)),
+    );
+  }
+
   private readonly toolRegistry: ToolRegistry;
   private readonly eventLog: EventLog;
   private readonly permissionPolicy: PermissionPolicy;
   private readonly defaultMode: RuntimeMode;
   private readonly runtimePolicy?: RuntimePolicy;
+  private readonly eventProfile: "agent" | "runtime-api";
 
   constructor(options: RuntimeToolExecutorOptions) {
     this.toolRegistry = options.toolRegistry;
     this.eventLog = options.eventLog ?? createEventLog();
     this.permissionPolicy = options.permissionPolicy ?? createPermissionPolicy();
     this.defaultMode = options.mode ?? "ask";
-    this.runtimePolicy = options.runtimePolicy;
+    this.runtimePolicy = options.runtimePolicy ? structuredClone(options.runtimePolicy) : undefined;
+    this.eventProfile = options.eventProfile ?? "agent";
   }
 
   async execute(input: RuntimeToolExecutorInput): Promise<RuntimeToolExecutionResult> {
+    return this.executeScoped(input, []);
+  }
+
+  private async executeScoped(
+    input: RuntimeToolExecutorInput,
+    ancestors: readonly AuthorityCeiling[],
+  ): Promise<RuntimeToolExecutionResult> {
+    // Capture authority before any tool/provider awaits or caller mutations.
+    input = { ...input, allowedTools: input.allowedTools ? [...input.allowedTools] : undefined };
     const startedAt = performance.now();
     const mode = input.mode ?? this.defaultMode;
+    const sessionContext = {
+      ...(this.eventProfile === "runtime-api" ? { sessionId: input.sessionId } : {}),
+      ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
+    };
     const allowedTools = input.allowedTools ? new Set(input.allowedTools) : undefined;
 
-    if (allowedTools && !allowedTools.has(input.toolName)) {
+    if (
+      (allowedTools && !allowedTools.has(input.toolName)) ||
+      ancestors.some((ceiling) => ceiling.allowedTools && !ceiling.allowedTools.has(input.toolName))
+    ) {
       const decision: PermissionDecision = {
         allowed: false,
         reason: `Tool '${input.toolName}' is not available to this agent.`,
@@ -63,62 +116,99 @@ export class RuntimeToolExecutor {
         reason: "Tool not registered.",
         risk: "read-only",
       };
-      return this.block(input, mode, decision, startedAt);
+      return this.block(input, mode, decision, startedAt, {}, true);
     }
 
-    const decision = this.permissionPolicy.canExecuteToolInput
-      ? this.permissionPolicy.canExecuteToolInput(mode, tool, input.input)
-      : this.permissionPolicy.canExecuteTool(mode, tool);
-    const runtimeDecision = decision.allowed
-      ? evaluateRuntimeToolPolicy(this.runtimePolicy, {
-          toolName: input.toolName,
-          risk: decision.risk,
-          confirmed: input.confirmed,
-        })
-      : undefined;
-
-    if (
-      !decision.allowed ||
-      runtimeDecision?.allowed === false ||
-      (decision.requiresConfirmation && input.confirmed !== true)
-    ) {
-      const reason =
-        runtimeDecision?.reason ??
-        decision.reason ??
-        (decision.requiresConfirmation
-          ? "Tool requires explicit runtime confirmation."
-          : "Tool is not allowed.");
-      return this.block(
-        input,
-        mode,
-        {
-          ...decision,
-          allowed: false,
-          reason,
-          requiresConfirmation:
-            runtimeDecision?.requiresConfirmation ?? decision.requiresConfirmation,
-          risk: runtimeDecision?.risk ?? decision.risk,
-        },
-        startedAt,
-        { runtimePolicyBlocked: runtimeDecision ? !runtimeDecision.allowed : false },
-      );
-    }
-
-    this.eventLog.record("agent.tool.called", {
-      mode,
-      tool: input.toolName,
+    const decisions = [mode, ...ancestors.map((ceiling) => ceiling.mode)].map((scopeMode) =>
+      this.permissionPolicy.canExecuteToolInput
+        ? this.permissionPolicy.canExecuteToolInput(scopeMode, tool, input.input)
+        : this.permissionPolicy.canExecuteTool(scopeMode, tool),
+    );
+    const decision = decisions[0]!;
+    const runtimeDecision = evaluateRuntimeToolPolicy(this.runtimePolicy, {
+      toolName: input.toolName,
       risk: decision.risk,
-      metadata: input.metadata,
+      confirmed: input.confirmed,
     });
+
+    for (const scopedDecision of decisions) {
+      const scopedRuntimeDecision = scopedDecision.allowed
+        ? evaluateRuntimeToolPolicy(this.runtimePolicy, {
+            toolName: input.toolName,
+            risk: scopedDecision.risk,
+            confirmed: input.confirmed,
+          })
+        : undefined;
+      if (
+        !scopedDecision.allowed ||
+        scopedRuntimeDecision?.allowed === false ||
+        (scopedDecision.requiresConfirmation && input.confirmed !== true)
+      ) {
+        const reason =
+          scopedRuntimeDecision?.reason ??
+          scopedDecision.reason ??
+          (scopedDecision.requiresConfirmation
+            ? "Tool requires explicit runtime confirmation."
+            : "Tool is not allowed.");
+        return this.block(
+          input,
+          mode,
+          {
+            ...scopedDecision,
+            allowed: false,
+            reason,
+            requiresConfirmation:
+              scopedRuntimeDecision?.requiresConfirmation ?? scopedDecision.requiresConfirmation,
+            risk: scopedRuntimeDecision?.risk ?? scopedDecision.risk,
+          },
+          startedAt,
+          { runtimePolicyBlocked: scopedRuntimeDecision ? !scopedRuntimeDecision.allowed : false },
+        );
+      }
+    }
+
+    if (this.eventProfile === "agent") {
+      this.eventLog.record("agent.tool.called", {
+        mode,
+        tool: input.toolName,
+        risk: decision.risk,
+        metadata: input.metadata,
+      });
+    }
     this.eventLog.record("tool.started", {
+      ...sessionContext,
       mode,
       tool: input.toolName,
       risk: decision.risk,
       runtimeApi: true,
       metadataKeys: Object.keys(input.metadata ?? {}).sort(),
     });
-    const result = await this.toolRegistry.execute(input.toolName, input.input);
+    const result = await this.toolRegistry.execute(input.toolName, input.input, {
+      signal: input.signal,
+      context: {
+        backgroundJobs: input.sessionId ? this.backgroundOwners.get(input.sessionId) : undefined,
+        executeDelegatedTool: (call) => {
+          const signals = [input.signal, call.signal].filter(
+            (signal): signal is AbortSignal => signal !== undefined,
+          );
+          return this.executeScoped(
+            {
+              toolName: call.toolName,
+              input: call.input,
+              mode: call.mode,
+              allowedTools: [...call.allowedTools],
+              toolCallId: call.toolCallId,
+              sessionId: input.sessionId,
+              signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0],
+              confirmed: false,
+            },
+            [...ancestors, { mode, allowedTools }],
+          );
+        },
+      },
+    });
     this.eventLog.record("tool.completed", {
+      ...sessionContext,
       mode,
       tool: input.toolName,
       success: result.success,
@@ -132,7 +222,14 @@ export class RuntimeToolExecutor {
       output: result.data,
       error: result.error,
       duration: result.duration,
-      decision,
+      decision:
+        this.eventProfile === "runtime-api"
+          ? {
+              ...decision,
+              risk: runtimeDecision?.risk ?? decision.risk,
+              requiresConfirmation: decision.requiresConfirmation,
+            }
+          : decision,
     };
   }
 
@@ -142,15 +239,20 @@ export class RuntimeToolExecutor {
     decision: PermissionDecision,
     startedAt: number,
     extraData: Record<string, unknown> = {},
+    unregistered = false,
   ): RuntimeToolExecutionResult {
+    const runtimeApi = this.eventProfile === "runtime-api";
     this.eventLog.record("tool.blocked", {
+      ...(runtimeApi ? { sessionId: input.sessionId } : {}),
+      ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
       mode,
       tool: input.toolName,
       reason: decision.reason,
-      risk: decision.risk,
-      requiresConfirmation: decision.requiresConfirmation,
+      ...(!runtimeApi || !unregistered
+        ? { risk: decision.risk, requiresConfirmation: decision.requiresConfirmation }
+        : {}),
       runtimeApi: true,
-      metadata: input.metadata,
+      ...(!runtimeApi ? { metadata: input.metadata } : {}),
       ...extraData,
     });
     return {

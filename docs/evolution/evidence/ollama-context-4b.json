@@ -1,0 +1,13 @@
+{
+  "model": "qwen3.5:4b",
+  "digest": "2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd",
+  "scope": "source compactor, 24 synthetic tool pairs, two real summaries and cancellation; not an autonomous long coding task",
+  "passed": false,
+  "error": "Summary is empty or exceeds its budget; original history retained\n\nfalse !== true\n",
+  "calls": 1,
+  "usage": {
+    "inputTokens": 3780,
+    "outputTokens": 1287
+  },
+  "seconds": 39.236990708
+}

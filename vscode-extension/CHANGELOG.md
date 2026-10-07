@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.42.0
+
+- Start the CLI through an executable and argument array; no shell-interpolated command text.
+- Respect Workspace Trust, choose the active workspace root and own one transient terminal per project.
+- Handle missing executables, manual terminal close, new sessions and extension deactivation.
+- Verify actual terminal launches in VS Code Extension Host and publish a verified VSIX on GitHub.
+- Clarify quality evidence and platform limits; Windows command wrappers remain unsupported.
+
+
 All notable changes to the COCO VS Code extension are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

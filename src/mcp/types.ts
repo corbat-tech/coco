@@ -15,6 +15,13 @@ export interface JSONRPCRequest {
   params?: Record<string, unknown>;
 }
 
+/** JSON-RPC notifications do not have a request id. */
+export type JSONRPCNotification = Omit<JSONRPCRequest, "id"> & { id?: never };
+export type MCPOutboundMessage = JSONRPCRequest | JSONRPCNotification;
+export interface MCPTransportSendOptions {
+  signal?: AbortSignal;
+}
+
 /**
  * JSON-RPC 2.0 Response
  */
@@ -177,7 +184,7 @@ export interface MCPTransport {
   disconnect(): Promise<void>;
 
   /** Send a message through the transport */
-  send(message: JSONRPCRequest): Promise<void>;
+  send(message: MCPOutboundMessage, options?: MCPTransportSendOptions): Promise<void>;
 
   /** Set callback for received messages */
   onMessage(callback: (message: JSONRPCResponse) => void): void;
@@ -192,6 +199,12 @@ export interface MCPTransport {
   isConnected(): boolean;
 }
 
+/** Local request lifetime; timeout 0 disables the deadline. */
+export interface MCPRequestOptions {
+  signal?: AbortSignal;
+  timeout?: number;
+}
+
 /**
  * MCP Client interface
  */
@@ -200,10 +213,10 @@ export interface MCPClient {
   initialize(params: MCPInitializeParams): Promise<MCPInitializeResult>;
 
   /** List available tools */
-  listTools(): Promise<{ tools: MCPTool[] }>;
+  listTools(options?: MCPRequestOptions): Promise<{ tools: MCPTool[] }>;
 
   /** Call a tool on the MCP server */
-  callTool(params: MCPCallToolParams): Promise<MCPCallToolResult>;
+  callTool(params: MCPCallToolParams, options?: MCPRequestOptions): Promise<MCPCallToolResult>;
 
   /** List available resources */
   listResources(): Promise<{ resources: MCPResource[] }>;
