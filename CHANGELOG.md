@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refresh platform-specific model catalogs from official documentation; migrate deprecated/retired saved IDs with explicit warnings.
 - Preserve scoped reasoning and signed/encrypted state across tool rounds; normalize typed content and send provider-specific request flags.
 - Update SDKs and model effort modes, pricing tiers, permissions and capability metadata. Regional cloud rates remain unknown until verified.
+- Update simple-git to 4.0.2, Undici to 7.30.0 and brace-expansion to 5.0.12 to resolve the production dependency advisories. Coco already uses the supported named simpleGit export.
 
 ### Validation and limits
 
