@@ -21,6 +21,9 @@ describe("isolated conversational turns", () => {
   it("recognizes a single text block", () => {
     expect(isConversationalOnlyTurn([{ type: "text", text: "hola" }])).toBe(true);
   });
+  it("keeps long input out of the social-only path", () => {
+    expect(isConversationalOnlyTurn(" ".repeat(10000) + "hola")).toBe(false);
+  });
   it("does not discard attached context or multiple blocks", () => {
     expect(
       isConversationalOnlyTurn([

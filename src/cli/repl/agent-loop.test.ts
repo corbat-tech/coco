@@ -411,6 +411,26 @@ describe("executeAgentTurn", () => {
     });
     expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
   });
+  it("recovers a polite action request instead of treating its question mark as conversation", async () => {
+    const { executeAgentTurn } = await import("./agent-loop.js");
+    (mockProvider.streamWithTools as Mock)
+      .mockImplementationOnce(createTextStreamMock("I will read the file.", "end_turn"))
+      .mockImplementationOnce(
+        createToolStreamMock("", [
+          { id: "read-polite", name: "read_file", input: { path: "README.md" } },
+        ]),
+      )
+      .mockImplementation(createTextStreamMock("Read complete", "end_turn"));
+    vi.mocked(mockToolRegistry.execute).mockResolvedValue({
+      success: true,
+      data: "README",
+      duration: 1,
+    });
+    await executeAgentTurn(mockSession, "Can you read README.md?", mockProvider, mockToolRegistry, {
+      skipConfirmation: true,
+    });
+    expect(mockToolRegistry.execute).toHaveBeenCalledTimes(1);
+  });
 
   it("deduplicates repeated identical tool calls in the same streamed turn", async () => {
     mockSession.trustedTools.add("get_env");

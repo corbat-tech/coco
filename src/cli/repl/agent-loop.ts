@@ -17,7 +17,6 @@ import { isDeepStrictEqual } from "node:util";
 import { ResponseIntegrityError } from "../../providers/response-integrity.js";
 import { validateToolCallInput } from "../../providers/tool-call-normalizer.js";
 import { isConversationalOnlyTurn } from "../../runtime/conversational-turn.js";
-import { classifyRequest } from "./prompts/classifier.js";
 import { AgentRuntime } from "../../runtime/agent-runtime.js";
 import { createRuntimeToolDispatch } from "./runtime-tool-dispatch.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -217,7 +216,11 @@ export async function executeAgentTurn(
   }
 
   const normalizedUserRequest = extractPlainText(userMessage).toLowerCase();
-  const informationRequest = classifyRequest(normalizedUserRequest) === "question";
+  // Polite action requests ("Can you run ...?") still need action recovery.
+  const informationRequest =
+    /^(explain|describe|what (is|are)|why|explica|describe|qu[ée] (es|son)|c[oó]mo funciona|por qu[ée])\b/u.test(
+      normalizedUserRequest.trim(),
+    );
   const userExplicitlyRequestedMcp =
     /\bmcp\b/.test(normalizedUserRequest) ||
     /\b(use|using|usa|usar|utiliza|utilizar)\b.{0,24}\bmcp\b/.test(normalizedUserRequest);
