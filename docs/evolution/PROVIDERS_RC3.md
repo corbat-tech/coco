@@ -10,7 +10,7 @@ La revisión previa a publicación corrige en Bedrock la ejecución de IDs dupli
 
 ## Seguridad y compatibilidad
 
-La auditoría inicial detectó 25 avisos de dependencias de producción, incluidos dos críticos. Se actualizan simple-git 4.0.2, Undici 7.30.0 y brace-expansion 5.0.12. La auditoría posterior devuelve cero avisos. Simple-git 4 elimina la exportación por defecto: Coco utiliza exportaciones nombradas; requiere comprobar también operaciones Git reales en un repositorio sintético aislado.
+La auditoría inicial detectó 25 avisos de dependencias de producción, incluidos dos críticos. Se actualizan simple-git 4.0.2, Undici 7.30.0 y brace-expansion 5.0.12. La auditoría posterior devuelve cero avisos. También se corrigen 11 avisos de desarrollo mediante actualizaciones compatibles del runner de pruebas y sus dependencias: la auditoría completa devuelve cero avisos. Simple-git 4 elimina la exportación por defecto: Coco utiliza exportaciones nombradas; se verifican operaciones reales init/add/commit/status/diff/log desde el paquete instalado en un repositorio sintético aislado.
 
 ## Entrega y verificación
 
