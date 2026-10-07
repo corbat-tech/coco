@@ -1,5 +1,7 @@
 # Cierre de mejora de Coco — entregas restantes
 
+Estado de publicación (2026-10-07): el usuario autoriza promover RC4 a **npm 2.42.0 / latest**, tras comprobar la instalación real, GPT-6 Luna y el saludo. Ver [decisión y límites](STABLE_2_42_0.md). Esta decisión sustituye la retención de publicación indicada en el plan histórico siguiente; las evaluaciones amplias de capacidad continúan pendientes.
+
 Base inicial: 2.42.0-next.4; última entrega confirmada: **2.42.0-rc.2 + VSIX 2.42.0**. Presupuesto API adicional: **0 €**. Incluye background y VSIX. Cierre técnico: candidato RC2; promoción estable pendiente por dictamen de capacidad. Ver [handoff actual](HANDOFF_2026-09-17.md).
 
 ## Cambio aprobado: evaluación local con Ollama
