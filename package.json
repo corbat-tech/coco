@@ -129,7 +129,7 @@
   },
   "devDependencies": {
     "@types/marked-terminal": "^6.1.1",
-    "@types/node": "^25.3.5",
+    "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "^4.1.11",
     "oxfmt": "^0.61.0",
     "oxlint": "^1.51.0",
