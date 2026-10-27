@@ -377,7 +377,7 @@ export class ContextCompactor {
       {
         maxTokens,
         temperature: 0.3,
-        thinking: "off",
+        // Let the provider select a valid default; some models require reasoning.
         signal,
         ...(summaryModel ? { model: summaryModel } : {}),
       },

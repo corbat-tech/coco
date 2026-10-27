@@ -106,7 +106,7 @@ describe("ContextCompactor", () => {
       expect(result.wasCompacted).toBe(false);
       expect(result.messages).toBe(messages);
       expect(result.failureReason).toBeTruthy();
-      expect(vi.mocked(provider.chat).mock.calls[0]?.[1]?.thinking).toBe("off");
+      expect(vi.mocked(provider.chat).mock.calls[0]?.[1]).not.toHaveProperty("thinking");
     });
 
     it("should preserve recent messages", async () => {
