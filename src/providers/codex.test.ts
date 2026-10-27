@@ -140,6 +140,65 @@ describe("CodexProvider", () => {
     vi.clearAllMocks();
   });
 
+  describe("reasoning request contract", () => {
+    const methods = ["chat", "chatWithTools", "stream", "streamWithTools"] as const;
+    const tools = [
+      {
+        name: "read_file",
+        description: "Read a file",
+        input_schema: { type: "object" as const, properties: {} },
+      },
+    ];
+
+    for (const method of methods) {
+      it.each([
+        ["medium", "medium"],
+        ["high", "high"],
+        ["xhigh", "xhigh"],
+        ["max", "max"],
+        ["off", "none"],
+        ["auto", "medium"],
+        [undefined, "medium"],
+      ] as const)(`${method} sends Luna reasoning %s as %s`, async (thinking, expected) => {
+        const provider = await initProvider();
+        mockSuccessfulChatResponse("Verified.");
+        const options = { model: "gpt-6-luna", thinking, tools };
+        const result = provider[method]([{ role: "user", content: "Inspect the file" }], options);
+        if (method === "stream" || method === "streamWithTools") {
+          for await (const _chunk of result as AsyncIterable<unknown>) {
+            // Consume the transport to inspect its serialized request.
+          }
+        } else {
+          await result;
+        }
+        const body = JSON.parse(mockFetch.mock.calls[0]?.[1]?.body as string);
+        expect(body.reasoning).toEqual({ effort: expected });
+        expect(body).not.toHaveProperty("reasoning_effort");
+        expect(body.model).toBe("gpt-6-luna");
+      });
+    }
+
+    it("rejects disabled reasoning for a mandatory-reasoning model before transport", async () => {
+      const provider = await initProvider();
+      await expect(
+        provider.chat([{ role: "user", content: "Inspect" }], {
+          model: "gpt-6-astra",
+          thinking: "off",
+          maxRetries: 0,
+        }),
+      ).rejects.toThrow(/requires reasoning/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("does not add reasoning to an unknown model without an explicit effort", async () => {
+      const provider = await initProvider();
+      mockSuccessfulChatResponse("Done.");
+      await provider.chat([{ role: "user", content: "Inspect" }], { model: "custom-model" });
+      const body = JSON.parse(mockFetch.mock.calls[0]?.[1]?.body as string);
+      expect(body).not.toHaveProperty("reasoning");
+    });
+  });
+
   describe("initialize", () => {
     it("should initialize with OAuth token from token store", async () => {
       const token = createFakeJwt({ chatgpt_account_id: "acct-123" });

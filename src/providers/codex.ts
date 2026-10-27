@@ -33,6 +33,8 @@ import { resolveRetryConfig, withRetry, type RetryConfig, DEFAULT_RETRY_CONFIG }
 import { ResponsesToolCallAssembler } from "./tool-call-normalizer.js";
 import { ResponseIntegrityError } from "./response-integrity.js";
 import { getCatalogContextWindow, getCatalogDefaultModel } from "./catalog.js";
+import { catalogEffort } from "./contracts.js";
+import { mapToOpenAIEffort, type ThinkingMode } from "./thinking.js";
 
 /**
  * Codex API endpoint (ChatGPT backend)
@@ -387,7 +389,12 @@ export class CodexProvider implements LLMProvider {
     model: string,
     input: ResponsesInputItem[],
     instructions: string | null,
-    options?: { tools?: ToolDefinition[]; maxTokens?: number; temperature?: number },
+    options?: {
+      tools?: ToolDefinition[];
+      maxTokens?: number;
+      temperature?: number;
+      thinking?: ThinkingMode;
+    },
   ): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model,
@@ -400,6 +407,11 @@ export class CodexProvider implements LLMProvider {
     if (options?.tools && options.tools.length > 0) {
       body.tools = this.convertTools(options.tools);
     }
+
+    const effort =
+      catalogEffort(this.id, model, options?.thinking) ??
+      mapToOpenAIEffort(options?.thinking, model);
+    if (effort) body.reasoning = { effort };
 
     return body;
   }
@@ -481,6 +493,7 @@ export class CodexProvider implements LLMProvider {
           const body = this.buildRequestBody(model, input, instructions, {
             maxTokens: options?.maxTokens,
             temperature: options?.temperature,
+            thinking: options?.thinking,
           });
 
           const response = await this.makeRequest(body, scope.signal);
@@ -559,6 +572,7 @@ export class CodexProvider implements LLMProvider {
           const body = this.buildRequestBody(model, input, instructions, {
             tools: options.tools,
             maxTokens: options?.maxTokens,
+            thinking: options.thinking,
           });
 
           const response = await this.makeRequest(body, scope.signal);
@@ -692,6 +706,7 @@ export class CodexProvider implements LLMProvider {
       const { input, instructions } = this.convertToResponsesInput(messages, options?.system);
       const body = this.buildRequestBody(model, input, instructions, {
         maxTokens: options?.maxTokens,
+        thinking: options?.thinking,
       });
       const response = await this.makeRequest(body, scope.signal);
       for await (const event of this.readSSEEvents(response, scope.signal)) {
@@ -735,6 +750,7 @@ export class CodexProvider implements LLMProvider {
       const body = this.buildRequestBody(model, input, instructions, {
         tools: options.tools,
         maxTokens: options.maxTokens,
+        thinking: options.thinking,
       });
       const response = await this.makeRequest(body, scope.signal);
       const toolCallAssembler = new ResponsesToolCallAssembler();
