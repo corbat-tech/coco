@@ -11,14 +11,23 @@ import type {
   RuntimeTurnInput,
   RuntimeTurnResult,
   RuntimeTurnRunner,
+  RuntimeSession,
 } from "./types.js";
 import { isConversationalOnlyTurn } from "./conversational-turn.js";
+import { compactContextToFit, measureContextBudget } from "./context-budget.js";
+import { createContextCompactor } from "./context-compactor.js";
+import { isContextOverflowError } from "../providers/context-overflow.js";
+import { formatWorkLedger, readWorkLedger } from "./work-ledger.js";
+import { getCatalogContextWindow } from "../providers/catalog.js";
+import type { ProviderType } from "../providers/provider-types.js";
 
 export interface ToolCallingRuntimeTurnRunnerOptions {
   maxToolIterations?: number;
 }
 
 interface RuntimeWithTools {
+  getSession?(sessionId: string): RuntimeSession | undefined;
+  getModel?(): string;
   executeTool(input: {
     signal?: AbortSignal;
     toolCallId?: string;
@@ -56,6 +65,8 @@ function toolResultToContent(result: RuntimeToolExecutionResult): string {
  * reusable runtime permission and event pipeline.
  */
 export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
+  readonly supportsTools = true;
+  readonly supportsTranscript = true;
   private readonly maxToolIterations: number;
 
   constructor(options: ToolCallingRuntimeTurnRunnerOptions = {}) {
@@ -67,7 +78,7 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
 
   async run(input: RuntimeTurnInput, context: RuntimeTurnContext): Promise<RuntimeTurnResult> {
     const runtime = runtimeWithTools(context.runtime);
-    const messages: Message[] = [
+    let messages: Message[] = context.transcript?.messages() ?? [
       ...context.session.messages,
       {
         role: "user",
@@ -81,23 +92,82 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
     const confirmedTools = new Set(input.confirmedTools ?? []);
     let inputTokens = 0;
     let outputTokens = 0;
+    const maxTokens = input.options?.maxTokens ?? 4096;
+
+    const system = () => {
+      const latest = runtime.getSession?.(context.session.id) ?? context.session;
+      const ledger = formatWorkLedger(readWorkLedger(latest.metadata));
+      return (
+        [latest.instructions ?? input.options?.system, ledger].filter(Boolean).join("\n\n") ||
+        undefined
+      );
+    };
+    const compactor = createContextCompactor();
+    const budgetInput = () => ({
+      messages,
+      system: system(),
+      tools,
+      countTokens: (text: string) => context.provider.countTokens(text),
+      contextWindow: getCatalogContextWindow(
+        context.provider.id as ProviderType,
+        input.options?.model ?? runtime.getModel?.(),
+        context.provider.getContextWindow(),
+      ),
+      reservedOutputTokens: maxTokens,
+    });
+    const compact = async (force: boolean): Promise<void> => {
+      if (!context.provider.countTokens || !context.provider.getContextWindow) return;
+      const budget = measureContextBudget(budgetInput());
+      if (!force && budget.fits) return;
+      const result = await compactContextToFit({
+        ...budgetInput(),
+        signal: input.options?.signal,
+        summarize: (history, signal) =>
+          compactor.compact(history, context.provider, {
+            signal,
+            summaryModel: input.options?.model,
+          }),
+      });
+      messages = result.messages;
+      // Keep the durable transcript intact. Compaction changes only this request
+      // view; later turns/reopens can reconstruct it from original messages.
+    };
 
     for (let iteration = 0; iteration < this.maxToolIterations; iteration++) {
       input.options?.signal?.throwIfAborted();
-      const response = await context.provider.chatWithTools(messages, {
-        tools,
-        model: input.options?.model,
-        maxTokens: input.options?.maxTokens,
-        temperature: input.options?.temperature,
-        stopSequences: input.options?.stopSequences,
-        system: context.session.instructions ?? input.options?.system,
-        timeout: input.options?.timeout,
-        signal: input.options?.signal,
-        thinking: input.options?.thinking,
-      });
+      await compact(false);
+      const request = () =>
+        context.provider.chatWithTools(messages, {
+          tools,
+          model: input.options?.model,
+          maxTokens,
+          temperature: input.options?.temperature,
+          stopSequences: input.options?.stopSequences,
+          system: system(),
+          timeout: input.options?.timeout,
+          signal: input.options?.signal,
+          thinking: input.options?.thinking,
+        });
+      let response;
+      try {
+        response = await request();
+      } catch (error) {
+        if (!isContextOverflowError(error) || input.options?.signal?.aborted) throw error;
+        // The rejected request has executed no tools; retry once after a real reduction.
+        await compact(true);
+        response = await request();
+      }
 
       inputTokens += response.usage.inputTokens;
       outputTokens += response.usage.outputTokens;
+      if (context.transcript) {
+        const usage = context.transcript.recordUsage(
+          response.usage.inputTokens,
+          response.usage.outputTokens,
+        );
+        inputTokens = usage.inputTokens;
+        outputTokens = usage.outputTokens;
+      }
       input.options?.signal?.throwIfAborted();
       if (response.stopReason === "max_tokens") {
         throw new Error(
@@ -137,24 +207,32 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
           providerState: toolCall.providerState,
         });
       }
-      messages.push({
+      const assistantMessage: Message = {
         role: "assistant",
         content: assistantContent as MessageContent,
-      });
+      };
+      context.transcript?.appendToolBatch(assistantMessage);
+      messages.push(assistantMessage);
 
       const toolResults: ToolResultContent[] = [];
       for (const toolCall of response.toolCalls) {
         input.options?.signal?.throwIfAborted();
         if (conversationalOnly) {
-          toolResults.push({
+          const denied: ToolResultContent = {
             type: "tool_result",
             tool_use_id: toolCall.id,
             content:
               "This isolated conversational message requires a direct text reply, without tools.",
             is_error: true,
-          });
+          };
+          context.transcript?.finishTool(toolCall.id, denied.content, true);
+          toolResults.push(denied);
           continue;
         }
+        const confirmed =
+          confirmedTools.has(toolCall.name) ||
+          input.confirmToolCall?.(structuredClone(toolCall)) === true;
+        context.transcript?.startTool(toolCall.id);
         const result = await runtime.executeTool({
           signal: input.options?.signal,
           toolCallId: toolCall.id,
@@ -162,13 +240,15 @@ export class ToolCallingRuntimeTurnRunner implements RuntimeTurnRunner {
           mode: context.session.mode,
           toolName: toolCall.name,
           input: toolCall.input,
-          confirmed: confirmedTools.has(toolCall.name),
+          confirmed,
           metadata: input.metadata,
         });
+        const resultContent = toolResultToContent(result);
+        context.transcript?.finishTool(toolCall.id, resultContent, !result.success);
         toolResults.push({
           type: "tool_result",
           tool_use_id: toolCall.id,
-          content: toolResultToContent(result),
+          content: resultContent,
           is_error: !result.success,
         });
       }

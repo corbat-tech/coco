@@ -402,7 +402,9 @@ describe("reusable agent runtime", () => {
     await expect(
       maxCostRuntime.runTurn({ sessionId: maxCostSession.id, content: "hello" }),
     ).rejects.toMatchObject({ code: "estimated_cost_exceeded" });
-    expect(maxCostRuntime.getSession(maxCostSession.id)?.messages).toEqual([]);
+    expect(maxCostRuntime.getSession(maxCostSession.id)?.messages).toEqual([
+      { role: "user", content: "hello" },
+    ]);
 
     const rateLimitedRuntime = await createAgentRuntime({
       providerType: "openai",
@@ -687,7 +689,10 @@ describe("reusable agent runtime", () => {
       break;
     }
 
-    expect(runtime.getSession(session.id)?.messages).toEqual([]);
+    expect(runtime.getSession(session.id)?.messages).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "stream " },
+    ]);
     expect(eventLog.list().map((event) => event.type)).toEqual([
       "provider.attached",
       "runtime.initialized",
@@ -697,7 +702,7 @@ describe("reusable agent runtime", () => {
     ]);
   });
 
-  it("does not persist streaming output when runtime token policy is exceeded", async () => {
+  it("retains streaming evidence with failed state when runtime token policy is exceeded", async () => {
     const runtime = await createAgentRuntime({
       providerType: "openai",
       model: "gpt-5.4",
@@ -720,7 +725,11 @@ describe("reusable agent runtime", () => {
       sessionId: session.id,
       error: "Runtime policy output token budget exceeded: 12/1",
     });
-    expect(runtime.getSession(session.id)?.messages).toEqual([]);
+    expect(runtime.getSession(session.id)?.messages).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "stream reply" },
+    ]);
+    expect(runtime.inspectSessionRecovery(session.id).turn?.status).toBe("failed");
   });
 
   it("executes runtime tools with permission events and confirmation gates", async () => {

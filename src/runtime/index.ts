@@ -4,6 +4,33 @@ export {
   type RuntimeRetentionCleanupOptions,
   type RuntimeRetentionCleanupResult,
 } from "./agent-runtime.js";
+export { inspectSessionRecovery, resolveSessionToolCall } from "./session-recovery.js";
+export {
+  createSessionWorkLedgerAccess,
+  deriveWorkOutcome,
+  formatWorkLedger,
+  readWorkLedger,
+  type WorkLedgerState,
+  type WorkPlanUpdate,
+  type WorkOutcome,
+  type WorkLedgerAccess,
+} from "./work-ledger.js";
+export {
+  measureContextBudget,
+  compactContextToFit,
+  ContextBudgetError,
+  type ContextBudget,
+  type ContextBudgetInput,
+  type CompactContextToFitInput,
+} from "./context-budget.js";
+export { createContextCompactor, ContextCompactor } from "./context-compactor.js";
+export type {
+  RuntimeTurnState,
+  RuntimeTurnToolCall,
+  RuntimeTurnTranscript,
+  RuntimeSessionRecovery,
+  RuntimeToolCallResolution,
+} from "./types.js";
 export {
   AgentRunner,
   createAgentRunner,
