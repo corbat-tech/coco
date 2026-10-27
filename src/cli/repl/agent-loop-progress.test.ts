@@ -69,11 +69,7 @@ describe("tool progress across long turns", () => {
   });
 
   it("still stops three genuine consecutive identical tool failures", async () => {
-    const { session, registry, provider } = fixture([
-      "missing-a",
-      "missing-a",
-      "missing-a",
-    ]);
+    const { session, registry, provider } = fixture(["missing-a", "missing-a", "missing-a"]);
     const result = await executeAgentTurn(session, "Inspect the project", provider, registry);
     expect(result.toolCalls).toHaveLength(3);
     expect(result.toolCalls.every((call) => !call.result.success)).toBe(true);
