@@ -272,6 +272,21 @@ describe("agent-coordinator", () => {
       expect(result.executionOrder).toHaveLength(2);
     });
 
+    it("preserves priorities when planning through the public tool", async () => {
+      const result = await createAgentPlanTool.execute({
+        tasks: [
+          { description: "Low", priority: "low", dependencies: [] },
+          { description: "High", priority: "high", dependencies: [] },
+          { description: "Medium", priority: "medium", dependencies: [] },
+          { description: "Another high", priority: "high", dependencies: [] },
+        ],
+        strategy: "priority-based",
+      });
+
+      expect(result.executionOrder).toEqual(["task-1", "task-3", "task-2", "task-0"]);
+      expect(result.tasks.map((task) => task.priority)).toEqual(["low", "high", "medium", "high"]);
+    });
+
     it("should normalize numeric dependency ids", async () => {
       const result = await createAgentPlanTool.execute({
         tasks: [

@@ -92,7 +92,12 @@ export class AgentTaskQueue {
  * Plan multi-agent execution
  */
 export function planExecution(
-  tasks: Array<{ id?: string; description: string; dependencies?: string[] }>,
+  tasks: Array<{
+    id?: string;
+    description: string;
+    dependencies?: string[];
+    priority?: string;
+  }>,
   strategy: ExecutionStrategy,
 ): {
   plan: string[];
@@ -146,7 +151,7 @@ export function planExecution(
       const sorted = tasks
         .map((t, idx) => ({
           id: t.id ?? `task-${idx}`,
-          priority: (t as { priority?: string }).priority ?? "medium",
+          priority: t.priority ?? "medium",
         }))
         .sort((a, b) => (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
       plan = sorted.map((t) => t.id);
@@ -250,6 +255,7 @@ export const createAgentPlanTool = defineTool({
     const plannedTasks = typedInput.tasks.map((task, idx) => ({
       id: indexIdMap.get(idx) as string,
       description: task.description,
+      priority: task.priority,
       dependencies: (task.dependencies || []).map(normalizeDependency),
     }));
 

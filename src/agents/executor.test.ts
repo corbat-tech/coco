@@ -533,6 +533,36 @@ describe("AgentExecutor", () => {
       expect(result.output).toBe("All done.");
     });
 
+    it.each([false, true])(
+      "rejects truncated responses without executing partial tool calls (tools: %s)",
+      async (withTools) => {
+        vi.mocked(mockProvider.chatWithTools).mockResolvedValueOnce(
+          makeChatResponse({
+            content: "Partial response",
+            stopReason: "max_tokens",
+            toolCalls: withTools
+              ? [{ id: "partial-call", name: "read_file", input: { path: "/src/main.ts" } }]
+              : [],
+          }),
+        );
+
+        const result = await executor.execute(createAgent(), createTask());
+
+        expect(result.success).toBe(false);
+        expect(result.output).toBe("Partial response");
+        expect(result.tokensUsed).toBe(150);
+        expect(result.toolsUsed).toEqual([]);
+        expect(result.structuredResult).toMatchObject({
+          status: "failed",
+          success: false,
+          error: expect.stringContaining("truncated"),
+          usage: { inputTokens: 100, outputTokens: 50 },
+        });
+        expect(mockToolRegistry.execute).not.toHaveBeenCalled();
+        expect(mockProvider.chatWithTools).toHaveBeenCalledOnce();
+      },
+    );
+
     it("should treat tool_use stopReason with empty toolCalls as completion", async () => {
       // Edge case: stopReason is tool_use but toolCalls array is empty
       vi.mocked(mockProvider.chatWithTools).mockResolvedValueOnce(
