@@ -90,6 +90,8 @@ program
     "Experimental: run headless tasks through the reusable runtime tool-calling runner",
   )
   .option("--output <format>", "Output format for headless mode (text or json)", "text")
+  .option("--session <id>", "Open a project-local headless runtime session")
+  .option("--continue", "Continue the most recent headless runtime session in this project")
   .option("--setup", "Run setup wizard before starting")
   .action(
     async (options: {
@@ -102,6 +104,8 @@ program
       setup?: boolean;
       editorModel?: string;
       weakModel?: string;
+      session?: string;
+      continue?: boolean;
     }) => {
       // Headless preflight must not open an interactive setup wizard or lose JSON errors.
       if (options.print !== undefined) {
@@ -117,6 +121,8 @@ program
             projectPath: options.path,
             outputFormat: format,
             useRuntimeRunner: options.runtimeRunner === true,
+            sessionId: options.session,
+            continueSession: options.continue,
             config: {
               provider: {
                 type: providerType as "anthropic" | "openai",
@@ -141,6 +147,8 @@ program
       }
 
       // Run setup if requested
+      if (options.session || options.continue)
+        throw new Error("--session and --continue require headless --print mode");
       if (options.setup) {
         const result = await runOnboardingV2();
         if (!result || !(await saveConfiguration(result))) {

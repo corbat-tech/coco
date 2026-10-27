@@ -10,6 +10,7 @@ export function requestsHeadlessJson(args: string[]): boolean {
     "--provider",
     "--editor-model",
     "--weak-model",
+    "--session",
   ]);
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;

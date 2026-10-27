@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { LLMProvider, Message, StreamChunk } from "../../providers/types.js";
 import { ToolRegistry } from "../../tools/registry.js";
 import { executeAgentTurn } from "./agent-loop.js";
@@ -60,14 +63,33 @@ function toolStream(): AsyncIterable<StreamChunk> {
   })();
 }
 
+function overflowStream(): AsyncIterable<StreamChunk> {
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        async next() {
+          throw Object.assign(new Error("provider context overflow"), {
+            code: "context_length_exceeded",
+          });
+        },
+      };
+    },
+  };
+}
+
 function expectedTokens(session: ReplSession, provider: LLMProvider, registry: ToolRegistry) {
-  return getConversationContext(session, registry).reduce(
-    (sum, message) =>
-      sum +
-      provider.countTokens(
-        typeof message.content === "string" ? message.content : JSON.stringify(message.content),
-      ),
-    0,
+  return (
+    provider.countTokens(
+      JSON.stringify(session.offeredTools ?? registry.getToolDefinitionsForLLM()),
+    ) +
+    getConversationContext(session, registry).reduce(
+      (sum, message) =>
+        sum +
+        provider.countTokens(
+          typeof message.content === "string" ? message.content : JSON.stringify(message.content),
+        ),
+      0,
+    )
   );
 }
 
@@ -184,5 +206,194 @@ describe("in-turn context compaction", () => {
           typeof m.content === "string" && m.content.includes("[Previous conversation summary]"),
       ),
     ).toBe(false);
+  });
+});
+
+describe("bounded provider overflow recovery", () => {
+  it.each([false, true])(
+    "never reexecutes completed tools when recovery is rejected again: %s",
+    async (rejectAgain) => {
+      const { session, registry, provider } = fixture();
+      session.contextManager!.updateConfig({ compactionThreshold: 1 });
+      const directory = await mkdtemp(path.join(tmpdir(), "coco-overflow-effect-"));
+      try {
+        const effectPath = path.join(directory, "effects.txt");
+        session.trustedTools.add("write_file");
+        registry.register({
+          name: "write_file",
+          category: "file",
+          description: "Append fixture effect",
+          parameters: z.object({}),
+          execute: async () => {
+            await appendFile(effectPath, "effect\n");
+            return { content: "result ".repeat(1800) };
+          },
+        });
+        const execute = vi.spyOn(registry.get("write_file")!, "execute");
+        let requests = 0;
+        const observed: Message[][] = [];
+        vi.mocked(provider.streamWithTools).mockImplementation((messages) => {
+          requests++;
+          observed.push(structuredClone(messages));
+          if (requests === 1)
+            return (async function* () {
+              yield {
+                type: "tool_use_end",
+                toolCall: { id: "write-1", name: "write_file", input: {} },
+              } as StreamChunk;
+              yield { type: "done", stopReason: "tool_use" } as StreamChunk;
+            })();
+          if (requests === 2 || rejectAgain) return overflowStream();
+          return textStream();
+        });
+        const result = await executeAgentTurn(session, "Inspect the project", provider, registry);
+        expect(provider.chat).toHaveBeenCalledTimes(1);
+        expect(provider.streamWithTools).toHaveBeenCalledTimes(3);
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(await readFile(effectPath, "utf8")).toBe("effect\n");
+        expect(observed[2]?.[1]?.content).toContain("[Previous conversation summary]");
+        if (rejectAgain) expect(result.error).toContain("after recovery");
+        else expect(result.error).toBeUndefined();
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("retains history and stops when forced compaction cannot reduce it", async () => {
+    const { session, registry, provider } = fixture(false);
+    session.contextManager!.updateConfig({ compactionThreshold: 1 });
+    const original = structuredClone(session.messages);
+    vi.mocked(provider.streamWithTools).mockImplementation(overflowStream);
+    const result = await executeAgentTurn(session, "Inspect the project", provider, registry);
+    expect(result.error).toContain("did not reduce");
+    expect(provider.streamWithTools).toHaveBeenCalledTimes(1);
+    expect(session.messages.slice(0, original.length)).toEqual(original);
+  });
+
+  it("cancels forced recovery without losing the prior history or observed tool facts", async () => {
+    const { session, registry, provider } = fixture();
+    session.contextManager!.updateConfig({ compactionThreshold: 1 });
+    registry.register({
+      name: "write_file",
+      category: "file",
+      description: "Mutate fixture",
+      parameters: z.object({}),
+      execute: async () => ({ content: "result ".repeat(1800) }),
+    });
+    session.trustedTools.add("write_file");
+    const original = structuredClone(session.messages);
+    const controller = new AbortController();
+    vi.mocked(provider.streamWithTools)
+      .mockImplementationOnce(() =>
+        (async function* () {
+          yield {
+            type: "tool_use_end",
+            toolCall: { id: "write-1", name: "write_file", input: {} },
+          } as StreamChunk;
+          yield { type: "done", stopReason: "tool_use" } as StreamChunk;
+        })(),
+      )
+      .mockImplementation(overflowStream);
+    vi.mocked(provider.chat).mockImplementation(async () => {
+      controller.abort();
+      return { content: "Summary", stopReason: "end_turn" } as Awaited<
+        ReturnType<LLMProvider["chat"]>
+      >;
+    });
+    const result = await executeAgentTurn(session, "Inspect the project", provider, registry, {
+      signal: controller.signal,
+    });
+    expect(result.aborted).toBe(true);
+    expect(session.messages).toEqual(original);
+    expect(provider.streamWithTools).toHaveBeenCalledTimes(2);
+    expect(session.workLedger?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ toolName: "write_file", phase: "completed" }),
+      ]),
+    );
+  });
+
+  it("stops before requesting a model when fixed schemas cannot fit", async () => {
+    const { session, registry, provider } = fixture(false);
+    registry.register({
+      name: "write_file",
+      category: "file",
+      description: "huge ".repeat(12000),
+      parameters: z.object({}),
+      execute: async () => ({}),
+    });
+    await expect(
+      executeAgentTurn(session, "Inspect the project", provider, registry),
+    ).rejects.toMatchObject({ code: "fixed_context_exceeds_window" });
+    expect(provider.streamWithTools).not.toHaveBeenCalled();
+    expect(provider.chat).not.toHaveBeenCalled();
+  });
+
+  it("budgets only the schema subset actually offered in strict plan mode", async () => {
+    const { session, registry, provider } = fixture(false);
+    registry.register({
+      name: "write_file",
+      category: "file",
+      description: "hidden huge ".repeat(12000),
+      parameters: z.object({}),
+      execute: async () => ({}),
+    });
+    session.planMode = true;
+    session.config.agent.planModeStrict = true;
+    vi.mocked(provider.streamWithTools).mockImplementation(textStream);
+    const result = await executeAgentTurn(session, "Inspect the project", provider, registry);
+    expect(result.error).toBeUndefined();
+    expect(
+      vi.mocked(provider.streamWithTools).mock.calls[0]?.[1]?.tools.map((tool) => tool.name),
+    ).toEqual(["read_file"]);
+    expect(session.offeredTools?.map((tool) => tool.name)).toEqual(["read_file"]);
+    expect(provider.chat).not.toHaveBeenCalled();
+  });
+});
+
+describe("host checkpoint boundary", () => {
+  it("propagates persistence failure before provider requests or tool effects", async () => {
+    const { session, registry, provider } = fixture(false);
+    const execute = vi.spyOn(registry.get("read_file")!, "execute");
+    const onCheckpoint = vi.fn(async () => {
+      throw new Error("checkpoint disk full");
+    });
+    await expect(
+      executeAgentTurn(session, "Inspect the project", provider, registry, { onCheckpoint }),
+    ).rejects.toThrow("checkpoint disk full");
+    expect(onCheckpoint).toHaveBeenCalledOnce();
+    expect(provider.streamWithTools).not.toHaveBeenCalled();
+    expect(provider.chat).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("checkpoints the user request before the first tool and complete pairs before continuing", async () => {
+    const { session, registry, provider } = fixture(false);
+    const checkpoints: Message[][] = [];
+    const tool = registry.get("read_file")!;
+    const execute = tool.execute;
+    vi.spyOn(tool, "execute").mockImplementation(async (input, context) => {
+      expect(checkpoints).toHaveLength(1);
+      expect(checkpoints[0]?.at(-1)).toEqual({ role: "user", content: "Inspect the project" });
+      return execute(input, context);
+    });
+    vi.mocked(provider.streamWithTools)
+      .mockImplementationOnce(() => toolStream())
+      .mockImplementation(textStream);
+    await executeAgentTurn(session, "Inspect the project", provider, registry, {
+      onCheckpoint: async () => {
+        checkpoints.push(structuredClone(session.messages));
+      },
+    });
+    expect(checkpoints).toHaveLength(2);
+    expect(checkpoints[1]?.at(-2)?.content).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "tool_use", id: "read-1" })]),
+    );
+    expect(checkpoints[1]?.at(-1)?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_result", tool_use_id: "read-1" }),
+      ]),
+    );
   });
 });

@@ -470,7 +470,7 @@ describe("storage.ts", () => {
       expect(loaded).toBeNull();
     });
 
-    it("should handle corrupted conversation.jsonl gracefully", async () => {
+    it("loads the authoritative snapshot when a legacy conversation projection is corrupted", async () => {
       const store = createSessionStore({ storageDir: tempDir });
       const session = createTestSession({ id: "corrupted-conv" });
 
@@ -482,8 +482,9 @@ describe("storage.ts", () => {
 
       const loaded = await store.load("corrupted-conv");
 
-      // Should return null since it cannot parse messages
-      expect(loaded).toBeNull();
+      // A torn compatibility projection must not override the committed snapshot.
+      expect(loaded?.id).toBe("corrupted-conv");
+      expect(loaded?.messages).toEqual([]);
     });
 
     it("should restore session dates as Date objects", async () => {

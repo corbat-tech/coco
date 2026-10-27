@@ -2,7 +2,14 @@
  * REPL types for Corbat-Coco
  */
 
-import type { Message, ToolCall, StreamChunk, LLMProvider } from "../../providers/types.js";
+import type { WorkLedgerState } from "../../runtime/work-ledger.js";
+import type {
+  Message,
+  ToolCall,
+  StreamChunk,
+  LLMProvider,
+  ToolDefinition,
+} from "../../providers/types.js";
 import type { ProviderType } from "../../providers/index.js";
 import type { ThinkingMode } from "../../providers/thinking.js";
 import type { AgentModeId } from "./modes.js";
@@ -27,6 +34,10 @@ export interface ReplSession {
   trustedTools: Set<string>;
   /** Context window manager for tracking token usage */
   contextManager?: ContextManager;
+  /** Exact tool definitions offered on the active provider request. */
+  offeredTools?: ToolDefinition[];
+  /** Host-owned plan and evidence carried across save/resume. */
+  workLedger?: WorkLedgerState;
   /** Host-bound compaction action; refreshed when the active provider changes. */
   compactContext?: (
     options?: Pick<CompactOptions, "signal" | "focusTopic">,
