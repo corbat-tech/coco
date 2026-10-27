@@ -1289,7 +1289,7 @@ export async function executeAgentTurn(
     // Update consecutive failure counts; if any tool hits the threshold, augment
     // the last result so the LLM understands it must stop retrying, then break.
     let stuckInErrorLoop = false;
-    for (const executedCall of executedTools) {
+    for (const executedCall of currentIterationExecuted) {
       if (!executedCall.result.success && executedCall.result.error) {
         // Normalise: tool name + first 120 chars of error (enough to distinguish messages)
         const errorKey = `${executedCall.name}:${executedCall.result.error.slice(0, 120).toLowerCase()}`;
@@ -1348,7 +1348,7 @@ export async function executeAgentTurn(
       toolResults.length > 0 &&
       autoIterationExtensionsUsed < MAX_AUTO_ITERATION_EXTENSIONS &&
       maxIterations < HARD_MAX_ITERATIONS &&
-      shouldAutoExtendIterationBudget(executedTools, toolResults, stuckInErrorLoop);
+      shouldAutoExtendIterationBudget(currentIterationExecuted, toolResults, stuckInErrorLoop);
 
     // Inject iteration-budget feedback into the last tool result so the LLM can adapt.
     // This runs AFTER the stuckInErrorLoop detection so both messages never overlap.
