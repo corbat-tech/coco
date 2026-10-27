@@ -119,12 +119,28 @@ for await (const event of runtime.streamTurn({ sessionId: session.id, content })
 }
 ```
 
-Streaming currently covers text-only provider turns. Tool streaming should be
-implemented as a separate runtime runner so embedders can keep confirmation and
-permission UX explicit. If a consumer disconnects or stops iteration before the
-`done` event, the runtime records `turn.cancelled` and does not persist a partial
-assistant message. Streaming token usage is estimated with provider token counts
-because most provider streaming APIs do not return final usage consistently.
+With `createToolCallingRuntimeTurnRunner()`, the runtime persists user intent,
+assistant tool batches and each tool start/result before advancing. Its
+`streamTurn()` delegates to that durable execution and emits buffered final text
+and the terminal result after tools finish. It does not stream tokens
+incrementally. Text-only/custom runners retain incremental text behavior; an
+interrupted text stream records cancellation without saving a partial answer.
+Streaming usage can be estimated when the provider omits final usage.
+
+Use `inspectSessionRecovery`, `resolveSessionToolCall` and `resumeTurn` to
+reconcile interrupted durable turns. An uncertain started effect blocks replay
+until the host records its observed outcome. Same-session guards operate within
+one runtime instance, not across processes. Consent callbacks are ephemeral
+host input and are never recovered from saved conversation metadata.
+
+The tool runner shares context budgeting/compaction with the REPL and injects
+the session's work ledger into each request. `read_plan` and `update_plan` receive
+host-bound ledger access through tool context; verification derives from
+observed current checks rather than assistant claims. Compaction changes the
+request view while the full runtime transcript remains on disk. See
+[conversation continuity](../guides/CONVERSATION_CONTINUITY.md) and
+[ADR 011](adrs/011-durable-conversations-and-work-evidence.md) for usage,
+persistence boundaries and limitations.
 
 Runtime consumers can execute registered tools through the same policy layer:
 
