@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LLMProvider, Message } from "../../providers/types.js";
 import type { ReplSession } from "./types.js";
-import { initializeContextManager } from "./session.js";
+import {
+  getConversationContext,
+  initializeContextManager,
+  checkAndCompactContext,
+} from "./session.js";
+import { ToolRegistry } from "../../tools/registry.js";
 
 function fixture() {
   const session = {
@@ -28,6 +33,27 @@ function fixture() {
 }
 
 describe("session compaction binding", () => {
+  it("counts the effective system prompt after installing compacted history", async () => {
+    const { session, provider } = fixture();
+    const registry = new ToolRegistry();
+    session.memoryContext = {
+      combinedContent: "Project rule ".repeat(500),
+    } as ReplSession["memoryContext"];
+    const result = await checkAndCompactContext(session, provider, undefined, registry, {
+      force: true,
+    });
+    expect(result?.wasCompacted).toBe(true);
+    const expected = getConversationContext(session, registry).reduce(
+      (sum, message) =>
+        sum +
+        provider.countTokens(
+          typeof message.content === "string" ? message.content : JSON.stringify(message.content),
+        ),
+      0,
+    );
+    expect(session.contextManager?.getUsedTokens()).toBe(expected);
+    expect(expected).toBeGreaterThan(result!.compactedTokens);
+  });
   it("manual compaction bypasses threshold, installs history, and follows provider rebinding", async () => {
     const { session, provider } = fixture();
     expect(session.contextManager?.shouldCompact()).toBe(false);

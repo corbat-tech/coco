@@ -1025,8 +1025,8 @@ export async function checkAndCompactContext(
       const compactedNonSystem = result.messages.filter((m) => m.role !== "system");
       session.messages = compactedNonSystem;
 
-      // Update token count
-      session.contextManager!.setUsedTokens(result.compactedTokens);
+      // Include the effective system prompt as well as the installed history.
+      updateContextTokens(session, provider, toolRegistry);
     }
 
     return result;

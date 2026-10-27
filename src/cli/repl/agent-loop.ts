@@ -4,7 +4,7 @@ import { withFileCheckpoints } from "./checkpoints/capture.js";
  * Handles tool calling iterations until task completion
  *
  * ABORT STRATEGY (Snapshot + Rollback):
- * Session mutations are transactional. A snapshot of session.messages.length
+ * Session mutations are transactional. A snapshot of session.messages
  * is taken at the start of executeAgentTurn. If the turn is aborted for any
  * reason, session.messages is rolled back to the snapshot — guaranteeing
  * valid message alternation regardless of where the abort occurred.
@@ -39,6 +39,8 @@ import {
   removeTrustedTool,
   saveDeniedTool,
   removeDeniedTool,
+  checkAndCompactContext,
+  updateContextTokens,
 } from "./session.js";
 import { confirmToolExecutionWithFallback } from "./confirmation.js";
 import { getTrustPattern } from "./bash-patterns.js";
@@ -126,9 +128,9 @@ export async function executeAgentTurn(
   });
 
   // --- Snapshot for transactional rollback on abort ---
-  // If the turn is aborted, we roll back session.messages to this length.
+  // Compaction can replace and shorten history, so length alone cannot restore it.
   // This guarantees valid message alternation regardless of where abort occurs.
-  const messageSnapshot = session.messages.length;
+  const messageSnapshot = [...session.messages];
 
   // Add user message to context
   addMessage(session, { role: "user", content: userMessage });
@@ -138,6 +140,7 @@ export async function executeAgentTurn(
   let totalOutputTokens = 0;
   let finalContent = "";
   let hadTurnError = false;
+  let compactionUnavailable = false;
   let repeatedOutputsSuppressed = 0;
   let observedLargeOutputs = 0;
   let observedLargeOutputChars = 0;
@@ -172,7 +175,8 @@ export async function executeAgentTurn(
   // Helper: abort return with rollback
   const abortReturn = (): AgentTurnResult => {
     // Rollback all session mutations from this turn
-    session.messages.length = messageSnapshot;
+    session.messages = [...messageSnapshot];
+    if (session.contextManager) updateContextTokens(session, provider, toolRegistry);
     const result: AgentTurnResult = {
       content: finalContent,
       toolCalls: executedTools,
@@ -548,6 +552,26 @@ export async function executeAgentTurn(
     // Check for abort at start of each iteration
     if (options.signal?.aborted) {
       return abortReturn();
+    }
+
+    // Compact only at a safe boundary, after complete tool call/result batches.
+    // Embedders without context management retain their existing behavior.
+    if (session.contextManager && !compactionUnavailable) {
+      try {
+        const compaction = await checkAndCompactContext(
+          session,
+          provider,
+          options.signal,
+          toolRegistry,
+        );
+        // Do not spend a summary request every iteration when compaction fails
+        // or cannot reduce this history. A later user turn may try again.
+        compactionUnavailable = !!compaction?.failureReason && !compaction.wasCompacted;
+      } catch (error) {
+        if (classifyAgentLoopError(error, options.signal).kind === "abort") return abortReturn();
+        throw error;
+      }
+      if (options.signal?.aborted) return abortReturn();
     }
 
     // Call LLM with tools using streaming (pass toolRegistry for dynamic prompt)
