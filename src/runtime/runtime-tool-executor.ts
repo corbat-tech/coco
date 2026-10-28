@@ -52,6 +52,7 @@ interface AuthorityCeiling {
 
 export class RuntimeToolExecutor {
   private readonly backgroundOwners = new Map<string, BackgroundJobOwner>();
+  private readonly activeLedgerCalls = new Map<string, Set<string>>();
 
   /** Host-only opt-in: pair with closeSession on every session exit. */
   enableBackgroundJobs(sessionId: string, projectRoot: string): void {
@@ -196,90 +197,139 @@ export class RuntimeToolExecutor {
       metadataKeys: Object.keys(input.metadata ?? {}).sort(),
     });
     const ledger = input.sessionId ? this.workLedgerAccess?.forSession(input.sessionId) : undefined;
+    // Provider IDs can be reused across workers/turns; evidence identity must be host-owned.
     const ledgerCallId = input.toolCallId ?? randomUUID();
-    ledger?.beforeTool(
-      input.toolName,
-      input.input,
-      decision.risk,
-      tool.provenance?.kind === "mcp",
-      ledgerCallId,
-    );
-    if (input.checkpoint) await input.checkpoint();
-    const result = await this.toolRegistry.execute(input.toolName, input.input, {
-      signal: input.signal,
-      context: {
-        sessionId: input.sessionId,
-        runAgent: input.runAgent,
-        workLedger: ledger,
-        backgroundJobs: input.sessionId ? this.backgroundOwners.get(input.sessionId) : undefined,
-        executeDelegatedTool: async (call) => {
-          // Capture the exact call before awaiting host UI; the worker cannot change approved input.
-          const child = {
-            ...call,
-            input: structuredClone(call.input),
-            allowedTools: [...call.allowedTools],
-          };
-          const confirmed = input.approveDelegatedTool
-            ? await input.approveDelegatedTool({
-                ...child,
-                input: structuredClone(child.input),
-                allowedTools: [...child.allowedTools],
-              })
-            : false;
-          const signals = [input.signal, call.signal].filter(
-            (signal): signal is AbortSignal => signal !== undefined,
-          );
-          return this.executeScoped(
-            {
-              toolName: child.toolName,
-              input: child.input,
-              mode: child.mode,
-              allowedTools: [...child.allowedTools],
-              toolCallId: child.toolCallId,
-              sessionId: input.sessionId,
-              signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0],
-              confirmed,
-              checkpoint: input.checkpoint,
-            },
-            [...ancestors, { mode, allowedTools }],
-          );
+    const hostExecutionId = randomUUID();
+    const active = this.activeLedgerCalls.get(input.sessionId ?? "") ?? new Set<string>();
+    const uncertain = ledger
+      ?.read()
+      .evidence.filter(
+        (entry) => entry.phase === "running" && !active.has(entry.hostExecutionId ?? entry.id),
+      );
+    if (decision.risk !== "read-only" && uncertain?.length) {
+      return this.block(
+        input,
+        mode,
+        {
+          allowed: false,
+          risk: decision.risk,
+          reason:
+            "Session has uncertain tool outcomes; inspect them and reconcile host evidence before further effects.",
         },
-      },
-    });
-    ledger?.recordTool({
-      toolCallId: ledgerCallId,
-      toolName: input.toolName,
-      input: input.input,
-      output: result.data,
-      success: result.success,
-      error: result.error,
-      remote: tool.provenance?.kind === "mcp",
-    });
-    if (input.checkpoint) await input.checkpoint();
-    this.eventLog.record("tool.completed", {
-      ...sessionContext,
-      mode,
-      tool: input.toolName,
-      success: result.success,
-      duration: result.duration,
-      runtimeApi: true,
-    });
+        startedAt,
+        { uncertainEvidenceIds: uncertain.map((entry) => entry.id) },
+      );
+    }
+    if (ledger) {
+      active.add(hostExecutionId);
+      this.activeLedgerCalls.set(input.sessionId!, active);
+    }
+    try {
+      ledger?.beforeTool(
+        input.toolName,
+        input.input,
+        decision.risk,
+        tool.provenance?.kind === "mcp",
+        ledgerCallId,
+        hostExecutionId,
+      );
+      if (input.checkpoint) await input.checkpoint();
+      const result = await this.toolRegistry.execute(input.toolName, input.input, {
+        signal: input.signal,
+        context: {
+          sessionId: input.sessionId,
+          runAgent: input.runAgent,
+          workLedger: ledger,
+          backgroundJobs: input.sessionId ? this.backgroundOwners.get(input.sessionId) : undefined,
+          executeDelegatedTool: async (call) => {
+            // Capture the exact call before awaiting host UI; the worker cannot change approved input.
+            const child = {
+              ...call,
+              input: structuredClone(call.input),
+              allowedTools: [...call.allowedTools],
+            };
+            const confirmed = input.approveDelegatedTool
+              ? await input.approveDelegatedTool({
+                  ...child,
+                  input: structuredClone(child.input),
+                  allowedTools: [...child.allowedTools],
+                })
+              : false;
+            const signals = [input.signal, call.signal].filter(
+              (signal): signal is AbortSignal => signal !== undefined,
+            );
+            return this.executeScoped(
+              {
+                toolName: child.toolName,
+                input: child.input,
+                mode: child.mode,
+                allowedTools: [...child.allowedTools],
+                toolCallId: child.toolCallId,
+                sessionId: input.sessionId,
+                signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0],
+                confirmed,
+                checkpoint: input.checkpoint,
+              },
+              [...ancestors, { mode, allowedTools }],
+            );
+          },
+        },
+      });
+      ledger?.recordTool({
+        toolCallId: ledgerCallId,
+        hostExecutionId,
+        toolName: input.toolName,
+        input: input.input,
+        output: result.data,
+        success: result.success,
+        error: result.error,
+        remote: tool.provenance?.kind === "mcp",
+      });
+      if (input.checkpoint) {
+        try {
+          await input.checkpoint();
+        } catch (error) {
+          // Preserve uncertainty in the live host too; a model must not retry an effect
+          // merely because persistence of its result failed.
+          ledger?.beforeTool(
+            input.toolName,
+            input.input,
+            decision.risk,
+            tool.provenance?.kind === "mcp",
+            ledgerCallId,
+            hostExecutionId,
+          );
+          throw error;
+        }
+      }
+      this.eventLog.record("tool.completed", {
+        ...sessionContext,
+        mode,
+        tool: input.toolName,
+        success: result.success,
+        duration: result.duration,
+        runtimeApi: true,
+      });
 
-    return {
-      toolName: input.toolName,
-      success: result.success,
-      output: result.data,
-      error: result.error,
-      duration: result.duration,
-      decision:
-        this.eventProfile === "runtime-api"
-          ? {
-              ...decision,
-              risk: runtimeDecision?.risk ?? decision.risk,
-              requiresConfirmation: decision.requiresConfirmation,
-            }
-          : decision,
-    };
+      return {
+        toolName: input.toolName,
+        success: result.success,
+        output: result.data,
+        error: result.error,
+        duration: result.duration,
+        decision:
+          this.eventProfile === "runtime-api"
+            ? {
+                ...decision,
+                risk: runtimeDecision?.risk ?? decision.risk,
+                requiresConfirmation: decision.requiresConfirmation,
+              }
+            : decision,
+      };
+    } finally {
+      active.delete(hostExecutionId);
+      if (active.size === 0) this.activeLedgerCalls.delete(input.sessionId ?? "");
+    }
   }
 
   private block(

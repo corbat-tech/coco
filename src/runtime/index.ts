@@ -10,6 +10,8 @@ export {
   deriveWorkOutcome,
   formatWorkLedger,
   readWorkLedger,
+  reconcileWorkEvidence,
+  type WorkEvidenceResolution,
   type WorkLedgerState,
   type WorkPlanUpdate,
   type WorkOutcome,

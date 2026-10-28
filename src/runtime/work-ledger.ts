@@ -12,6 +12,7 @@ const WorkItemSchema = z.object({
 const EvidenceSchema = z.object({
   id: z.string(),
   toolCallId: z.string(),
+  hostExecutionId: z.string().optional(),
   toolName: z.string(),
   kind: z.enum(["check", "observation"]),
   phase: z.enum(["running", "completed"]),
@@ -35,6 +36,42 @@ export const WorkPlanUpdateSchema = z.object({
 });
 export type WorkLedgerState = z.infer<typeof WorkLedgerSchema>;
 export type WorkPlanUpdate = z.input<typeof WorkPlanUpdateSchema>;
+const WorkResolutionSchema = z.object({
+  evidenceId: z.string().min(1),
+  outcome: z.enum(["applied", "not-applied"]),
+  reason: z.string().trim().min(1).max(500),
+});
+export type WorkEvidenceResolution = z.input<typeof WorkResolutionSchema>;
+
+/** Host-observed reconciliation. Never replays a tool or manufactures a passing check. */
+export function reconcileWorkEvidence(
+  state: WorkLedgerState,
+  input: WorkEvidenceResolution,
+): WorkLedgerState {
+  const resolution = WorkResolutionSchema.parse(input);
+  const current = WorkLedgerSchema.parse(state);
+  const evidence = current.evidence.find((entry) => entry.id === resolution.evidenceId);
+  if (!evidence || evidence.phase !== "running")
+    throw new Error("Reconciliation must identify an uncertain evidence ID from this session.");
+  return {
+    ...current,
+    evidence: current.evidence.map((entry) =>
+      entry.id !== resolution.evidenceId
+        ? entry
+        : {
+            ...entry,
+            kind: "observation" as const,
+            phase: "completed" as const,
+            success: resolution.outcome === "applied",
+            summary:
+              `[Host reconciliation: ${resolution.outcome}; ${resolution.reason}] ${entry.summary}`.slice(
+                0,
+                600,
+              ),
+          },
+    ),
+  };
+}
 export type WorkOutcome =
   | "not_planned"
   | "pending"
@@ -44,6 +81,7 @@ export type WorkOutcome =
 
 export interface WorkToolOutcome {
   toolCallId: string;
+  hostExecutionId?: string;
   toolName: string;
   input: Record<string, unknown>;
   output?: unknown;
@@ -60,6 +98,7 @@ export interface WorkLedgerHandle {
     risk: string,
     remote: boolean,
     toolCallId?: string,
+    hostExecutionId?: string,
   ): void;
   recordTool(input: WorkToolOutcome): void;
 }
@@ -172,8 +211,11 @@ export function formatWorkLedger(state?: WorkLedgerState): string {
       ? [
           `Unresolved tool outcomes: ${state.evidence
             .filter((evidence) => evidence.phase === "running")
-            .map((evidence) => `${evidence.toolCallId}: ${evidence.summary}`)
-            .join("; ")}. Inspect before repeating any possibly executed action.`,
+            .slice(0, 8)
+            .map((evidence) => `${evidence.id} (call ${evidence.toolCallId}): ${evidence.summary}`)
+            .join(
+              "; ",
+            )}. Inspect before repeating any possibly executed action. Use /work resolve <evidenceId> applied|not-applied <inspection reason> after host inspection.`,
         ]
       : []),
     "Use read_plan/update_plan to inspect evidence, preserve existing pending steps and link real check IDs. Never invent verification.",
@@ -227,7 +269,7 @@ export function createSessionWorkLedgerAccess(store: RuntimeSessionStore): WorkL
             return { ...state, planRevision: state.planRevision + 1, items: [...items.values()] };
           });
         },
-        beforeTool(toolName, input, risk, remote, toolCallId = randomUUID()) {
+        beforeTool(toolName, input, risk, remote, toolCallId = randomUUID(), hostExecutionId) {
           if (["read_plan", "update_plan"].includes(toolName) && !remote) return;
           if (
             risk === "read-only" &&
@@ -245,6 +287,7 @@ export function createSessionWorkLedgerAccess(store: RuntimeSessionStore): WorkL
                 {
                   id: `ev_${randomUUID()}`,
                   toolCallId,
+                  ...(hostExecutionId ? { hostExecutionId } : {}),
                   toolName,
                   kind: isVerificationTool(toolName, input, remote)
                     ? ("check" as const)
@@ -264,7 +307,12 @@ export function createSessionWorkLedgerAccess(store: RuntimeSessionStore): WorkL
           if (
             !read().items.length &&
             !read().evidence.some(
-              (item) => item.toolCallId === outcome.toolCallId && item.phase === "running",
+              (item) =>
+                (outcome.hostExecutionId
+                  ? item.hostExecutionId === outcome.hostExecutionId
+                  : item.toolCallId === outcome.toolCallId) &&
+                item.toolName === outcome.toolName &&
+                item.phase === "running",
             )
           )
             return;
@@ -289,10 +337,18 @@ export function createSessionWorkLedgerAccess(store: RuntimeSessionStore): WorkL
             const summary = describeAction(outcome.toolName, outcome.input);
             const previous = [...state.evidence]
               .reverse()
-              .find((item) => item.toolCallId === outcome.toolCallId && item.phase === "running");
+              .find(
+                (item) =>
+                  (outcome.hostExecutionId
+                    ? item.hostExecutionId === outcome.hostExecutionId
+                    : item.toolCallId === outcome.toolCallId) &&
+                  item.toolName === outcome.toolName &&
+                  item.phase === "running",
+              );
             const evidence = {
               id: previous?.id ?? `ev_${randomUUID()}`,
               toolCallId: outcome.toolCallId,
+              ...(previous?.hostExecutionId ? { hostExecutionId: previous.hostExecutionId } : {}),
               toolName: outcome.toolName,
               kind: check ? ("check" as const) : ("observation" as const),
               phase: "completed" as const,

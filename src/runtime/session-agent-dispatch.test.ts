@@ -7,9 +7,134 @@ import { delegateTaskTool } from "../tools/agent-coordinator.js";
 import { z } from "zod";
 import type { RunAgent, ToolExecutionContext } from "../tools/execution-context.js";
 import { InMemoryRuntimeSessionStore } from "./runtime-session-store.js";
-import { createSessionWorkLedgerAccess, readWorkLedger } from "./work-ledger.js";
+import {
+  createSessionWorkLedgerAccess,
+  readWorkLedger,
+  reconcileWorkEvidence,
+} from "./work-ledger.js";
 
 describe("host-bound session worker dispatch", () => {
+  it("does not let a provider reuse a call ID to erase uncertain host evidence", async () => {
+    const store = new InMemoryRuntimeSessionStore();
+    store.create({ id: "identity", mode: "build" });
+    const access = createSessionWorkLedgerAccess(store);
+    access
+      .forSession("identity")
+      .beforeTool("write_file", {}, "write", false, "reused-provider-id");
+    const registry = new ToolRegistry();
+    const effect = vi.fn(async () => "effect");
+    registry.register({
+      name: "read_file",
+      description: "fixture",
+      category: "file",
+      parameters: z.object({}),
+      execute: async () => "read",
+    });
+    registry.register({
+      name: "write_file",
+      description: "fixture",
+      category: "file",
+      parameters: z.object({}),
+      execute: effect,
+    });
+    const runtime = new RuntimeToolExecutor({ toolRegistry: registry, workLedgerAccess: access });
+    expect(
+      (
+        await runtime.execute({
+          sessionId: "identity",
+          mode: "build",
+          toolName: "read_file",
+          toolCallId: "reused-provider-id",
+          input: {},
+        })
+      ).success,
+    ).toBe(true);
+    expect(
+      (
+        await runtime.execute({
+          sessionId: "identity",
+          mode: "build",
+          toolName: "write_file",
+          input: {},
+          confirmed: true,
+        })
+      ).success,
+    ).toBe(false);
+    expect(effect).not.toHaveBeenCalled();
+    expect(access.forSession("identity").read().evidence[0]).toMatchObject({
+      toolName: "write_file",
+      phase: "running",
+    });
+  });
+  it("blocks mutations after reopening an effect whose result was not durably saved", async () => {
+    const store = new InMemoryRuntimeSessionStore();
+    store.create({ id: "reopen", mode: "build" });
+    const registry = new ToolRegistry();
+    const effect = vi.fn(async () => "applied");
+    registry.register({
+      name: "write_file",
+      description: "fixture",
+      category: "file",
+      parameters: z.object({}),
+      execute: effect,
+    });
+    let durable = store.get("reopen")!;
+    let saves = 0;
+    const options = {
+      toolRegistry: registry,
+      workLedgerAccess: createSessionWorkLedgerAccess(store),
+    };
+    await expect(
+      new RuntimeToolExecutor(options).execute({
+        sessionId: "reopen",
+        mode: "build",
+        toolName: "write_file",
+        input: {},
+        confirmed: true,
+        checkpoint: async () => {
+          if (++saves === 1) durable = store.get("reopen")!;
+          else throw new Error("result not persisted");
+        },
+      }),
+    ).rejects.toThrow("result not persisted");
+    expect(effect).toHaveBeenCalledOnce();
+    const sameHost = await new RuntimeToolExecutor(options).execute({
+      sessionId: "reopen",
+      mode: "build",
+      toolName: "write_file",
+      input: {},
+      confirmed: true,
+    });
+    expect(sameHost.success).toBe(false);
+    expect(effect).toHaveBeenCalledOnce();
+    store.update(durable);
+    const reopened = await new RuntimeToolExecutor(options).execute({
+      sessionId: "reopen",
+      mode: "build",
+      toolName: "write_file",
+      input: {},
+      confirmed: true,
+    });
+    expect(reopened.success).toBe(false);
+    expect(reopened.error).toContain("uncertain");
+    expect(effect).toHaveBeenCalledOnce();
+    const state = readWorkLedger(store.get("reopen")!.metadata);
+    const reconciled = reconcileWorkEvidence(state, {
+      evidenceId: state.evidence[0]!.id,
+      outcome: "applied",
+      reason: "Host inspected the written file",
+    });
+    store.update({ ...store.get("reopen")!, metadata: { workLedger: reconciled } });
+    const continued = await new RuntimeToolExecutor(options).execute({
+      sessionId: "reopen",
+      mode: "build",
+      toolName: "write_file",
+      input: {},
+      confirmed: true,
+    });
+    expect(continued.success).toBe(true);
+    expect(effect).toHaveBeenCalledTimes(2);
+  });
   it("persists intent before effects and observations afterwards; a failed barrier blocks effects", async () => {
     const store = new InMemoryRuntimeSessionStore();
     store.create({ id: "durable", mode: "build" });

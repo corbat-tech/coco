@@ -15,7 +15,51 @@ import {
   deriveWorkOutcome,
   formatWorkLedger,
   isVerificationTool,
+  reconcileWorkEvidence,
 } from "./work-ledger.js";
+
+describe("host reconciliation of unknown ledger effects", () => {
+  it("cannot turn an unknown check into verified acceptance or resolve foreign evidence", () => {
+    const store = createRuntimeSessionStore();
+    store.create({ id: "owner" });
+    const ledger = createSessionWorkLedgerAccess(store).forSession("owner");
+    ledger.beforeTool("run_tests", {}, "destructive", false, "interrupted-check");
+    const state = ledger.read();
+    const resolved = reconcileWorkEvidence(state, {
+      evidenceId: state.evidence[0]!.id,
+      outcome: "applied",
+      reason: "Inspected saved test report",
+    });
+    expect(resolved.evidence[0]).toMatchObject({
+      kind: "observation",
+      phase: "completed",
+      success: true,
+    });
+    expect(formatWorkLedger(state)).toContain(state.evidence[0]!.id);
+    expect(() =>
+      reconcileWorkEvidence(state, {
+        evidenceId: "foreign",
+        outcome: "applied",
+        reason: "inspect",
+      }),
+    ).toThrow("uncertain");
+    expect(() =>
+      reconcileWorkEvidence(state, {
+        evidenceId: state.evidence[0]!.id,
+        outcome: "applied",
+        reason: " ",
+      }),
+    ).toThrow();
+    expect(() =>
+      reconcileWorkEvidence(resolved, {
+        evidenceId: state.evidence[0]!.id,
+        outcome: "not-applied",
+        reason: "repeat",
+      }),
+    ).toThrow("uncertain");
+    expect(state.evidence[0]?.phase).toBe("running");
+  });
+});
 
 function fixture() {
   const store = createRuntimeSessionStore();
