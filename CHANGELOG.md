@@ -5,7 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0] - 2026-10-28
+## [3.0.1] - 2026-10-28
+
+- Make pending-SSE deadline integration deterministic: retain real HTTP/body closure, but advance the unchanged 100 ms timer only after READY. Production timeouts and all closure/cancellation assertions are unchanged.
+- Include the Node minimum and dependency/toolchain maintenance from the unpublished 3.0.0 candidate below.
+
+## [3.0.0] - 2026-10-28 (unpublished)
+
+The official gate stopped on a timing-sensitive pending-SSE fixture before
+packing/publication. Preserve that tag; 3.0.1 makes the fixture clock deterministic.
+
 
 ### Breaking
 - Require Node >=22.13.0, making the existing inherited ESTree visitor dependency's engine floor explicit. Earlier metadata advertised 22.0 although the dependency graph already required 22.13. Node 22 users should install a maintained patch release (22.23.4 or newer); Node 24 LTS is recommended.
