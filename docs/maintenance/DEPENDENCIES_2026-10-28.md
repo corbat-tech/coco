@@ -18,7 +18,7 @@ Compatibility targets: Node 22.23.4 LTS and 26.12.1 Current.
 - Execa 10: exit listeners move to `nodeChildProcess`; retain owned process groups, cancellation/escalation, stream draining and failures. Fixtures model the new emitter; real process tests cover cancellation and TERM-resistant descendants.
 - Chalk 6, Glob 14 and Minimatch 11 retain the used APIs and Node 22 support. Platform/CLI tests exercise consumers.
 - Vitest and coverage 5.0.5 stay paired, Vite is explicit. Existing assertions, coverage scope and thresholds are preserved. New mock clearing and async assertion checks remain enabled. tsup 9 supports the selected LTS build runtime.
-- TypeScript 7.0.2 deferred: TypeDoc 0.28.20 supports through 6.0.x; typescript-eslint 8.72.1 requires <6.1.0. Keep 6.0.3 until compiler consumers support 7.
+- Root/workspace TypeScript 7.0.2 deferred: TypeDoc 0.28.20 supports through 6.0.x; typescript-eslint 8.72.1 requires <6.1.0. Keep 6.0.3 until compiler consumers support 7.
 - Marked 18.1.2 deferred: marked-terminal 7.3.0 requires Marked >=1 <16. Keep 15.0.12, respecting the peer contract.
 - Commander 15 / Undici 8 deferred: require Node >=22.12 / >=22.19. Security fixes exist in Undici 7.30.1; raising the public minimum solely for these majors would require a separate breaking release.
 - Anthropic SDK 1.3.0 deferred: changes default API version to 2026-10-21 and removes temperature/top_p/top_k. Coco exposes sampling and supports Anthropic-compatible endpoints. Keep 0.135.0 rather than silently removing these contracts; migration needs explicit API/capability routing and acceptance checks.
@@ -74,7 +74,7 @@ Resolved baseline/final versions; target metadata comes from the official npm re
 | vite | 8.3.4 | 8.3.5 | 8.3.5 | ^20.19.0 || >=22.12.0 |
 | vitest | 4.1.11 | 5.0.5 | 5.0.5 | ^22.12.0 || ^24.0.0 || >=26.0.0 |
 
-Apps: tsx 4.23.15, TypeScript 6.0.3, @types/node 22.20.5. Extension: VSCE 3.7.1 → 4.0.0, esbuild 0.24.2 → 0.28.2, TypeScript 5.9.3 → 6.0.3, Node declarations 22.19.11 → 22.20.5; test-electron stays 3.1.0. VS Code declarations deliberately pin 1.85.0 (baseline lock 1.109.0; latest 1.140.0) to enforce the advertised editor minimum. Node type inclusion is explicit in the extension compiler configuration.
+Apps: tsx 4.23.15, TypeScript 6.0.3, @types/node 22.20.5. Extension: VSCE 3.7.1 → 4.0.0, esbuild 0.24.2 → 0.28.2, TypeScript 5.9.3 → 7.0.2, Node declarations 22.19.11 → 22.20.5; test-electron stays 3.1.0. VS Code declarations deliberately pin 1.85.0 (baseline lock 1.109.0; latest 1.140.0) to enforce the advertised editor minimum. Node type inclusion is explicit in the extension compiler configuration. Standalone TypeScript 7.0.2 passes typecheck and real Extension Host on macOS, and has no compiler-API consumers; reuse Dependabot PR #246 for this migration. While checks ran, the existing auto-merge workflow merged declaration-only PR #247; restore 1.85.0 and prevent isolated minor/major declaration upgrades until engines.vscode is reviewed alongside them. This does not suppress vulnerability advisories.
 
 Actions: checkout 6 → 7.0.1; setup-node 6 → 7.1.0; upload-artifact 4/6 → 7.0.2; download-artifact 4 → 8.0.2; Codecov 6 → 7.1.1; pnpm/action-setup 6.0.10 → 6.1.0; CodeQL 4.39.0 → 4.39.1; fetch-metadata 3 → 3.1.0; gh-release 3 → 3.0.3. Reviewed ESM transitions, setup-node's removal of dummy NODE_AUTH_TOKEN and download-artifact's default digest enforcement. OIDC remains the only npm publication channel.
 
@@ -100,7 +100,7 @@ Corrected paths include Coco/OpenAI → Undici (7.30.0 → 7.30.1), AJV → fast
 
 ## Validation
 
-Baseline: types/lint/format, 413 files / 8,555 tests (15 skipped), REPL 28 tests, build, five apps and extension types/contracts pass. Coverage statements 80.45%, branches 71.59%, functions 82.55%, lines 81.27%. Baseline Extension Host could not start because the installed dependencies lacked the declared test-electron package; reinstalling the independent lockfile fixed it.
+Baseline: types/lint/format, 413 files / 8,555 tests (15 skipped), REPL 28 tests, build, five apps and extension types/contracts pass. Coverage statements 80.45%, branches 71.59%, functions 82.55%, lines 81.27%. The pre-existing oxlint no-thenable warning in owned-shell.ts remains unchanged; it models an intentionally tracked completion. Baseline Extension Host could not start because the installed dependencies lacked the declared test-electron package; reinstalling the independent lockfile fixed it.
 
 Migrated Node 24 LTS release gate: identical 8,555 + 28 tests pass, thresholds unchanged. Coverage statements 80.47%, branches 71.64%, functions 82.67%, lines 81.29%. Five apps typecheck. macOS arm64 Extension Host 1.137.0 passes executable argv, special paths, multiroot, terminal reuse/new/close, missing executable; trust/launch contracts also pass. VSIX inspected with no dependencies or test fixtures. No live paid provider calls were made.
 
@@ -112,6 +112,7 @@ The CI matrix verifies Node 22/24/26 on Linux; platform contracts and packed con
 
 - [Node versions/support](https://nodejs.org/en/about/previous-releases), [Node download versions](https://nodejs.org/en/download).
 - [pnpm 11 migration](https://pnpm.io/11.x/migration), [pnpm 12 release](https://pnpm.io/blog/releases/12.0), [platform support](https://pnpm.io/installation).
+- [TypeScript 7 release and compiler API limitations](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/).
 - [Vitest 5 migration](https://vitest.dev/guide/migration/), [tsup 9](https://github.com/egoist/tsup/releases/tag/v9.0.0), [Execa 10](https://github.com/sindresorhus/execa/releases/tag/v10.0.0), [Chalk 6](https://github.com/chalk/chalk/releases/tag/v6.0.0).
 - [Anthropic API migration](https://platform.claude.com/docs/en/api/migration-2026-10-21), [tslog 5](https://github.com/fullstack-build/tslog/releases/tag/v5.0.0), [Undici 8](https://undici.nodejs.org/best-practices/migrating-from-v7-to-v8).
 - Official npm metadata (engines/peers), upstream security advisories and Actions release notes linked through the reviewed Dependabot PRs.
