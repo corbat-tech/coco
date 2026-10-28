@@ -6,6 +6,7 @@ import { z } from "zod";
 import { executeAgentTurn } from "./agent-loop.js";
 import { agentsCommand } from "./commands/agents.js";
 import { confirmToolExecutionWithFallback } from "./confirmation.js";
+import { saveTrustedTool } from "./session.js";
 import {
   createSessionAgentRunner,
   delegationAllowedForTurn,
@@ -19,6 +20,10 @@ import type { ReplSession } from "./types.js";
 
 vi.mock("./output/renderer.js", () => ({ resetLineBuffer: vi.fn(), flushLineBuffer: vi.fn() }));
 vi.mock("./confirmation.js", () => ({ confirmToolExecutionWithFallback: vi.fn(async () => "no") }));
+vi.mock("./session.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./session.js")>()),
+  saveTrustedTool: vi.fn(async () => {}),
+}));
 
 const terminal: ChatWithToolsResponse = {
   id: "fixture",
@@ -162,6 +167,23 @@ describe("session-owned explicit specialists", () => {
     );
   });
 
+  it.each(["trust_project", "trust_global"] as const)(
+    "persists the selected %s outer specialist trust without writing user configuration in tests",
+    async (choice) => {
+      const f = fixture();
+      f.chat.mockReset().mockResolvedValue(terminal);
+      vi.mocked(saveTrustedTool).mockClear();
+      vi.mocked(confirmToolExecutionWithFallback).mockResolvedValueOnce(choice);
+      await executeAgentTurn(f.session, "@test Verify the fixture", f.provider, f.registry);
+      expect(f.session.trustedTools.has("spawnSimpleAgent")).toBe(true);
+      expect(saveTrustedTool).toHaveBeenCalledExactlyOnceWith(
+        "spawnSimpleAgent",
+        choice === "trust_global" ? null : f.session.projectPath,
+        choice === "trust_global",
+      );
+    },
+  );
+
   it("skipping interactive confirmation never grants child write consent", async () => {
     const f = fixture();
     const write = vi.fn(async () => "written fixture");
@@ -255,6 +277,164 @@ describe("session-owned explicit specialists", () => {
     expect((await run({ type: "review", task: "Review B", maxTurns: 1 }, {})).success).toBe(false);
     expect(f.chat).toHaveBeenCalledOnce();
     expect(run.budget.snapshot().turns).toBe(1);
+  });
+
+  it("serializes raw workers when the user explicitly requests sequential execution", async () => {
+    const f = fixture();
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const firstStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    f.chat
+      .mockReset()
+      .mockImplementationOnce(async () => {
+        started();
+        await gate;
+        return terminal;
+      })
+      .mockResolvedValue(terminal);
+    const run = createSessionAgentRunner(
+      f.session,
+      f.provider,
+      f.registry,
+      undefined,
+      "Use agents sequentially",
+    );
+    const first = run({ type: "explore", task: "Read A", maxTurns: 1 }, {});
+    const second = run({ type: "explore", task: "Read B", maxTurns: 1 }, {});
+    await firstStarted;
+    try {
+      expect(f.chat).toHaveBeenCalledOnce();
+      expect(getSessionAgentManager(f.session)?.getActiveCount()).toBe(1);
+    } finally {
+      release();
+    }
+    expect((await first).success).toBe(true);
+    expect((await second).success).toBe(true);
+    expect(f.chat).toHaveBeenCalledTimes(2);
+    expect(run.projectRoot).toBe(f.session.projectPath);
+    expect(run.delegation).toMatchObject({ message: "Use agents sequentially", mode: "manual" });
+    expect(run.budget.snapshot().turns).toBe(2);
+  });
+
+  it("does not admit an aborted queued worker after its predecessor settles", async () => {
+    const f = fixture();
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const firstStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    f.chat
+      .mockReset()
+      .mockImplementationOnce(async () => {
+        started();
+        await gate;
+        return terminal;
+      })
+      .mockResolvedValue(terminal);
+    const run = createSessionAgentRunner(
+      f.session,
+      f.provider,
+      f.registry,
+      undefined,
+      "Usa agentes secuencialmente",
+    );
+    const first = run({ type: "explore", task: "Read A", maxTurns: 1 }, {});
+    const controller = new AbortController();
+    const reason = new Error("Queued worker cancelled");
+    const second = run(
+      { type: "explore", task: "Read B", maxTurns: 1 },
+      { signal: controller.signal },
+    ).then(
+      (result) => ({ result, error: undefined }),
+      (error) => ({ result: undefined, error }),
+    );
+    await firstStarted;
+    controller.abort(reason);
+    release();
+    await first;
+    expect((await second).error).toBe(reason);
+    expect(f.chat).toHaveBeenCalledOnce();
+    expect(f.session.delegationHistory).toHaveLength(1);
+  });
+
+  it("rechecks mode and shared budget only after a queued predecessor settles", async () => {
+    for (const restriction of ["off", "budget"] as const) {
+      const f = fixture();
+      if (restriction === "budget") f.session.config.agent.maxToolIterations = 1;
+      let release!: () => void;
+      let started!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const firstStarted = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      f.chat
+        .mockReset()
+        .mockImplementationOnce(async () => {
+          started();
+          await gate;
+          return terminal;
+        })
+        .mockResolvedValue(terminal);
+      const run = createSessionAgentRunner(
+        f.session,
+        f.provider,
+        f.registry,
+        undefined,
+        "Use agents sequentially",
+      );
+      const first = run({ type: "explore", task: "Read A", maxTurns: 1 }, {});
+      const second = run({ type: "explore", task: "Read B", maxTurns: 1 }, {}).then(
+        (result) => ({ result, error: undefined }),
+        (error) => ({ result: undefined, error }),
+      );
+      await firstStarted;
+      if (restriction === "off") f.session.config.agent.delegation = { mode: "off" };
+      release();
+      await first;
+      const outcome = await second;
+      if (restriction === "off")
+        expect(outcome.error).toEqual(
+          expect.objectContaining({ message: "Delegation mode is off" }),
+        );
+      else
+        expect(outcome.result).toMatchObject({
+          success: false,
+          error: expect.stringContaining("budget exhausted"),
+        });
+      expect(f.chat).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("releases sequential admission when a preceding queued request rejects", async () => {
+    const f = fixture();
+    f.chat.mockReset().mockResolvedValue(terminal);
+    const run = createSessionAgentRunner(
+      f.session,
+      f.provider,
+      f.registry,
+      undefined,
+      "Use agents sequentially",
+    );
+    const controller = new AbortController();
+    controller.abort(new Error("Cancelled before admission"));
+    const first = run(
+      { type: "explore", task: "Read A", maxTurns: 1 },
+      { signal: controller.signal },
+    );
+    const second = run({ type: "explore", task: "Read B", maxTurns: 1 }, {});
+    await expect(first).rejects.toThrow("Cancelled before admission");
+    expect((await second).success).toBe(true);
+    expect(f.chat).toHaveBeenCalledOnce();
   });
 
   it("auto admits only a validated plan when the user did not explicitly request workers", async () => {

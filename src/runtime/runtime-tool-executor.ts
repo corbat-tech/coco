@@ -101,7 +101,11 @@ export class RuntimeToolExecutor {
     ancestors: readonly AuthorityCeiling[],
   ): Promise<RuntimeToolExecutionResult> {
     // Capture authority before any tool/provider awaits or caller mutations.
-    input = { ...input, allowedTools: input.allowedTools ? [...input.allowedTools] : undefined };
+    input = {
+      ...input,
+      input: structuredClone(input.input),
+      allowedTools: input.allowedTools ? [...input.allowedTools] : undefined,
+    };
     const startedAt = performance.now();
     const mode = input.mode ?? this.defaultMode;
     const sessionContext = {

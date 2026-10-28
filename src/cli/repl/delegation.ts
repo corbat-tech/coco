@@ -139,7 +139,7 @@ export function createSessionAgentRunner(
   const maxWorkers = session.config.agent.delegation?.maxWorkersPerTask ?? 4;
   const history = (session.delegationHistory ??= []);
   const budget = new DelegationBudget({ maxTurns: session.config.agent.maxToolIterations });
-  const run: NonNullable<ToolExecutionContext["runAgent"]> = async (request, context) => {
+  const dispatch: NonNullable<ToolExecutionContext["runAgent"]> = async (request, context) => {
     if (session.delegationBlockedForTurn)
       throw new Error("The user stopped worker admission for this turn");
     if (parseDelegationIntent(currentMessage).error)
@@ -217,6 +217,25 @@ export function createSessionAgentRunner(
     if (record) record.status = result.structuredResult.status;
     await checkpoint?.();
     return result.structuredResult;
+  };
+  const sequential = parseDelegationIntent(currentMessage).strategy === "sequential";
+  let predecessor = Promise.resolve();
+  const run: NonNullable<ToolExecutionContext["runAgent"]> = async (request, context) => {
+    if (!sequential) return dispatch(request, context);
+    const prior = predecessor;
+    let release!: () => void;
+    predecessor = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await prior;
+    try {
+      // The wait does not grant admission: current consent, resource ownership and
+      // the shared request budget are checked only after the predecessor settles.
+      context.signal?.throwIfAborted();
+      return await dispatch(request, context);
+    } finally {
+      release();
+    }
   };
   return Object.assign(run, {
     budget,
@@ -316,6 +335,15 @@ export async function executeSpecialistTurn(
       const answer = await confirmToolExecutionWithFallback(call);
       confirmed = ["yes", "trust_project", "trust_global"].includes(String(answer));
       declined = !confirmed;
+      if (answer === "trust_project" || answer === "trust_global") {
+        const pattern = getTrustPattern(call.name, call.input);
+        session.trustedTools.add(pattern);
+        await saveTrustedTool(
+          pattern,
+          answer === "trust_global" ? null : session.projectPath,
+          answer === "trust_global",
+        );
+      }
     } finally {
       options.onAfterConfirmation?.();
     }

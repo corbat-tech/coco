@@ -30,6 +30,55 @@ function fixture(permissionPolicy?: PermissionPolicy) {
 const read = { toolName: "read_file", input: { path: "README.md" } };
 
 describe("AgentRuntime tool execution contract", () => {
+  it("keeps the policy-checked payload immutable while a persistence barrier is pending", async () => {
+    const { runtime, registry } = fixture();
+    const effect = vi.fn();
+    const execute = vi.fn(async (input: { fix: boolean; target: { path: string } }) => {
+      if (input.fix) effect();
+      return input;
+    });
+    registry.register({
+      name: "run_linter",
+      description: "Input-aware linter fixture",
+      category: "quality",
+      parameters: z.object({ fix: z.boolean(), target: z.object({ path: z.string() }) }),
+      execute,
+    });
+    let releaseCheckpoint!: () => void;
+    const checkpointBarrier = new Promise<void>((resolve) => {
+      releaseCheckpoint = resolve;
+    });
+    let checkpointReached!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      checkpointReached = resolve;
+    });
+    let checkpoints = 0;
+    const input = { fix: false, target: { path: "approved.ts" } };
+    const pending = runtime.executeTool({
+      toolName: "run_linter",
+      mode: "plan",
+      input,
+      checkpoint: async () => {
+        if (++checkpoints === 1) {
+          checkpointReached();
+          await checkpointBarrier;
+        }
+      },
+    });
+    await reached;
+    input.fix = true;
+    input.target.path = "unapproved.ts";
+    releaseCheckpoint();
+    const result = await pending;
+    expect(result).toMatchObject({ success: true, decision: { risk: "read-only" } });
+    expect(effect).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledExactlyOnceWith(
+      { fix: false, target: { path: "approved.ts" } },
+      expect.anything(),
+    );
+    expect(result.output).toEqual({ fix: false, target: { path: "approved.ts" } });
+  });
+
   it("does not dispatch a tool when the caller has already cancelled", async () => {
     const { runtime, execute, events } = fixture();
     const controller = new AbortController();
