@@ -1,3 +1,4 @@
+import { getAgentProfile } from "../runtime/agent-profiles.js";
 import { isCancellation, rethrowCancellation } from "../utils/cancellation.js";
 import type { ToolExecutionContext } from "../tools/execution-context.js";
 /**
@@ -342,120 +343,12 @@ function normalizeRole(role: AgentDefinition["role"]): AgentRole {
 /**
  * Predefined agent roles with system prompts and real tool names
  */
-export const AGENT_ROLES: Record<string, Omit<AgentDefinition, "maxTurns">> = {
-  researcher: {
-    role: "researcher",
-    systemPrompt: `You are a code researcher agent. Your role is to:
-- Explore and understand existing codebases
-- Find relevant code patterns and examples
-- Identify dependencies and relationships
-- Document your findings clearly
-
-Use tools to search, read files, and analyze code structure.`,
-    allowedTools: ["read_file", "grep", "find_in_file", "glob", "codebase_map"],
-  },
-
-  architect: {
-    role: "architect",
-    systemPrompt: `You are an architecture planning agent. Your role is to:
-- Understand the existing system before proposing changes
-- Design the smallest coherent implementation plan
-- Split work into editor-ready tasks with dependencies
-- Identify risks, migration concerns, and verification gates
-
-Use read-only tools for codebase mapping, symbol navigation, and planning.`,
-    allowedTools: [
-      "read_file",
-      "grep",
-      "glob",
-      "codebase_map",
-      "lsp_workspace_symbols",
-      "lsp_definition",
-      "create_agent_plan",
-    ],
-  },
-
-  editor: {
-    role: "editor",
-    systemPrompt: `You are an implementation editor agent. Your role is to:
-- Apply a provided architecture plan with minimal, focused edits
-- Preserve existing project conventions
-- Avoid broad refactors unless explicitly requested
-- Run targeted verification for the files you change
-
-Use tools to read, edit, validate, and test code.`,
-    allowedTools: [
-      "read_file",
-      "edit_file",
-      "write_file",
-      "grep",
-      "lsp_references",
-      "validateCode",
-      "run_tests",
-      "bash_exec",
-    ],
-  },
-
-  coder: {
-    role: "coder",
-    systemPrompt: `You are a code generation agent. Your role is to:
-- Write high-quality, production-ready code
-- Follow best practices and coding standards
-- Ensure code is syntactically valid
-- Write clean, maintainable code
-
-Use tools to read existing code, write new files, and validate syntax.`,
-    allowedTools: ["read_file", "write_file", "edit_file", "bash_exec", "validateCode"],
-  },
-
-  tester: {
-    role: "tester",
-    systemPrompt: `You are a test generation agent. Your role is to:
-- Write comprehensive test suites
-- Achieve high code coverage
-- Test edge cases and error conditions
-- Ensure tests are reliable and maintainable
-
-Use tools to read code, write tests, and run them.`,
-    allowedTools: ["read_file", "write_file", "run_tests", "get_coverage", "run_test_file"],
-  },
-
-  reviewer: {
-    role: "reviewer",
-    systemPrompt: `You are a code review agent. Your role is to:
-- Identify code quality issues
-- Check for security vulnerabilities
-- Ensure best practices are followed
-- Provide actionable feedback
-
-Use tools to read and analyze code quality.`,
-    allowedTools: ["read_file", "calculate_quality", "analyze_complexity", "grep"],
-  },
-
-  optimizer: {
-    role: "optimizer",
-    systemPrompt: `You are a code optimization agent. Your role is to:
-- Reduce code complexity
-- Eliminate duplication
-- Improve performance
-- Refactor for maintainability
-
-Use tools to analyze and improve code.`,
-    allowedTools: ["read_file", "write_file", "edit_file", "analyze_complexity", "grep"],
-  },
-
-  planner: {
-    role: "planner",
-    systemPrompt: `You are a task planning agent. Your role is to:
-- Break down complex tasks into subtasks
-- Identify dependencies between tasks
-- Estimate complexity and effort
-- Create actionable plans
-
-Use tools to analyze requirements and explore the codebase.`,
-    allowedTools: ["read_file", "grep", "glob", "codebase_map"],
-  },
-};
+export const AGENT_ROLES: Record<string, Omit<AgentDefinition, "maxTurns">> = Object.fromEntries(
+  Object.entries({ researcher: "explore", architect: "architect", editor: "refactor", coder: "debug", tester: "test", reviewer: "review", optimizer: "refactor", planner: "plan" } as const).map(([role, type]) => {
+    const profile = getAgentProfile(type);
+    return [role, { role: role as AgentDefinition["role"], systemPrompt: profile.instructions, allowedTools: profile.allowedTools }];
+  }),
+);
 
 /**
  * Create an agent executor
