@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { scopedGlob } from "./scoped-glob.js";
@@ -173,7 +174,13 @@ Examples:
  * Write file tool
  */
 export const writeFileTool: ToolDefinition<
-  { path: string; content: string; createDirs?: boolean; dryRun?: boolean },
+  {
+    path: string;
+    content: string;
+    createDirs?: boolean;
+    dryRun?: boolean;
+    expectedContentHash?: string | null;
+  },
   { path: string; size: number; dryRun: boolean; wouldCreate: boolean }
 > = defineTool({
   name: "write_file",
@@ -187,6 +194,14 @@ Examples:
   parameters: z.object({
     path: z.string().describe("Absolute or relative path to the file"),
     content: z.string().describe("Content to write"),
+    expectedContentHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .nullable()
+      .optional()
+      .describe(
+        "Optional SHA-256 of the observed file; null requires that the file does not exist. Checked immediately before writing.",
+      ),
     createDirs: z
       .boolean()
       .optional()
@@ -198,7 +213,7 @@ Examples:
       .default(false)
       .describe("Preview operation without making changes"),
   }),
-  async execute({ path: filePath, content, createDirs, dryRun }) {
+  async execute({ path: filePath, content, createDirs, dryRun, expectedContentHash }) {
     const absolutePath = await resolvePathSecurely(filePath, "write");
     try {
       // Check if file exists
@@ -223,6 +238,22 @@ Examples:
         await fs.mkdir(path.dirname(absolutePath), { recursive: true });
       }
 
+      if (expectedContentHash !== undefined) {
+        let actualHash: string | null = null;
+        try {
+          actualHash = createHash("sha256")
+            .update(await fs.readFile(absolutePath))
+            .digest("hex");
+        } catch (error) {
+          if (!isENOENT(error)) throw error;
+        }
+        if (actualHash !== expectedContentHash)
+          throw new ToolError(
+            "File content precondition failed; inspect the current file before retrying.",
+            { tool: "write_file" },
+          );
+      }
+
       await fs.writeFile(absolutePath, content, "utf-8");
       const stats = await fs.stat(absolutePath);
 
@@ -233,6 +264,7 @@ Examples:
         wouldCreate,
       };
     } catch (error) {
+      if (error instanceof ToolError) throw error;
       if (isENOENT(error)) {
         const enriched = await enrichENOENT(filePath, "write");
         throw new FileSystemError(enriched, {

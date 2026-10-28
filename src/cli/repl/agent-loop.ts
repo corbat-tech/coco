@@ -27,6 +27,16 @@ import { createContextCompactor } from "./context/compactor.js";
 import { readWorkLedger } from "../../runtime/work-ledger.js";
 import { AgentRuntime } from "../../runtime/agent-runtime.js";
 import { createRuntimeToolDispatch } from "./runtime-tool-dispatch.js";
+import {
+  cancelSessionWorkers,
+  budgetCompactionProvider,
+  createSessionAgentRunner,
+  createSessionDelegatedApproval,
+  delegationAllowedForTurn,
+  executeSpecialistTurn,
+  requestedSpecialist,
+} from "./delegation.js";
+import { parseDelegationIntent } from "../../runtime/delegation-policy.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -37,6 +47,8 @@ import type {
   ToolUseContent,
   ToolDefinition,
   MessageContent,
+  Message,
+  ChatWithToolsOptions,
 } from "../../providers/types.js";
 import type { ToolRegistry } from "../../tools/registry.js";
 import type { ReplSession, AgentTurnResult, ExecutedToolCall } from "./types.js";
@@ -113,6 +125,7 @@ export async function executeAgentTurn(
   toolRegistry: ToolRegistry,
   options: AgentTurnOptions = {},
 ): Promise<AgentTurnResult> {
+  session.delegationBlockedForTurn = false;
   const mode = session.planMode ? "plan" : (session.agentMode ?? "build");
   const runtime =
     session.runtime ??
@@ -136,6 +149,86 @@ export async function executeAgentTurn(
       });
     }
   }
+
+  const messageText =
+    typeof userMessage === "string"
+      ? userMessage
+      : userMessage
+          .filter((block) => block.type === "text")
+          .map((block) => ("text" in block ? block.text : ""))
+          .join("\n");
+  const requestedWorker = requestedSpecialist(session, messageText);
+  const sessionRunner = createSessionAgentRunner(
+    session,
+    provider,
+    toolRegistry,
+    options.onCheckpoint,
+    messageText,
+  );
+  let allowDelegation =
+    delegationAllowedForTurn(session, messageText) || requestedWorker !== undefined;
+  const accountParentRequests = allowDelegation;
+  // A rejecting host callback prevents legacy singleton fallback on denied turns.
+  const runAgent: typeof sessionRunner = Object.assign(
+    async (...args: Parameters<typeof sessionRunner>) => {
+      if (!allowDelegation || session.delegationBlockedForTurn)
+        throw new Error("Delegation is not admitted for this user turn");
+      return sessionRunner(...args);
+    },
+    {
+      budget: sessionRunner.budget,
+      projectRoot: session.projectPath,
+      delegation: sessionRunner.delegation,
+    },
+  );
+  const compactionProvider = accountParentRequests
+    ? budgetCompactionProvider(provider, runAgent.budget, session.config.provider.maxTokens)
+    : provider;
+  async function* streamWithTurnBudget(
+    messages: Message[],
+    requestOptions: ChatWithToolsOptions,
+  ): AsyncIterable<StreamChunk> {
+    const inputTokens = Math.ceil(
+      JSON.stringify({ messages, tools: requestOptions.tools, system: requestOptions.system })
+        .length / 3,
+    );
+    const reservation = accountParentRequests
+      ? runAgent.budget.reserve({
+          estimatedInputTokens: inputTokens,
+          maxOutputTokens: requestOptions.maxTokens ?? 4096,
+        })
+      : undefined;
+    let terminal = false;
+    let output = "";
+    let emittedChunk = false;
+    let rejectedBeforeExecution = false;
+    try {
+      for await (const chunk of provider.streamWithTools(messages, requestOptions)) {
+        emittedChunk = true;
+        output += chunk.text ?? (chunk.toolCall ? JSON.stringify(chunk.toolCall) : "");
+        if (chunk.type === "done") terminal = true;
+        yield chunk;
+      }
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+      rejectedBeforeExecution =
+        !emittedChunk && ["context_length_exceeded", "prompt_too_long"].includes(String(code));
+      throw error;
+    } finally {
+      reservation?.settle(
+        terminal && !requestOptions.signal?.aborted
+          ? {
+              inputTokens,
+              outputTokens: provider.countTokens(output),
+            }
+          : rejectedBeforeExecution
+            ? { inputTokens: 0, outputTokens: 0 }
+            : undefined,
+      );
+    }
+  }
+  if (requestedWorker)
+    return executeSpecialistTurn(session, requestedWorker, toolRegistry, options, runAgent);
 
   // Reset line buffer at start of each turn
   resetLineBuffer();
@@ -219,7 +312,9 @@ export async function executeAgentTurn(
 
   // Get tool definitions for LLM (cast to provider's ToolDefinition type)
   // In plan mode, restrict to read-only tools only
-  const allTools = toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[];
+  const allTools = (toolRegistry.getToolDefinitionsForLLM() as ToolDefinition[]).filter(
+    (tool) => allowDelegation || !["spawnSimpleAgent", "delegateTask"].includes(tool.name),
+  );
   const conversationalOnly = isConversationalOnlyTurn(userMessage);
   const tools = conversationalOnly
     ? []
@@ -489,6 +584,11 @@ export async function executeAgentTurn(
     priorContent: string,
     reason: string,
   ): Promise<string> {
+    if (allowDelegation)
+      return (
+        priorContent ||
+        "The delegated task stopped without a usable result. No further model request was made."
+      );
     let explanation = "";
     let explanationThinkingEnded = false;
 
@@ -509,7 +609,7 @@ export async function executeAgentTurn(
         },
       ];
 
-      for await (const chunk of provider.streamWithTools(finalMessages, {
+      for await (const chunk of streamWithTurnBudget(finalMessages, {
         tools: [],
         maxTokens: session.config.provider.maxTokens,
         signal: options.signal,
@@ -590,13 +690,17 @@ export async function executeAgentTurn(
       try {
         const compaction = await checkAndCompactContext(
           session,
-          provider,
+          compactionProvider,
           options.signal,
           toolRegistry,
         );
         // Do not spend a summary request every iteration when compaction fails
         // or cannot reduce this history. A later user turn may try again.
         compactionUnavailable = !!compaction?.failureReason && !compaction.wasCompacted;
+        if (accountParentRequests && runAgent.budget.snapshot().unknownRequests > 0)
+          throw new Error(
+            "Compaction usage is unknown; no further model requests are admitted. Run explicit compaction separately before retrying.",
+          );
       } catch (error) {
         if (classifyAgentLoopError(error, options.signal).kind === "abort") return abortReturn();
         throw error;
@@ -657,7 +761,7 @@ export async function executeAgentTurn(
         const invalidBatch = () =>
           new ResponseIntegrityError("Invalid or incomplete tool call batch", provider.name);
         try {
-          for await (const chunk of provider.streamWithTools(messages, {
+          for await (const chunk of streamWithTurnBudget(messages, {
             tools,
             maxTokens: session.config.provider.maxTokens,
             signal: options.signal,
@@ -812,8 +916,13 @@ export async function executeAgentTurn(
           }
           break;
         } catch (streamError) {
+          if (accountParentRequests && !isContextOverflowError(streamError)) throw streamError;
           if (streamError instanceof ResponseIntegrityError) throw streamError;
           if (isContextOverflowError(streamError)) {
+            if (accountParentRequests && runAgent.budget.snapshot().unknownRequests > 0)
+              throw new Error(
+                "Provider usage is unknown after context rejection; no further model requests are admitted.",
+              );
             if (overflowRecoveryAttempted || sawToolChunk || responseContent) {
               throw new ContextBudgetError(
                 "compacted_context_exceeds_window",
@@ -840,7 +949,7 @@ export async function executeAgentTurn(
               reservedOutputTokens: session.config.provider.maxTokens ?? 4096,
               signal: options.signal,
               summarize: (history, signal) =>
-                createContextCompactor().compact(history, provider, {
+                createContextCompactor().compact(history, compactionProvider, {
                   signal,
                   summaryModel:
                     session.config.provider.weakModel ?? session.config.provider.editorModel,
@@ -1055,6 +1164,15 @@ export async function executeAgentTurn(
         break;
       }
 
+      if (!allowDelegation && ["spawnSimpleAgent", "delegateTask"].includes(toolCall.name)) {
+        declinedTools.set(
+          toolCall.id,
+          "Delegation is disabled or requires an explicit user request in manual mode.",
+        );
+        recordToolSkipped(toolCall, "Delegation not admitted for this turn");
+        continue;
+      }
+
       if (conversationalOnly) {
         declinedTools.set(
           toolCall.id,
@@ -1184,7 +1302,15 @@ export async function executeAgentTurn(
       const parallelResult = await executor.executeParallel(
         confirmedTools,
         withFileCheckpoints(
-          createRuntimeToolDispatch(runtime, session.id, mode, approvedTools),
+          createRuntimeToolDispatch(
+            runtime,
+            session.id,
+            mode,
+            approvedTools,
+            runAgent,
+            createSessionDelegatedApproval(session, toolRegistry, options),
+            accountParentRequests ? options.onCheckpoint : undefined,
+          ),
           session.id,
           session.projectPath,
         ),
@@ -1491,6 +1617,12 @@ export async function executeAgentTurn(
     if (options.onSteeringCheck) {
       const steeringMessages = options.onSteeringCheck();
       if (steeringMessages.length > 0) {
+        if (
+          steeringMessages.some((message) => parseDelegationIntent(message).preference === "off")
+        ) {
+          allowDelegation = false;
+          cancelSessionWorkers(session, "all");
+        }
         const steeringContext = [
           "\n---",
           "## Mid-task steering from user:",
@@ -1511,7 +1643,7 @@ export async function executeAgentTurn(
     if (stuckInErrorLoop) {
       try {
         const finalMessages = getConversationContext(session, toolRegistry);
-        for await (const chunk of provider.streamWithTools(finalMessages, {
+        for await (const chunk of streamWithTurnBudget(finalMessages, {
           tools: [],
           maxTokens: session.config.provider.maxTokens,
           signal: options.signal,
@@ -1553,7 +1685,7 @@ export async function executeAgentTurn(
       options.onThinkingStart?.();
       try {
         const finalMessages = getConversationContext(session, toolRegistry);
-        for await (const chunk of provider.streamWithTools(finalMessages, {
+        for await (const chunk of streamWithTurnBudget(finalMessages, {
           tools: [],
           maxTokens: session.config.provider.maxTokens,
           signal: options.signal,

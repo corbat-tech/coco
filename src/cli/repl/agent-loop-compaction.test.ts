@@ -94,6 +94,59 @@ function expectedTokens(session: ReplSession, provider: LLMProvider, registry: T
 }
 
 describe("in-turn context compaction", () => {
+  it("counts automatic compaction against the same delegated turn budget", async () => {
+    const { session, registry, provider } = fixture();
+    session.config.agent.delegation = { mode: "auto" };
+    session.config.agent.maxToolIterations = 2;
+    vi.mocked(provider.chat).mockResolvedValue({
+      content: "Old work completed; verification pending",
+      stopReason: "end_turn",
+      usage: { inputTokens: 30, outputTokens: 10 },
+      model: "fixture",
+      id: "summary",
+    });
+    vi.mocked(provider.streamWithTools)
+      .mockImplementationOnce(toolStream)
+      .mockImplementation(textStream);
+    const result = await executeAgentTurn(session, "Inspect the project", provider, registry);
+    expect(provider.chat).toHaveBeenCalledOnce();
+    expect(provider.streamWithTools).toHaveBeenCalledOnce();
+    expect(result.error).toContain("budget exhausted");
+  });
+
+  it("stops after auxiliary usage becomes unknown instead of treating summarization as free", async () => {
+    const { session, registry, provider } = fixture();
+    session.config.agent.delegation = { mode: "auto" };
+    vi.mocked(provider.streamWithTools)
+      .mockImplementationOnce(toolStream)
+      .mockImplementation(textStream);
+    await expect(
+      executeAgentTurn(session, "Inspect the project", provider, registry),
+    ).rejects.toThrow(/usage is unknown/);
+    expect(provider.chat).toHaveBeenCalledOnce();
+    expect(provider.streamWithTools).toHaveBeenCalledOnce();
+  });
+
+  it("preserves bounded recovery for a definite pre-output context rejection in auto mode", async () => {
+    const { session, registry, provider } = fixture();
+    session.config.agent.delegation = { mode: "auto" };
+    session.contextManager!.updateConfig({ compactionThreshold: 1 });
+    vi.mocked(provider.chat).mockResolvedValue({
+      content: "Old work completed; verification pending",
+      stopReason: "end_turn",
+      usage: { inputTokens: 30, outputTokens: 10 },
+      model: "fixture",
+      id: "summary",
+    });
+    vi.mocked(provider.streamWithTools)
+      .mockImplementationOnce(overflowStream)
+      .mockImplementation(textStream);
+    const result = await executeAgentTurn(session, "Inspect the project", provider, registry);
+    expect(result.error).toBeUndefined();
+    expect(provider.chat).toHaveBeenCalledOnce();
+    expect(provider.streamWithTools).toHaveBeenCalledTimes(2);
+  });
+
   it("compacts after tool output crosses the threshold and preserves the complete tool pair", async () => {
     const { session, registry, provider } = fixture();
     const requests: Message[][] = [];

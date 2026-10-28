@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "frozenAfterCoreImplementation": true,
+  "reservationNote": "Reserved-after-implementation cases are excluded from subsequent prompt tuning, not a blind pre-implementation benchmark.",
+  "cases": [
+    {
+      "id": "local-clamp",
+      "group": "local",
+      "split": "development",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Fix src/clamp.mjs: clamp(value, min, max) must return min below the inclusive lower bound, max above the upper bound, and the unchanged number inside the interval. Inputs are finite numbers with min <= max. Preserve the export and avoid unrelated changes.",
+      "acceptanceSha256": "e42b127c8c625d3327864573da49fde3ea32f7605cac552562c57146ffe76bd9",
+      "solutionFiles": ["src/clamp.mjs"],
+      "fixtureSha256": "230cd1fc6cdd5478fac4bbb236352853e3c041177c2e26c2838e9afa119f03f5"
+    },
+    {
+      "id": "local-slug",
+      "group": "local",
+      "split": "development",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Fix slug(text) in src/slug.mjs. Trim leading/trailing whitespace, lowercase the text and replace each run of whitespace (spaces, tabs and newlines) with one hyphen. Do not strip non-whitespace characters. The empty/whitespace-only input returns an empty string. Preserve the export.",
+      "acceptanceSha256": "7e5bc0bd5f1ed409cf49032af915a6478abbf8d805c376ee944208a5bb910f0f",
+      "solutionFiles": ["src/slug.mjs"],
+      "fixtureSha256": "139a55965731bfd9c647b925d6aa3ce30c15f87e44d6ccd8adc1a34844daeeb2"
+    },
+    {
+      "id": "local-discount",
+      "group": "local",
+      "split": "development",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Fix discountedTotal(amount, discount) in src/discount.mjs. The default discount is 0.1 only when discount is undefined. An explicit zero must mean no discount; other supplied rates must be used unchanged. Inputs are valid finite numbers. Preserve the export and existing default behavior.",
+      "acceptanceSha256": "1fbc0d93ee8bacad55eb83c686fac75983fdbca83fd66988f2824c762339fd4e",
+      "solutionFiles": ["src/discount.mjs"],
+      "fixtureSha256": "416d3b7a7be7de306c7965c65d88f45ac1a65c2fe8bba3b1579294a9e1ce4420"
+    },
+    {
+      "id": "local-pagination",
+      "group": "local",
+      "split": "reserved-after-implementation",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Fix paginate(items, page, size) in src/paginate.mjs. Pages are one-based and contain at most size items, with no overlap. Beyond the last page return an empty array and never mutate items. Preserve the RangeError for nonpositive or noninteger page/size and the named export.",
+      "acceptanceSha256": "270bc4bd2aca286d7bab429a0b336a2c46ddab363e3a8fc55ea84481a5d8861b",
+      "solutionFiles": ["src/paginate.mjs"],
+      "fixtureSha256": "e922790d59ec80641ef0469ff5b930523bfa832db18793fc4e8a73c2b35bc810"
+    },
+    {
+      "id": "ordered-cents",
+      "group": "ordered",
+      "split": "development",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Change the contract of parseAmount(text) in src/amount.mjs from currency units to integer cents, rounded with Math.round(Number(text) * 100). Then update its consumer invoiceLabel(text) in src/invoice.mjs to preserve the existing display EUR followed by two decimal places. Do not change either export. Establish the producer contract before adapting the consumer.",
+      "acceptanceSha256": "07d97925311c485314564b9b5aaca2136d2d17131482f235fd4a473fe7314941",
+      "solutionFiles": ["src/amount.mjs", "src/invoice.mjs"],
+      "fixtureSha256": "fe55ce9871bc4c2dde55d8ec0b3c3f378653058f91545be5b933ccf705793e4f"
+    },
+    {
+      "id": "ordered-token-result",
+      "group": "ordered",
+      "split": "development",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Migrate tokenize(text) in src/tokens.mjs to return { tokens: string[], count: number } instead of an array. Whitespace-delimited nonempty tokens must be preserved; blank input gives empty tokens/count zero. Then adapt wordCount(text) in src/count.mjs to the new result while preserving its numeric API. Preserve named exports.",
+      "acceptanceSha256": "9803651044abc7acc3fce484de2e6a8a611bb17088c3f6f101b96a25052dd795",
+      "solutionFiles": ["src/tokens.mjs", "src/count.mjs"],
+      "fixtureSha256": "2f22411385bd810d91377295a9e17c3610cba9527bb776165954a138797aec5f"
+    },
+    {
+      "id": "ordered-user-result",
+      "group": "ordered",
+      "split": "development",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Change findUser(users, id) in src/users.mjs to return { found: true, item: matchingUser } on a match and { found: false, item: null } otherwise. Then update greeting(users, id) in src/greeting.mjs to consume that contract, preserving Hello NAME for a match and Unknown user otherwise. Match IDs with strict equality and preserve named exports.",
+      "acceptanceSha256": "f1e636d72a6732b64d06885ab6afe60460c26c8eed30214c63afc0494450c556",
+      "solutionFiles": ["src/users.mjs", "src/greeting.mjs"],
+      "fixtureSha256": "7fb1cfda16cf2bf29f4671929be6d9acc04122b0e104c1ab7561615223bd08f3"
+    },
+    {
+      "id": "ordered-server-config",
+      "group": "ordered",
+      "split": "reserved-after-implementation",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Migrate loadConfig(env) in src/config.mjs from flat host/port fields to { server: { host, port } }. Preserve defaults localhost and 3000 and numeric conversion of a supplied PORT. Then update baseUrl(env) in src/url.mjs to consume the nested contract while preserving http://HOST:PORT output. Keep the existing named exports.",
+      "acceptanceSha256": "537ef382807f1f3931f81fb917f3d127b54b6a849d8e71488b0c3b6166dfe1ec",
+      "solutionFiles": ["src/config.mjs", "src/url.mjs"],
+      "fixtureSha256": "c0646b7b21a6ab4604fec03f1947129fe0f1e5b79408a5b543882a72a269dfe3"
+    },
+    {
+      "id": "parallel-statistics",
+      "group": "independent",
+      "split": "development",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Fix two independent modules without changing their exports: mean(values) in src/mean.mjs must return zero for an empty numeric array and the arithmetic average otherwise. maximum(values) in src/maximum.mjs must return null for an empty array and the largest supplied value otherwise, including all-negative arrays. Each change can be implemented independently.",
+      "acceptanceSha256": "cd71049b67fd6483c83e02eb2ce3984a0c135aa00231297814d45b889ec4ca90",
+      "solutionFiles": ["src/mean.mjs", "src/maximum.mjs"],
+      "fixtureSha256": "c2c44e53555a5a4c2711d977c7e45df205a64c549d58157546a0fcd747827e45"
+    },
+    {
+      "id": "parallel-html-escaping",
+      "group": "independent",
+      "split": "development",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Fix the independent HTML helpers. escapeText(text) in src/text.mjs must escape every &, < and >, in that order, and preserve quotes. escapeAttribute(text) in src/attribute.mjs must escape every & and double quote as &amp; and &quot;, preserving other characters. Avoid double-escaping entities introduced by the helper itself. Preserve the named exports.",
+      "acceptanceSha256": "99bff1e4b866c6bd77f61ab415f96589aabaf91a78b3b44ece86ae7b9eede1bc",
+      "solutionFiles": ["src/text.mjs", "src/attribute.mjs"],
+      "fixtureSha256": "429fef768e0b95bf8fe2916e4b850ad9454692ab7bf8461f02b2ac8b0c5ee4f2"
+    },
+    {
+      "id": "parallel-date-duration",
+      "group": "independent",
+      "split": "reserved-after-implementation",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Fix two independent formatters. utcDate(date) in src/date.mjs must format a valid Date as YYYY-MM-DD using UTC fields and zero-padded month/day. duration(seconds) in src/duration.mjs receives a nonnegative integer and must return total minutes followed by a colon and exactly two digits for remaining seconds, for example 65 -> 1:05. Preserve exports.",
+      "acceptanceSha256": "ce4eb9afda0157719d076f0bb803060a6a1c4f111b7a0eed0388d4a4a4091fa2",
+      "solutionFiles": ["src/date.mjs", "src/duration.mjs"],
+      "fixtureSha256": "c48041d58bda8902c91e9f8c531facb2728c9daa41702bca8fd85ad14a14a8dc"
+    },
+    {
+      "id": "parallel-collections",
+      "group": "independent",
+      "split": "reserved-after-implementation",
+      "snapshotId": "pilot-fixture-v1",
+      "task": "Fix independent collection helpers. unique(values) in src/unique.mjs must remove duplicate strings preserving first appearance order and not mutate its input. countOccurrences(values) in src/counts.mjs must return a plain object of exact occurrence counts for arbitrary string keys, including constructor and __proto__, without prototype mutation. Preserve exports.",
+      "acceptanceSha256": "df9f92a4985844f5c525cc8dcf286cbc014667ed60d3d3d91b41be24c00c1ceb",
+      "solutionFiles": ["src/unique.mjs", "src/counts.mjs"],
+      "fixtureSha256": "6fffd2f2eaaf840c18493301de645fd6e17262bb87ea5fd76c41623c307f5223"
+    }
+  ]
+}

@@ -344,6 +344,7 @@ export async function createDefaultReplConfig(): Promise<ReplConfig> {
       showDiff: "on_request",
     },
     agent: {
+      delegation: { mode: "manual", maxConcurrentWorkers: 2, maxWorkersPerTask: 4 },
       systemPrompt: COCO_SYSTEM_PROMPT,
       maxToolIterations: 25,
       confirmDestructive: true,

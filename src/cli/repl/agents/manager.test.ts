@@ -689,8 +689,8 @@ describe("AgentManager", () => {
 
       const result = await agentManager.spawn("explore", "Keep reading");
 
-      // Agent should complete due to maxTurns limit (explore has maxTurns: 10)
-      expect(result.success).toBe(true);
+      // Exhausting a budget is not a terminal successful response.
+      expect(result.success).toBe(false);
       // Should have made multiple calls but stopped at limit
       expect((mockProvider.chatWithTools as Mock).mock.calls.length).toBeLessThanOrEqual(10);
     });
@@ -786,7 +786,7 @@ describe("AgentManager", () => {
       expect(testAgent?.description).toContain("test");
 
       const debugAgent = types.find((t) => t.type === "debug");
-      expect(debugAgent?.description).toContain("error");
+      expect(debugAgent?.description).toMatch(/error|failure/i);
     });
 
     it("should provide config for each agent type", () => {

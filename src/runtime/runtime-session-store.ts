@@ -6,7 +6,7 @@ import { getRuntimeTurn } from "./turn-transcript.js";
 import type { RuntimeSession, RuntimeSessionCreateOptions, RuntimeSessionStore } from "./types.js";
 
 function createSessionId(): string {
-  return `rt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  return `rt_${randomUUID()}`;
 }
 
 function cloneSession(session: RuntimeSession): RuntimeSession {

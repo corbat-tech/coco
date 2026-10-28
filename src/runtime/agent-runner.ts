@@ -44,6 +44,8 @@ export interface AgentRunnerRawResult {
 export interface AgentRunnerOptions {
   eventLog?: EventLog;
   executor?: AgentRunnerExecutor;
+  /** Explicit dry-run only. Omission never implies successful real execution. */
+  allowSimulated?: boolean;
 }
 
 export class AgentRunner {
@@ -61,7 +63,10 @@ export class AgentRunner {
     let raw: AgentRunnerRawResult | undefined;
     try {
       input.signal?.throwIfAborted();
-      raw = await (this.options.executor ?? defaultExecutor)({
+      const executor =
+        this.options.executor ?? (this.options.allowSimulated ? simulatedExecutor : undefined);
+      if (!executor) throw new Error("AgentRunner requires an executor for real agent execution.");
+      raw = await executor({
         task: input.task,
         capability: input.capability,
         trace,
@@ -156,10 +161,11 @@ export function createAgentRunner(options?: AgentRunnerOptions): AgentRunner {
   return new AgentRunner(options);
 }
 
-async function defaultExecutor(
+async function simulatedExecutor(
   context: AgentRunnerExecutionContext,
 ): Promise<AgentRunnerRawResult> {
   return {
     output: `Agent ${context.capability.role} accepted task '${context.task.objective}'.`,
+    metadata: { simulated: true },
   };
 }
