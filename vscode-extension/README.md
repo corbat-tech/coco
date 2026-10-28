@@ -99,7 +99,7 @@ The CLI is not on your `$PATH`. Either:
 
 **Terminal opens but COCO exits immediately**
 
-Check that Node.js ≥ 22 is installed: `node --version`
+Check the installed CLI requirements (Coco 3 requires Node.js ≥ 22.13): `node --version`
 
 **Want to use a local model?**
 

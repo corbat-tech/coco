@@ -8,7 +8,7 @@
 [![downloads](https://img.shields.io/npm/dm/@corbat-tech/coco?style=flat-square&label=downloads)](https://www.npmjs.com/package/@corbat-tech/coco)
 [![CI](https://img.shields.io/github/actions/workflow/status/corbat-tech/coco/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/corbat-tech/coco/actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/corbat-tech/coco/codeql.yml?branch=main&style=flat-square&label=CodeQL)](https://github.com/corbat-tech/coco/actions/workflows/codeql.yml)
-[![Node](https://img.shields.io/badge/Node.js-22%2B-22c55e?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/Node.js-22.13%2B-22c55e?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
 
 [Install](#install) · [Quick Start](#quick-start) · [Why Coco](#why-coco) · [Runtime](#runtime-reuse) · [Web Assistant Example](#example-web-assistant-runtime) · [Providers](#providers) · [Documentation](#documentation)
@@ -95,7 +95,7 @@ Coco is designed to be useful on medium and large repos, not only toy examples.
 
 ### Prerequisites
 
-- Node.js `22+`
+- Node.js `22.13+`
 - macOS or Linux
 - Windows: use WSL2
 
@@ -463,7 +463,7 @@ Tech stack:
 - Zod
 - Commander
 
-Release gate (`pnpm check:release`) runs typecheck, lint, formatting, the full suite with coverage, the separate REPL suite and build. Development and release use Node 24.22.1 LTS (`.node-version`) and pnpm 12.15.0 (`packageManager`); the published CLI/runtime still supports Node 22+.
+Release gate (`pnpm check:release`) runs typecheck, lint, formatting, the full suite with coverage, the separate REPL suite and build. Development and release use Node 24.22.1 LTS (`.node-version`) and pnpm 12.15.0 (`packageManager`); the published CLI/runtime requires Node >=22.13.0.
 
 ## Current Scope and Limitations
 

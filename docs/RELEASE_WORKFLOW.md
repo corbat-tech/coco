@@ -17,6 +17,9 @@ publication; `vscode-v<extension-version>` is the separate VSIX channel.
 3. Install with `pnpm install --frozen-lockfile`. Run `pnpm check:release` and
    `pnpm -r --filter './apps/*' --if-present typecheck`. The release gate runs
    types, lint, format, coverage, the separate REPL suite and build. Coverage
+   CI also packs the build and installs it with `--engine-strict` in a clean
+   consumer at the declared minimum Node 22.13.0 before running the package smoke.
+   Keep that CI runtime aligned with `engines.node`. Coverage
    thresholds are defined in `vitest.config.ts`; do not weaken them for release.
 4. Review the integrated diff, push, create/update a PR and wait for checks on
    its current SHA. Merge with an allowed repository method after they pass.

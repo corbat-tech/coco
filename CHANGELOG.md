@@ -5,7 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.43.2] - 2026-10-28
+## [3.0.0] - 2026-10-28
+
+### Breaking
+- Require Node >=22.13.0, making the existing inherited ESTree visitor dependency's engine floor explicit. Earlier metadata advertised 22.0 although the dependency graph already required 22.13. Node 22 users should install a maintained patch release (22.23.4 or newer); Node 24 LTS is recommended.
+
+### Changed
+- Upgrade Commander 15 after checking the ESM and negated-option migration.
+- Remove the unused typescript-eslint parser package and its automatically installed ESLint peer; Coco uses typescript-estree directly.
+- Enforce a clean production install with engine-strict at the declared minimum in CI.
+- Include the dependency/toolchain modernization and npm 12 release corrections described below.
+
+
+## [2.43.2] - 2026-10-28 (unpublished)
+
+The 2.43.2 workflow was cancelled before publication after final engine review found
+the inherited Node floor mismatch. Its tag is preserved; 3.0.0 declares the floor
+with a major version and verifies a strict install at that minimum.
 
 The 2.43.1 tag stopped before publication because npm 12 changed pack metadata
 from a single-element array to a package-name-keyed object and wrapped view results

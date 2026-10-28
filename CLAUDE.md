@@ -4,7 +4,7 @@
 - **Name**: Corbat-Coco
 - **Purpose**: Autonomous coding agent with self-review and quality convergence
 - **Language**: TypeScript (ESM)
-- **Runtime**: Node.js 22+
+- **Runtime**: Node.js 22.13+ (development/release: Node 24 LTS)
 
 ## Repository Structure
 ```
