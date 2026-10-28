@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Reject missing real executors, truncated or inconsistent worker responses and turn exhaustion instead of reporting completion.
 - Keep tool authority and exact child consent bound to the host; scope structured file writes and guard observed content before overwrites.
-- Block new effects after interrupted persistence until host inspection, using host-owned execution IDs independently of provider call IDs.
+- Block new effects after interrupted persistence until host inspection, using host-owned execution IDs independently of provider call IDs. Generate runtime session IDs with cryptographic UUIDs.
 - Account for parent, worker and auxiliary model requests within delegated turns, and process cancellation controls without extra model calls.
 - Snapshot tool payloads before policy checks and asynchronous checkpoints, serialize direct workers when the user requests sequential execution, and persist explicit specialist trust choices.
 

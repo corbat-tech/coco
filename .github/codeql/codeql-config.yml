@@ -7,3 +7,7 @@ paths-ignore:
   - node_modules/**
   - "**/*.test.ts"
   - "**/*.spec.ts"
+  # Deliberately incorrect escaping exercises, never shipped or used by production.
+  # Keep the evaluation host, graders and every production module in the scan.
+  - test/fixtures/delegation/projects/parallel-html-escaping/src/attribute.mjs
+  - test/fixtures/delegation/projects/parallel-html-escaping/src/text.mjs
