@@ -1,3 +1,11 @@
+/** Scan each line once rather than backtracking across repeated provider phrases. */
+function hasOrderedPhrases(text: string, start: RegExp, end: RegExp): boolean {
+  return text.split("\n").some((line) => {
+    const match = start.exec(line);
+    return match !== null && end.test(line.slice(match.index + match[0].length));
+  });
+}
+
 /** Recognize explicit input-context overflow without treating generic request errors as recoverable. */
 export function isContextOverflowError(error: unknown): boolean {
   const queue: unknown[] = [error];
@@ -19,11 +27,21 @@ export function isContextOverflowError(error: unknown): boolean {
         /^(?:context_length_exceeded|context_window_exceeded|prompt_too_long|input_too_long)$/i.test(
           value,
         ) ||
-        /(?:input|prompt) token count[^\n]*exceeds (?:the )?(?:maximum|limit)/i.test(value) ||
-        /(?:maximum context length|context (?:window|length))[^\n]*(?:exceeded|exceeds|too (?:long|large))/i.test(
+        hasOrderedPhrases(
           value,
+          /(?:input|prompt) token count/i,
+          /exceeds (?:the )?(?:maximum|limit)/i,
         ) ||
-        /(?:input|prompt) (?:is )?too long[^\n]*(?:tokens|context|maximum)/i.test(value)
+        hasOrderedPhrases(
+          value,
+          /(?:maximum context length|context (?:window|length))/i,
+          /(?:exceeded|exceeds|too (?:long|large))/i,
+        ) ||
+        hasOrderedPhrases(
+          value,
+          /(?:input|prompt) (?:is )?too long/i,
+          /(?:tokens|context|maximum)/i,
+        )
       )
         overflow = true;
       continue;

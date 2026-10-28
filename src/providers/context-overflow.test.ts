@@ -38,4 +38,20 @@ describe("input context overflow classification", () => {
     error.cause = error;
     expect(isContextOverflowError(error)).toBe(false);
   });
+  it.each(["input token count", "context window context length", "input too long"])(
+    "handles repeated incomplete provider phrases: %s",
+    (phrase) => {
+      expect(isContextOverflowError(new Error(`${phrase} `.repeat(10000)))).toBe(false);
+    },
+  );
+  it.each([
+    "input token count\nexceeds maximum",
+    "context window\nexceeded",
+    "input too long\ntokens",
+    "exceeds maximum input token count",
+    "exceeded context window",
+    "tokens input too long",
+  ])("requires ordered phrases on the same line: %s", (message) => {
+    expect(isContextOverflowError(new Error(message))).toBe(false);
+  });
 });

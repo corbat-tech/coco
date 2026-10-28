@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Preserve user intent and completed tool effects across provider failures, cancellation and reopening; reject resuming completed turns without changing their state.
 - Budget composed instructions, actual tool schemas and output reserve; recover a classified context overflow once without repeating completed actions.
+- Scan context-error phrases without polynomial regex backtracking on repeated provider input; retain ordering and single-line classification constraints.
 - Preserve current exact-call consent in headless continuation and report terminal errors as failure.
 - Propagate truncated delegated responses and failed prerequisites, prioritize ready tasks without violating dependencies, and use current tool outcomes for loop recovery.
 - Serialize provider reasoning effort consistently and use valid reasoning defaults for context summaries.
