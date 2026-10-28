@@ -163,11 +163,16 @@ jobs:
       - name: Install and smoke the packed artifact in isolation
         shell: bash
         run: |
+          TASK_NPM="$RUNNER_TEMP/coco-release-npm"
+          npm install --prefix "$TASK_NPM" --ignore-scripts --no-audit --no-fund npm@12.2.1
+          task_npm() { node "$TASK_NPM/node_modules/npm/bin/npm-cli.js" "$@"; }
+          test "$(task_npm --version)" = "12.2.1"
           mkdir -p artifacts
-          npm pack --ignore-scripts --json --pack-destination artifacts > artifacts/pack.json
+          task_npm pack --ignore-scripts --json --pack-destination artifacts > artifacts/pack.json
+          node --input-type=module -e 'import assert from "node:assert/strict"; import { readPackMetadata } from "./scripts/pack-metadata.mjs"; assert.equal((await readPackMetadata("artifacts/pack.json")).name, "@corbat-tech/coco");'
           TASK_CONSUMER=$(mktemp -d)
           printf '{"private":true}' > "$TASK_CONSUMER/package.json"
-          npm install --prefix "$TASK_CONSUMER" --ignore-scripts --no-audit --no-fund "$PWD"/artifacts/*.tgz
+          task_npm install --prefix "$TASK_CONSUMER" --ignore-scripts --no-audit --no-fund "$PWD"/artifacts/*.tgz
           TASK_VERSION=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')
           node scripts/smoke-package.mjs "$TASK_CONSUMER" "$TASK_VERSION"
 

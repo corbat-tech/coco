@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.43.1] - 2026-10-28
+## [2.43.2] - 2026-10-28
+
+The 2.43.1 tag stopped before publication because npm 12 changed pack metadata
+from a single-element array to a package-name-keyed object and wrapped view results
+in arrays. That tag is preserved; 2.43.2 fixes
+metadata normalization in both publication and registry-integrity verification.
+
 
 ### Fixed
 - Refresh production and development dependencies, resolving known Undici, fast-uri, Markdown-it and Vitest mocker advisories. Azure Identity still introduces the upstream MSAL 6 advisory; see the [dependency maintenance report](docs/maintenance/DEPENDENCIES_2026-10-28.md).
