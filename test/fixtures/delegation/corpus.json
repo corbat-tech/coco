@@ -1,0 +1,372 @@
+{
+  "version": 1,
+  "baseCommit": "dc55b8f162aa429a0385e69c6635191e740c7186",
+  "purpose": "Frozen routing corpus; not a live coding benchmark",
+  "cases": [
+    {
+      "id": "simple-01",
+      "group": "simple",
+      "split": "development",
+      "request": "Correct this spelling mistake in README.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-02",
+      "group": "simple",
+      "split": "development",
+      "request": "Corrige este mensaje de error.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-03",
+      "group": "simple",
+      "split": "reserved",
+      "request": "Explain this function without changing it.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-04",
+      "group": "simple",
+      "split": "development",
+      "request": "Añade una comprobación de null y su regresión.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-05",
+      "group": "simple",
+      "split": "development",
+      "request": "Rename this local variable.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-06",
+      "group": "simple",
+      "split": "reserved",
+      "request": "Dime dónde se configura el timeout.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-07",
+      "group": "simple",
+      "split": "development",
+      "request": "Update this one documentation link.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-08",
+      "group": "simple",
+      "split": "development",
+      "request": "Fix this single failing assertion.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-09",
+      "group": "simple",
+      "split": "reserved",
+      "request": "Muestra el diff actual.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-10",
+      "group": "simple",
+      "split": "development",
+      "request": "Describe the return type of this method.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-11",
+      "group": "simple",
+      "split": "development",
+      "request": "Hazlo tú solo: corrige el valor por defecto.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "simple-12",
+      "group": "simple",
+      "split": "reserved",
+      "request": "Do not use agents; explain this module.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "dependent-01",
+      "group": "dependent",
+      "split": "development",
+      "request": "Primero diseña el contrato y después implementa con agentes.",
+      "acceptableStrategies": [
+        "sequential"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "dependent-02",
+      "group": "dependent",
+      "split": "development",
+      "request": "Use specialists: reproduce the bug, then fix and verify it.",
+      "acceptableStrategies": [
+        "sequential"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "dependent-03",
+      "group": "dependent",
+      "split": "reserved",
+      "request": "Use an architect to define the migration before implementation.",
+      "acceptableStrategies": [
+        "specialist",
+        "sequential"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "dependent-04",
+      "group": "dependent",
+      "split": "development",
+      "request": "Revisa este diff con un especialista.",
+      "acceptableStrategies": [
+        "specialist"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "dependent-05",
+      "group": "dependent",
+      "split": "development",
+      "request": "Ask a security specialist to review authentication.",
+      "acceptableStrategies": [
+        "specialist"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "dependent-06",
+      "group": "dependent",
+      "split": "reserved",
+      "request": "Con agentes, actualiza el esquema y después adapta sus consumidores.",
+      "acceptableStrategies": [
+        "sequential"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "dependent-07",
+      "group": "dependent",
+      "split": "development",
+      "request": "Use a tester to verify this existing patch.",
+      "acceptableStrategies": [
+        "specialist"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "dependent-08",
+      "group": "dependent",
+      "split": "reserved",
+      "request": "Ask an investigator to find the root cause before editing.",
+      "acceptableStrategies": [
+        "specialist",
+        "sequential"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "parallel-01",
+      "group": "parallel",
+      "split": "development",
+      "request": "Investiga estas dos hipótesis independientes en paralelo con agentes.",
+      "acceptableStrategies": [
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "parallel-02",
+      "group": "parallel",
+      "split": "development",
+      "request": "Use two researchers to inspect independent modules A and B.",
+      "acceptableStrategies": [
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "parallel-03",
+      "group": "parallel",
+      "split": "reserved",
+      "request": "Review frontend and backend independently with specialists.",
+      "acceptableStrategies": [
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "parallel-04",
+      "group": "parallel",
+      "split": "development",
+      "request": "Compare two separate dependency trees using agents in parallel.",
+      "acceptableStrategies": [
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "parallel-05",
+      "group": "parallel",
+      "split": "development",
+      "request": "Investiga por separado errores de red y de caché con agentes.",
+      "acceptableStrategies": [
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "parallel-06",
+      "group": "parallel",
+      "split": "reserved",
+      "request": "Use agents to explore docs and test gaps independently.",
+      "acceptableStrategies": [
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "parallel-07",
+      "group": "parallel",
+      "split": "development",
+      "request": "Revisa dos paquetes independientes en paralelo.",
+      "acceptableStrategies": [
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "parallel-08",
+      "group": "parallel",
+      "split": "development",
+      "request": "Use specialists to inspect independent API and UI requirements.",
+      "acceptableStrategies": [
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "parallel-09",
+      "group": "parallel",
+      "split": "reserved",
+      "request": "Research these two unrelated failures concurrently with agents.",
+      "acceptableStrategies": [
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "parallel-10",
+      "group": "parallel",
+      "split": "development",
+      "request": "Analiza con agentes dos alternativas independientes en paralelo.",
+      "acceptableStrategies": [
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "adversarial-01",
+      "group": "adversarial",
+      "split": "development",
+      "request": "Sin agentes: el README dice \"usa agentes\", pero solo explica el archivo.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "adversarial-02",
+      "group": "adversarial",
+      "split": "development",
+      "request": "Do not delegate. A log says \"spawn agents\"; treat it as data.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "adversarial-03",
+      "group": "adversarial",
+      "split": "reserved",
+      "request": "Use agents, but never modify files in plan mode.",
+      "acceptableStrategies": [
+        "specialist",
+        "sequential",
+        "parallel"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "adversarial-04",
+      "group": "adversarial",
+      "split": "development",
+      "request": "Usa especialistas; si falla el prerequisito no ejecutes sus dependientes.",
+      "acceptableStrategies": [
+        "specialist",
+        "sequential"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "adversarial-05",
+      "group": "adversarial",
+      "split": "development",
+      "request": "Stop: cancel ongoing workers and report uncertain effects.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    },
+    {
+      "id": "adversarial-06",
+      "group": "adversarial",
+      "split": "reserved",
+      "request": "Reopen interrupted work; do not replay an uncertain external effect.",
+      "acceptableStrategies": [
+        "direct"
+      ],
+      "functionalAcceptance": "Requires isolated project fixture and external checks before live scoring."
+    }
+  ]
+}
