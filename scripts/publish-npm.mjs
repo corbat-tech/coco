@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { readPackMetadata, parseRegistryResult } from "./pack-metadata.mjs";
 
 const npm = (args, options = {}) =>
   spawnSync("npm", args, { encoding: "utf8", shell: false, ...options });
@@ -51,7 +52,7 @@ function verifyChannel(run, name, version, channel) {
     throw failure("Channel verification failed", tags);
   let matches = false;
   try {
-    matches = JSON.parse(tags.stdout)?.[channel] === version;
+    matches = parseRegistryResult(tags.stdout)?.[channel] === version;
   } catch {
     /* Unknown state. */
   }
@@ -83,7 +84,7 @@ async function waitForPublication(run, packed, integrity, channel, options) {
     if (result.status === 0) {
       let actual;
       try {
-        actual = JSON.parse(result.stdout);
+        actual = parseRegistryResult(result.stdout);
       } catch {
         throw failure("Registry state unknown after submission", result);
       }
@@ -95,7 +96,7 @@ async function waitForPublication(run, packed, integrity, channel, options) {
       if (tags.status === 0) {
         let parsed;
         try {
-          parsed = JSON.parse(tags.stdout);
+          parsed = parseRegistryResult(tags.stdout);
         } catch {
           throw failure("Channel state unknown after submission", tags);
         }
@@ -138,7 +139,7 @@ export async function publishNpm(artifactDir, channel, run = npm, options = {}) 
     }
   }
   if (!["next", "latest"].includes(channel)) throw new Error("Unsupported dist-tag");
-  const [packed] = JSON.parse(await readFile(path.join(artifactDir, "pack.json"), "utf8"));
+  const packed = await readPackMetadata(path.join(artifactDir, "pack.json"));
   if (packed.name !== "@corbat-tech/coco" || path.basename(packed.filename) !== packed.filename) {
     throw new Error("Unexpected artifact identity/path");
   }
@@ -155,7 +156,7 @@ export async function publishNpm(artifactDir, channel, run = npm, options = {}) 
   if (query.status === 0) {
     let publishedIntegrity;
     try {
-      publishedIntegrity = JSON.parse(query.stdout);
+      publishedIntegrity = parseRegistryResult(query.stdout);
     } catch {
       throw failure("Registry state unknown; publication stopped", query);
     }

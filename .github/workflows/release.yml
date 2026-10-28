@@ -29,7 +29,9 @@ jobs:
           node-version-file: ".node-version"
           cache: "pnpm"
       - name: Install npm with trusted publishing support
-        run: npm install --global npm@12.2.1
+        run: |
+          npm install --global npm@12.2.1
+          test "$(npm --version)" = "12.2.1"
       - name: Validate tag and package identity
         id: metadata
         env:
@@ -69,7 +71,7 @@ jobs:
           EXPECTED_VERSION: ${{ steps.metadata.outputs.version }}
         run: |
           npm view "@corbat-tech/coco@$EXPECTED_VERSION" dist.integrity > artifacts/registry-integrity.txt
-          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const packed=JSON.parse(fs.readFileSync("artifacts/pack.json"))[0]; assert.equal(fs.readFileSync("artifacts/registry-integrity.txt","utf8").trim(),packed.integrity);'
+          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; import { readPackMetadata } from "./scripts/pack-metadata.mjs"; const packed=await readPackMetadata("artifacts/pack.json"); assert.equal(fs.readFileSync("artifacts/registry-integrity.txt","utf8").trim(),packed.integrity);'
           TASK_CONSUMER=$(mktemp -d)
           printf '{"private":true}' > "$TASK_CONSUMER/package.json"
           npm install --prefix "$TASK_CONSUMER" --ignore-scripts --no-audit --no-fund "@corbat-tech/coco@$EXPECTED_VERSION"

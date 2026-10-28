@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -28,6 +28,46 @@ describe("npm publication reconciliation", () => {
     expect(await publishNpm(dir, "latest", run)).toBe("already-published");
     expect(run).toHaveBeenCalledTimes(2);
   });
+  it("reconciles npm 12 keyed pack metadata and array view results without republishing", async () => {
+    const filename = path.join(dir, "pack.json");
+    const [packed] = JSON.parse(await readFile(filename, "utf8"));
+    await writeFile(filename, JSON.stringify({ [packed.name]: packed }));
+    const run = vi
+      .fn()
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify([integrity]) })
+      .mockReturnValueOnce({ status: 0, stdout: '[{"latest":"2.42.0"}]' });
+    expect(await publishNpm(dir, "latest", run)).toBe("already-published");
+    expect(run.mock.calls.map(([args]) => args[0])).toEqual(["view", "view"]);
+  });
+  it("publishes npm 12 metadata and verifies wrapped registry integrity and channel", async () => {
+    const filename = path.join(dir, "pack.json");
+    const [packed] = JSON.parse(await readFile(filename, "utf8"));
+    await writeFile(filename, JSON.stringify({ [packed.name]: packed }));
+    const run = vi
+      .fn()
+      .mockReturnValueOnce({ status: 1, stdout: '{"error":{"code":"E404"}}' })
+      .mockReturnValueOnce({ status: 0, stdout: '"publisher"' })
+      .mockReturnValueOnce({ status: 0, stdout: "{}" })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify([integrity]) })
+      .mockReturnValueOnce({ status: 0, stdout: '[{"latest":"2.42.0"}]' });
+    expect(await publishNpm(dir, "latest", run)).toBe("published");
+    expect(run.mock.calls.map(([args]) => args[0])).toEqual([
+      "view",
+      "whoami",
+      "publish",
+      "view",
+      "view",
+    ]);
+  });
+  it.each([null, {}, [], [{ name: "one" }, { name: "two" }]])(
+    "rejects incomplete or ambiguous pack metadata before registry access: %j",
+    async (value) => {
+      await writeFile(path.join(dir, "pack.json"), JSON.stringify(value));
+      const run = vi.fn();
+      await expect(publishNpm(dir, "latest", run)).rejects.toThrow("exactly one");
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
   it("publishes only after explicit not-found and disables lifecycle rebuild", async () => {
     const run = vi
       .fn()
@@ -50,6 +90,8 @@ describe("npm publication reconciliation", () => {
   });
   it.each([
     { status: 0, stdout: '"different"' },
+    { status: 0, stdout: "[]" },
+    { status: 0, stdout: '["one", "two"]' },
     { status: 1, stdout: '{"error":{"code":"E401"}}' },
     { status: 1, stdout: "network failure" },
     { status: null, stdout: "", signal: "SIGTERM" },
