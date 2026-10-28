@@ -27,7 +27,7 @@ What actually happened.
 ## Environment
 
 - **OS**: [e.g., macOS 14.0, Ubuntu 22.04]
-- **Node.js version**: [e.g., 22.0.0]
+- **Node.js version**: [e.g., 24.22.1]
 - **Corbat-Coco version**: [e.g., 0.1.0]
 
 ## Logs

@@ -6,7 +6,7 @@ Get up and running with Coco in under 5 minutes.
 
 ## Prerequisites
 
-- **Node.js 22+** — check with `node --version`
+- **Node.js 22.13+** (Node 24 LTS recommended) — check with `node --version`
 - **An API key** from your chosen provider — see [PROVIDERS.md](PROVIDERS.md) for the full list
 
 ---
