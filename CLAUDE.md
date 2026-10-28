@@ -96,6 +96,25 @@ await fs.readFile(path, "utf-8");
 - Colocate tests: `*.test.ts` next to source
 - Run specific test: `pnpm test src/config/`
 
+## Agent Reliability
+
+- Compact managed conversations at complete tool call/result boundaries inside long turns. Count the effective prompt after compaction; cancellation must restore the pre-turn history without orphaned tool results.
+- Treat truncated provider responses as incomplete; never execute their pending tool calls or report delegated success. Failed prerequisites block dependent tasks while independent branches may continue.
+- Update retry streaks and iteration extensions from the current tool batch only. Historical failures must not stop a recovered task, and historical successes must not extend a stalled one.
+- Keep model effort serialization in provider adapters, derived from the shared catalog contracts. Test the wire request for both streaming and non-streaming paths.
+- Background summaries must use a reasoning mode accepted by their provider/model. Prefer adapter defaults when the effective model is unknown; do not force `off` for mandatory-reasoning models.
+- Use focused regression checks while editing, then run the repository's final checks. Replay fixtures verify control flow; live model evaluations must record model, effort, budgets and external acceptance results separately from heuristic quality scores.
+- Headless execution does not itself grant tool authority. Isolated evaluation hosts must explicitly configure the permitted tools and exact shell invocation; preserve the normal permission boundary.
+- Persist user intent and tool start/result boundaries before advancing a durable turn. An effect without a saved result is uncertain: require host inspection and resolution before resuming, and never silently replay it. Read the latest metadata when patching journals so work evidence survives.
+- Keep work claims separate from observed checks. Plan tools use host-bound session identity; only current successful check receipts support `verified`, and potential mutations invalidate older checks. Receipts do not prove semantic coverage of requirements.
+- Reuse runtime context budgeting and compaction from adapters. Include composed system instructions, actual offered schemas and output reserve; preserve tool pairs and host-summary provenance. Context retries must reduce the request, fit the budget and never repeat completed tools.
+- Save coherent REPL snapshots at explicit iteration/command/exit boundaries. Keep action observations durable even when cancelling rolls conversation history back. Snapshot replacement is not a transaction across external effects or a multi-process lock.
+- Freeze common evaluation criteria before implementation and retain scored failures without silent retries. Report capabilities, deterministic contracts and live task scores separately, including harness mistakes and request-level model/effort evidence. Do not infer general product parity, hard token limits or invoice cost from subscription metadata.
+
+See [conversation continuity](docs/guides/CONVERSATION_CONTINUITY.md) and
+[ADR 011](docs/architecture/adrs/011-durable-conversations-and-work-evidence.md)
+for the public recovery contract and its limits.
+
 ## Commits
 - Use conventional commits
 - Format: `type(scope): message`

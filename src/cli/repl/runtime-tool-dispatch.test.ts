@@ -51,9 +51,13 @@ describe("runtime tool dispatch", () => {
       success: true,
       data: { path: "fixture.txt", content: "original" },
     });
-    expect(effect).toHaveBeenCalledExactlyOnceWith(approved.input, {
-      executeDelegatedTool: expect.any(Function),
-    });
+    expect(effect).toHaveBeenCalledExactlyOnceWith(
+      approved.input,
+      expect.objectContaining({
+        executeDelegatedTool: expect.any(Function),
+        workLedger: expect.objectContaining({ read: expect.any(Function) }),
+      }),
+    );
     expect(eventLog.list().map(({ type }) => type)).toEqual(["tool.started", "tool.completed"]);
     for (const event of eventLog.list()) {
       expect(event.data).toMatchObject({
@@ -101,9 +105,13 @@ describe("runtime tool dispatch", () => {
     expect((await execute(appended)).success).toBe(false);
     expect(effect).not.toHaveBeenCalled();
     expect((await execute(original)).success).toBe(true);
-    expect(effect).toHaveBeenCalledExactlyOnceWith(original.input, {
-      executeDelegatedTool: expect.any(Function),
-    });
+    expect(effect).toHaveBeenCalledExactlyOnceWith(
+      original.input,
+      expect.objectContaining({
+        executeDelegatedTool: expect.any(Function),
+        workLedger: expect.objectContaining({ read: expect.any(Function) }),
+      }),
+    );
   });
 
   it("requires common runtime confirmation for copy_file", async () => {
@@ -129,9 +137,13 @@ describe("runtime tool dispatch", () => {
     const boundary = vi.spyOn(runtime, "executeTool");
     const read = call("read_file");
     expect((await dispatch()(read)).success).toBe(true);
-    expect(effect).toHaveBeenCalledExactlyOnceWith(read.input, {
-      executeDelegatedTool: expect.any(Function),
-    });
+    expect(effect).toHaveBeenCalledExactlyOnceWith(
+      read.input,
+      expect.objectContaining({
+        executeDelegatedTool: expect.any(Function),
+        workLedger: expect.objectContaining({ read: expect.any(Function) }),
+      }),
+    );
     expect(boundary).toHaveBeenCalledTimes(1);
     expect(boundary.mock.calls[0]?.[0].confirmed).not.toBe(true);
   });

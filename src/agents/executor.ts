@@ -122,6 +122,24 @@ export class AgentExecutor {
         totalTokens += (usage?.inputTokens || 0) + (usage?.outputTokens || 0);
         executionContext?.signal?.throwIfAborted();
 
+        // A token limit can leave both prose and tool arguments incomplete.
+        if (response.stopReason === "max_tokens") {
+          return this.toAgentResult({
+            agent,
+            task,
+            output: response.content,
+            success: false,
+            turns: turn,
+            toolsUsed: Array.from(toolsUsed),
+            tokensUsed: totalTokens,
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
+            duration: Date.now() - startTime,
+            startedAt,
+            error: "Agent response was truncated by the output token limit (max_tokens).",
+          });
+        }
+
         // If no tool calls, the agent is done
         if (response.stopReason !== "tool_use" || response.toolCalls.length === 0) {
           return this.toAgentResult({

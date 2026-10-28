@@ -319,24 +319,20 @@ Response format (JSON only, no prose):
     outputPath,
     qualityThreshold: 85,
     maxIterationsPerSprint: 3,
-    sprints: generated.sprints.map(
-      (s): Sprint => ({
-        id: s.id,
-        name: s.name,
-        goal: s.goal,
-        tasks: s.tasks.map(
-          (t): BacklogTask => ({
-            id: t.id,
-            title: t.title,
-            description: t.description,
-            role: safeRole(t.role),
-            dependencies: t.dependencies ?? [],
-            acceptanceCriteria: t.acceptanceCriteria ?? [],
-            estimatedTurns: t.estimatedTurns ?? 10,
-          }),
-        ),
-      }),
-    ),
+    sprints: generated.sprints.map((s): Sprint => ({
+      id: s.id,
+      name: s.name,
+      goal: s.goal,
+      tasks: s.tasks.map((t): BacklogTask => ({
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        role: safeRole(t.role),
+        dependencies: t.dependencies ?? [],
+        acceptanceCriteria: t.acceptanceCriteria ?? [],
+        estimatedTurns: t.estimatedTurns ?? 10,
+      })),
+    })),
   };
 
   // ------------------------------------------------------------------

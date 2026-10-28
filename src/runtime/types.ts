@@ -1,5 +1,11 @@
 import type { ProviderType } from "../providers/index.js";
-import type { ChatOptions, LLMProvider, Message, ProviderConfig } from "../providers/types.js";
+import type {
+  ChatOptions,
+  LLMProvider,
+  Message,
+  ProviderConfig,
+  ToolCall,
+} from "../providers/types.js";
 import type { ProviderRuntimeCapability } from "../providers/runtime-capabilities.js";
 import type { ToolDefinition, ToolRegistry } from "../tools/registry.js";
 import type { ThinkingMode } from "../providers/thinking.js";
@@ -184,6 +190,58 @@ export interface RuntimeTurnInput {
    * turn. Destructive tools are still blocked unless listed here.
    */
   confirmedTools?: string[];
+  /** Ephemeral host-only approval of this exact call; never persisted or restored from metadata. */
+  confirmToolCall?: (call: Readonly<ToolCall>) => boolean;
+}
+
+/** Durable state is stored in session.metadata.runtimeTurn for store compatibility. */
+export interface RuntimeTurnState {
+  version: 1;
+  id: string;
+  status: "running" | "completed" | "failed" | "cancelled";
+  input: string;
+  startedAt: string;
+  error?: string;
+  calls: RuntimeTurnToolCall[];
+  usage?: { inputTokens: number; outputTokens: number };
+}
+
+export interface RuntimeTurnToolCall {
+  /** Host-generated identity, independent of provider call-ID reuse across batches. */
+  id: string;
+  callId: string;
+  name: string;
+  input: Record<string, unknown>;
+  status: "planned" | "running" | "completed";
+  assistantMessageIndex: number;
+}
+
+export interface RuntimeSessionRecovery {
+  sessionId: string;
+  turn?: RuntimeTurnState;
+  uncertainCalls: RuntimeTurnToolCall[];
+  canResume: boolean;
+}
+
+export interface RuntimeToolCallResolution {
+  turnId: string;
+  callId: string;
+  content: string;
+  isError: boolean;
+  /** Host evidence or explanation; resolution does not grant tool permissions. */
+  reason: string;
+}
+
+/** Trusted host journal; methods persist synchronously before returning. */
+export interface RuntimeTurnTranscript {
+  messages(): Message[];
+  recordUsage(
+    inputTokens: number,
+    outputTokens: number,
+  ): { inputTokens: number; outputTokens: number };
+  appendToolBatch(message: Message): void;
+  startTool(callId: string): void;
+  finishTool(callId: string, content: string, isError: boolean): void;
 }
 
 export interface RuntimeTurnResult {
@@ -222,9 +280,14 @@ export interface RuntimeTurnContext {
   toolRegistry: ToolRegistry;
   permissionPolicy: PermissionPolicy;
   eventLog: EventLog;
+  transcript?: RuntimeTurnTranscript;
 }
 
 export interface RuntimeTurnRunner {
+  /** Supports tool actions; streamTurn may emit the completed result as buffered events. */
+  readonly supportsTools?: boolean;
+  /** Runner consumes the persisted input through context.transcript. */
+  readonly supportsTranscript?: boolean;
   run(input: RuntimeTurnInput, context: RuntimeTurnContext): Promise<RuntimeTurnResult>;
 }
 

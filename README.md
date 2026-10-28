@@ -240,6 +240,10 @@ See [examples/web-assistant-runtime](examples/web-assistant-runtime/README.md) f
 - Tool-call handling is normalized across OpenAI/Codex-style streaming events to reduce malformed argument regressions.
 - Agent turns include quality telemetry (`score`, iteration usage, tool success/failure, repeated-output suppression).
 - Repeated identical tool outputs are suppressed in context to reduce token waste in multi-iteration loops.
+- Managed REPL sessions check context before each model iteration, compact complete tool batches when needed, and retain the pre-turn history on cancellation.
+- Persistent runtime conversations retain tool exchanges and expose explicit recovery for uncertain effects. Headless `--session`/`--continue` resumes project-local work without restoring consent from conversation data.
+- Session plans (`update_plan`, `read_plan`, `/work`) distinguish completion claims from successful observed checks and make earlier evidence stale after mutations.
+- Delegated responses stopped by an output token limit report failure; dependent tasks are blocked after a prerequisite fails while independent branches continue.
 - Agent loop now recovers from common "silent stop" cases (e.g. `tool_use` without reconstructed tool calls, empty `max_tokens` turns, short planning-only replies) before giving control back.
 - Streaming turns now retry once on empty retryable provider failures before surfacing an error, reducing transient dead-end turns without re-running partial tool work.
 - Recovery replay also covers multimodal prompts (image + text / image-only) by rebuilding a retryable task prompt when possible.
@@ -248,6 +252,14 @@ See [examples/web-assistant-runtime](examples/web-assistant-runtime/README.md) f
 - Plan mode now has a strict read-only allowlist by default, so `/plan` cannot drift into write-capable tools unless you explicitly disable `agent.planModeStrict`.
 - `/doctor` provides a read-only local diagnostics pass for project access, config parsing, provider auth, hooks, and tool registry health.
 - Release readiness can be gated with `pnpm check:release` (typecheck + lint + stable provider/agent suites).
+
+See the [agent capability review and measured evaluation](docs/evolution/AGENT_REVIEW_2026-10-27.md)
+for official-source comparisons, implementation evidence and remaining limitations.
+
+See [conversation continuity and work evidence](docs/guides/CONVERSATION_CONTINUITY.md)
+for persistent sessions, recovery APIs, context budgets and their limits.
+The [follow-up evaluation](docs/evolution/EXCELLENCE_RESULTS_2026-10-27.md) records
+baseline/final scores, the OpenCode comparison and its methodological limits.
 
 ## Commands (REPL)
 

@@ -98,7 +98,7 @@ describe("runtime tool turn completion contract", () => {
         expect(execute).not.toHaveBeenCalled();
         expect(runtime.eventLog.list().map((e) => e.type)).toContain("turn.failed");
         expect(runtime.eventLog.list().map((e) => e.type)).not.toContain("turn.completed");
-        expect(runtime.listSessions()[0]?.messages).toEqual([]);
+        expect(runtime.listSessions()[0]?.messages).toEqual([{ role: "user", content: "Work" }]);
       } finally {
         await runtime.close();
       }
@@ -201,7 +201,7 @@ describe("default runtime completion contract", () => {
     try {
       await expect(runtime.runTurn({ content: "work" })).rejects.toThrow("Runtime turn incomplete");
       expect(runtime.eventLog.list().map((e) => e.type)).not.toContain("turn.completed");
-      expect(runtime.listSessions()[0]?.messages).toEqual([]);
+      expect(runtime.listSessions()[0]?.messages).toEqual([{ role: "user", content: "work" }]);
     } finally {
       await runtime.close();
     }
@@ -260,7 +260,10 @@ describe("default runtime completion contract", () => {
         expect(events.at(-1)?.type).toBe(success ? "done" : "error");
         expect(runtime.eventLog.list().some((e) => e.type === "turn.completed")).toBe(success);
         expect(runtime.eventLog.list().some((e) => e.type === "turn.failed")).toBe(!success);
-        expect(runtime.listSessions()[0]?.messages).toHaveLength(success ? 2 : 0);
+        expect(runtime.listSessions()[0]?.messages).toHaveLength(2);
+        expect(runtime.inspectSessionRecovery(runtime.listSessions()[0]!.id).turn?.status).toBe(
+          success ? "completed" : "failed",
+        );
       } finally {
         await runtime.close();
       }

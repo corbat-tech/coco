@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
+import { z } from "zod";
+import { getRuntimeTurn } from "./turn-transcript.js";
 import type { RuntimeSession, RuntimeSessionCreateOptions, RuntimeSessionStore } from "./types.js";
 
 function createSessionId(): string {
@@ -15,6 +17,8 @@ export class InMemoryRuntimeSessionStore implements RuntimeSessionStore {
   private sessions = new Map<string, RuntimeSession>();
 
   create(options: RuntimeSessionCreateOptions = {}): RuntimeSession {
+    if (options.id && this.sessions.has(options.id))
+      throw new Error(`Runtime session already exists: ${options.id}`);
     const now = new Date().toISOString();
     const session: RuntimeSession = {
       id: options.id ?? createSessionId(),
@@ -60,6 +64,29 @@ interface RuntimeSessionFile {
   sessions: RuntimeSession[];
 }
 
+const SessionFileSchema = z.object({
+  version: z.literal(1),
+  sessions: z.array(
+    z
+      .object({
+        id: z.string().min(1),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+        mode: z.enum(["ask", "plan", "build", "debug", "review", "architect"]),
+        messages: z.array(
+          z
+            .object({
+              role: z.enum(["user", "assistant", "system"]),
+              content: z.union([z.string(), z.array(z.object({ type: z.string() }).passthrough())]),
+            })
+            .passthrough(),
+        ),
+        metadata: z.record(z.string(), z.unknown()),
+      })
+      .passthrough(),
+  ),
+});
+
 export class FileRuntimeSessionStore implements RuntimeSessionStore {
   private sessions = new Map<string, RuntimeSession>();
 
@@ -81,6 +108,7 @@ export class FileRuntimeSessionStore implements RuntimeSessionStore {
     };
 
     const sessions = this.readSessionsFromDisk();
+    if (sessions.has(session.id)) throw new Error(`Runtime session already exists: ${session.id}`);
     sessions.set(session.id, cloneSession(session));
     this.sessions = sessions;
     this.persist(sessions);
@@ -130,12 +158,12 @@ export class FileRuntimeSessionStore implements RuntimeSessionStore {
       }
       throw error;
     }
-    if (!raw.trim()) return new Map();
-
     const parsed = JSON.parse(raw) as RuntimeSessionFile;
-    if (parsed.version !== 1 || !Array.isArray(parsed.sessions)) {
-      throw new Error(`Unsupported runtime session store format: ${this.filePath}`);
-    }
+    if (!SessionFileSchema.safeParse(parsed).success)
+      throw new Error(`Corrupt or unsupported runtime session store format: ${this.filePath}`);
+    if (new Set(parsed.sessions.map((session) => session.id)).size !== parsed.sessions.length)
+      throw new Error(`Duplicate runtime session IDs in store: ${this.filePath}`);
+    for (const session of parsed.sessions) getRuntimeTurn(session);
     return new Map(parsed.sessions.map((session) => [session.id, cloneSession(session)]));
   }
 
@@ -145,8 +173,16 @@ export class FileRuntimeSessionStore implements RuntimeSessionStore {
       sessions: [...sessions.values()].map(cloneSession),
     };
     const tempPath = `${this.filePath}.${randomUUID()}.tmp`;
-    writeFileSync(tempPath, JSON.stringify(payload, null, 2) + "\n", "utf-8");
-    renameSync(tempPath, this.filePath);
+    try {
+      writeFileSync(tempPath, JSON.stringify(payload, null, 2) + "\n", {
+        encoding: "utf-8",
+        mode: 0o600,
+        flag: "wx",
+      });
+      renameSync(tempPath, this.filePath);
+    } finally {
+      rmSync(tempPath, { force: true });
+    }
   }
 }
 

@@ -37,6 +37,8 @@ import {
 import { createProvider, type ProviderType } from "../../providers/index.js";
 import { setAgentProvider, setAgentToolRegistry } from "../../agents/provider-bridge.js";
 import { createAgentRuntime } from "../../runtime/index.js";
+import { createFileRuntimeSessionStore } from "../../runtime/runtime-session-store.js";
+import { getSessionStore } from "./sessions/storage.js";
 import { createFullToolRegistry } from "../../tools/index.js";
 import {
   isSlashCommand,
@@ -204,6 +206,9 @@ export async function startRepl(
     model: session.config.provider.model || undefined,
     provider,
     toolRegistry: createFullToolRegistry(),
+    runtimeSessionStore: createFileRuntimeSessionStore(
+      path.join(projectPath, ".coco", "repl-runtime-sessions.json"),
+    ),
     eventLogPath: path.join(projectPath, ".coco", "events", `${session.id}.jsonl`),
     publishToGlobalBridge: true,
     legacyAgentBridge: { setAgentProvider, setAgentToolRegistry },
@@ -213,6 +218,7 @@ export async function startRepl(
   runtime.enableBackgroundJobs(session.id, projectPath);
   const cleanupRepl: Array<() => void | Promise<void>> = [() => runtime.close()];
   try {
+    await getSessionStore().save(session);
     const toolRegistry = runtime.toolRegistry;
 
     // Initialize unified skill registry (discover skills across all scopes)
@@ -685,6 +691,7 @@ export async function startRepl(
 
         const { command, args } = parseSlashCommand(input);
         const commandResult = await executeSlashCommand(command, args, session);
+        await getSessionStore().save(session);
         if (commandResult.shouldExit) break;
 
         if (
@@ -766,6 +773,7 @@ export async function startRepl(
           if (shouldExecute) {
             const { command, args } = intentRecognizer.intentToCommand(intent)!;
             const intentResult = await executeSlashCommand(command, args, session);
+            await getSessionStore().save(session);
             if (intentResult.shouldExit) break;
             if (intentResult.forkPrompt) {
               agentMessage = intentResult.forkPrompt;
@@ -1023,6 +1031,7 @@ export async function startRepl(
         await ensureRequestedMcpConnections(extractMessageText(effectiveMessage));
 
         const result = await executeAgentTurn(session, effectiveMessage, provider, toolRegistry, {
+          onCheckpoint: () => getSessionStore().save(session),
           onStream: (chunk) => {
             // Clear any lingering spinner on first text chunk to avoid overlap
             if (!streamStarted) {
@@ -1153,6 +1162,7 @@ export async function startRepl(
           hookExecutor,
         });
 
+        await getSessionStore().save(session);
         // Remove SIGINT handler and clean up thinking interval after agent turn
         clearThinkingInterval();
         clearSpinner();
@@ -1589,6 +1599,13 @@ export async function startRepl(
       }
     }
   } finally {
+    try {
+      await getSessionStore().save(session);
+    } catch (error) {
+      console.warn(
+        `Could not save the final session snapshot: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     await Promise.allSettled(cleanupRepl.map(async (cleanup) => cleanup()));
   }
 }

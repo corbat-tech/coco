@@ -1,4 +1,6 @@
 import { BackgroundJobOwner } from "../tools/utils/background-jobs.js";
+import { randomUUID } from "node:crypto";
+import type { WorkLedgerAccess } from "./work-ledger.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { evaluateRuntimeToolPolicy, type RuntimePolicy } from "./context.js";
 import { createEventLog } from "./event-log.js";
@@ -12,6 +14,7 @@ import type {
 } from "./types.js";
 
 export interface RuntimeToolExecutorOptions {
+  workLedgerAccess?: WorkLedgerAccess;
   toolRegistry: ToolRegistry;
   eventLog?: EventLog;
   permissionPolicy?: PermissionPolicy;
@@ -68,6 +71,7 @@ export class RuntimeToolExecutor {
   private readonly permissionPolicy: PermissionPolicy;
   private readonly defaultMode: RuntimeMode;
   private readonly runtimePolicy?: RuntimePolicy;
+  private readonly workLedgerAccess?: WorkLedgerAccess;
   private readonly eventProfile: "agent" | "runtime-api";
 
   constructor(options: RuntimeToolExecutorOptions) {
@@ -76,6 +80,7 @@ export class RuntimeToolExecutor {
     this.permissionPolicy = options.permissionPolicy ?? createPermissionPolicy();
     this.defaultMode = options.mode ?? "ask";
     this.runtimePolicy = options.runtimePolicy ? structuredClone(options.runtimePolicy) : undefined;
+    this.workLedgerAccess = options.workLedgerAccess;
     this.eventProfile = options.eventProfile ?? "agent";
   }
 
@@ -183,9 +188,19 @@ export class RuntimeToolExecutor {
       runtimeApi: true,
       metadataKeys: Object.keys(input.metadata ?? {}).sort(),
     });
+    const ledger = input.sessionId ? this.workLedgerAccess?.forSession(input.sessionId) : undefined;
+    const ledgerCallId = input.toolCallId ?? randomUUID();
+    ledger?.beforeTool(
+      input.toolName,
+      input.input,
+      decision.risk,
+      tool.provenance?.kind === "mcp",
+      ledgerCallId,
+    );
     const result = await this.toolRegistry.execute(input.toolName, input.input, {
       signal: input.signal,
       context: {
+        workLedger: ledger,
         backgroundJobs: input.sessionId ? this.backgroundOwners.get(input.sessionId) : undefined,
         executeDelegatedTool: (call) => {
           const signals = [input.signal, call.signal].filter(
@@ -206,6 +221,15 @@ export class RuntimeToolExecutor {
           );
         },
       },
+    });
+    ledger?.recordTool({
+      toolCallId: ledgerCallId,
+      toolName: input.toolName,
+      input: input.input,
+      output: result.data,
+      success: result.success,
+      error: result.error,
+      remote: tool.provenance?.kind === "mcp",
     });
     this.eventLog.record("tool.completed", {
       ...sessionContext,

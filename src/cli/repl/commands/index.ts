@@ -56,6 +56,7 @@ import { architectCommand } from "./architect.js";
 import { buildFromPlanCommand } from "./build-from-plan.js";
 import { evalsCommand } from "./evals.js";
 import { statsCommand } from "./stats.js";
+import { workCommand } from "./work.js";
 import { renderError } from "../output/renderer.js";
 import { createDefaultRegistry } from "../skills/index.js";
 import type { SkillRegistry } from "../skills/index.js";
@@ -64,6 +65,7 @@ import type { SkillRegistry } from "../skills/index.js";
  * All registered commands
  */
 const commands: SlashCommand[] = [
+  workCommand,
   helpCommand,
   clearCommand,
   exitCommand,

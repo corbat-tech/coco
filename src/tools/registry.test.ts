@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { ToolRegistry } from "./registry.js";
 
 vi.mock("../utils/logger.js", () => ({
@@ -561,10 +562,18 @@ describe("faithful input schemas", () => {
         },
       },
       items: { type: "array", minItems: 1, items: { enum: ["a", "b"] } },
-      nullable: { anyOf: [{ type: "string" }, { type: "null" }] },
-      choice: { anyOf: [{ type: "string" }, { type: "number" }] },
       defaulted: { type: "string", default: "hello" },
     });
+    // Equivalent JSON Schema unions may use anyOf or an array of primitive types.
+    const validate = new Ajv2020({ allowUnionTypes: true }).compile(schema);
+    const valid = { nested: { count: 2, label: "ok" }, items: ["a"], nullable: null };
+    expect(validate(valid)).toBe(true);
+    expect(validate({ ...valid, nullable: "text", choice: 3 })).toBe(true);
+    expect(validate({ ...valid, choice: "text" })).toBe(true);
+    expect(validate({ ...valid, nullable: 3 })).toBe(false);
+    expect(validate({ ...valid, choice: false })).toBe(false);
+    expect(validate({ ...valid, nested: { count: 0, label: "ok" } })).toBe(false);
+    expect(validate({ ...valid, items: [] })).toBe(false);
   });
 
   it("does not advertise unsupported contracts as unconstrained objects", () => {

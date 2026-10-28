@@ -12,7 +12,8 @@
  *       context.json        - Context manager state
  */
 
-import { readFile, writeFile, mkdir, readdir, rm, access } from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir, rm, access, rename } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type {
   PersistedSession,
@@ -25,6 +26,14 @@ import type {
 import type { ReplSession } from "../types.js";
 import type { Message } from "../../../providers/types.js";
 import { CONFIG_PATHS } from "../../../config/paths.js";
+import { readWorkLedger, type WorkLedgerState } from "../../../runtime/work-ledger.js";
+
+interface SessionSnapshot {
+  version: 1;
+  metadata: PersistedSession;
+  messages: Message[];
+  workLedger?: WorkLedgerState;
+}
 
 // =============================================================================
 // Default Configuration
@@ -58,6 +67,7 @@ export function getDefaultStorageDir(): string {
 export class SessionStore implements SessionStorage {
   private config: SessionPersistenceConfig;
   private initialized = false;
+  private readonly saves = new Map<string, Promise<void>>();
 
   constructor(config: Partial<SessionPersistenceConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -79,11 +89,33 @@ export class SessionStore implements SessionStorage {
   }
 
   getSessionDir(sessionId: string): string {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(sessionId)) throw new Error("Invalid session ID");
     return join(this.config.storageDir, sessionId);
+  }
+
+  private async readSnapshot(sessionId: string): Promise<SessionSnapshot | undefined> {
+    let raw: string;
+    try {
+      raw = await readFile(join(this.getSessionDir(sessionId), "snapshot.json"), "utf-8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
+    const snapshot = JSON.parse(raw) as SessionSnapshot;
+    if (
+      snapshot.version !== 1 ||
+      snapshot.metadata?.id !== sessionId ||
+      !Array.isArray(snapshot.messages)
+    )
+      throw new Error("Invalid session snapshot");
+    if (snapshot.workLedger)
+      snapshot.workLedger = readWorkLedger({ workLedger: snapshot.workLedger });
+    return snapshot;
   }
 
   async exists(sessionId: string): Promise<boolean> {
     try {
+      if (await this.readSnapshot(sessionId)) return true;
       const files = this.getSessionFiles(sessionId);
       await access(files.metadata);
       return true;
@@ -93,12 +125,43 @@ export class SessionStore implements SessionStorage {
   }
 
   async save(session: ReplSession): Promise<void> {
-    await this.ensureInitialized();
+    // Capture one coherent view before any filesystem awaits or concurrent turn mutations.
+    const runtimeMetadata = session.runtime?.getSession(session.id)?.metadata;
+    const captured: ReplSession = {
+      ...session,
+      startedAt: new Date(session.startedAt),
+      messages: structuredClone(session.messages),
+      config: structuredClone(session.config),
+      workLedger: structuredClone(
+        runtimeMetadata ? readWorkLedger(runtimeMetadata) : session.workLedger,
+      ),
+      runtime: undefined,
+      contextManager: undefined,
+    };
+    this.getSessionDir(captured.id);
+    const previous = this.saves.get(captured.id);
+    const persist = async () => {
+      try {
+        await previous;
+      } catch {
+        /* A failed older save must not poison a later snapshot. */
+      }
+      await this.persistSnapshot(captured);
+    };
+    const pending = persist();
+    this.saves.set(captured.id, pending);
+    try {
+      await pending;
+    } finally {
+      if (this.saves.get(captured.id) === pending) this.saves.delete(captured.id);
+    }
+  }
 
+  private async persistSnapshot(session: ReplSession): Promise<void> {
+    await this.ensureInitialized();
     const files = this.getSessionFiles(session.id);
     const sessionDir = this.getSessionDir(session.id);
     await mkdir(sessionDir, { recursive: true });
-
     const metadata: PersistedSession = {
       id: session.id,
       projectPath: session.projectPath,
@@ -110,25 +173,34 @@ export class SessionStore implements SessionStorage {
       title: this.generateTitle(session),
       status: "active",
     };
-
-    await writeFile(files.metadata, JSON.stringify(metadata, null, 2), "utf-8");
-
-    const conversationLines = session.messages.map((msg) => {
-      const serialized: SerializedMessage = {
-        role: msg.role,
-        content: msg.content,
-        timestamp: new Date().toISOString(),
-      };
-      return JSON.stringify(serialized);
-    });
-
-    await writeFile(files.conversation, conversationLines.join("\n"), "utf-8");
-
-    const context: SerializedContext = {
-      tokenUsage: this.calculateTokens(session),
+    const snapshot: SessionSnapshot = {
+      version: 1,
+      metadata,
+      messages: session.messages,
+      workLedger: session.workLedger,
     };
-
-    await writeFile(files.context, JSON.stringify(context, null, 2), "utf-8");
+    const temporary = join(sessionDir, `snapshot.${randomUUID()}.tmp`);
+    try {
+      await writeFile(temporary, JSON.stringify(snapshot), { mode: 0o600, flag: "wx" });
+      await rename(temporary, join(sessionDir, "snapshot.json"));
+    } finally {
+      await rm(temporary, { force: true });
+    }
+    // Compatibility projections are optional; never let their failure undo a committed snapshot.
+    const conversation = session.messages
+      .map((message) =>
+        JSON.stringify({
+          ...message,
+          timestamp: metadata.lastSavedAt.toISOString(),
+        } satisfies SerializedMessage),
+      )
+      .join("\n");
+    const context: SerializedContext = { tokenUsage: metadata.totalTokens };
+    await Promise.allSettled([
+      writeFile(files.metadata, JSON.stringify(metadata, null, 2), { mode: 0o600 }),
+      writeFile(files.conversation, conversation, { mode: 0o600 }),
+      writeFile(files.context, JSON.stringify(context, null, 2), { mode: 0o600 }),
+    ]);
   }
 
   async load(sessionId: string): Promise<ReplSession | null> {
@@ -137,6 +209,18 @@ export class SessionStore implements SessionStorage {
     const files = this.getSessionFiles(sessionId);
 
     try {
+      const snapshot = await this.readSnapshot(sessionId);
+      if (snapshot) {
+        return {
+          id: snapshot.metadata.id,
+          projectPath: snapshot.metadata.projectPath,
+          startedAt: new Date(snapshot.metadata.startedAt),
+          config: snapshot.metadata.config,
+          messages: snapshot.messages,
+          trustedTools: new Set(),
+          workLedger: snapshot.workLedger,
+        };
+      }
       const metadataContent = await readFile(files.metadata, "utf-8");
       const metadata = JSON.parse(metadataContent) as PersistedSession;
 
@@ -183,8 +267,10 @@ export class SessionStore implements SessionStorage {
         const metadataPath = join(this.config.storageDir, entry.name, "metadata.json");
 
         try {
-          const content = await readFile(metadataPath, "utf-8");
-          const metadata = JSON.parse(content) as PersistedSession;
+          const snapshot = await this.readSnapshot(entry.name);
+          const metadata =
+            snapshot?.metadata ??
+            (JSON.parse(await readFile(metadataPath, "utf-8")) as PersistedSession);
 
           metadata.startedAt = new Date(metadata.startedAt);
           metadata.lastSavedAt = new Date(metadata.lastSavedAt);
@@ -231,6 +317,14 @@ export class SessionStore implements SessionStorage {
    */
   async appendMessages(sessionId: string, messages: Message[]): Promise<void> {
     await this.ensureInitialized();
+
+    if (await this.readSnapshot(sessionId)) {
+      const session = await this.load(sessionId);
+      if (!session) throw new Error("Cannot append to an invalid session snapshot");
+      session.messages.push(...messages);
+      await this.save(session);
+      return;
+    }
 
     const files = this.getSessionFiles(sessionId);
     const sessionDir = this.getSessionDir(sessionId);

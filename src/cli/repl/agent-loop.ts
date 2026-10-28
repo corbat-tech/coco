@@ -4,7 +4,7 @@ import { withFileCheckpoints } from "./checkpoints/capture.js";
  * Handles tool calling iterations until task completion
  *
  * ABORT STRATEGY (Snapshot + Rollback):
- * Session mutations are transactional. A snapshot of session.messages.length
+ * Session mutations are transactional. A snapshot of session.messages
  * is taken at the start of executeAgentTurn. If the turn is aborted for any
  * reason, session.messages is rolled back to the snapshot — guaranteeing
  * valid message alternation regardless of where the abort occurred.
@@ -17,6 +17,14 @@ import { isDeepStrictEqual } from "node:util";
 import { ResponseIntegrityError } from "../../providers/response-integrity.js";
 import { validateToolCallInput } from "../../providers/tool-call-normalizer.js";
 import { isConversationalOnlyTurn } from "../../runtime/conversational-turn.js";
+import {
+  measureContextBudget,
+  compactContextToFit,
+  ContextBudgetError,
+} from "../../runtime/context-budget.js";
+import { isContextOverflowError } from "../../providers/context-overflow.js";
+import { createContextCompactor } from "./context/compactor.js";
+import { readWorkLedger } from "../../runtime/work-ledger.js";
 import { AgentRuntime } from "../../runtime/agent-runtime.js";
 import { createRuntimeToolDispatch } from "./runtime-tool-dispatch.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -39,6 +47,8 @@ import {
   removeTrustedTool,
   saveDeniedTool,
   removeDeniedTool,
+  checkAndCompactContext,
+  updateContextTokens,
 } from "./session.js";
 import { confirmToolExecutionWithFallback } from "./confirmation.js";
 import { getTrustPattern } from "./bash-patterns.js";
@@ -75,6 +85,8 @@ export interface AgentTurnOptions {
   /** Called after confirmation dialog completes (to resume capture, etc.) */
   onAfterConfirmation?: () => void;
   signal?: AbortSignal;
+  /** Persist the current host session at a complete-message boundary before work continues. */
+  onCheckpoint?: () => Promise<void>;
   /** Skip confirmation prompts for destructive tools */
   skipConfirmation?: boolean;
   /** Hook registry for lifecycle hooks */
@@ -114,7 +126,16 @@ export async function executeAgentTurn(
     throw new Error("REPL registry does not match its runtime execution boundary.");
   }
   session.runtime = runtime;
-  if (!runtime.getSession(session.id)) runtime.createSession({ id: session.id, mode });
+  if (!runtime.getSession(session.id)) {
+    const created = runtime.createSession({ id: session.id, mode });
+    if (session.workLedger) {
+      const ledger = readWorkLedger({ workLedger: session.workLedger });
+      runtime.runtimeSessionStore.update({
+        ...created,
+        metadata: { ...created.metadata, workLedger: ledger },
+      });
+    }
+  }
 
   // Reset line buffer at start of each turn
   resetLineBuffer();
@@ -126,9 +147,9 @@ export async function executeAgentTurn(
   });
 
   // --- Snapshot for transactional rollback on abort ---
-  // If the turn is aborted, we roll back session.messages to this length.
+  // Compaction can replace and shorten history, so length alone cannot restore it.
   // This guarantees valid message alternation regardless of where abort occurs.
-  const messageSnapshot = session.messages.length;
+  const messageSnapshot = [...session.messages];
 
   // Add user message to context
   addMessage(session, { role: "user", content: userMessage });
@@ -138,6 +159,7 @@ export async function executeAgentTurn(
   let totalOutputTokens = 0;
   let finalContent = "";
   let hadTurnError = false;
+  let compactionUnavailable = false;
   let repeatedOutputsSuppressed = 0;
   let observedLargeOutputs = 0;
   let observedLargeOutputChars = 0;
@@ -171,8 +193,11 @@ export async function executeAgentTurn(
 
   // Helper: abort return with rollback
   const abortReturn = (): AgentTurnResult => {
-    // Rollback all session mutations from this turn
-    session.messages.length = messageSnapshot;
+    // Prompt rollback never erases host-owned facts about completed/started tools.
+    session.workLedger = readWorkLedger(runtime.getSession(session.id)?.metadata ?? {});
+    // Rollback all conversation mutations from this turn
+    session.messages = [...messageSnapshot];
+    if (session.contextManager) updateContextTokens(session, provider, toolRegistry);
     const result: AgentTurnResult = {
       content: finalContent,
       toolCalls: executedTools,
@@ -203,6 +228,7 @@ export async function executeAgentTurn(
         ? filterStrictPlanModeTools(allTools)
         : filterReadOnlyTools(allTools)
       : allTools;
+  session.offeredTools = tools;
   const availableMcpToolNames = allTools
     .map((t) => t.name)
     .filter((name) => name.startsWith("mcp_"));
@@ -550,8 +576,50 @@ export async function executeAgentTurn(
       return abortReturn();
     }
 
+    try {
+      await options.onCheckpoint?.();
+    } catch (error) {
+      if (classifyAgentLoopError(error, options.signal).kind === "abort") return abortReturn();
+      throw error;
+    }
+    if (options.signal?.aborted) return abortReturn();
+
+    // Compact only at a safe boundary, after complete tool call/result batches.
+    // Embedders without context management retain their existing behavior.
+    if (session.contextManager && !compactionUnavailable) {
+      try {
+        const compaction = await checkAndCompactContext(
+          session,
+          provider,
+          options.signal,
+          toolRegistry,
+        );
+        // Do not spend a summary request every iteration when compaction fails
+        // or cannot reduce this history. A later user turn may try again.
+        compactionUnavailable = !!compaction?.failureReason && !compaction.wasCompacted;
+      } catch (error) {
+        if (classifyAgentLoopError(error, options.signal).kind === "abort") return abortReturn();
+        throw error;
+      }
+      if (options.signal?.aborted) return abortReturn();
+    }
+
     // Call LLM with tools using streaming (pass toolRegistry for dynamic prompt)
-    const messages = getConversationContext(session, toolRegistry);
+    let messages = getConversationContext(session, toolRegistry);
+    if (session.contextManager) {
+      const budget = measureContextBudget({
+        messages,
+        tools,
+        countTokens: (text) => provider.countTokens(text),
+        contextWindow: session.contextManager.getConfig().maxTokens,
+        reservedOutputTokens: session.config.provider.maxTokens ?? 4096,
+      });
+      if (!budget.fits)
+        throw new ContextBudgetError(
+          "compacted_context_exceeds_window",
+          "Request exceeds the context window including tool schemas and output reserve. Reduce context/tools or choose a larger model.",
+        );
+    }
 
     // Notify thinking started
     options.onThinkingStart?.();
@@ -562,6 +630,7 @@ export async function executeAgentTurn(
     let thinkingEnded = false;
     let lastStopReason: StreamChunk["stopReason"];
     const maxStreamAttempts = recoveryV2Enabled ? 2 : 1;
+    let overflowRecoveryAttempted = false;
 
     // Wrap streaming in try/catch to handle provider errors gracefully
     try {
@@ -744,6 +813,49 @@ export async function executeAgentTurn(
           break;
         } catch (streamError) {
           if (streamError instanceof ResponseIntegrityError) throw streamError;
+          if (isContextOverflowError(streamError)) {
+            if (overflowRecoveryAttempted || sawToolChunk || responseContent) {
+              throw new ContextBudgetError(
+                "compacted_context_exceeds_window",
+                "Provider rejected context after recovery, or after emitting partial output. No further retry; reduce context/tools or choose a larger model.",
+              );
+            }
+            overflowRecoveryAttempted = true;
+            const history = JSON.stringify(session.messages);
+            const binding = session.compactContext;
+            const recovered = await compactContextToFit({
+              messages: session.messages,
+              system: messages
+                .filter((message) => message.role === "system")
+                .map((message) =>
+                  typeof message.content === "string"
+                    ? message.content
+                    : JSON.stringify(message.content),
+                )
+                .join("\n\n"),
+              tools,
+              countTokens: (text) => provider.countTokens(text),
+              contextWindow:
+                session.contextManager?.getConfig().maxTokens ?? provider.getContextWindow(),
+              reservedOutputTokens: session.config.provider.maxTokens ?? 4096,
+              signal: options.signal,
+              summarize: (history, signal) =>
+                createContextCompactor().compact(history, provider, {
+                  signal,
+                  summaryModel:
+                    session.config.provider.weakModel ?? session.config.provider.editorModel,
+                }),
+            });
+            if (history !== JSON.stringify(session.messages) || binding !== session.compactContext)
+              throw new ContextBudgetError(
+                "compaction_failed",
+                "Conversation changed during context recovery; current history retained. Retry with the current conversation.",
+              );
+            session.messages = recovered.messages;
+            updateContextTokens(session, provider, toolRegistry);
+            messages = getConversationContext(session, toolRegistry);
+            continue;
+          }
           const classification = classifyAgentLoopError(streamError, options.signal);
           if (classification.kind === "abort") {
             throw classification.original;
@@ -1265,7 +1377,7 @@ export async function executeAgentTurn(
     // Update consecutive failure counts; if any tool hits the threshold, augment
     // the last result so the LLM understands it must stop retrying, then break.
     let stuckInErrorLoop = false;
-    for (const executedCall of executedTools) {
+    for (const executedCall of currentIterationExecuted) {
       if (!executedCall.result.success && executedCall.result.error) {
         // Normalise: tool name + first 120 chars of error (enough to distinguish messages)
         const errorKey = `${executedCall.name}:${executedCall.result.error.slice(0, 120).toLowerCase()}`;
@@ -1324,7 +1436,7 @@ export async function executeAgentTurn(
       toolResults.length > 0 &&
       autoIterationExtensionsUsed < MAX_AUTO_ITERATION_EXTENSIONS &&
       maxIterations < HARD_MAX_ITERATIONS &&
-      shouldAutoExtendIterationBudget(executedTools, toolResults, stuckInErrorLoop);
+      shouldAutoExtendIterationBudget(currentIterationExecuted, toolResults, stuckInErrorLoop);
 
     // Inject iteration-budget feedback into the last tool result so the LLM can adapt.
     // This runs AFTER the stuckInErrorLoop detection so both messages never overlap.
@@ -1370,6 +1482,8 @@ export async function executeAgentTurn(
       role: "user",
       content: toolResults,
     });
+
+    session.workLedger = readWorkLedger(runtime.getSession(session.id)?.metadata ?? {});
 
     // Mid-task steering: check for user messages injected between iterations.
     // These are incorporated as additional context without aborting the turn,

@@ -1452,10 +1452,9 @@ describe("Error loop recovery: final LLM turn", () => {
       { onStream },
     );
 
-    // The LLM should have been called 3 times:
-    // 2 tool iterations (each failing, but error counter accumulates over all executedTools
-    // per iteration — so after 2 iterations the count reaches 3) + 1 final text-only turn
-    expect(callCount).toBe(3);
+    // Three genuine failed tool iterations, followed by one text-only explanation.
+    // Historical results must not be counted again on a later iteration.
+    expect(callCount).toBe(4);
 
     // The final content should include the explanation
     expect(result.content).toContain("I was unable to find the file");

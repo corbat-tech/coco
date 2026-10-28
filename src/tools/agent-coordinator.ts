@@ -92,7 +92,12 @@ export class AgentTaskQueue {
  * Plan multi-agent execution
  */
 export function planExecution(
-  tasks: Array<{ id?: string; description: string; dependencies?: string[] }>,
+  tasks: Array<{
+    id?: string;
+    description: string;
+    dependencies?: string[];
+    priority?: string;
+  }>,
   strategy: ExecutionStrategy,
 ): {
   plan: string[];
@@ -141,16 +146,43 @@ export function planExecution(
     }
 
     case "priority-based": {
-      // Sort by priority field: high > medium > low
+      // Validate the known graph even when missing dependencies block other tasks.
+      const visited = new Set<string>();
+      const visiting = new Set<string>();
+      const visit = (id: string): void => {
+        if (visiting.has(id)) throw new Error("Circular dependency");
+        if (visited.has(id)) return;
+        visiting.add(id);
+        for (const dep of taskGraph.get(id) ?? []) visit(dep);
+        visiting.delete(id);
+        visited.add(id);
+      };
+      for (const id of taskGraph.keys()) visit(id);
+
+      // Priority breaks ties only among tasks whose prerequisites are scheduled.
       const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
       const sorted = tasks
         .map((t, idx) => ({
           id: t.id ?? `task-${idx}`,
-          priority: (t as { priority?: string }).priority ?? "medium",
+          priority: t.priority ?? "medium",
         }))
         .sort((a, b) => (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
-      plan = sorted.map((t) => t.id);
-      estimatedTime = tasks.length * 80;
+      const blocked = new Set(unresolvedDependencies.map((dep) => dep.taskId));
+      const scheduled = new Set<string>();
+      while (sorted.length > 0) {
+        const readyIndex = sorted.findIndex(
+          (task) =>
+            !blocked.has(task.id) &&
+            (taskGraph.get(task.id) ?? []).every((dep) => scheduled.has(dep)),
+        );
+        if (readyIndex < 0) break;
+        const [next] = sorted.splice(readyIndex, 1);
+        if (next) {
+          scheduled.add(next.id);
+          plan.push(next.id);
+        }
+      }
+      estimatedTime = plan.length * 80;
       maxParallelism = 3;
       break;
     }
@@ -250,6 +282,7 @@ export const createAgentPlanTool = defineTool({
     const plannedTasks = typedInput.tasks.map((task, idx) => ({
       id: indexIdMap.get(idx) as string,
       description: task.description,
+      priority: task.priority,
       dependencies: (task.dependencies || []).map(normalizeDependency),
     }));
 

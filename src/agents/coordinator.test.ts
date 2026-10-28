@@ -3,10 +3,58 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import type { AgentDefinition, AgentTask, AgentResult } from "./executor.js";
+import type { AgentDefinition, AgentTask, AgentResult, AgentExecutor } from "./executor.js";
 import { AgentCoordinator } from "./coordinator.js";
 
 describe("AgentCoordinator", () => {
+  it("blocks failed dependency chains and diamonds while completing independent branches", async () => {
+    const execute = vi.fn(
+      async (_agent: AgentDefinition, task: AgentTask): Promise<AgentResult> => ({
+        output: `${task.id}-out`,
+        success: task.id !== "failed",
+        turns: 1,
+        toolsUsed: [],
+        duration: 1,
+      }),
+    );
+    const coordinator = new AgentCoordinator({ execute } as unknown as AgentExecutor, new Map());
+    const result = await coordinator.coordinateAgents(
+      [
+        { id: "failed", description: "implement" },
+        { id: "left", description: "implement", dependencies: ["failed"] },
+        { id: "right", description: "implement", dependencies: ["failed"] },
+        { id: "join", description: "implement", dependencies: ["left", "right"] },
+        { id: "independent", description: "implement" },
+        { id: "independent-child", description: "implement", dependencies: ["independent"] },
+      ],
+      { maxParallelAgents: 2 },
+    );
+
+    expect(execute.mock.calls.map(([, task]) => task.id)).toEqual([
+      "failed",
+      "independent",
+      "independent-child",
+    ]);
+    expect(result.results.size).toBe(6);
+    expect(result.results.get("failed")).toMatchObject({ success: false, turns: 1 });
+    expect(result.results.get("independent-child")).toMatchObject({ success: true, turns: 1 });
+    for (const id of ["left", "right", "join"]) {
+      expect(result.results.get(id)).toMatchObject({
+        success: false,
+        turns: 0,
+        toolsUsed: [],
+        tokensUsed: 0,
+        structuredResult: { status: "failed", error: expect.stringContaining("blocked") },
+      });
+    }
+    expect(result.results.get("join")?.structuredResult?.metadata?.blockedBy).toEqual([
+      "left",
+      "right",
+    ]);
+    expect(result.results.get("left")?.output).toContain("failed");
+    expect(result.parallelismAchieved).toBe(1);
+  });
+
   it("should preserve task descriptions and dependency context across levels", async () => {
     const calls: Array<{ agent: AgentDefinition; task: AgentTask }> = [];
 

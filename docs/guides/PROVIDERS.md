@@ -86,6 +86,9 @@ provider-specific:
 
 - `openai` may use Responses API and OpenAI `reasoning`/`reasoning_effort` for
   supported reasoning models.
+- `codex` sends the catalog-validated effort as `reasoning.effort` on chat and
+  streaming requests, including tool calls. `/thinking medium` therefore reaches
+  the subscription endpoint; `off` is rejected for models with mandatory reasoning.
 - OpenAI-compatible providers such as `groq`, `openrouter`, `mistral`,
   `deepseek`, `together`, `huggingface`, and `qwen` must not receive
   OpenAI-specific reasoning parameters unless the endpoint/model combination has

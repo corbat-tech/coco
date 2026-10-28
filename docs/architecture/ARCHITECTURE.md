@@ -6,6 +6,13 @@
 
 ## Overview
 
+The supported interactive coding path uses `AgentRuntime` and the REPL agent
+loop. The phase diagrams below describe the COCO design and existing phase
+modules; they do not mean that the legacy `coco build` or `coco resume` commands
+execute those workflows. Those commands currently report that they are not
+implemented. See the [measured capability review](../evolution/AGENT_REVIEW_2026-10-27.md)
+for the current execution boundaries and verified improvements.
+
 Corbat-Coco follows a **phase-based architecture** inspired by modern software development methodologies. The system is designed to transform natural language requirements into production-ready code through iterative refinement.
 
 For the reusable runtime boundary used by the CLI and future agent products, see
@@ -213,7 +220,8 @@ Code is iteratively improved until it meets senior-level quality standards:
 Score >= 85 AND (Score[n] - Score[n-1] < 2)
 ```
 
-**Rationale:** Ensures consistently high-quality output without infinite loops.
+**Rationale:** Bounds refinement against configured quality targets. A score or
+convergence delta alone does not prove that external acceptance criteria passed.
 
 ### 3. Checkpoint-Based Recovery
 
@@ -223,7 +231,10 @@ State is persisted at key moments:
 - Every 5 minutes
 - On error
 
-**Rationale:** Enables recovery from any interruption without losing progress.
+**Rationale:** Supports recovery for the state captured by each implementation.
+The interactive loop restores pre-turn conversation on cancellation and captures
+eligible file edits; it does not undo completed shell or remote effects. Managed
+sessions compact between complete tool batches within long turns.
 
 ### 4. Tool Abstraction Layer
 

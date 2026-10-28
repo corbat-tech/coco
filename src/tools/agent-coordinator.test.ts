@@ -272,6 +272,64 @@ describe("agent-coordinator", () => {
       expect(result.executionOrder).toHaveLength(2);
     });
 
+    it("preserves priorities when planning through the public tool", async () => {
+      const result = await createAgentPlanTool.execute({
+        tasks: [
+          { description: "Low", priority: "low", dependencies: [] },
+          { description: "High", priority: "high", dependencies: [] },
+          { description: "Medium", priority: "medium", dependencies: [] },
+          { description: "Another high", priority: "high", dependencies: [] },
+        ],
+        strategy: "priority-based",
+      });
+
+      expect(result.executionOrder).toEqual(["task-1", "task-3", "task-2", "task-0"]);
+      expect(result.tasks.map((task) => task.priority)).toEqual(["low", "high", "medium", "high"]);
+    });
+
+    it("orders priorities only among tasks with satisfied dependencies", async () => {
+      const result = await createAgentPlanTool.execute({
+        tasks: [
+          { description: "Base", priority: "low", dependencies: [] },
+          { description: "Dependent", priority: "high", dependencies: ["0"] },
+          { description: "Independent", priority: "medium", dependencies: [] },
+          { description: "Low peer", priority: "low", dependencies: [] },
+        ],
+        strategy: "priority-based",
+      });
+
+      expect(result.executionOrder).toEqual(["task-2", "task-0", "task-1", "task-3"]);
+      expect(result.unresolvedDependencies).toEqual([]);
+    });
+
+    it("reports missing priority-plan dependencies and omits blocked descendants", async () => {
+      const result = await createAgentPlanTool.execute({
+        tasks: [
+          { description: "Missing prerequisite", priority: "high", dependencies: ["external"] },
+          { description: "Blocked descendant", priority: "high", dependencies: ["0"] },
+          { description: "Independent", priority: "low", dependencies: [] },
+        ],
+        strategy: "priority-based",
+      });
+
+      expect(result.executionOrder).toEqual(["task-2"]);
+      expect(result.unresolvedDependencies).toEqual([{ taskId: "task-0", dependency: "external" }]);
+      expect(result.estimatedTime).toBe(80);
+    });
+
+    it("rejects priority-plan cycles even alongside an unresolved dependency", async () => {
+      await expect(
+        createAgentPlanTool.execute({
+          tasks: [
+            { description: "Cycle A", priority: "low", dependencies: ["1"] },
+            { description: "Cycle B", priority: "high", dependencies: ["0"] },
+            { description: "Missing", priority: "high", dependencies: ["external"] },
+          ],
+          strategy: "priority-based",
+        }),
+      ).rejects.toThrow("Circular dependency");
+    });
+
     it("should normalize numeric dependency ids", async () => {
       const result = await createAgentPlanTool.execute({
         tasks: [

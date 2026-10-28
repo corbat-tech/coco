@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.43.0] - 2026-10-28
+
+### Added
+
+- Durable runtime tool transcripts, explicit inspection/reconciliation of uncertain effects, and guarded continuation without automatic replay.
+- Project-local headless sessions with `--session` and `--continue`, coherent REPL snapshots, and session work plans through `read_plan`, `update_plan` and `/work`.
+- Host-observed verification evidence that becomes stale after potential mutations, with session isolation and bounded retention of uncertain actions.
+
+### Fixed
+
+- Preserve user intent and completed tool effects across provider failures, cancellation and reopening; reject resuming completed turns without changing their state.
+- Budget composed instructions, actual tool schemas and output reserve; recover a classified context overflow once without repeating completed actions.
+- Scan context-error phrases without polynomial regex backtracking on repeated provider input; retain ordering and single-line classification constraints.
+- Preserve current exact-call consent in headless continuation and report terminal errors as failure.
+- Propagate truncated delegated responses and failed prerequisites, prioritize ready tasks without violating dependencies, and use current tool outcomes for loop recovery.
+- Serialize provider reasoning effort consistently and use valid reasoning defaults for context summaries.
+
+### Validation and limits
+
+- The pre-integration evaluation improved the three-scenario group mean from 96.67 to 98.89, compared with OpenCode 100; 17 external contracts and 13 reserved assertions passed. This is not general product parity. See `docs/evolution/EXCELLENCE_RESULTS_2026-10-27.md`.
+- Release checks and installed-artifact/registry integrity verification are required by the tag-triggered workflow. Tool-runner streaming is buffered; external effects are not an exactly-once transaction and local session guards are not multi-process locks.
+
 ## [2.42.0-rc.3] - 2026-10-07
 
 ### Added
@@ -1817,7 +1839,8 @@ Future versions will include upgrade guides here.
 - [Documentation](https://github.com/corbat/corbat-coco/tree/main/docs)
 - [Issues](https://github.com/corbat/corbat-coco/issues)
 
-[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.40.0...HEAD
+[Unreleased]: https://github.com/corbat-tech/coco/compare/v2.43.0...HEAD
+[2.43.0]: https://github.com/corbat-tech/coco/compare/v2.42.0...v2.43.0
 [2.40.0]: https://github.com/corbat-tech/coco/compare/v2.39.0...v2.40.0
 [2.39.0]: https://github.com/corbat-tech/coco/compare/v2.38.0...v2.39.0
 [2.38.0]: https://github.com/corbat-tech/coco/compare/v2.37.0...v2.38.0

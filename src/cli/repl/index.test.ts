@@ -5,6 +5,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import type { LLMProvider } from "../../providers/types.js";
 
+vi.mock("../../runtime/runtime-session-store.js", () => ({
+  createFileRuntimeSessionStore: vi.fn(() => ({})),
+}));
+const sessionPersistence = vi.hoisted(() => ({ save: vi.fn(async () => {}) }));
+vi.mock("./sessions/storage.js", () => ({ getSessionStore: () => sessionPersistence }));
+
 // Mock providers
 vi.mock("../../providers/index.js", () => ({
   createProvider: vi.fn(),
@@ -447,6 +453,7 @@ describe("REPL index", () => {
         "❌ Provider is not available. Your API key may be invalid.",
       );
       expect(process.exit).toHaveBeenCalledWith(1);
+      expect(sessionPersistence.save).not.toHaveBeenCalled();
     });
 
     it("should print welcome message and start input loop", async () => {
@@ -494,6 +501,12 @@ describe("REPL index", () => {
       expect(mockConsoleLog).toHaveBeenCalled();
       // Should call close on exit
       expect(mockInputHandler.close).toHaveBeenCalled();
+      expect(sessionPersistence.save).toHaveBeenCalledTimes(2);
+      const { createFileRuntimeSessionStore } =
+        await import("../../runtime/runtime-session-store.js");
+      expect(createFileRuntimeSessionStore).toHaveBeenCalledWith(
+        expect.stringContaining("repl-runtime-sessions.json"),
+      );
       expect(setAgentProvider).toHaveBeenCalledWith(mockProvider);
       expect(setAgentToolRegistry).toHaveBeenCalledWith(mockRegistry);
     });

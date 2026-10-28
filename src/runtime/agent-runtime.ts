@@ -24,6 +24,13 @@ import { createPermissionPolicy } from "./permission-policy.js";
 import { createProviderRegistry, ProviderRegistry } from "./provider-registry.js";
 import { createRuntimeSessionStore } from "./runtime-session-store.js";
 import { RuntimeToolExecutor } from "./runtime-tool-executor.js";
+import { createSessionWorkLedgerAccess } from "./work-ledger.js";
+import { getRuntimeTurn, SessionTurnTranscript } from "./turn-transcript.js";
+import {
+  assertSessionReady,
+  inspectSessionRecovery,
+  resolveSessionToolCall,
+} from "./session-recovery.js";
 import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.js";
 import type {
   AgentRuntimeOptions,
@@ -40,6 +47,8 @@ import type {
   RuntimeTurnStreamEvent,
   RuntimeTurnRunner,
   RuntimeMode,
+  RuntimeSessionRecovery,
+  RuntimeToolCallResolution,
 } from "./types.js";
 
 export interface RuntimeRetentionCleanupOptions {
@@ -76,6 +85,7 @@ export class AgentRuntime {
   private readonly runtimeHostMode: RuntimeHostMode;
   private readonly requestTimestampsBySubject = new Map<string, number[]>();
   private activeRuns = 0;
+  private readonly activeSessions = new Set<string>();
   private readonly toolExecutor: RuntimeToolExecutor;
 
   constructor(private readonly options: AgentRuntimeOptions) {
@@ -102,6 +112,7 @@ export class AgentRuntime {
       permissionPolicy: this.permissionPolicy,
       runtimePolicy: this.runtimePolicy,
       eventProfile: "runtime-api",
+      workLedgerAccess: createSessionWorkLedgerAccess(this.runtimeSessionStore),
     });
     assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "runtime.initialize");
     this.workflowEngine =
@@ -185,6 +196,8 @@ export class AgentRuntime {
 
   createSession(options: RuntimeSessionCreateOptions = {}): RuntimeSession {
     assertRuntimeTenantBoundary(this.runtimeContext, this.runtimeHostMode, "session.create");
+    if (options.metadata && ("runtimeTurn" in options.metadata || "workLedger" in options.metadata))
+      throw new Error("Reserved runtime session metadata cannot be supplied as input");
     const session = this.runtimeSessionStore.create({
       ...options,
       metadata: {
@@ -225,7 +238,9 @@ export class AgentRuntime {
       : [];
     const deletedSessionIds = dryRun
       ? []
-      : expiredSessionIds.filter((id) => this.runtimeSessionStore.delete(id));
+      : expiredSessionIds.filter(
+          (id) => !this.activeSessions.has(id) && this.runtimeSessionStore.delete(id),
+        );
 
     this.eventLog.record("retention.cleanup", {
       dryRun,
@@ -245,238 +260,381 @@ export class AgentRuntime {
   }
 
   async runTurn(input: RuntimeTurnInput): Promise<RuntimeTurnResult> {
+    return this.runTurnInternal(input, false);
+  }
+
+  /** Resume the recorded input; uncertain effects must first be reconciled by the host. */
+  async resumeTurn(
+    input: Omit<RuntimeTurnInput, "content"> & { sessionId: string },
+  ): Promise<RuntimeTurnResult> {
+    return this.runTurnInternal({ ...input, content: "" }, true);
+  }
+
+  inspectSessionRecovery(sessionId: string): RuntimeSessionRecovery {
+    assertRuntimeTenantBoundary(
+      this.runtimeContext,
+      this.runtimeHostMode,
+      "session.recovery.inspect",
+    );
+    return inspectSessionRecovery(this.runtimeSessionStore, sessionId);
+  }
+
+  resolveSessionToolCall(sessionId: string, resolution: RuntimeToolCallResolution): void {
+    assertRuntimeTenantBoundary(
+      this.runtimeContext,
+      this.runtimeHostMode,
+      "session.recovery.resolve",
+    );
+    const release = this.acquireSession(sessionId);
+    try {
+      resolveSessionToolCall(this.runtimeSessionStore, sessionId, resolution);
+    } finally {
+      release();
+    }
+  }
+
+  private acquireSession(sessionId: string): () => void {
+    if (this.activeSessions.has(sessionId))
+      throw new RuntimePolicyViolation({
+        code: "concurrency_limit_exceeded",
+        subject: "turn.session",
+        policyPath: "runtime.session.activeTurn",
+        message: `Runtime session already has an active turn: ${sessionId}`,
+      });
+    this.activeSessions.add(sessionId);
+    return () => this.activeSessions.delete(sessionId);
+  }
+
+  private async runTurnInternal(
+    input: RuntimeTurnInput,
+    resume: boolean,
+  ): Promise<RuntimeTurnResult> {
     const provider = this.provider;
     if (!provider) {
       throw new Error("Runtime provider is not initialized.");
     }
 
-    const session = input.sessionId
-      ? this.runtimeSessionStore.get(input.sessionId)
-      : this.createSession({ mode: input.mode, metadata: input.metadata });
-    if (!session) {
-      throw new Error(`Runtime session not found: ${input.sessionId}`);
-    }
-    const effectiveSession =
-      input.mode && input.mode !== session.mode ? { ...session, mode: input.mode } : session;
-    assertRuntimeTurnWithinPolicy(this.runtimePolicy, {
-      subject: "turn.run",
-      currentTurns: countUserTurns(effectiveSession),
-      tenantId: this.runtimeContext?.tenant?.id,
-    });
-    const releaseRuntimeRequest = this.beginRuntimeRequest("turn.run");
-
-    this.eventLog.record("turn.started", {
-      sessionId: effectiveSession.id,
-      provider: this.providerType,
-      model: this.getModel(),
-      mode: effectiveSession.mode,
-      runtimeApi: true,
-    });
-
+    // Acquire before reading the session so a concurrent turn cannot observe stale history.
+    const sessionId =
+      input.sessionId ?? this.createSession({ mode: input.mode, metadata: input.metadata }).id;
+    const releaseSession = this.acquireSession(sessionId);
     try {
-      const result = await this.turnRunner.run(input, {
-        runtime: this,
-        session: effectiveSession,
-        provider,
-        toolRegistry: this.toolRegistry,
-        permissionPolicy: this.permissionPolicy,
-        eventLog: this.eventLog,
-      });
-      const estimatedCostUsd = this.estimateTurnCost(result);
-      assertRuntimeUsageWithinPolicy(this.runtimePolicy, {
-        ...result.usage,
-        estimatedCostUsd,
-        tenantId: this.runtimeContext?.tenant?.id,
-        subject: "turn.run",
-      });
+      const session = input.sessionId
+        ? this.runtimeSessionStore.get(input.sessionId)
+        : this.runtimeSessionStore.get(sessionId);
+      if (!session) {
+        throw new Error(`Runtime session not found: ${input.sessionId}`);
+      }
+      const effectiveSession =
+        input.mode && input.mode !== session.mode ? { ...session, mode: input.mode } : session;
+      if (!resume) assertSessionReady(this.runtimeSessionStore, session.id);
+      if (resume && !this.turnRunner.supportsTranscript)
+        throw new Error("This custom/default runner does not support transcript resume");
+      const interrupted = resume ? getRuntimeTurn(session) : undefined;
+      if (resume && (!interrupted || interrupted.status === "completed"))
+        throw new Error(
+          interrupted
+            ? "Runtime turn is already completed"
+            : "Runtime session has no interrupted turn",
+        );
+      if (interrupted?.calls.some((call) => call.status === "running"))
+        throw new Error("Uncertain tool effects require host resolution before resuming");
+      if (!resume)
+        assertRuntimeTurnWithinPolicy(this.runtimePolicy, {
+          subject: "turn.run",
+          currentTurns: countUserTurns(effectiveSession),
+          tenantId: this.runtimeContext?.tenant?.id,
+        });
+      const releaseRuntimeRequest = this.beginRuntimeRequest("turn.run");
 
-      const updatedSession = this.runtimeSessionStore.update({
-        ...effectiveSession,
-        messages: [
-          ...effectiveSession.messages,
-          { role: "user", content: input.content },
-          { role: "assistant", content: result.content },
-        ],
-      });
+      let transcript: SessionTurnTranscript | undefined;
 
-      this.eventLog.record("session.updated", {
-        sessionId: updatedSession.id,
-        messages: updatedSession.messages.length,
-      });
-      this.eventLog.record("turn.completed", {
-        sessionId: updatedSession.id,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        estimatedCostUsd,
-        model: result.model,
-        runtimeApi: true,
-      });
-
-      return { ...result, sessionId: updatedSession.id, mode: updatedSession.mode };
-    } catch (error) {
-      this.eventLog.record("turn.failed", {
+      this.eventLog.record("turn.started", {
         sessionId: effectiveSession.id,
-        error: error instanceof Error ? error.message : String(error),
+        provider: this.providerType,
+        model: this.getModel(),
+        mode: effectiveSession.mode,
         runtimeApi: true,
       });
-      throw error;
+
+      try {
+        if (resume) {
+          const previous = interrupted!;
+          transcript = new SessionTurnTranscript(this.runtimeSessionStore, session.id, previous.id);
+          transcript.resume(effectiveSession.mode);
+          input = { ...input, content: previous.input };
+        } else {
+          transcript = SessionTurnTranscript.begin(
+            this.runtimeSessionStore,
+            effectiveSession,
+            input.content,
+          );
+        }
+        const result = await this.turnRunner.run(input, {
+          runtime: this,
+          session: effectiveSession,
+          provider,
+          toolRegistry: this.toolRegistry,
+          permissionPolicy: this.permissionPolicy,
+          eventLog: this.eventLog,
+          transcript,
+        });
+        if (!this.turnRunner.supportsTranscript)
+          result.usage = {
+            ...result.usage,
+            ...transcript.recordUsage(result.usage.inputTokens, result.usage.outputTokens),
+          };
+        const estimatedCostUsd = this.estimateTurnCost(result);
+        assertRuntimeUsageWithinPolicy(this.runtimePolicy, {
+          ...result.usage,
+          estimatedCostUsd,
+          tenantId: this.runtimeContext?.tenant?.id,
+          subject: "turn.run",
+        });
+
+        transcript.terminal("completed", undefined, result.content);
+        const updatedSession = this.getSession(session.id)!;
+
+        this.eventLog.record("session.updated", {
+          sessionId: updatedSession.id,
+          messages: updatedSession.messages.length,
+        });
+        this.eventLog.record("turn.completed", {
+          sessionId: updatedSession.id,
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          estimatedCostUsd,
+          model: result.model,
+          runtimeApi: true,
+        });
+
+        return { ...result, sessionId: updatedSession.id, mode: updatedSession.mode };
+      } catch (error) {
+        if (transcript) {
+          try {
+            transcript.terminal(
+              input.options?.signal?.aborted ? "cancelled" : "failed",
+              error instanceof Error ? error.message : String(error),
+            );
+          } catch (persistenceError) {
+            throw new AggregateError(
+              [error, persistenceError],
+              "Runtime turn failed and recovery state could not be persisted; inspect stored effects before retrying",
+            );
+          }
+        }
+        this.eventLog.record("turn.failed", {
+          sessionId: effectiveSession.id,
+          error: error instanceof Error ? error.message : String(error),
+          runtimeApi: true,
+        });
+        throw error;
+      } finally {
+        releaseRuntimeRequest();
+      }
     } finally {
-      releaseRuntimeRequest();
+      releaseSession();
     }
   }
 
   async *streamTurn(input: RuntimeTurnInput): AsyncIterable<RuntimeTurnStreamEvent> {
+    // Tool-aware runners share the durable turn implementation. Their output is
+    // buffered until completion; this is not incremental provider token streaming.
+    if (this.turnRunner.supportsTools) {
+      let sessionId = input.sessionId;
+      try {
+        sessionId ??= this.createSession({ mode: input.mode, metadata: input.metadata }).id;
+        const result = await this.runTurn({ ...input, sessionId });
+        if (result.content)
+          yield { type: "text", sessionId: result.sessionId, text: result.content };
+        yield { type: "done", sessionId: result.sessionId, result };
+      } catch (error) {
+        yield {
+          type: "error",
+          sessionId: sessionId ?? "",
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+      return;
+    }
     const provider = this.provider;
     if (!provider) {
       throw new Error("Runtime provider is not initialized.");
     }
 
-    const session = input.sessionId
-      ? this.runtimeSessionStore.get(input.sessionId)
-      : this.createSession({ mode: input.mode, metadata: input.metadata });
-    if (!session) {
-      throw new Error(`Runtime session not found: ${input.sessionId}`);
-    }
-    const effectiveSession =
-      input.mode && input.mode !== session.mode ? { ...session, mode: input.mode } : session;
-    assertRuntimeTurnWithinPolicy(this.runtimePolicy, {
-      subject: "turn.stream",
-      currentTurns: countUserTurns(effectiveSession),
-      tenantId: this.runtimeContext?.tenant?.id,
-    });
-    const releaseRuntimeRequest = this.beginRuntimeRequest("turn.stream");
-    const messages = [
-      ...effectiveSession.messages,
-      {
-        role: "user" as const,
-        content: input.content,
-      },
-    ];
-
-    this.eventLog.record("turn.started", {
-      sessionId: effectiveSession.id,
-      provider: this.providerType,
-      model: this.getModel(),
-      mode: effectiveSession.mode,
-      streaming: true,
-      runtimeApi: true,
-    });
-
-    let content = "";
-    let completed = false;
-    let failed = false;
-    let terminal = false;
+    const sessionId =
+      input.sessionId ?? this.createSession({ mode: input.mode, metadata: input.metadata }).id;
+    const releaseSession = this.acquireSession(sessionId);
     try {
-      input.options?.signal?.throwIfAborted();
-      for await (const chunk of provider.stream(messages, {
-        model: input.options?.model,
-        maxTokens: input.options?.maxTokens,
-        temperature: input.options?.temperature,
-        stopSequences: input.options?.stopSequences,
-        system: effectiveSession.instructions ?? input.options?.system,
-        timeout: input.options?.timeout,
-        signal: input.options?.signal,
-        thinking: input.options?.thinking,
-      })) {
+      const session = input.sessionId
+        ? this.runtimeSessionStore.get(input.sessionId)
+        : this.runtimeSessionStore.get(sessionId);
+      if (!session) {
+        throw new Error(`Runtime session not found: ${input.sessionId}`);
+      }
+      const effectiveSession =
+        input.mode && input.mode !== session.mode ? { ...session, mode: input.mode } : session;
+      assertSessionReady(this.runtimeSessionStore, session.id);
+      assertRuntimeTurnWithinPolicy(this.runtimePolicy, {
+        subject: "turn.stream",
+        currentTurns: countUserTurns(effectiveSession),
+        tenantId: this.runtimeContext?.tenant?.id,
+      });
+      const releaseRuntimeRequest = this.beginRuntimeRequest("turn.stream");
+      const messages = [
+        ...effectiveSession.messages,
+        {
+          role: "user" as const,
+          content: input.content,
+        },
+      ];
+
+      this.eventLog.record("turn.started", {
+        sessionId: effectiveSession.id,
+        provider: this.providerType,
+        model: this.getModel(),
+        mode: effectiveSession.mode,
+        streaming: true,
+        runtimeApi: true,
+      });
+
+      let content = "";
+      let completed = false;
+      let failed = false;
+      let terminal = false;
+      let transcript: SessionTurnTranscript | undefined;
+      try {
+        transcript = SessionTurnTranscript.begin(
+          this.runtimeSessionStore,
+          effectiveSession,
+          input.content,
+        );
         input.options?.signal?.throwIfAborted();
-        if (chunk.type !== "text" && chunk.type !== "done") {
-          throw new Error("Runtime turn incomplete: text-only stream requested tool execution.");
-        }
-        if (terminal) {
-          throw new Error(
-            "Runtime turn incomplete: provider emitted content after its terminal event.",
-          );
-        }
-        if (chunk.type === "done") {
-          if (chunk.stopReason !== "end_turn" && chunk.stopReason !== "stop_sequence") {
+        for await (const chunk of provider.stream(messages, {
+          model: input.options?.model,
+          maxTokens: input.options?.maxTokens,
+          temperature: input.options?.temperature,
+          stopSequences: input.options?.stopSequences,
+          system: effectiveSession.instructions ?? input.options?.system,
+          timeout: input.options?.timeout,
+          signal: input.options?.signal,
+          thinking: input.options?.thinking,
+        })) {
+          input.options?.signal?.throwIfAborted();
+          if (chunk.type !== "text" && chunk.type !== "done") {
+            throw new Error("Runtime turn incomplete: text-only stream requested tool execution.");
+          }
+          if (terminal) {
             throw new Error(
-              `Runtime turn incomplete: provider stopped with ${chunk.stopReason ?? "unknown"}.`,
+              "Runtime turn incomplete: provider emitted content after its terminal event.",
             );
           }
-          terminal = true;
+          if (chunk.type === "done") {
+            if (chunk.stopReason !== "end_turn" && chunk.stopReason !== "stop_sequence") {
+              throw new Error(
+                `Runtime turn incomplete: provider stopped with ${chunk.stopReason ?? "unknown"}.`,
+              );
+            }
+            terminal = true;
+          }
+          if (chunk.type === "text" && chunk.text) {
+            content += chunk.text;
+            yield {
+              type: "text",
+              sessionId: effectiveSession.id,
+              text: chunk.text,
+            };
+          }
         }
-        if (chunk.type === "text" && chunk.text) {
-          content += chunk.text;
-          yield {
-            type: "text",
-            sessionId: effectiveSession.id,
-            text: chunk.text,
-          };
-        }
-      }
 
-      input.options?.signal?.throwIfAborted();
-      if (!terminal)
-        throw new Error("Runtime turn incomplete: provider stream ended without a terminal event.");
-      const result: RuntimeTurnResult = {
-        sessionId: effectiveSession.id,
-        content,
-        usage: {
-          inputTokens: provider.countTokens(input.content),
-          outputTokens: provider.countTokens(content),
-          estimated: true,
-        },
-        model: input.options?.model ?? this.getModel(),
-        mode: effectiveSession.mode,
-      };
-      const estimatedCostUsd = this.estimateTurnCost(result);
-      assertRuntimeUsageWithinPolicy(this.runtimePolicy, {
-        ...result.usage,
-        estimatedCostUsd,
-        tenantId: this.runtimeContext?.tenant?.id,
-        subject: "turn.stream",
-      });
-
-      const updatedSession = this.runtimeSessionStore.update({
-        ...effectiveSession,
-        messages: [
-          ...effectiveSession.messages,
-          { role: "user", content: input.content },
-          { role: "assistant", content },
-        ],
-      });
-      result.sessionId = updatedSession.id;
-      result.mode = updatedSession.mode;
-
-      this.eventLog.record("session.updated", {
-        sessionId: updatedSession.id,
-        messages: updatedSession.messages.length,
-      });
-      this.eventLog.record("turn.completed", {
-        sessionId: updatedSession.id,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        estimatedCostUsd,
-        model: result.model,
-        streaming: true,
-        runtimeApi: true,
-      });
-      completed = true;
-      yield { type: "done", sessionId: updatedSession.id, result };
-    } catch (error) {
-      failed = true;
-      const message = error instanceof Error ? error.message : String(error);
-      this.eventLog.record("turn.failed", {
-        sessionId: effectiveSession.id,
-        error: message,
-        streaming: true,
-        runtimeApi: true,
-      });
-      yield {
-        type: "error",
-        sessionId: effectiveSession.id,
-        error: message,
-      };
-    } finally {
-      if (!completed && !failed) {
-        this.eventLog.record("turn.cancelled", {
+        input.options?.signal?.throwIfAborted();
+        if (!terminal)
+          throw new Error(
+            "Runtime turn incomplete: provider stream ended without a terminal event.",
+          );
+        const result: RuntimeTurnResult = {
           sessionId: effectiveSession.id,
-          outputTokens: provider.countTokens(content),
+          content,
+          usage: {
+            inputTokens: provider.countTokens(input.content),
+            outputTokens: provider.countTokens(content),
+            estimated: true,
+          },
+          model: input.options?.model ?? this.getModel(),
+          mode: effectiveSession.mode,
+        };
+        const estimatedCostUsd = this.estimateTurnCost(result);
+        assertRuntimeUsageWithinPolicy(this.runtimePolicy, {
+          ...result.usage,
+          estimatedCostUsd,
+          tenantId: this.runtimeContext?.tenant?.id,
+          subject: "turn.stream",
+        });
+
+        transcript.terminal("completed", undefined, content);
+        const updatedSession = this.getSession(session.id)!;
+        result.sessionId = updatedSession.id;
+        result.mode = updatedSession.mode;
+
+        this.eventLog.record("session.updated", {
+          sessionId: updatedSession.id,
+          messages: updatedSession.messages.length,
+        });
+        this.eventLog.record("turn.completed", {
+          sessionId: updatedSession.id,
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          estimatedCostUsd,
+          model: result.model,
           streaming: true,
           runtimeApi: true,
         });
+        completed = true;
+        yield { type: "done", sessionId: updatedSession.id, result };
+      } catch (error) {
+        failed = true;
+        let message = error instanceof Error ? error.message : String(error);
+        try {
+          transcript?.terminal(
+            input.options?.signal?.aborted ? "cancelled" : "failed",
+            message,
+            content || undefined,
+          );
+        } catch (persistenceError) {
+          message += `; recovery persistence failed: ${String(persistenceError)}`;
+        }
+        this.eventLog.record("turn.failed", {
+          sessionId: effectiveSession.id,
+          error: message,
+          streaming: true,
+          runtimeApi: true,
+        });
+        yield {
+          type: "error",
+          sessionId: effectiveSession.id,
+          error: message,
+        };
+      } finally {
+        try {
+          if (!completed && !failed) {
+            transcript?.terminal(
+              "cancelled",
+              "Stream consumer stopped before completion",
+              content || undefined,
+            );
+            this.eventLog.record("turn.cancelled", {
+              sessionId: effectiveSession.id,
+              outputTokens: provider.countTokens(content),
+              streaming: true,
+              runtimeApi: true,
+            });
+          }
+        } finally {
+          releaseRuntimeRequest();
+        }
       }
-      releaseRuntimeRequest();
+    } finally {
+      releaseSession();
     }
   }
 
@@ -488,10 +646,13 @@ export class AgentRuntime {
   }
 
   async closeSession(sessionId: string): Promise<void> {
+    if (this.activeSessions.has(sessionId))
+      throw new Error("Cannot close a session with an active turn");
     await this.toolExecutor.closeSession(sessionId);
   }
 
   async close(): Promise<void> {
+    if (this.activeSessions.size > 0) throw new Error("Cannot close runtime with active turns");
     await this.toolExecutor.close();
   }
 
@@ -630,7 +791,12 @@ export class AgentRuntime {
 }
 
 function countUserTurns(session: RuntimeSession): number {
-  return session.messages.filter((message) => message.role === "user").length;
+  return session.messages.filter(
+    (message) =>
+      message.role === "user" &&
+      (typeof message.content === "string" ||
+        message.content.some((block) => block.type !== "tool_result")),
+  ).length;
 }
 
 export async function createAgentRuntime(options: AgentRuntimeOptions): Promise<AgentRuntime> {

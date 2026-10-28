@@ -7,6 +7,8 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { measureContextBudget, ContextBudgetError } from "../../runtime/context-budget.js";
+import { formatWorkLedger, readWorkLedger } from "../../runtime/work-ledger.js";
 import type { Message, LLMProvider } from "../../providers/types.js";
 import type { ReplSession, ReplConfig } from "./types.js";
 import {
@@ -229,6 +231,8 @@ For tasks with 3+ steps:
 3. Break into atomic steps with verification after each
 4. Implement vertically (one complete slice end-to-end) rather than horizontally
 
+When offered, use update_plan to maintain these steps and read_plan to recover state and observed check IDs. Link verification to observed evidence IDs; marking a step completed is a claim, not proof that checks passed.
+
 ## After Completing Tasks
 
 Suggest 1-2 brief, actionable next steps:
@@ -295,11 +299,11 @@ You are running on a fast, compact model. Keep outputs minimal and actions direc
 
 - Greetings and conversational answers still require no tools. Never use shell commands just to print a reply.
 - Call ONE tool at a time. Do NOT combine multiple tool calls per turn.
-- Skip multi-step planning — just do the next concrete action.
+- For work requiring three or more steps, use update_plan when offered for a short plan and keep it current; use read_plan to recover its state and observed check IDs.
 - Debugging: read the error, fix it, verify. No analysis phases.
 - Verification: run the command, report the result. No elaborate protocols.
 - Skip "Parallel Execution" — serialize all tool calls for reliability.
-- NEVER narrate your plan. NEVER explain what you are about to do. Just do it.`;
+- Keep progress notes brief. For simple answers and one-step actions, proceed directly without a plan.`;
 
 /**
  * Default REPL configuration
@@ -622,6 +626,11 @@ export function getConversationContext(
     systemPrompt = `${systemPrompt}\n\n${MINI_MODEL_ADDENDUM}`;
   }
 
+  const runtimeMetadata = session.runtime?.getSession(session.id)?.metadata;
+  const ledger = runtimeMetadata ? readWorkLedger(runtimeMetadata) : session.workLedger;
+  const ledgerContext = formatWorkLedger(ledger);
+  if (ledgerContext) systemPrompt += `\n\n${ledgerContext}`;
+
   return [{ role: "system", content: systemPrompt }, ...session.messages];
 }
 
@@ -915,7 +924,7 @@ export function initializeContextManager(session: ReplSession, provider: LLMProv
   const tierCfg = getTierConfig(providerType, model);
   session.contextManager = createContextManager(contextWindow, {
     compactionThreshold: tierCfg.compactionThreshold,
-    reservedTokens: 4096,
+    reservedTokens: session.config.provider.maxTokens ?? 4096,
   });
   session.compactContext = (options = {}) =>
     checkAndCompactContext(session, provider, options.signal, session.runtime?.toolRegistry, {
@@ -938,27 +947,15 @@ export function updateContextTokens(
 ): void {
   if (!session.contextManager) return;
 
-  let totalTokens = 0;
-
-  if (toolRegistry) {
-    // Count the full effective conversation including composed system prompt
-    const effectiveMessages = getConversationContext(session, toolRegistry);
-    for (const message of effectiveMessages) {
-      const content =
-        typeof message.content === "string" ? message.content : JSON.stringify(message.content);
-      totalTokens += provider.countTokens(content);
-    }
-  } else {
-    // Fallback: count raw base prompt + messages (less accurate but works without registry)
-    totalTokens += provider.countTokens(session.config.agent.systemPrompt);
-    for (const message of session.messages) {
-      const content =
-        typeof message.content === "string" ? message.content : JSON.stringify(message.content);
-      totalTokens += provider.countTokens(content);
-    }
-  }
-
-  session.contextManager.setUsedTokens(totalTokens);
+  const budget = measureContextBudget({
+    messages: getConversationContext(session, toolRegistry),
+    tools: session.offeredTools ?? toolRegistry?.getToolDefinitionsForLLM(),
+    countTokens: (text) => provider.countTokens(text),
+    contextWindow: session.contextManager.getConfig().maxTokens,
+    reservedOutputTokens: session.config.provider.maxTokens ?? 4096,
+  });
+  session.contextManager.updateConfig({ reservedTokens: budget.reservedOutputTokens });
+  session.contextManager.setUsedTokens(budget.inputTokens);
 }
 
 /**
@@ -979,6 +976,20 @@ export async function checkAndCompactContext(
 
   // Update token count (pass toolRegistry for accurate effective-prompt counting)
   updateContextTokens(session, provider, toolRegistry);
+
+  const config = session.contextManager!.getConfig();
+  const budget = measureContextBudget({
+    messages: getConversationContext(session, toolRegistry),
+    tools: session.offeredTools ?? toolRegistry?.getToolDefinitionsForLLM(),
+    countTokens: (text) => provider.countTokens(text),
+    contextWindow: config.maxTokens,
+    reservedOutputTokens: config.reservedTokens,
+  });
+  if (!budget.fixedFits)
+    throw new ContextBudgetError(
+      "fixed_context_exceeds_window",
+      "System instructions, offered tool schemas and output reserve exceed the context window. Reduce tools/instructions or output budget, or choose a larger model.",
+    );
 
   // Check if compaction needed
   if (!options.force && !session.contextManager!.shouldCompact()) {
@@ -1023,10 +1034,29 @@ export async function checkAndCompactContext(
       // Update session messages with compacted version
       // Extract non-system messages from compacted result
       const compactedNonSystem = result.messages.filter((m) => m.role !== "system");
+      const candidate = measureContextBudget({
+        messages: [
+          ...getConversationContext(session, toolRegistry).filter((m) => m.role === "system"),
+          ...compactedNonSystem,
+        ],
+        tools: session.offeredTools ?? toolRegistry?.getToolDefinitionsForLLM(),
+        countTokens: (text) => provider.countTokens(text),
+        contextWindow: config.maxTokens,
+        reservedOutputTokens: config.reservedTokens,
+      });
+      if (!candidate.fits) {
+        return {
+          ...result,
+          messages: session.messages,
+          wasCompacted: false,
+          failureReason:
+            "Compacted history still exceeds the context window; original history retained",
+        };
+      }
       session.messages = compactedNonSystem;
 
-      // Update token count
-      session.contextManager!.setUsedTokens(result.compactedTokens);
+      // Include the effective system prompt as well as the installed history.
+      updateContextTokens(session, provider, toolRegistry);
     }
 
     return result;

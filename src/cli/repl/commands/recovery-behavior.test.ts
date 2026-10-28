@@ -236,10 +236,10 @@ describe("recovery commands using persisted histories and snapshots", () => {
     await resumeCommand.execute([], current);
     await resumeCommand.execute(["missing"], current);
     await savedSession();
-    await writeFile(join(store.getSessionDir("saved"), "conversation.jsonl"), "invalid JSON");
+    await writeFile(join(store.getSessionDir("saved"), "snapshot.json"), "invalid JSON");
     await resumeCommand.execute(["saved"], current);
     expect(current.id).toBe("current");
-    expect(output()).toContain("Failed to load session");
+    expect(output()).toContain("Session not found: saved");
     expect(output()).not.toContain("Session resumed:");
   });
 });

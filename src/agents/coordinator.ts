@@ -8,6 +8,7 @@ import { createResourceAwareSemaphore } from "../utils/resource-semaphore.js";
 import { getMaxSafeAgents } from "../utils/resource-monitor.js";
 import { getLogger } from "../utils/logger.js";
 import { createRequestScope } from "../utils/request-scope.js";
+import { mapLegacyAgentRole, normalizeAgentRunResult } from "../runtime/multi-agent.js";
 
 export interface CoordinationOptions {
   maxParallelAgents?: number;
@@ -185,6 +186,35 @@ export class AgentCoordinator {
               resourceSem.withSemaphore(async () => {
                 try {
                   scope.signal.throwIfAborted();
+                  const failedDependencies = (task.dependencies ?? []).filter(
+                    (id) => results.get(id)?.success === false,
+                  );
+                  if (failedDependencies.length > 0) {
+                    const output = `Task blocked by failed dependencies: ${failedDependencies.join(", ")}`;
+                    const structuredResult = normalizeAgentRunResult({
+                      id: `${task.id}-${Date.now().toString(36)}`,
+                      taskId: task.id,
+                      role: mapLegacyAgentRole(this.getAgentForTask(task).role),
+                      success: false,
+                      output,
+                      error: output,
+                      turns: 0,
+                      toolsUsed: [],
+                      durationMs: 0,
+                      metadata: { blockedBy: failedDependencies },
+                    });
+                    const result: AgentResult = {
+                      output,
+                      success: false,
+                      turns: 0,
+                      toolsUsed: [],
+                      duration: 0,
+                      tokensUsed: 0,
+                      structuredResult,
+                      artifacts: structuredResult.artifacts,
+                    };
+                    return { taskId: task.id, result };
+                  }
                   // Build context from dependency results
                   const context = this.buildContext(task, results);
 
@@ -219,7 +249,7 @@ export class AgentCoordinator {
           const rejected = batchResults.find((outcome) => outcome.status === "rejected");
           if (rejected?.status === "rejected") throw rejected.reason;
           scope.signal.throwIfAborted();
-          // Store only a fully settled successful batch.
+          // Store a fully settled batch, including failed and blocked task results.
           for (const outcome of batchResults) {
             if (outcome.status === "fulfilled")
               results.set(outcome.value.taskId, outcome.value.result);

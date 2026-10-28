@@ -380,6 +380,8 @@ import { githubTools } from "./github.js";
 import { openTools } from "./open.js";
 import { authorizePathTools } from "./authorize-path.js";
 import { mcpTools } from "./mcp.js";
+import { workPlanTools } from "./work-plan.js";
+export { readPlanTool, updatePlanTool, workPlanTools } from "./work-plan.js";
 
 export function registerAllTools(registry: ToolRegistry): void {
   const allTools = [
@@ -418,6 +420,7 @@ export function registerAllTools(registry: ToolRegistry): void {
     ...githubTools,
     ...openTools,
     ...mcpTools,
+    ...workPlanTools,
     ...authorizePathTools,
   ];
 

@@ -1,5 +1,6 @@
 import { realpath } from "node:fs/promises";
 import type { Message } from "../../../providers/types.js";
+import { readWorkLedger } from "../../../runtime/work-ledger.js";
 /**
  * /resume command - Resume a previous session
  *
@@ -253,6 +254,21 @@ async function resumeSession(
   currentSession.id = loadedSession.id;
   currentSession.startedAt = loadedSession.startedAt;
   currentSession.messages = messages;
+  const durableLedger = runtime?.getSession(loadedSession.id)?.metadata?.workLedger;
+  currentSession.workLedger = durableLedger
+    ? readWorkLedger({ workLedger: durableLedger })
+    : loadedSession.workLedger;
+  if (runtime && currentSession.workLedger && !durableLedger) {
+    const restored = runtime.getSession(loadedSession.id);
+    if (restored)
+      runtime.runtimeSessionStore.update({
+        ...restored,
+        metadata: {
+          ...restored.metadata,
+          workLedger: readWorkLedger({ workLedger: currentSession.workLedger }),
+        },
+      });
+  }
   // Runtime/model configuration and current project consent remain host-controlled.
 
   // Display confirmation
