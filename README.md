@@ -168,6 +168,7 @@ Runtime consumers can create their own backend, register only the tools they tru
 - [Public API v0](docs/PUBLIC_API_V0.md)
 - [Product Family](docs/PRODUCT_FAMILY.md)
 - [Build Custom Agents](docs/guides/BUILD_CUSTOM_AGENTS.md)
+- [Specialist Agents and Delegation](docs/guides/SPECIALIST_AGENTS.md)
 - [Support/RAG Assistant](docs/guides/SUPPORT_RAG_ASSISTANT.md)
 - [Web Assistant Runtime Example](examples/web-assistant-runtime/README.md)
 
@@ -434,6 +435,7 @@ See:
 - [Architecture](docs/architecture/ARCHITECTURE.md)
 - [Platform Layers](docs/architecture/PLATFORM_LAYERS.md)
 - [Build Custom Agents](docs/guides/BUILD_CUSTOM_AGENTS.md)
+- [Specialist Agents and Delegation](docs/guides/SPECIALIST_AGENTS.md)
 - [Public Assistant Runtime](docs/guides/PUBLIC_ASSISTANT_RUNTIME.md)
 - [RAG Assistant](docs/guides/RAG_ASSISTANT.md)
 - [WhatsApp Assistant](docs/guides/WHATSAPP_ASSISTANT.md)

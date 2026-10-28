@@ -1,0 +1,65 @@
+{
+  "sourceCommit": "331db5a77468301f8e5c2b2c7b19cbe2875977ff",
+  "releaseGate": {
+    "command": "fnm exec --using=24.22.1 pnpm check:release",
+    "passed": true,
+    "main": {
+      "files": 428,
+      "passed": 8704,
+      "skippedExisting": 15
+    },
+    "repl": {
+      "files": 1,
+      "passed": 29
+    },
+    "coveragePercent": {
+      "statements": 80.73,
+      "branches": 72.17,
+      "functions": 82.94,
+      "lines": 81.56
+    }
+  },
+  "newContractsCoveragePercent": {
+    "statements": 97.38,
+    "branches": 96.02,
+    "functions": 96.66,
+    "lines": 98.83
+  },
+  "referenceAppsTypecheck": {
+    "passed": true,
+    "count": 5
+  },
+  "minimumNode": {
+    "version": "22.13.0",
+    "verification": "Focused policies, recovery and pilot tests; not a full release gate."
+  },
+  "routingLatency": {
+    "node": "24.22.1",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "samples": 1000,
+    "medianMs": 0.000541,
+    "p95Ms": 0.00075,
+    "scope": "Local fixed simple-request admission only; excludes startup and provider latency."
+  },
+  "evaluationReadiness": {
+    "routingCases": 36,
+    "codingPilotCases": 12,
+    "developmentCases": 8,
+    "reservedAfterImplementationCases": 4,
+    "baselineAcceptance": "All 12 broken fixtures fail; all 12 known-good solutions pass trusted Node acceptance.",
+    "realModelRuns": 0,
+    "requiresExplicitConsumptionApproval": true,
+    "manualConfiguration": "One forced specialist; not an optimized manual team."
+  },
+  "rollout": {
+    "default": "manual",
+    "auto": "opt-in; real quality/speed/usage gates pending",
+    "parallelism": "Read-only nodes concurrent; mutations serialized"
+  },
+  "publication": {
+    "pushed": false,
+    "published": false,
+    "globalInstallationChanged": false
+  }
+}

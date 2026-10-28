@@ -1,0 +1,15 @@
+{
+  "sourceCommit": "331db5a77468301f8e5c2b2c7b19cbe2875977ff",
+  "tarballSha256": "eaff730de6e7e57c86c3121074a2da70ed4c1c1814936419884fbf9a682f573f",
+  "consumerSmoke": {
+    "profiles": 12,
+    "direct": true,
+    "missingExecutorFails": true,
+    "budgetEnforced": true,
+    "hostReconciliationExported": true,
+    "offDispatches": 0
+  },
+  "cliHelpExitCode": 0,
+  "dependencies": "Shared local dependencies through symlink; no independent registry installation claimed.",
+  "node": "24.22.1"
+}

@@ -3,6 +3,8 @@
 Fecha: 28 de octubre de 2026. Estado: **propuesta de implementación; no implementado**.
 Base inspeccionada: Coco 3.0.1, commit `dc55b8f162aa429a0385e69c6635191e740c7186`.
 
+Este encabezado describe la propuesta original. La ejecución posterior, los ajustes y los gates realmente superados se registran en [SPECIALIST_AGENTS_WORKLOG.md](SPECIALIST_AGENTS_WORKLOG.md); no debe interpretarse la lista final de este plan como una certificación de entrega.
+
 ## 1. Resultado esperado y alcance
 
 Coco debe resolver directamente los trabajos sencillos, recurrir a especialistas cuando exista una ventaja identificable y coordinar partes independientes en paralelo. El usuario puede pedir un especialista, colaboración, secuencialidad o ejecución sin subagentes en lenguaje natural. Coco sigue siendo responsable del resultado integrado.
