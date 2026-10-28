@@ -20,16 +20,16 @@ Common issues and solutions for Corbat-Coco.
 
 ### "Node.js version not supported"
 
-**Problem:** Corbat-Coco requires Node.js 22+.
+**Problem:** Corbat-Coco requires Node.js 22.13+; Node 24 LTS is recommended.
 
 **Solution:**
 ```bash
 # Check your version
 node --version
 
-# Install Node.js 22 using nvm
-nvm install 22
-nvm use 22
+# Install maintained Node.js 24 LTS using nvm
+nvm install 24
+nvm use 24
 
 # Or using fnm
 fnm install 22

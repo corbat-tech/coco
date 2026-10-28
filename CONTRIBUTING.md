@@ -23,7 +23,7 @@ This project and everyone participating in it is governed by our commitment to c
 
 ### Prerequisites
 
-- **Node.js**: 24.22.1 LTS for development (see `.node-version`); published Coco supports Node >=22.0.0
+- **Node.js**: 24.22.1 LTS for development (see `.node-version`); published Coco requires Node >=22.13.0
 - **pnpm**: Version 12.15.0 (enforced via `packageManager` field)
 - **Git**: For version control
 - **Anthropic API Key**: For running integration tests (optional)
@@ -35,7 +35,7 @@ This project and everyone participating in it is governed by our commitment to c
 git clone https://github.com/corbat-tech/coco.git
 cd corbat-coco
 
-# With fnm installed, select the project runtime without changing other projects
+# With fnm configured in this shell, select the project runtime
 fnm install
 fnm use
 

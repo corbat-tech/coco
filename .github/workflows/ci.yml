@@ -140,6 +140,25 @@ jobs:
           path: dist/
           retention-days: 7
 
+      - name: Pack for minimum-runtime acceptance
+        run: |
+          mkdir -p artifacts
+          npm pack --ignore-scripts --pack-destination artifacts
+
+      - name: Setup declared minimum runtime
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "22.13.0"
+
+      - name: Strict clean install and smoke at the declared minimum
+        shell: bash
+        run: |
+          TASK_CONSUMER=$(mktemp -d)
+          printf '{"private":true}' > "$TASK_CONSUMER/package.json"
+          npm install --engine-strict --prefix "$TASK_CONSUMER" --ignore-scripts --no-audit --no-fund "$PWD"/artifacts/*.tgz
+          TASK_VERSION=$(node --input-type=module -e 'import fs from "node:fs"; console.log(JSON.parse(fs.readFileSync("package.json")).version)')
+          node scripts/smoke-package.mjs "$TASK_CONSUMER" "$TASK_VERSION"
+
   portability:
     name: Package smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
