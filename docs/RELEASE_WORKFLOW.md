@@ -1,348 +1,91 @@
-# Release Workflow (Sube Versión)
+# Release workflow
 
-This document describes the complete workflow for releasing a new version of Coco to npm.
+The maintained executable release contract is
+[release.yml](../.github/workflows/release.yml). A merge to `main` runs CI but
+**does not publish**. Pushing a new `v<package-version>` tag triggers npm
+publication; `vscode-v<extension-version>` is the separate VSIX channel.
 
-## Overview
+## Integrate and version
 
-The release process is fully automated through a series of steps that ensure code quality, proper versioning, and safe deployment.
+1. Read `AGENTS.md` and `CLAUDE.md`, preserve local changes, fetch the current
+   principal branch and inspect related PRs/commit ancestry. Integrate relevant
+   unmerged changes without merging unrelated dependency proposals.
+2. Select an unused SemVer version: compatible new features require a minor
+   release, fixes a patch, and incompatible public contracts a major version.
+   Update `package.json` and `CHANGELOG.md`. The lockfile contains no root package
+   version; update it only when dependency metadata actually changes.
+3. Install with `pnpm install --frozen-lockfile`. Run `pnpm check:release` and
+   `pnpm -r --filter './apps/*' --if-present typecheck`. The release gate runs
+   types, lint, format, coverage, the separate REPL suite and build. Coverage
+   thresholds are defined in `vitest.config.ts`; do not weaken them for release.
+4. Review the integrated diff, push, create/update a PR and wait for checks on
+   its current SHA. Merge with an allowed repository method after they pass.
+   Never bypass branch protections. Verify that all intended changes are in
+   the resulting principal-branch commit before tagging it.
 
-## Prerequisites
+## Publish through GitHub Actions
 
-- Clean git working directory (no uncommitted changes)
-- All tests passing (`pnpm test`)
-- Proper npm authentication configured
-- GitHub CLI (`gh`) installed and authenticated
-- Write access to the repository
+Create one new annotated tag at the verified merged commit, matching the npm
+package version exactly, then push that tag. Do not tag an unmerged feature
+branch. `scripts/release-metadata.mjs` validates package/tag identity and routes
+stable versions to `latest`, prereleases to `next`.
 
-## Release Steps
+The npm job uses Node 22, npm trusted publishing through GitHub OIDC, and
+`id-token: write`. It does not need a local npm token. It performs these steps:
 
-### 1. Create Feature Branch
+1. Install the frozen dependencies and run the release gate, building once.
+2. Pack with scripts disabled and record integrity/checksums of the candidate.
+3. Install that tarball in an isolated consumer and smoke CLI, package exports
+   and a real file-tool round trip with a scripted provider.
+4. Preserve the candidate as a workflow artifact before publication.
+5. Publish that exact tarball with `scripts/publish-npm.mjs`, without rebuilding.
+6. Verify registry integrity equals the candidate, install from npm in a new
+   consumer and repeat the smoke test.
+7. Upload release assets and create the GitHub Release only after successful
+   publication and verification. The other product channel is skipped.
 
-```bash
-git checkout -b feat/v1.x.x-description
-```
+Follow the run for the exact tag/commit. A successful merge or a queued workflow
+is not proof of publication. Do not launch a competing manual `npm publish`.
+The workflow smoke test is deterministic; it does not certify live provider
+quality or general product parity.
 
-### 2. Implement Changes
+## Verify the delivered artifact
 
-Make your code changes, following the project's coding standards:
+Check the official registry for the exact version, `dist-tags`, publication time
+and `dist.integrity`. Compare integrity against the run's `pack.json` and the
+published GitHub release tarball. Trace the run and tag back to the merged
+commit; `gitHead` may be absent when publishing a previously packed tarball.
+OIDC provenance, when present, supplies additional source/build evidence.
 
-- TypeScript with strict mode
-- ESM modules only
-- Comprehensive tests (coverage > 80%)
-- oxlint + oxfmt for linting/formatting
-
-### 3. Run Quality Checks
-
-```bash
-# Type check
-pnpm typecheck
-
-# Lint
-pnpm lint
-
-# Format check
-pnpm format
-
-# Run tests
-pnpm test
-
-# Full check (all of the above)
-pnpm check
-```
-
-Fix any issues before proceeding.
-
-### 4. Run Test Coverage
-
-```bash
-pnpm test:coverage
-```
-
-Ensure coverage is above 80% for all metrics (lines, functions, branches, statements).
-
-### 5. Update Version
-
-Edit `package.json` to bump the version following [Semantic Versioning](https://semver.org/):
-
-- **Patch** (x.x.1): Bug fixes, minor changes
-- **Minor** (x.1.0): New features, backward-compatible
-- **Major** (1.0.0): Breaking changes
-
-```json
-{
-  "version": "1.4.0"
-}
-```
-
-### 6. Update CHANGELOG.md
-
-Add a new section for your version following the [Keep a Changelog](https://keepachangelog.com/) format:
-
-```markdown
-## [1.4.0] - 2026-02-10
-
-### Added
-- New feature X
-- New command Y
-
-### Changed
-- Improved Z behavior
-
-### Fixed
-- Bug in W
-```
-
-Update the version links at the bottom of the changelog.
-
-### 7. Commit Changes
+Install the exact registry version in a temporary consumer, without changing a
+global installation, and run:
 
 ```bash
-git add .
-git commit -m "feat(release): v1.4.0 - description
-
-- Feature 1
-- Feature 2
-- Improvement 3"
+node scripts/smoke-package.mjs /absolute/path/to/consumer <expected-version>
 ```
 
-**Important:** Do NOT include `Co-Authored-By: Claude` or similar in release commits.
-
-### 8. Push Branch
-
-```bash
-git push -u origin feat/v1.x.x-description
-```
-
-### 9. Create Pull Request
-
-```bash
-gh pr create --title "Release v1.4.0: Description" --body "$(cat <<'EOF'
-## Summary
-- New feature X with comprehensive tests
-- Improved Y for better UX
-- Fixed bug in Z
-
-## Changes
-- Added `/full-access` command with safety guards
-- Enabled `/coco` mode by default
-- Redesigned README for better clarity
-
-## Quality
-- Test coverage: 82%
-- All checks passing
-- No security vulnerabilities
-
-## Breaking Changes
-None
-
-## Test Plan
-- [x] Manual testing of new features
-- [x] All unit tests passing
-- [x] Integration tests verified
-- [x] Documentation updated
-
-🤖 Generated with [Coco](https://github.com/corbat/corbat-coco)
-EOF
-)"
-```
-
-### 10. Wait for CI Checks
-
-GitHub Actions will automatically run:
-
-- TypeScript compilation
-- Linting (oxlint)
-- Tests (Vitest)
-- Coverage report
-- Security scan (CodeQL)
-
-Monitor the checks:
-
-```bash
-gh pr checks
-```
-
-If checks fail, fix the issues, commit, and push again.
-
-### 11. Merge Pull Request
-
-Once all checks pass and you've reviewed the changes:
-
-```bash
-gh pr merge --squash --delete-branch
-```
-
-Or use the GitHub web interface to merge.
-
-### 12. Create and Push Tag
-
-After merging to main:
-
-```bash
-git checkout main
-git pull
-git tag -a v1.4.0 -m "Release v1.4.0"
-git push origin v1.4.0
-```
-
-### 13. Publish to npm
-
-The tag push will trigger automatic npm publishing via GitHub Actions.
-
-Alternatively, publish manually:
-
-```bash
-pnpm build
-npm publish --access public
-```
-
-### 14. Verify Publication
-
-Check that the package is available:
-
-```bash
-npm view @corbat-tech/coco version
-```
-
-Test installation:
-
-```bash
-npm install -g @corbat-tech/coco@latest
-coco --version
-```
-
-## Quick Reference
-
-### One-Command Release Checklist
-
-```bash
-# 1. Create branch
-git checkout -b feat/v1.x.x-description
-
-# 2. Make changes
-# ... (edit files)
-
-# 3. Run quality checks
-pnpm check
-pnpm test:coverage
-
-# 4. Update version in package.json
-# ... (edit package.json)
-
-# 5. Update CHANGELOG.md
-# ... (edit CHANGELOG.md)
-
-# 6. Commit and push
-git add .
-git commit -m "feat(release): v1.x.x - description"
-git push -u origin feat/v1.x.x-description
-
-# 7. Create PR
-gh pr create --title "Release v1.x.x" --body "..."
-
-# 8. Wait for checks
-gh pr checks
-
-# 9. Merge
-gh pr merge --squash --delete-branch
-
-# 10. Tag and publish
-git checkout main
-git pull
-git tag -a v1.x.x -m "Release v1.x.x"
-git push origin v1.x.x
-
-# 11. Verify
-npm view @corbat-tech/coco version
-```
-
-## Common Issues
-
-### npm Publish Fails
-
-**Error:** Permission denied
-
-**Solution:**
-```bash
-npm login
-# Or use npm token
-npm config set //registry.npmjs.org/:_authToken YOUR_TOKEN
-```
-
-### Tests Fail in CI
-
-**Error:** Tests pass locally but fail in CI
-
-**Solution:**
-- Check for environment-specific issues
-- Ensure all dependencies are in `package.json`
-- Review CI logs for specific failures
-- Run tests in a clean environment: `rm -rf node_modules && pnpm install && pnpm test`
-
-### Version Conflict
-
-**Error:** Version already exists on npm
-
-**Solution:**
-- Bump the version number again
-- Update CHANGELOG.md
-- Create a new commit and tag
-
-### Tag Already Exists
-
-**Error:** Tag v1.x.x already exists
-
-**Solution:**
-```bash
-# Delete local tag
-git tag -d v1.x.x
-
-# Delete remote tag
-git push origin :refs/tags/v1.x.x
-
-# Create new tag
-git tag -a v1.x.x -m "Release v1.x.x"
-git push origin v1.x.x
-```
-
-## Rollback Procedure
-
-If a release has critical issues:
-
-### 1. Deprecate the Version
-
-```bash
-npm deprecate @corbat-tech/coco@1.4.0 "Critical bug - use 1.3.0 instead"
-```
-
-### 2. Publish a Patch
-
-```bash
-# Create hotfix branch
-git checkout -b hotfix/v1.4.1
-
-# Make fixes
-# ... (edit files)
-
-# Follow the release process for v1.4.1
-```
-
-### 3. Notify Users
-
-- Update GitHub release notes
-- Post in discussions/issues
-- Update README if needed
-
-## Automated Release (Future)
-
-We're working on automating this process with:
-
-- Automatic version bumping based on conventional commits
-- Automated CHANGELOG generation
-- One-command releases with `/ship`
-
-Stay tuned!
-
----
-
-For questions or issues with the release process, open an issue on [GitHub](https://github.com/corbat/corbat-coco/issues).
+Also inspect the installed runtime/tools for the new public APIs and exercise
+critical new behavior. Remove task-only consumers, tarballs and logs after the
+results have been recorded.
+
+## Recover a failed or interrupted release
+
+Inspect the failing step and query npm **before retrying**: publication can have
+succeeded before a later verification/upload step failed. The publisher accepts
+an already-published version only if its integrity and requested dist-tag match
+exactly. Unknown registry/auth states stop publication. An acknowledged publish
+has a bounded visibility wait; expiry means uncertain outcome, not permission to
+publish again blindly.
+
+If a version exists with different integrity, stop and investigate. Never move
+or delete a released tag, overwrite an immutable npm version, or change `latest`
+to hide a failure. A source/build fix needs a new version and tag. Infrastructure
+retries must reconcile and preserve the original verified artifact.
+
+For OIDC rejection, inspect the configured trusted publisher's repository,
+workflow identity and npm account policy. Do not print credentials or replace
+OIDC with a token merely to circumvent the configured policy. Report external
+approval/credential blockers if they cannot be resolved within authorization.
+
+A critical shipped defect should be corrected with a new patch release; any
+npm deprecation or dist-tag rollback requires a separately justified decision.
