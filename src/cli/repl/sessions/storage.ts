@@ -33,6 +33,7 @@ interface SessionSnapshot {
   metadata: PersistedSession;
   messages: Message[];
   workLedger?: WorkLedgerState;
+  delegationHistory?: ReplSession["delegationHistory"];
 }
 
 // =============================================================================
@@ -135,6 +136,7 @@ export class SessionStore implements SessionStorage {
       workLedger: structuredClone(
         runtimeMetadata ? readWorkLedger(runtimeMetadata) : session.workLedger,
       ),
+      delegationHistory: structuredClone(session.delegationHistory),
       runtime: undefined,
       contextManager: undefined,
     };
@@ -178,6 +180,7 @@ export class SessionStore implements SessionStorage {
       metadata,
       messages: session.messages,
       workLedger: session.workLedger,
+      delegationHistory: session.delegationHistory,
     };
     const temporary = join(sessionDir, `snapshot.${randomUUID()}.tmp`);
     try {
@@ -219,6 +222,10 @@ export class SessionStore implements SessionStorage {
           messages: snapshot.messages,
           trustedTools: new Set(),
           workLedger: snapshot.workLedger,
+          delegationHistory: snapshot.delegationHistory?.map((run) => ({
+            ...run,
+            status: run.status === "running" ? "interrupted" : run.status,
+          })),
         };
       }
       const metadataContent = await readFile(files.metadata, "utf-8");

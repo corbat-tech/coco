@@ -1,4 +1,4 @@
-import { resolveAgentType } from "./agent-type.js";
+import { AGENT_TYPES, resolveAgentType } from "./agent-type.js";
 import { getAgentMode, type AgentModeId } from "./agent-modes.js";
 import type { ToolDefinition } from "../tools/registry.js";
 import type { PermissionDecision, PermissionPolicy, RuntimeMode } from "./types.js";
@@ -144,7 +144,21 @@ export class DefaultPermissionPolicy implements PermissionPolicy {
         tool.name === "spawnSimpleAgent"
           ? { type: input["type"], role: input["role"] }
           : { type: input["agentType"], role: input["agentRole"] };
-      const risk = riskForSpawnedAgent(roleInput);
+      let risk = riskForSpawnedAgent(roleInput);
+      if (tool.name === "delegateTask" && Array.isArray(input["assignments"])) {
+        const severity = ["read-only", "network", "write", "destructive", "secrets-sensitive"];
+        for (const assignment of input["assignments"]) {
+          const profile =
+            assignment && typeof assignment === "object"
+              ? (assignment as Record<string, unknown>)["profile"]
+              : undefined;
+          const childRisk =
+            typeof profile === "string" && AGENT_TYPES.includes(profile as never)
+              ? riskForSpawnedAgent({ type: profile })
+              : "secrets-sensitive";
+          if (severity.indexOf(childRisk) > severity.indexOf(risk)) risk = childRisk;
+        }
+      }
       const definition = getAgentMode(mode as AgentModeId);
       if (definition.readOnly && risk !== "read-only" && risk !== "network") {
         return {

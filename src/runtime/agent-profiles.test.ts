@@ -6,15 +6,20 @@ import { AGENT_ROLES } from "../agents/executor.js";
 
 describe("distributed specialist profiles", () => {
   it("ships each existing profile with bounded instructions and a compatible CLI adapter", () => {
-    expect(listAgentProfiles().map(p => p.id)).toEqual([...AGENT_TYPES]);
+    expect(listAgentProfiles().map((p) => p.id)).toEqual([...AGENT_TYPES]);
     for (const profile of listAgentProfiles()) {
       expect(getAgentConfig(profile.id)).toMatchObject({
-        type: profile.id, role: profile.role, tools: profile.allowedTools, systemPrompt: profile.instructions,
+        type: profile.id,
+        role: profile.role,
+        tools: profile.allowedTools,
+        systemPrompt: profile.instructions,
       });
       expect(profile.maxTurns).toBeGreaterThan(0);
       expect(profile.whenToUse).toBeTruthy();
       expect(profile.whenNotToUse).toBeTruthy();
-      expect(profile.instructions).not.toMatch(/TypeScript ESM only|one assertion|80%|corbat-coco/i);
+      expect(profile.instructions).not.toMatch(
+        /TypeScript ESM only|one assertion|80%|corbat-coco/i,
+      );
     }
   });
   it("keeps strict user selection separate from legacy fallback and agrees on coder", () => {

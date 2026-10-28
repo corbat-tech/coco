@@ -1,3 +1,4 @@
+import { adaptDelegatedResult } from "./delegated-result.js";
 /**
  * Simple Multi-Agent Tool
  *
@@ -31,7 +32,13 @@ const SpawnSimpleAgentSchema = z.object({
     .enum(["researcher", "coder", "tester", "reviewer", "optimizer", "planner"])
     .optional()
     .describe("DEPRECATED: Use 'type' instead. Legacy role name, mapped to new agent types."),
-  maxTurns: z.number().default(10).describe("Maximum tool-use turns for the agent"),
+  maxTurns: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(10)
+    .describe("Maximum tool-use turns for the agent"),
 });
 
 /**
@@ -71,7 +78,7 @@ Use 'explore' for quick codebase searches, 'plan' for design before execution.`,
 
     const manager = getAgentManager();
 
-    if (!manager) {
+    if (!manager && !executionContext?.runAgent) {
       const agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       return {
         stdout: JSON.stringify({
@@ -96,11 +103,19 @@ Use 'explore' for quick codebase searches, 'plan' for design before execution.`,
       : typedInput.task;
 
     const startTime = Date.now();
-    const result = await manager.spawn(agentType, taskDescription, {
-      executionContext,
-      signal: executionContext?.signal,
-      timeout: typedInput.maxTurns * 60_000, // rough estimate: 1 min per turn
-    });
+    const result = executionContext?.runAgent
+      ? await executionContext
+          .runAgent(
+            { type: agentType, task: taskDescription, maxTurns: typedInput.maxTurns },
+            executionContext,
+          )
+          .then(adaptDelegatedResult)
+      : await manager!.spawn(agentType, taskDescription, {
+          executionContext,
+          signal: executionContext?.signal,
+          maxTurns: typedInput.maxTurns,
+          timeout: typedInput.maxTurns * 60_000,
+        });
 
     const duration = Date.now() - startTime;
 
@@ -113,6 +128,8 @@ Use 'explore' for quick codebase searches, 'plan' for design before execution.`,
         output: result.output,
         success: result.success,
         usage: result.usage,
+        artifacts: result.artifacts,
+        structuredResult: result.structuredResult,
         duration,
       }),
       stderr: "",

@@ -26,7 +26,7 @@ import type {
   AgentEvent,
   AgentEventType,
 } from "./types.js";
-import type { AgentRole } from "../../../runtime/multi-agent.js";
+import type { AgentRole, AgentRunStatus } from "../../../runtime/multi-agent.js";
 import { mapLegacyAgentRole, normalizeAgentRunResult } from "../../../runtime/multi-agent.js";
 import {
   createRuntimeToolExecutor,
@@ -34,6 +34,10 @@ import {
 } from "../../../runtime/runtime-tool-executor.js";
 import type { RuntimeMode } from "../../../runtime/types.js";
 import { getAgentConfig, AGENT_NAMES, AGENT_DESCRIPTIONS } from "./prompts.js";
+import { ResponseIntegrityError } from "../../../providers/response-integrity.js";
+import { validateToolCallInput } from "../../../providers/tool-call-normalizer.js";
+import { redactSecrets } from "../../../runtime/guardrails.js";
+import { measureContextBudget, ContextBudgetError } from "../../../runtime/context-budget.js";
 
 /**
  * Maximum number of concurrent agents
@@ -93,6 +97,7 @@ export class AgentManager extends EventEmitter {
     provider: LLMProvider,
     toolRegistry: ToolRegistry,
     runtimeToolExecutor?: RuntimeToolExecutor,
+    private readonly limits: { maxConcurrentAgents?: number } = {},
   ) {
     super();
     this.provider = provider;
@@ -127,9 +132,20 @@ export class AgentManager extends EventEmitter {
     task: string,
     options: SpawnAgentOptions = {},
   ): Promise<AgentResult> {
+    if (
+      options.maxTurns !== undefined &&
+      (!Number.isInteger(options.maxTurns) || options.maxTurns < 1)
+    )
+      throw new RangeError("Agent maxTurns must be a positive integer");
+    if (
+      options.maxTokens !== undefined &&
+      (!Number.isInteger(options.maxTokens) || options.maxTokens < 1)
+    )
+      throw new RangeError("Agent maxTokens must be a positive integer");
     // Check concurrent agent limit
-    if (this.activeAgents.size >= MAX_CONCURRENT_AGENTS) {
-      const error = `Cannot spawn agent: maximum concurrent agents (${MAX_CONCURRENT_AGENTS}) reached`;
+    const concurrentLimit = this.limits.maxConcurrentAgents ?? MAX_CONCURRENT_AGENTS;
+    if (this.activeAgents.size >= concurrentLimit) {
+      const error = `Cannot spawn agent: maximum concurrent agents (${concurrentLimit}) reached`;
       this.logger.warn(error);
 
       const failedAgent = this.createAgent(type, task);
@@ -176,7 +192,10 @@ export class AgentManager extends EventEmitter {
 
     try {
       options.onStatusChange?.(agent);
-      this.logger.info(`Spawned ${type} agent: ${agent.id}`, { task, timeout });
+      this.logger.info(`Spawned ${type} agent: ${agent.id}`, {
+        task: redactSecrets(task).content,
+        timeout,
+      });
       this.emitEvent("spawn", agent);
       // Execute the agent with internal abort controller
       const result = await this.executeAgent(agent, {
@@ -299,7 +318,7 @@ export class AgentManager extends EventEmitter {
    * @returns True if under the concurrent limit
    */
   canSpawn(): boolean {
-    return this.activeAgents.size < MAX_CONCURRENT_AGENTS;
+    return this.activeAgents.size < (this.limits.maxConcurrentAgents ?? MAX_CONCURRENT_AGENTS);
   }
 
   /**
@@ -361,7 +380,8 @@ export class AgentManager extends EventEmitter {
     let totalOutputTokens = 0;
     let finalOutput = "";
     let iteration = 0;
-    const maxTurns = config.maxTurns ?? 10;
+    const maxTurns = Math.min(config.maxTurns ?? 10, options.maxTurns ?? Infinity);
+    let terminalResponse = false;
     const startedAt = new Date().toISOString();
     const toolsUsed = new Set<string>();
 
@@ -372,16 +392,75 @@ export class AgentManager extends EventEmitter {
 
         options.signal?.throwIfAborted();
 
-        // Call LLM
-        const response = await this.provider.chatWithTools(messages, {
-          system: config.systemPrompt,
-          tools,
-          maxTokens: 4096,
-          signal: options.signal,
+        await options.onCheckpoint?.();
+        options.signal?.throwIfAborted();
+
+        const system = [config.systemPrompt, options.projectInstructions]
+          .filter(Boolean)
+          .join("\n\n");
+        if (this.provider.getContextWindow && this.provider.countTokens) {
+          const contextBudget = measureContextBudget({
+            messages,
+            system,
+            tools,
+            countTokens: (text) => this.provider.countTokens(text),
+            contextWindow: this.provider.getContextWindow(),
+            reservedOutputTokens: options.maxTokens ?? 4096,
+          });
+          if (!contextBudget.fits)
+            throw new ContextBudgetError(
+              "compacted_context_exceeds_window",
+              "Specialist context exceeds its model window; narrow the task or referenced tool output before retrying.",
+            );
+        }
+        const reservation = options.budget?.reserve({
+          estimatedInputTokens: Math.ceil(JSON.stringify({ system, messages, tools }).length / 3),
+          maxOutputTokens: options.maxTokens ?? 4096,
         });
+        // Reserve synchronously before yielding so parallel workers share one ceiling.
+        let response: Awaited<ReturnType<LLMProvider["chatWithTools"]>>;
+        try {
+          response = await this.provider.chatWithTools(messages, {
+            system,
+            tools,
+            model: options.model,
+            thinking: options.thinking,
+            maxTokens: options.maxTokens ?? 4096,
+            signal: options.signal,
+          });
+        } catch (error) {
+          reservation?.settle();
+          throw error;
+        }
+        reservation?.settle(response.usage);
         totalInputTokens += response.usage.inputTokens;
         totalOutputTokens += response.usage.outputTokens;
         options.signal?.throwIfAborted();
+        if (response.stopReason === "max_tokens")
+          throw new ResponseIntegrityError(
+            "Specialist response was truncated; task is incomplete",
+            this.provider.name,
+          );
+        const calls = response.toolCalls ?? [];
+        if (
+          (response.stopReason === "tool_use" && calls.length === 0) ||
+          (calls.length > 0 && response.stopReason !== "tool_use") ||
+          (calls.length === 0 && !["end_turn", "stop_sequence"].includes(response.stopReason))
+        )
+          throw new ResponseIntegrityError(
+            "Specialist returned an incomplete tool-use response",
+            this.provider.name,
+          );
+        const ids = new Set<string>();
+        for (const call of response.toolCalls ?? []) {
+          if (!call.id || !call.name || ids.has(call.id))
+            throw new ResponseIntegrityError(
+              "Specialist returned an invalid tool-call batch",
+              this.provider.name,
+            );
+          ids.add(call.id);
+          validateToolCallInput(call.input, this.provider.name);
+        }
 
         // Capture text output
         if (response.content) {
@@ -391,6 +470,7 @@ export class AgentManager extends EventEmitter {
 
         // Check if no more tool calls
         if (!response.toolCalls || response.toolCalls.length === 0) {
+          terminalResponse = true;
           // Add final response to messages
           messages.push({ role: "assistant", content: response.content });
           break;
@@ -422,6 +502,7 @@ export class AgentManager extends EventEmitter {
 
         // Add tool results as user message
         messages.push({ role: "user", content: toolResults });
+        await options.onCheckpoint?.();
 
         this.logger.debug(`Agent ${agent.id} completed iteration ${iteration}`, {
           toolCalls: response.toolCalls.length,
@@ -429,6 +510,8 @@ export class AgentManager extends EventEmitter {
       }
 
       options.signal?.throwIfAborted();
+      if (!terminalResponse)
+        throw new Error(`Specialist turn limit exhausted (${maxTurns}); task is incomplete`);
       // Mark as completed
       agent.status = "completed";
       agent.result = finalOutput;
@@ -462,6 +545,11 @@ export class AgentManager extends EventEmitter {
         agent,
         success: false,
         output: agent.error,
+        status: options.signal?.aborted
+          ? options.signal.reason instanceof Error && options.signal.reason.name === "TimeoutError"
+            ? "timeout"
+            : "cancelled"
+          : "failed",
         turns: iteration,
         toolsUsed: Array.from(toolsUsed),
         startedAt,
@@ -568,6 +656,7 @@ export class AgentManager extends EventEmitter {
     toolsUsed: string[];
     startedAt: string;
     usage: { inputTokens: number; outputTokens: number };
+    status?: AgentRunStatus;
   }): AgentResult {
     const structuredResult = normalizeAgentRunResult({
       id: `${input.agent.id}-run`,
@@ -582,7 +671,7 @@ export class AgentManager extends EventEmitter {
       durationMs: input.agent.completedAt
         ? input.agent.completedAt.getTime() - input.agent.createdAt.getTime()
         : 0,
-      status: input.success ? "completed" : "failed",
+      status: input.status ?? (input.success ? "completed" : "failed"),
       error: input.success ? undefined : input.agent.error,
       metadata: { agentType: input.agent.type },
     });

@@ -10,28 +10,24 @@ import {
   getAgentConfig,
   type AgentType,
 } from "../agents/index.js";
+import { resolveAgentProfile } from "../../../runtime/agent-profiles.js";
+import { cancelSessionWorkers } from "../delegation.js";
 
-const AGENT_ALIASES: Record<string, AgentType> = {
-  researcher: "explore",
-  explorer: "explore",
-  architect: "architect",
-  editor: "refactor",
-  coder: "refactor",
-  reviewer: "review",
-  tester: "test",
-  security: "security",
-  "provider-debugger": "debug",
-  debugger: "debug",
-};
+/** Host controls that may run during a turn without a model classification call. */
+export function parseLiveAgentControl(message: string): string[] | undefined {
+  const match =
+    /^\/(?:agents|agent)\s+(status|explain(?:\s+[a-z0-9_-]+)?|cancel\s+[a-z0-9_-]+|mode\s+off)\s*$/i.exec(
+      message.trim(),
+    );
+  return match?.[1]?.toLowerCase().split(/\s+/);
+}
 
 function allAgentTypes(): AgentType[] {
   return Object.keys(AGENT_NAMES) as AgentType[];
 }
 
 function resolveAgentType(input: string): AgentType | undefined {
-  const normalized = input.replace(/^@/, "").toLowerCase();
-  if (normalized in AGENT_NAMES) return normalized as AgentType;
-  return AGENT_ALIASES[normalized];
+  return resolveAgentProfile(input);
 }
 
 function renderAgents(): void {
@@ -43,14 +39,14 @@ function renderAgents(): void {
     console.log(chalk.dim(`   tools: ${config.tools.slice(0, 8).join(", ")}`));
   }
   console.log(chalk.dim("\nAliases: @researcher, @editor, @provider-debugger"));
-  console.log(chalk.dim("Use /agents run <role> <task> to route the next turn.\n"));
+  console.log(chalk.dim("Use /agents run <role> <task> to execute a specialist.\n"));
 }
 
 export const agentsCommand: SlashCommand = {
   name: "agents",
   aliases: ["agent"],
   description: "List subagents or route a task to a specialized agent",
-  usage: "/agents [list|status|run <role> <task>]",
+  usage: "/agents [list|status|mode off|manual|auto|run <role> <task>|cancel <id|all>|explain]",
 
   async execute(args: string[], session: ReplSession): Promise<boolean> {
     const subcommand = args[0]?.toLowerCase() ?? "list";
@@ -62,11 +58,56 @@ export const agentsCommand: SlashCommand = {
 
     if (subcommand === "status") {
       console.log(chalk.cyan.bold("\n═══ Subagent Status ═══\n"));
+      console.log(chalk.dim(`Mode: ${session.config.agent.delegation?.mode ?? "manual"}`));
+      const runs = session.delegationHistory ?? [];
+      if (!runs.length) console.log(chalk.dim("No specialist runs recorded in this session."));
+      for (const run of runs)
+        console.log(`${run.id} @${run.type} ${run.status}: ${run.task.slice(0, 100)}`);
+      return false;
+    }
+
+    if (subcommand === "mode") {
+      const mode = args[1];
+      if (mode !== "off" && mode !== "manual" && mode !== "auto") {
+        console.log(chalk.red("Usage: /agents mode off|manual|auto"));
+        return false;
+      }
+      session.config.agent.delegation = { ...session.config.agent.delegation, mode };
+      if (mode === "off") {
+        session.delegationBlockedForTurn = true;
+        cancelSessionWorkers(session, "all");
+      }
       console.log(
-        chalk.dim("  No persistent subagent run is active in this REPL command context."),
+        chalk.green(
+          `Delegation mode: ${mode}${mode === "auto" ? " (opt-in; no automatic fan-out without a validated plan)" : ""}`,
+        ),
       );
+      return false;
+    }
+
+    if (subcommand === "cancel") {
+      const id = args[1];
+      if (id === "all") session.delegationBlockedForTurn = true;
+      if (!id) console.log(chalk.red("Usage: /agents cancel <runId|all>"));
+      else
+        console.log(
+          chalk.dim(
+            `Cancellation requested for ${cancelSessionWorkers(session, id)} active workers. Completed effects are retained.`,
+          ),
+        );
+      return false;
+    }
+
+    if (subcommand === "explain") {
+      const run = args[1]
+        ? session.delegationHistory?.find((item) => item.id === args[1])
+        : session.delegationHistory?.at(-1);
       console.log(
-        chalk.dim("  Tool-driven agents report progress inside the active assistant turn.\n"),
+        chalk.dim(
+          run
+            ? `@${run.type}: ${run.status}. Task: ${run.task}\n${run.error ?? run.output ?? "No terminal result yet."}`
+            : "No matching specialist run in this session.",
+        ),
       );
       return false;
     }
@@ -102,15 +143,15 @@ export const agentsCommand: SlashCommand = {
       return false;
     }
 
-    const config = getAgentConfig(agentType);
-    session.messages.push({
-      role: "user",
-      content:
-        `[agent directive] Route the next task to @${agentType} (${AGENT_NAMES[agentType]}). ` +
-        `Allowed tools: ${config.tools.join(", ")}. Task: ${task}`,
-    });
+    if (session.config.agent.delegation?.mode === "off") {
+      console.log(
+        chalk.red("Delegation is off. Select /agents mode manual before requesting a specialist."),
+      );
+      return false;
+    }
+    session.pendingDelegation = { type: agentType, task };
 
-    console.log(chalk.green(`\n✓ Routed next turn to @${agentType} (${AGENT_NAMES[agentType]})`));
+    console.log(chalk.green(`\nQueued specialist @${agentType} (${AGENT_NAMES[agentType]})`));
     console.log(chalk.dim(`  ${task}\n`));
     return false;
   },

@@ -26,6 +26,11 @@ import {
 } from "./output/renderer.js";
 import { createSpinner, type Spinner } from "./output/spinner.js";
 import { executeAgentTurn, formatAbortSummary, summarizeToolResults } from "./agent-loop.js";
+import { cancelSessionWorkers, delegationAllowedForTurn } from "./delegation.js";
+import { parseLiveAgentControl } from "./commands/agents.js";
+import { classifyInterruption } from "./interruptions/classifier.js";
+import { mapClassificationToAction } from "./input/action-selector.js";
+import { parseDelegationIntent } from "../../runtime/delegation-policy.js";
 import {
   isAbortError,
   humanizeProviderError,
@@ -711,8 +716,8 @@ export async function startRepl(
           }
         }
 
-        if (commandResult.forkPrompt) {
-          agentMessage = commandResult.forkPrompt;
+        if (commandResult.forkPrompt || session.pendingDelegation) {
+          agentMessage = commandResult.forkPrompt ?? session.pendingDelegation!.task;
           // Don't skip the agent turn — let it process the forked skill instructions
         } else if (hasPendingImage()) {
           // Check if slash command queued a multimodal message (e.g., /image)
@@ -775,8 +780,8 @@ export async function startRepl(
             const intentResult = await executeSlashCommand(command, args, session);
             await getSessionStore().save(session);
             if (intentResult.shouldExit) break;
-            if (intentResult.forkPrompt) {
-              agentMessage = intentResult.forkPrompt;
+            if (intentResult.forkPrompt || session.pendingDelegation) {
+              agentMessage = intentResult.forkPrompt ?? session.pendingDelegation!.task;
               // Fall through to agent turn to process forked skill instructions
             } else {
               continue;
@@ -901,6 +906,7 @@ export async function startRepl(
       // Used in the catch block to roll back any partial messages written by
       // executeAgentTurn before it threw, keeping session.messages consistent.
       const preCallMessageLength = session.messages.length;
+      let boundedDelegationTurn = false;
 
       try {
         // Show contextual hint for first feature-like prompt when quality loop is off
@@ -944,6 +950,12 @@ export async function startRepl(
 
         // Use skill-prepared prompt if available, otherwise use original message
         const effectiveMessage = cocoForkPrompt ?? agentMessage;
+        boundedDelegationTurn =
+          Boolean(session.pendingDelegation) ||
+          Boolean(
+            session.config.agent &&
+            delegationAllowedForTurn(session, extractMessageText(effectiveMessage)),
+          );
 
         // Pause normal input handler and start concurrent capture
         // This allows the user to type messages during agent execution
@@ -958,6 +970,7 @@ export async function startRepl(
         const pendingClassifications: Promise<void>[] = [];
         // Track async LLM error-explanation promises (fire-and-forget, printed as hints)
         const pendingExplanations: Array<Promise<string | null>> = [];
+        const handledLiveControls = new WeakSet<object>();
 
         concurrentCapture.reset();
         inputEcho.reset();
@@ -966,12 +979,43 @@ export async function startRepl(
             // Step 1: Clear echo line (user pressed Enter, buffer is now empty)
             inputEcho.clear();
 
+            const liveControl = parseLiveAgentControl(msg.text);
+            if (liveControl) {
+              handledLiveControls.add(msg);
+              clearSpinner();
+              pendingClassifications.push(
+                (async () => {
+                  await executeSlashCommand("agents", liveControl, session);
+                  if (liveControl[0] === "mode" || liveControl[0] === "cancel")
+                    await getSessionStore().save(session);
+                })().catch((error) => {
+                  renderError(
+                    `Agent control failed: ${error instanceof Error ? error.message : String(error)}`,
+                  );
+                }),
+              );
+              return;
+            }
+            if (parseDelegationIntent(msg.text).preference === "off") {
+              session.delegationBlockedForTurn = true;
+              cancelSessionWorkers(session, "all");
+              turnSteeringMessages.push(msg.text);
+              handledLiveControls.add(msg);
+              return;
+            }
+
             const preview = msg.text.length > 60 ? msg.text.slice(0, 57) + "\u2026" : msg.text;
             console.log(chalk.dim(`  \u2026 Classifying: ${preview}`));
 
             // Step 2: Launch LLM classification (async, tracked for later await)
             const classificationPromise = (async () => {
-              const classification = await llmClassifier.classify(msg, originalUserMessage);
+              const classification = boundedDelegationTurn
+                ? {
+                    action: mapClassificationToAction(classifyInterruption(msg).type),
+                    source: "keywords" as const,
+                  }
+                : await llmClassifier.classify(msg, originalUserMessage);
+              if (boundedDelegationTurn) handledLiveControls.add(msg);
               const action = classification.action;
               const sourceHint = classification.source === "keywords" ? chalk.dim(" (fast)") : "";
 
@@ -1074,6 +1118,7 @@ export async function startRepl(
             // Fire async LLM explanation for errors that look technically opaque
             if (
               !result.result.success &&
+              !boundedDelegationTurn &&
               result.result.error &&
               looksLikeTechnicalJargon(result.result.error)
             ) {
@@ -1182,6 +1227,7 @@ export async function startRepl(
         // Any messages still in the queue (captured after last selector or never processed)
         // are added to the next turn queue
         for (const msg of remainingMessages) {
+          if (handledLiveControls.has(msg)) continue;
           turnQueuedMessages.push(msg.text);
         }
 
@@ -1344,62 +1390,63 @@ export async function startRepl(
         // bar always shows the post-compaction percentage (never a stale pre-compaction value).
         const usageBefore = getContextUsagePercent(session);
         let usageForDisplay = usageBefore;
-        try {
-          const compactAbort = new AbortController();
-          const compactTimeout = setTimeout(() => compactAbort.abort(), 30_000);
-          const compactSigint = () => compactAbort.abort();
-          process.once("SIGINT", compactSigint);
-
-          const compactSpinner = createSpinner("Compacting context");
-          compactSpinner.start();
-
+        if (!boundedDelegationTurn)
           try {
-            const compactionResult = await checkAndCompactContext(
-              session,
-              provider,
-              compactAbort.signal,
-              toolRegistry,
+            const compactAbort = new AbortController();
+            const compactTimeout = setTimeout(() => compactAbort.abort(), 30_000);
+            const compactSigint = () => compactAbort.abort();
+            process.once("SIGINT", compactSigint);
+
+            const compactSpinner = createSpinner("Compacting context");
+            compactSpinner.start();
+
+            try {
+              const compactionResult = await checkAndCompactContext(
+                session,
+                provider,
+                compactAbort.signal,
+                toolRegistry,
+              );
+              if (compactionResult?.wasCompacted) {
+                usageForDisplay = getContextUsagePercent(session);
+                compactSpinner.stop(
+                  `Context compacted (${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%)`,
+                );
+                // Persistent compact notice — stays in scroll history
+                console.log(
+                  chalk.dim(
+                    `  ⟳ Context compacted · ${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%`,
+                  ),
+                );
+                warned75 = false;
+                warned90 = false;
+              } else {
+                compactSpinner.clear();
+                if (compactionResult?.failureReason)
+                  console.log(chalk.yellow(`  ⚠ ${compactionResult.failureReason}`));
+              }
+            } catch (error) {
+              if (isAbortError(error, compactAbort.signal)) {
+                compactSpinner.stop("Context compaction cancelled; history unchanged");
+              } else {
+                compactSpinner.stop("⚠ Context compaction failed");
+                console.log(
+                  chalk.yellow(
+                    "  ⚠ Context compaction failed — context unchanged. Use /clear if needed.",
+                  ),
+                );
+              }
+            } finally {
+              clearTimeout(compactTimeout);
+              process.off("SIGINT", compactSigint);
+            }
+          } catch {
+            console.log(
+              chalk.yellow(
+                "  ⚠ Context compaction failed — context unchanged. Use /clear if needed.",
+              ),
             );
-            if (compactionResult?.wasCompacted) {
-              usageForDisplay = getContextUsagePercent(session);
-              compactSpinner.stop(
-                `Context compacted (${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%)`,
-              );
-              // Persistent compact notice — stays in scroll history
-              console.log(
-                chalk.dim(
-                  `  ⟳ Context compacted · ${usageBefore.toFixed(0)}% → ${usageForDisplay.toFixed(0)}%`,
-                ),
-              );
-              warned75 = false;
-              warned90 = false;
-            } else {
-              compactSpinner.clear();
-              if (compactionResult?.failureReason)
-                console.log(chalk.yellow(`  ⚠ ${compactionResult.failureReason}`));
-            }
-          } catch (error) {
-            if (isAbortError(error, compactAbort.signal)) {
-              compactSpinner.stop("Context compaction cancelled; history unchanged");
-            } else {
-              compactSpinner.stop("⚠ Context compaction failed");
-              console.log(
-                chalk.yellow(
-                  "  ⚠ Context compaction failed — context unchanged. Use /clear if needed.",
-                ),
-              );
-            }
-          } finally {
-            clearTimeout(compactTimeout);
-            process.off("SIGINT", compactSigint);
           }
-        } catch {
-          console.log(
-            chalk.yellow(
-              "  ⚠ Context compaction failed — context unchanged. Use /clear if needed.",
-            ),
-          );
-        }
 
         // Render status bar with post-compaction context usage
         renderStatusBar(session.projectPath, session.config, gitContext, usageForDisplay);
@@ -1449,6 +1496,12 @@ export async function startRepl(
 
         // ── Context overflow (Anthropic / Copilot) ───────────────────────────
         if (errorMsg.includes("prompt token count") && errorMsg.includes("exceeds the limit")) {
+          if (boundedDelegationTurn) {
+            renderError(
+              "Context recovery stopped within the delegated task budget. Use /compact explicitly or retry with less context.",
+            );
+            continue;
+          }
           renderError("Context window full — compacting conversation history...");
           try {
             const compactionResult = await checkAndCompactContext(

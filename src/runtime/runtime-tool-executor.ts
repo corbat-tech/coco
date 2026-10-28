@@ -1,5 +1,6 @@
 import { BackgroundJobOwner } from "../tools/utils/background-jobs.js";
 import { randomUUID } from "node:crypto";
+import type { RunAgent, DelegatedToolCall } from "../tools/execution-context.js";
 import type { WorkLedgerAccess } from "./work-ledger.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { evaluateRuntimeToolPolicy, type RuntimePolicy } from "./context.js";
@@ -25,6 +26,12 @@ export interface RuntimeToolExecutorOptions {
 }
 
 export interface RuntimeToolExecutorInput {
+  /** Host-only session-scoped dispatch; not inherited by delegated tool calls. */
+  runAgent?: RunAgent;
+  /** Interactive host approval bound to the exact child call. Absent means no child consent. */
+  approveDelegatedTool?: (call: DelegatedToolCall) => Promise<boolean>;
+  /** Host persistence barrier, run before effects and after observations. */
+  checkpoint?: () => Promise<void>;
   /** Provider call ID for correlating parallel tool attempts. */
   toolCallId?: string;
   /** Cancellation forwarded to the registry without changing tool authority. */
@@ -197,25 +204,42 @@ export class RuntimeToolExecutor {
       tool.provenance?.kind === "mcp",
       ledgerCallId,
     );
+    if (input.checkpoint) await input.checkpoint();
     const result = await this.toolRegistry.execute(input.toolName, input.input, {
       signal: input.signal,
       context: {
+        sessionId: input.sessionId,
+        runAgent: input.runAgent,
         workLedger: ledger,
         backgroundJobs: input.sessionId ? this.backgroundOwners.get(input.sessionId) : undefined,
-        executeDelegatedTool: (call) => {
+        executeDelegatedTool: async (call) => {
+          // Capture the exact call before awaiting host UI; the worker cannot change approved input.
+          const child = {
+            ...call,
+            input: structuredClone(call.input),
+            allowedTools: [...call.allowedTools],
+          };
+          const confirmed = input.approveDelegatedTool
+            ? await input.approveDelegatedTool({
+                ...child,
+                input: structuredClone(child.input),
+                allowedTools: [...child.allowedTools],
+              })
+            : false;
           const signals = [input.signal, call.signal].filter(
             (signal): signal is AbortSignal => signal !== undefined,
           );
           return this.executeScoped(
             {
-              toolName: call.toolName,
-              input: call.input,
-              mode: call.mode,
-              allowedTools: [...call.allowedTools],
-              toolCallId: call.toolCallId,
+              toolName: child.toolName,
+              input: child.input,
+              mode: child.mode,
+              allowedTools: [...child.allowedTools],
+              toolCallId: child.toolCallId,
               sessionId: input.sessionId,
               signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0],
-              confirmed: false,
+              confirmed,
+              checkpoint: input.checkpoint,
             },
             [...ancestors, { mode, allowedTools }],
           );
@@ -231,6 +255,7 @@ export class RuntimeToolExecutor {
       error: result.error,
       remote: tool.provenance?.kind === "mcp",
     });
+    if (input.checkpoint) await input.checkpoint();
     this.eventLog.record("tool.completed", {
       ...sessionContext,
       mode,

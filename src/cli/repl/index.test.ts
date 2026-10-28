@@ -328,6 +328,7 @@ vi.mock("./interruptions/llm-classifier.js", () => ({
 vi.mock("./full-access-mode.js", () => ({
   loadFullAccessPreference: vi.fn().mockResolvedValue(undefined),
   isFullAccessEnabled: vi.fn().mockReturnValue(false),
+  isFullAccessMode: vi.fn().mockReturnValue(false),
   isCommandSafeForFullAccess: vi.fn().mockReturnValue(false),
 }));
 
@@ -1180,6 +1181,67 @@ describe("REPL index", () => {
   });
 
   describe("MCP initialization", () => {
+    it("executes live agent controls without model classification or unbudgeted post-turn compaction", async () => {
+      await setupMinimalRepl({ inputPromptValues: ["Implement feature", null] });
+      const { createSession, checkAndCompactContext } = await import("./session.js");
+      const { executeAgentTurn } = await import("./agent-loop.js");
+      const { executeSlashCommand, isSlashCommand } = await import("./commands/index.js");
+      const { createConcurrentCapture } = await import("./input/concurrent-capture-v2.js");
+      const { createLLMClassifier } = await import("./interruptions/llm-classifier.js");
+      vi.mocked(createSession).mockReturnValue({
+        id: "live-controls",
+        startedAt: new Date(),
+        projectPath: "/test",
+        messages: [],
+        trustedTools: new Set(),
+        config: {
+          provider: { type: "anthropic", model: "fixture", maxTokens: 512 },
+          ui: { theme: "dark", showTimestamps: false, maxHistorySize: 100, showDiff: "on_request" },
+          agent: {
+            systemPrompt: "Fixture",
+            maxToolIterations: 4,
+            confirmDestructive: true,
+            delegation: { mode: "auto" },
+          },
+        },
+      });
+      vi.mocked(isSlashCommand).mockReturnValue(false);
+      vi.mocked(executeSlashCommand).mockResolvedValue({ shouldExit: false });
+      vi.mocked(executeAgentTurn).mockImplementation(async () => {
+        const capture = vi.mocked(createConcurrentCapture).mock.results.at(-1)!.value;
+        const callback = capture.start.mock.calls.at(-1)![0];
+        const controls = ["/agents status", "/agents cancel all", "/agents mode off"].map(
+          (text) => ({ text, timestamp: Date.now() }),
+        );
+        for (const control of controls) callback(control);
+        capture.stop.mockReturnValueOnce(controls);
+        return {
+          content: "Done",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          toolCalls: [],
+          aborted: false,
+        };
+      });
+      const { startRepl } = await import("./index.js");
+      await startRepl({ projectPath: "/test" });
+      expect(executeAgentTurn).toHaveBeenCalledOnce();
+      expect(executeSlashCommand).toHaveBeenCalledWith("agents", ["status"], expect.anything());
+      expect(executeSlashCommand).toHaveBeenCalledWith(
+        "agents",
+        ["cancel", "all"],
+        expect.anything(),
+      );
+      expect(executeSlashCommand).toHaveBeenCalledWith(
+        "agents",
+        ["mode", "off"],
+        expect.anything(),
+      );
+      expect(
+        vi.mocked(createLLMClassifier).mock.results.at(-1)!.value.classify,
+      ).not.toHaveBeenCalled();
+      expect(checkAndCompactContext).not.toHaveBeenCalled();
+    });
+
     /** Helper: build a minimal working session + provider + input handler mock setup */
     async function setupMinimalRepl(overrides?: { inputPromptValues?: (string | null)[] }) {
       const { createProvider } = await import("../../providers/index.js");

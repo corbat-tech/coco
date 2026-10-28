@@ -1,3 +1,4 @@
+import { adaptDelegatedResult } from "./delegated-result.js";
 import { AGENT_TYPES, resolveAgentType } from "../runtime/agent-type.js";
 /**
  * Agent Coordinator - Enhanced multi-agent coordination
@@ -8,6 +9,8 @@ import { z } from "zod";
 import { defineTool } from "./registry.js";
 import { getAgentManager } from "../agents/provider-bridge.js";
 import type { AgentType } from "../cli/repl/agents/types.js";
+import { specialistAssignmentSchema } from "../runtime/specialist-coordinator.js";
+import { executeSpecialistPlan } from "./specialist-plan.js";
 
 /**
  * Agent task with priority and dependencies
@@ -313,21 +316,33 @@ export const createAgentPlanTool = defineTool({
  */
 export const delegateTaskTool = defineTool({
   name: "delegateTask",
-  description: "Delegate a task to a specialized sub-agent with real LLM tool-use execution.",
+  description:
+    "Delegate a bounded task to a specialist. For independent or dependent work, supply assignments with profile, objective, acceptance, explicit relative read/write files and dependsOn IDs. The host validates and schedules them; completion is not verified acceptance. Keep simple tasks direct.",
   category: "build" as const,
   parameters: z.object({
     taskId: z.string(),
     task: z.string().describe("Description of the task for the agent to execute"),
+    assignments: z.array(specialistAssignmentSchema).min(1).max(4).optional(),
     agentType: z.enum(AGENT_TYPES).optional().describe("Specialized agent type to use"),
     agentRole: z
       .enum(["researcher", "coder", "reviewer", "tester", "optimizer"])
       .optional()
       .describe("DEPRECATED: Use agentType instead"),
     context: z.string().optional(),
-    maxTurns: z.number().default(10),
+    maxTurns: z.number().int().min(1).max(100).default(10),
   }),
 
   async execute(input, executionContext) {
+    if (Array.isArray((input as { assignments?: unknown }).assignments)) {
+      return executeSpecialistPlan(
+        (
+          input as {
+            assignments: import("../runtime/specialist-coordinator.js").SpecialistAssignment[];
+          }
+        ).assignments,
+        executionContext,
+      );
+    }
     const typedInput = input as {
       taskId: string;
       task: string;
@@ -339,7 +354,7 @@ export const delegateTaskTool = defineTool({
 
     const manager = getAgentManager();
 
-    if (!manager) {
+    if (!manager && !executionContext?.runAgent) {
       const resolvedType = typedInput.agentType ?? "explore";
       return {
         agentId: `agent-${Date.now()}-${resolvedType}`,
@@ -360,11 +375,19 @@ export const delegateTaskTool = defineTool({
       : typedInput.task;
 
     const startTime = Date.now();
-    const result = await manager.spawn(agentType, taskDescription, {
-      executionContext,
-      signal: executionContext?.signal,
-      timeout: typedInput.maxTurns * 60_000,
-    });
+    const result = executionContext?.runAgent
+      ? await executionContext
+          .runAgent(
+            { type: agentType, task: taskDescription, maxTurns: typedInput.maxTurns },
+            executionContext,
+          )
+          .then(adaptDelegatedResult)
+      : await manager!.spawn(agentType, taskDescription, {
+          executionContext,
+          signal: executionContext?.signal,
+          maxTurns: typedInput.maxTurns,
+          timeout: typedInput.maxTurns * 60_000,
+        });
 
     const duration = Date.now() - startTime;
 
@@ -376,6 +399,8 @@ export const delegateTaskTool = defineTool({
       output: result.output,
       success: result.success,
       usage: result.usage,
+      artifacts: result.artifacts,
+      structuredResult: result.structuredResult,
       duration,
     };
   },

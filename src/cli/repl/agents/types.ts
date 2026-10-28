@@ -1,4 +1,6 @@
 import type { ToolExecutionContext } from "../../../tools/execution-context.js";
+import type { ThinkingMode } from "../../../providers/thinking.js";
+import type { DelegationBudget } from "../../../runtime/delegation-budget.js";
 /**
  * Subagent types for Corbat-Coco
  * Defines the types for specialized agents that can be spawned for different tasks
@@ -63,6 +65,16 @@ export interface AgentConfig {
  * Options for spawning a subagent
  */
 export interface SpawnAgentOptions {
+  /** Per-task ceiling, narrowed by the profile's own maximum. */
+  maxTurns?: number;
+  model?: string;
+  thinking?: ThinkingMode;
+  maxTokens?: number;
+  /** Trusted project instructions supplied by the parent host. */
+  projectInstructions?: string;
+  /** Persist host-owned state at complete iteration boundaries. */
+  onCheckpoint?: () => Promise<void>;
+  budget?: DelegationBudget;
   /** Host authority for this execution; without it, tools are restricted to read-only mode. */
   executionContext?: ToolExecutionContext;
   /** Callback when agent status changes */

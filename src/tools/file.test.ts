@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { createHash } from "node:crypto";
 
 const mockHandle = {
   read: vi.fn().mockResolvedValue({ bytesRead: 100, buffer: Buffer.from("truncated content") }),
@@ -145,6 +146,39 @@ describe("writeFileTool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFs.stat.mockResolvedValue({ size: 11, isFile: () => true, isDirectory: () => false });
+  });
+  it("rejects stale content after approval rather than overwriting another edit", async () => {
+    const { writeFileTool } = await import("./file.js");
+    mockFs.readFile.mockResolvedValueOnce("external update");
+    const expectedContentHash = createHash("sha256").update("observed version").digest("hex");
+    await expect(
+      writeFileTool.execute({
+        path: "/test/file.txt",
+        content: "replacement",
+        expectedContentHash,
+      }),
+    ).rejects.toThrow("precondition");
+    expect(mockFs.writeFile).not.toHaveBeenCalled();
+  });
+  it("writes an unchanged observed file and guards creation against an existing file", async () => {
+    const { writeFileTool } = await import("./file.js");
+    mockFs.readFile.mockResolvedValueOnce("observed version");
+    await writeFileTool.execute({
+      path: "/test/file.txt",
+      content: "replacement",
+      expectedContentHash: createHash("sha256").update("observed version").digest("hex"),
+    });
+    expect(mockFs.writeFile).toHaveBeenCalledOnce();
+    mockFs.writeFile.mockClear();
+    mockFs.readFile.mockResolvedValueOnce("new external file");
+    await expect(
+      writeFileTool.execute({
+        path: "/test/file.txt",
+        content: "replacement",
+        expectedContentHash: null,
+      }),
+    ).rejects.toThrow("precondition");
+    expect(mockFs.writeFile).not.toHaveBeenCalled();
   });
 
   it("should have correct metadata", async () => {

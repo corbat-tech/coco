@@ -308,3 +308,34 @@ export type {
   RuntimeTurnStreamEvent,
   RuntimeTurnRunner,
 } from "./types.js";
+
+export {
+  getAgentProfile,
+  listAgentProfiles,
+  resolveAgentProfile,
+  type AgentProfile,
+} from "./agent-profiles.js";
+export {
+  decideDelegation,
+  parseDelegationIntent,
+  type DelegationMode,
+  type DelegationStrategy,
+  type DelegationIntent,
+  type DelegationProposal,
+  type DelegationDecision,
+} from "./delegation-policy.js";
+
+export {
+  DelegationBudget,
+  type DelegationBudgetLimits,
+  type WorkerUsage,
+} from "./delegation-budget.js";
+export {
+  createSpecialistCoordinator,
+  SpecialistCoordinator,
+  specialistAssignmentSchema,
+  type SpecialistAssignment,
+  type SpecialistCoordinatorOptions,
+  type SpecialistRunInput,
+  type SpecialistRunResult,
+} from "./specialist-coordinator.js";

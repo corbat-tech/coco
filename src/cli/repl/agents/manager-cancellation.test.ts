@@ -82,6 +82,7 @@ describe("AgentManager cancellation ownership", () => {
     expect(result.success).toBe(false);
     expect(result.agent.status).toBe("failed");
     expect(result.agent.error).toContain("fixture preabort reason");
+    expect(result.structuredResult?.status).toBe("cancelled");
     expect(f.chat).not.toHaveBeenCalled();
     expect(f.cancel).toHaveBeenCalledOnce();
     expect(f.manager.getActiveCount()).toBe(0);
@@ -178,6 +179,7 @@ describe("AgentManager cancellation ownership", () => {
       expect(result.success).toBe(false);
       expect(result.agent.status).toBe("failed");
       expect(result.agent.error).toMatch(/timeout|timed out/i);
+      expect(result.structuredResult?.status).toBe("timeout");
       expect(f.complete).not.toHaveBeenCalled();
       expect(f.manager.getActiveCount()).toBe(0);
       expect(vi.getTimerCount()).toBe(0);

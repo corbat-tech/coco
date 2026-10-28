@@ -20,6 +20,19 @@ import type { MemoryContext } from "./memory/types.js";
 import type { ProjectStackContext } from "./context/stack-detector.js";
 import type { UnifiedSkillRegistry } from "../../skills/registry.js";
 import type { AgentRuntime } from "../../runtime/index.js";
+import type { AgentType } from "../../runtime/agent-type.js";
+
+/** Host-owned worker summary, never a claim that its checks passed. */
+export interface ReplDelegationRun {
+  id: string;
+  type: AgentType;
+  task: string;
+  status: "running" | "completed" | "failed" | "interrupted" | "cancelled" | "timeout";
+  startedAt: string;
+  completedAt?: string;
+  output?: string;
+  error?: string;
+}
 
 /**
  * REPL session state
@@ -60,6 +73,12 @@ export interface ReplSession {
   agentMode?: AgentModeId;
   /** Reusable runtime facade for provider/tools/permissions/observability */
   runtime?: AgentRuntime;
+  /** Structured command intent, consumed once at the next turn boundary. */
+  pendingDelegation?: { type: AgentType; task: string };
+  /** Live host steering closes admission immediately; reset at the next user turn. */
+  delegationBlockedForTurn?: boolean;
+  /** Bounded summaries; live execution ownership is held by the session host. */
+  delegationHistory?: ReplDelegationRun[];
   /** Validated live adapter passed from /provider to its host, never persisted. */
   pendingProvider?: {
     instance: LLMProvider;
@@ -100,6 +119,12 @@ export interface ReplConfig {
     showDiff: "never" | "on_request" | "on_complete" | "always";
   };
   agent: {
+    /** Automatic delegation remains opt-in until measured product gates pass. */
+    delegation?: {
+      mode: "off" | "manual" | "auto";
+      maxConcurrentWorkers?: number;
+      maxWorkersPerTask?: number;
+    };
     systemPrompt: string;
     maxToolIterations: number;
     confirmDestructive: boolean;

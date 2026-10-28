@@ -3,6 +3,7 @@ import type { AgentRuntime } from "../../runtime/agent-runtime.js";
 import type { RuntimeMode } from "../../runtime/types.js";
 import type { ToolCall } from "../../providers/types.js";
 import type { ToolResult } from "../../tools/registry.js";
+import type { DelegatedToolCall, RunAgent } from "../../tools/execution-context.js";
 
 /** Bind consent to the exact approved call, before hooks can change its input. */
 export function createRuntimeToolDispatch(
@@ -10,6 +11,9 @@ export function createRuntimeToolDispatch(
   sessionId: string,
   mode: RuntimeMode,
   approvedCalls: ToolCall[],
+  runAgent?: RunAgent,
+  approveDelegatedTool?: (call: DelegatedToolCall) => Promise<boolean>,
+  checkpoint?: () => Promise<void>,
 ): (call: ToolCall, signal?: AbortSignal) => Promise<ToolResult> {
   const approvals = structuredClone(approvedCalls);
   return async (call, signal) => {
@@ -27,6 +31,9 @@ export function createRuntimeToolDispatch(
       input: call.input,
       confirmed,
       signal,
+      runAgent,
+      approveDelegatedTool,
+      checkpoint,
     });
     return {
       success: result.success,

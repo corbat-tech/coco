@@ -292,6 +292,12 @@ export interface RuntimeTurnRunner {
 }
 
 export interface RuntimeToolExecutionInput {
+  checkpoint?: () => Promise<void>;
+  /** Host-owned specialist dispatch, excluded from model-authored arguments. */
+  runAgent?: import("../tools/execution-context.js").RunAgent;
+  approveDelegatedTool?: (
+    call: import("../tools/execution-context.js").DelegatedToolCall,
+  ) => Promise<boolean>;
   /** Provider call ID for correlating parallel tool attempts. */
   toolCallId?: string;
   /** Cancellation forwarded to the registry without changing tool authority. */

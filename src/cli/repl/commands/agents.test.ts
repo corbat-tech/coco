@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { agentsCommand } from "./agents.js";
+import { agentsCommand, parseLiveAgentControl } from "./agents.js";
 import type { ReplSession } from "../types.js";
 
 vi.mock("chalk", () => ({
@@ -27,6 +27,14 @@ function makeSession(): ReplSession {
 }
 
 describe("agentsCommand", () => {
+  it("recognizes only bounded host controls during execution", () => {
+    expect(parseLiveAgentControl("/agents status")).toEqual(["status"]);
+    expect(parseLiveAgentControl("/agents cancel all")).toEqual(["cancel", "all"]);
+    expect(parseLiveAgentControl("/agents mode off")).toEqual(["mode", "off"]);
+    expect(parseLiveAgentControl("/agents run docs write README")).toBeUndefined();
+    expect(parseLiveAgentControl("/agents mode auto")).toBeUndefined();
+    expect(parseLiveAgentControl('Explain "/agents cancel all"')).toBeUndefined();
+  });
   beforeEach(() => {
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
@@ -43,16 +51,41 @@ describe("agentsCommand", () => {
     const session = makeSession();
     await agentsCommand.execute(["run", "@researcher", "inspect providers"], session);
 
-    expect(session.messages).toHaveLength(1);
-    expect(session.messages[0]?.content).toContain("@explore");
-    expect(session.messages[0]?.content).toContain("inspect providers");
+    expect(session.messages).toHaveLength(0);
+    expect(session.pendingDelegation).toEqual({ type: "explore", task: "inspect providers" });
   });
 
   it("supports shorthand /agents <role> <task>", async () => {
     const session = makeSession();
     await agentsCommand.execute(["provider-debugger", "fix gpt tools"], session);
 
-    expect(session.messages[0]?.content).toContain("@debug");
-    expect(session.messages[0]?.content).toContain("fix gpt tools");
+    expect(session.pendingDelegation).toEqual({ type: "debug", task: "fix gpt tools" });
+  });
+
+  it("persists a mode preference and refuses explicit work when off", async () => {
+    const session = makeSession();
+    await agentsCommand.execute(["mode", "off"], session);
+    await agentsCommand.execute(["run", "review", "Inspect the diff"], session);
+    expect(session.config.agent.delegation?.mode).toBe("off");
+    expect(session.pendingDelegation).toBeUndefined();
+    expect(session.messages).toHaveLength(0);
+  });
+
+  it("shows actual session records without inventing active work", async () => {
+    const session = makeSession();
+    session.delegationHistory = [
+      {
+        id: "owned-run",
+        type: "review",
+        task: "Review API",
+        status: "failed",
+        startedAt: new Date().toISOString(),
+        error: "Test failed",
+      },
+    ];
+    await agentsCommand.execute(["status"], session);
+    await agentsCommand.execute(["explain", "owned-run"], session);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining("owned-run @review failed"));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining("Test failed"));
   });
 });

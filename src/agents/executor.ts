@@ -344,9 +344,25 @@ function normalizeRole(role: AgentDefinition["role"]): AgentRole {
  * Predefined agent roles with system prompts and real tool names
  */
 export const AGENT_ROLES: Record<string, Omit<AgentDefinition, "maxTurns">> = Object.fromEntries(
-  Object.entries({ researcher: "explore", architect: "architect", editor: "refactor", coder: "debug", tester: "test", reviewer: "review", optimizer: "refactor", planner: "plan" } as const).map(([role, type]) => {
+  Object.entries({
+    researcher: "explore",
+    architect: "architect",
+    editor: "refactor",
+    coder: "debug",
+    tester: "test",
+    reviewer: "review",
+    optimizer: "refactor",
+    planner: "plan",
+  } as const).map(([role, type]) => {
     const profile = getAgentProfile(type);
-    return [role, { role: role as AgentDefinition["role"], systemPrompt: profile.instructions, allowedTools: profile.allowedTools }];
+    return [
+      role,
+      {
+        role: role as AgentDefinition["role"],
+        systemPrompt: profile.instructions,
+        allowedTools: profile.allowedTools,
+      },
+    ];
   }),
 );
 
