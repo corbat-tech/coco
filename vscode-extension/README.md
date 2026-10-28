@@ -116,3 +116,12 @@ Install Ollama (`https://ollama.com`), pull a model, then run `/provider` inside
 ## License
 
 MIT © [Corbat Tech](https://github.com/corbat)
+
+## Building the extension
+
+Use the root `.node-version` (Node 24.22.1 LTS) and pnpm 12.15.0. The extension
+has an independent `pnpm-workspace.yaml` and `pnpm-lock.yaml`: run
+`pnpm --dir vscode-extension install --frozen-lockfile`, then `typecheck`,
+`test:contract`, `test:host` and `package` in that directory. An old ignored
+`package-lock.json` is not the release input. VS Code API types stay at 1.85.0
+to match the advertised editor minimum. The test host is pinned separately.

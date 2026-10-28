@@ -32,6 +32,17 @@ updates:
           - "minor"
           - "patch"
 
+  # Independently installed VS Code extension
+  - package-ecosystem: "npm"
+    directory: "/vscode-extension"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"

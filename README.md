@@ -463,7 +463,7 @@ Tech stack:
 - Zod
 - Commander
 
-Release gate (`pnpm check:release`) runs the stable typecheck/lint/provider+agent suites used for release readiness.
+Release gate (`pnpm check:release`) runs typecheck, lint, formatting, the full suite with coverage, the separate REPL suite and build. Development and release use Node 24.22.1 LTS (`.node-version`) and pnpm 12.15.0 (`packageManager`); the published CLI/runtime still supports Node 22+.
 
 ## Current Scope and Limitations
 

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.43.1] - 2026-10-28
+
+### Fixed
+- Refresh production and development dependencies, resolving known Undici, fast-uri, Markdown-it and Vitest mocker advisories. Azure Identity still introduces the upstream MSAL 6 advisory; see the [dependency maintenance report](docs/maintenance/DEPENDENCIES_2026-10-28.md).
+- Migrate Execa 10 process lifecycle hooks without changing cancellation or subprocess ownership.
+
+### Changed
+- Upgrade compatible major dependencies (Chalk 6, Execa 10, Glob 14, Minimatch 11, Vitest 5 and tsup 9); retain supported compiler/parser, terminal renderer, provider and logger contracts.
+- Pin pnpm 12.15.0 and Node 24.22.1 LTS for development/release; published runtime remains Node >=22.0.0. Use Node 22 declaration types.
+- Remove obsolete cross-major overrides, update Actions, verify workspace applications and add cross-platform installed-package checks plus independent extension CI.
+- Verify durable conversation reopening in the official package smoke.
+
+
 ## [Unreleased]
 
 ## [2.43.0] - 2026-10-28

@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.42.1] - 2026-10-28
+
+- Upgrade packaging to VSCE 4, esbuild 0.28 and TypeScript 6; refresh the independent lockfile.
+- Declare Node types explicitly and pin VS Code API declarations to the supported editor minimum.
+- Use pnpm 12 with an independent workspace and verify packaging and Extension Host behavior in CI.
+- One upstream MSAL advisory remains in development-only VSCE dependencies; it is not bundled into the VSIX.
+
 ## 2.42.0
 
 - Start the CLI through an executable and argument array; no shell-interpolated command text.

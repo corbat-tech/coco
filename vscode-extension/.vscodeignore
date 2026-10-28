@@ -8,6 +8,7 @@ dist/**
 esbuild.js
 tsconfig.json
 pnpm-lock.yaml
+pnpm-workspace.yaml
 node_modules/**
 
 # Dev & editor config

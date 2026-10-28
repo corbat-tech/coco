@@ -45,7 +45,7 @@ export function ownShell(subprocess: ResultPromise, signal: AbortSignal) {
   };
   signal.addEventListener("abort", onAbort, { once: true });
   // Shell exit can precede pipe closure when descendants inherit stdout/stderr.
-  subprocess.once?.("exit", onAbort);
+  subprocess.nodeChildProcess?.once("exit", onAbort);
   if (signal.aborted) onAbort();
   const completion = (async () => {
     try {
@@ -55,7 +55,7 @@ export function ownShell(subprocess: ResultPromise, signal: AbortSignal) {
         await stop();
       } finally {
         signal.removeEventListener("abort", onAbort);
-        subprocess.off?.("exit", onAbort);
+        subprocess.nodeChildProcess?.off("exit", onAbort);
       }
     }
   })();

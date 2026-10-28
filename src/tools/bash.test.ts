@@ -37,6 +37,7 @@ function createMockSubprocess(result: { exitCode?: number; stdout?: string; stde
 
   // Execa subprocess is both a Promise and has stream properties
   const subprocess = Object.assign(promise, {
+    nodeChildProcess: new EventEmitter(),
     stdout: stdoutEmitter,
     stderr: stderrEmitter,
 
@@ -416,7 +417,12 @@ describe("bashExecTool timeout handling", () => {
   it("should throw TimeoutError when command times out", async () => {
     const { execa } = await import("execa");
     const timeoutError = { timedOut: true, message: "Command timed out" };
-    vi.mocked(execa).mockRejectedValueOnce(timeoutError);
+    vi.mocked(execa).mockImplementationOnce(
+      () =>
+        Object.assign(Promise.reject(timeoutError), {
+          nodeChildProcess: new EventEmitter(),
+        }) as any,
+    );
 
     const { bashExecTool } = await import("./bash.js");
 
