@@ -47,7 +47,7 @@ npm install -g pnpm
 
 # Or using corepack (Node.js 16+)
 corepack enable
-corepack prepare pnpm@latest --activate
+corepack prepare pnpm@12.15.0 --activate
 ```
 
 ### "Permission denied" on global install

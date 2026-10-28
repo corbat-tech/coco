@@ -1,0 +1,7 @@
+# This extension is installed and released independently from the root workspace.
+packages:
+  - "."
+allowBuilds:
+  "@vscode/vsce-sign": true # Downloads the official signing helper.
+  esbuild: true
+  keytar: false # Optional OS keychain helper; the workflow packages without credentials.

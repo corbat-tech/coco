@@ -2,7 +2,7 @@
 /** Run against a clean consumer directory containing the installed tarball. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFile, writeFile, rm, realpath } from "node:fs/promises";
+import { readFile, writeFile, rm, realpath, mkdtemp } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -43,14 +43,18 @@ for (const name of [
 ]) {
   await load(name);
 }
-const { createAgentRuntime, createToolCallingRuntimeTurnRunner } = await load(
-  "@corbat-tech/coco/runtime",
-);
+const {
+  createAgentRuntime,
+  createToolCallingRuntimeTurnRunner,
+  createFileRuntimeSessionStore,
+} = await load("@corbat-tech/coco/runtime");
 const { ToolRegistry, readFileTool } = await load("@corbat-tech/coco/tools");
 const filename = path.join(consumer, "smoke-input.txt");
 const expected = "installed-package-tool-result";
 await writeFile(filename, expected, { flag: "wx" });
 const previousCwd = process.cwd();
+const sessionDirectory = await mkdtemp(path.join(consumer, "smoke-session-"));
+const sessionPath = path.join(sessionDirectory, "sessions.json");
 try {
   process.chdir(consumer);
   let calls = 0;
@@ -60,9 +64,13 @@ try {
     async initialize() {},
     async chatWithTools(messages) {
       calls++;
-      if (calls === 2)
+      if (calls >= 2)
         assert.ok(JSON.stringify(messages).includes(expected), "Missing real tool output");
-      assert.ok(calls <= 2, "Unexpected additional provider call");
+      if (calls === 3) {
+        assert.ok(JSON.stringify(messages).includes("Read smoke-input.txt"));
+        assert.equal(messages.at(-1).content, "Continue the saved conversation");
+      }
+      assert.ok(calls <= 3, "Unexpected additional provider call");
       return {
         id: `smoke-${calls}`,
         model: "fixture",
@@ -83,19 +91,40 @@ try {
     model: "fixture",
     provider,
     toolRegistry: registry,
+    runtimeSessionStore: createFileRuntimeSessionStore(sessionPath),
     turnRunner: createToolCallingRuntimeTurnRunner(),
   });
-  const result = await runtime.runTurn({ content: "Read smoke-input.txt", mode: "ask" });
+  const session = runtime.createSession({ mode: "ask" });
+  const result = await runtime.runTurn({ sessionId: session.id, content: "Read smoke-input.txt" });
   assert.equal(result.content, "verified");
   assert.equal(calls, 2);
   assert.equal(await readFile(filename, "utf8"), expected);
   assert.ok(
     runtime.eventLog.list().some((event) => event.type === "tool.completed" && event.data.success),
   );
+  // Reopen through a new store and runtime: no in-memory history may supply the result.
+  const reopenedStore = createFileRuntimeSessionStore(sessionPath);
+  assert.equal(reopenedStore.get(session.id).messages.length, 4);
+  const reopenedRuntime = await createAgentRuntime({
+    providerType: "openai",
+    model: "fixture",
+    provider,
+    toolRegistry: registry,
+    runtimeSessionStore: reopenedStore,
+    turnRunner: createToolCallingRuntimeTurnRunner(),
+  });
+  const continued = await reopenedRuntime.runTurn({
+    sessionId: session.id,
+    content: "Continue the saved conversation",
+  });
+  assert.equal(continued.content, "verified");
+  assert.equal(calls, 3, "Continuation must not replay the file tool");
+  assert.equal(createFileRuntimeSessionStore(sessionPath).get(session.id).messages.length, 6);
   console.log(
-    `Installed package ${metadata.version}: CLI, exports and real file tool PASS (scripted provider).`,
+    `Installed package ${metadata.version}: CLI, exports, real file tool and durable continuation PASS (scripted provider).`,
   );
 } finally {
   process.chdir(previousCwd);
   await rm(filename, { force: true });
+  await rm(sessionDirectory, { recursive: true, force: true });
 }

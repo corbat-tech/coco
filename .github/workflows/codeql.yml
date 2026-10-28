@@ -19,18 +19,27 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.39.0
+        uses: github/codeql-action/init@v4.39.1
         with:
           languages: typescript
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4.39.0
+        uses: github/codeql-action/autobuild@v4.39.1
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4.39.0
+        uses: github/codeql-action/analyze@v4.39.1
         with:
           category: "/language:typescript"
+          output: codeql-results
+
+      - name: Preserve security results for exact-commit review
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: codeql-results
+          path: codeql-results/*.sarif
+          if-no-files-found: error
+          retention-days: 7

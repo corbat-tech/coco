@@ -64,3 +64,6 @@ yarn.lock
 # VS Code isolated test output
 vscode-extension/.test-dist/
 vscode-extension/.vscode-test/
+
+# Vitest 5 generated reports and attachments
+.vitest/

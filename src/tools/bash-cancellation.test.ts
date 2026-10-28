@@ -19,7 +19,13 @@ function subprocess(result: Record<string, unknown>, rejected = false) {
     finish = resolve;
     fail = reject;
   });
-  const proc = Object.assign(promise, { stdout, stderr, killed: false, kill: vi.fn() });
+  const proc = Object.assign(promise, {
+    stdout,
+    stderr,
+    nodeChildProcess: new EventEmitter(),
+    killed: false,
+    kill: vi.fn(),
+  });
   mocked.execa.mockImplementation(() => {
     queueMicrotask(() => {
       trackedDuringRun = _activeSubprocessCount();
@@ -144,7 +150,7 @@ it("caps capture and terminal forwarding while draining oversized output", async
           resolve({ exitCode: 0 });
         });
       }),
-      { stdout, stderr, kill: vi.fn(), killed: false },
+      { stdout, stderr, nodeChildProcess: new EventEmitter(), kill: vi.fn(), killed: false },
     ),
   );
   const result = await bashExecTool.execute({ command: "fixture-large-output" });

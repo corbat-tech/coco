@@ -23,8 +23,8 @@ This project and everyone participating in it is governed by our commitment to c
 
 ### Prerequisites
 
-- **Node.js**: Version 22.0.0 or higher
-- **pnpm**: Version 10.0.0 (enforced via `packageManager` field)
+- **Node.js**: 24.22.1 LTS for development (see `.node-version`); published Coco supports Node >=22.0.0
+- **pnpm**: Version 12.15.0 (enforced via `packageManager` field)
 - **Git**: For version control
 - **Anthropic API Key**: For running integration tests (optional)
 
@@ -35,8 +35,12 @@ This project and everyone participating in it is governed by our commitment to c
 git clone https://github.com/corbat-tech/coco.git
 cd corbat-coco
 
-# Install dependencies
-pnpm install
+# With fnm installed, select the project runtime without changing other projects
+fnm install
+fnm use
+
+# Install using the exact packageManager version
+pnpm install --frozen-lockfile
 
 # Run the CLI in development mode
 pnpm dev --help

@@ -30,13 +30,13 @@ package version exactly, then push that tag. Do not tag an unmerged feature
 branch. `scripts/release-metadata.mjs` validates package/tag identity and routes
 stable versions to `latest`, prereleases to `next`.
 
-The npm job uses Node 22, npm trusted publishing through GitHub OIDC, and
+The npm job uses the Node 24 LTS version in `.node-version`, pnpm 12.15.0, npm 12.2.1, npm trusted publishing through GitHub OIDC, and
 `id-token: write`. It does not need a local npm token. It performs these steps:
 
 1. Install the frozen dependencies and run the release gate, building once.
 2. Pack with scripts disabled and record integrity/checksums of the candidate.
 3. Install that tarball in an isolated consumer and smoke CLI, package exports
-   and a real file-tool round trip with a scripted provider.
+   and a real file-tool round trip plus durable conversation reopen/continuation with a scripted provider.
 4. Preserve the candidate as a workflow artifact before publication.
 5. Publish that exact tarball with `scripts/publish-npm.mjs`, without rebuilding.
 6. Verify registry integrity equals the candidate, install from npm in a new
