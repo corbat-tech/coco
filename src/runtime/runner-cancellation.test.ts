@@ -84,8 +84,8 @@ describe("Runner and workflow cancellation", () => {
         checks: [],
         steps: [],
         nodes: [
-          { id: "a", description: "A", agentRole: "reviewer" },
-          { id: "b", description: "B", agentRole: "reviewer" },
+          { id: "a", description: "A", agentRole: "reviewer", risk: "read-only" },
+          { id: "b", description: "B", agentRole: "reviewer", risk: "read-only" },
         ],
         parallelism: 2,
       },

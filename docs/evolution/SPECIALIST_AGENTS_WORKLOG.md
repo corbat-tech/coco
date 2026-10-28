@@ -23,3 +23,10 @@ Each implementation entry records focused checks and any deviations. Automatic d
 - Removed target-project assumptions (Coco-only TypeScript/Vitest conventions), arbitrary shell from read-only researcher/security defaults and coverage/one-assertion goals.
 - Preserved 12 public IDs; `coder` canonical lookup is `debug`, `editor` is `refactor`. CLI adapter migrates its previous inconsistent coder alias.
 - Focused regression run: 77 tests passed across profiles, policy, budget, legacy executor, delegation role authority and consumers. No model requests.
+
+## P2–P4 — real runtime contracts and bounded scheduling
+
+- Generic AgentRunner fails closed without an executor; explicit simulation remains labelled. Profile IDs, role/risk consistency, output schemas and current-workflow dependency context are enforced.
+- Existing graph gains opt-in continue-independent with blocked descendants, retains fail-fast default and serializes mutation-capable work. Invalid numeric scheduler limits are rejected.
+- Focused runtime verification: 98 tests passed, typecheck clean. Coordinator-specific coverage: 100% lines and 96.72% branches (agent-reported focused run; integrated verification follows).
+- Conservative rollout adjustment: initial plans serialize all mutation-capable nodes, including disjoint writes. Parallelism initially benefits independent readers; no claim of concurrent mutation safety or cross-process locking.

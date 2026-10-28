@@ -19,6 +19,148 @@ import {
 import { createEventLog } from "./event-log.js";
 
 describe("multi-agent runtime contracts", () => {
+  it.each([NaN, Infinity, -Infinity, 1.5])("rejects non-integral scheduler limits: %s", (value) => {
+    const result = validateAgentGraph({
+      parallelism: value,
+      nodes: [
+        { id: "work", description: "Work", risk: "read-only", retryPolicy: { maxAttempts: value } },
+      ],
+    });
+    expect(result.valid).toBe(false);
+    expect(result.issues.map((issue) => issue.code)).toContain("invalid-parallelism");
+    expect(result.issues.map((issue) => issue.code)).toContain("invalid-retry-policy");
+  });
+  it("continues independent branches but blocks failed descendants under opt-in policy", async () => {
+    const dispatched: string[] = [];
+    const engine = createAgentGraphEngine({
+      nodeExecutor: async ({ task }) => {
+        dispatched.push(task.id);
+        return normalizeAgentRunResult({
+          id: task.id,
+          taskId: task.id,
+          role: task.role,
+          success: task.id !== "fails",
+          output: task.id,
+          error: task.id === "fails" ? "observed failure" : undefined,
+        });
+      },
+    });
+    const result = await engine.run({
+      workflowRunId: "independent",
+      input: {},
+      graph: {
+        failurePolicy: "continue-independent",
+        parallelism: 1,
+        nodes: [
+          { id: "fails", description: "Fails", risk: "read-only" },
+          { id: "independent", description: "Independent", risk: "read-only" },
+          { id: "blocked", description: "Dependent", risk: "read-only", dependsOn: ["fails"] },
+          {
+            id: "finishes",
+            description: "Independent descendant",
+            risk: "read-only",
+            dependsOn: ["independent"],
+          },
+        ],
+      },
+    });
+    expect(result.status).toBe("failed");
+    expect(dispatched).toEqual(["fails", "independent", "finishes"]);
+    expect(result.nodeResults.blocked).toMatchObject({
+      success: false,
+      metadata: { blocked: true, blockedBy: ["fails"] },
+    });
+    expect(result.nodeResults.finishes?.success).toBe(true);
+  });
+
+  it("uses edge dependencies to block descendants and retains legacy fail-fast by default", async () => {
+    const dispatched: string[] = [];
+    const engine = createAgentGraphEngine({
+      nodeExecutor: async ({ task }) => {
+        dispatched.push(task.id);
+        return normalizeAgentRunResult({
+          id: task.id,
+          taskId: task.id,
+          role: task.role,
+          success: false,
+          output: "",
+          error: "failed",
+        });
+      },
+    });
+    const nodes = [
+      { id: "fails", description: "Fails", risk: "read-only" as const },
+      { id: "blocked", description: "Blocked", risk: "read-only" as const },
+    ];
+    const result = await engine.run({
+      workflowRunId: "edge",
+      input: {},
+      graph: {
+        failurePolicy: "continue-independent",
+        nodes,
+        edges: [{ from: "fails", to: "blocked" }],
+      },
+    });
+    expect(dispatched).toEqual(["fails"]);
+    expect(result.nodeResults.blocked?.metadata?.blocked).toBe(true);
+    dispatched.length = 0;
+    const legacy = await engine.run({
+      workflowRunId: "legacy",
+      input: {},
+      graph: { parallelism: 1, nodes },
+    });
+    expect(dispatched).toEqual(["fails"]);
+    expect(legacy.status).toBe("failed");
+  });
+
+  it("serializes mutators and drains parallel readers before a mutation", async () => {
+    let active = 0;
+    let maximumReaders = 0;
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const starts: string[] = [];
+    const engine = createAgentGraphEngine({
+      nodeExecutor: async ({ task, node }) => {
+        starts.push(task.id);
+        active++;
+        if (node.risk === "read-only") {
+          maximumReaders = Math.max(maximumReaders, active);
+          if (active === 2) release();
+          await barrier;
+        } else {
+          expect(active).toBe(1);
+          await Promise.resolve();
+        }
+        active--;
+        return normalizeAgentRunResult({
+          id: task.id,
+          taskId: task.id,
+          role: task.role,
+          success: true,
+          output: task.id,
+        });
+      },
+    });
+    const result = await engine.run({
+      workflowRunId: "resources",
+      input: {},
+      graph: {
+        parallelism: 4,
+        nodes: [
+          { id: "read-a", description: "Read A", risk: "read-only" },
+          { id: "read-b", description: "Read B", risk: "read-only" },
+          { id: "write-a", description: "Write A", risk: "write" },
+          { id: "write-b", description: "Write B", risk: "destructive" },
+        ],
+      },
+    });
+    expect(result.status).toBe("completed");
+    expect(maximumReaders).toBe(2);
+    expect(starts).toEqual(["read-a", "read-b", "write-a", "write-b"]);
+  });
+
   it("validates DAG execution levels for fan-out and fan-in workflows", () => {
     const result = validateAgentGraph({
       parallelism: 3,

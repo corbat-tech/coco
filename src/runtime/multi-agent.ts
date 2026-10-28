@@ -105,6 +105,8 @@ export function listLegacyAgentRoleMappings(): LegacyAgentRoleMapping[] {
 export interface AgentTask {
   id: string;
   role: AgentRole;
+  /** Select a stable profile ID; legacy callers may continue selecting by role. */
+  agentDefinitionId?: string;
   objective: string;
   context?: Record<string, unknown>;
   dependencies?: string[];
@@ -207,6 +209,7 @@ export interface AgentGateDefinition {
 export interface AgentGraphNode {
   id: string;
   agentRole?: AgentRole;
+  agentDefinitionId?: string;
   description: string;
   dependsOn?: string[];
   requiredTools?: string[];
@@ -231,6 +234,8 @@ export interface AgentGraphDefinition {
   edges?: AgentGraphEdge[];
   gates?: AgentGateDefinition[];
   parallelism?: number;
+  /** Preserve fail-fast for existing consumers; blocked descendants never execute. */
+  failurePolicy?: "fail-fast" | "continue-independent";
 }
 
 export interface AgentGraphValidationIssue {
@@ -764,8 +769,9 @@ export class AgentGraphEngine {
 
     try {
       input.signal?.throwIfAborted();
+      let graphFailure: string | undefined;
       for (const level of validation.levels) {
-        const batches = chunk(level, input.graph.parallelism ?? level.length);
+        const batches = resourceSafeBatches(level, input.graph);
         for (const batch of batches) {
           input.signal?.throwIfAborted();
           const levelResults = await Promise.allSettled(
@@ -805,11 +811,14 @@ export class AgentGraphEngine {
             if (result.success) artifacts.push(...result.artifacts.map(cloneArtifact));
             else batchFailure ??= result.error ?? `Node '${node.id}' failed`;
           }
-          if (batchFailure) throw new Error(batchFailure);
+          graphFailure ??= batchFailure;
+          if (batchFailure && input.graph.failurePolicy !== "continue-independent")
+            throw new Error(batchFailure);
           input.signal?.throwIfAborted();
         }
       }
 
+      if (graphFailure) throw new Error(graphFailure);
       const completedAt = new Date().toISOString();
       const result: AgentGraphRunResult = {
         id: input.workflowRunId,
@@ -858,6 +867,36 @@ export class AgentGraphEngine {
     nodeResults: Map<string, AgentRunResult>;
     signal?: AbortSignal;
   }): Promise<AgentRunResult> {
+    const dependencies = nodeDependencyIds(input.node, input.graph);
+    const blockedBy = dependencies.filter((id) => !input.nodeResults.get(id)?.success);
+    if (blockedBy.length > 0) {
+      const task = graphNodeToTask(input.node, input.input);
+      const error = `Node '${input.node.id}' blocked by unsuccessful dependencies: ${blockedBy.join(", ")}.`;
+      const result = normalizeAgentRunResult({
+        id: `${input.workflowRunId}-${input.node.id}-blocked`,
+        taskId: task.id,
+        role: task.role,
+        success: false,
+        output: "",
+        error,
+        metadata: {
+          workflowRunId: input.workflowRunId,
+          nodeId: input.node.id,
+          blocked: true,
+          blockedBy,
+        },
+      });
+      this.eventLog?.record("agent.failed", {
+        workflowRunId: input.workflowRunId,
+        nodeId: input.node.id,
+        taskId: task.id,
+        error,
+        blocked: true,
+        blockedBy,
+        trace: input.graphTrace,
+      });
+      return result;
+    }
     const skipReason = input.signal?.aborted
       ? undefined
       : shouldSkipNode(input.node, input.graph, input.input, input.nodeResults);
@@ -954,7 +993,7 @@ export class AgentGraphEngine {
           attempt,
           workflowRunId: input.workflowRunId,
           trace,
-          dependencyResults: input.nodeResults,
+          dependencyResults: new Map(dependencies.map((id) => [id, input.nodeResults.get(id)!])),
           sharedState: this.sharedState,
           eventLog: this.eventLog ?? NULL_EVENT_LOG,
           signal: scope.signal,
@@ -1217,10 +1256,13 @@ export function validateAgentGraph(graph: AgentGraphDefinition): AgentGraphValid
   const nodeIds = new Set<string>();
   const gateIds = new Set((graph.gates ?? []).map((gate) => gate.id));
 
-  if (graph.parallelism !== undefined && graph.parallelism < 1) {
+  if (
+    graph.parallelism !== undefined &&
+    (!Number.isSafeInteger(graph.parallelism) || graph.parallelism < 1)
+  ) {
     issues.push({
       code: "invalid-parallelism",
-      message: "Graph parallelism must be greater than zero.",
+      message: "Graph parallelism must be a positive safe integer.",
     });
   }
 
@@ -1234,7 +1276,10 @@ export function validateAgentGraph(graph: AgentGraphDefinition): AgentGraphValid
     }
     nodeIds.add(node.id);
 
-    if (node.retryPolicy && node.retryPolicy.maxAttempts < 1) {
+    if (
+      node.retryPolicy &&
+      (!Number.isSafeInteger(node.retryPolicy.maxAttempts) || node.retryPolicy.maxAttempts < 1)
+    ) {
       issues.push({
         code: "invalid-retry-policy",
         message: `Node '${node.id}' retry policy must allow at least one attempt.`,
@@ -1344,6 +1389,7 @@ function graphNodeToTask(node: AgentGraphNode, workflowInput: Record<string, unk
   return {
     id: node.id,
     role: node.agentRole ?? mapLegacyAgentRole(node.id, "coder"),
+    agentDefinitionId: node.agentDefinitionId,
     objective: node.description,
     context: {
       workflowInput,
@@ -1445,6 +1491,34 @@ function chunk<T>(items: T[], size: number): T[][] {
     result.push(items.slice(index, index + safeSize));
   }
   return result;
+}
+
+/** Conservatively serialize mutation-capable nodes with all other shared-workspace work. */
+function resourceSafeBatches(level: string[], graph: AgentGraphDefinition): string[][] {
+  const batches: string[][] = [];
+  let readers: string[] = [];
+  const flushReaders = () => {
+    batches.push(...chunk(readers, graph.parallelism ?? Math.max(1, readers.length)));
+    readers = [];
+  };
+  for (const id of level) {
+    if (graph.nodes.find((node) => node.id === id)!.risk === "read-only") readers.push(id);
+    else {
+      flushReaders();
+      batches.push([id]);
+    }
+  }
+  flushReaders();
+  return batches;
+}
+
+function nodeDependencyIds(node: AgentGraphNode, graph: AgentGraphDefinition): string[] {
+  return [
+    ...new Set([
+      ...(node.dependsOn ?? []),
+      ...(graph.edges ?? []).filter((edge) => edge.to === node.id).map((edge) => edge.from),
+    ]),
+  ];
 }
 
 function shouldSkipNode(
