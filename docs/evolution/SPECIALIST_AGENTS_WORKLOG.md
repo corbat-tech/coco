@@ -83,3 +83,11 @@ Source and retained test harness: `331db5a` (production recovery fix `783f147`).
 P0–P6 engineering contracts and conservative rollout are implemented and locally validated. P7 tooling/fixtures/adapter/runner are prepared; its actual model quality/speed/usage gates remain pending. P8 local packaging/docs are verified; publishing/push/global installation changes were not authorized or performed.
 
 Remaining deliberate boundaries: parallel readers with serialized mutation-capable work; no arbitrary shell/test mutation inside structured worker plans; read resources advisory; no OS sandbox/distributed lock; no automatic whole-graph replay. Manual pilot configuration is one forced specialist, not an optimized hand-built team.
+
+## Subsequent release authorization — 3.1.0
+
+The user subsequently authorized review, corrections, merge, push and npm publication. The previous no-publication entries above describe the initial local delivery, not this new authorization.
+
+Pre-release independent review found and reproduced payload mutation during an asynchronous checkpoint and direct workers overlapping under an explicit sequential request. Both were corrected with regressions; specialist trust choices are also persisted. Release3.1.0 adds these corrections and uses the existing official OIDC publication workflow. The live-model evaluation remains outside this release authorization and has not been run.
+
+Publication evidence is the official GitHub tag/release/workflow and npm registry integrity, verified after the workflow completes; it must not be inferred from local version metadata.

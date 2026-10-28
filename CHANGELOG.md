@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-10-28
+
+### Added
+- Ship twelve versioned specialist profiles shared by the CLI and reusable runtime, with explicit same-turn delegation and session-scoped status, cancellation and explanation.
+- Add bounded specialist plans with dependencies, read-only parallelism, conservative serialized mutations, shared request admission and opt-in automatic delegation. Manual delegation remains the default.
+- Preserve scoped handoffs and structured results, and provide explicit host reconciliation for uncertain effects through `/work resolve` and the runtime API.
+- Prepare a provider-injected evaluation harness and twelve frozen coding exercises with external acceptance checks. No live-model performance or competitive parity claim is made.
+
+### Fixed
+- Reject missing real executors, truncated or inconsistent worker responses and turn exhaustion instead of reporting completion.
+- Keep tool authority and exact child consent bound to the host; scope structured file writes and guard observed content before overwrites.
+- Block new effects after interrupted persistence until host inspection, using host-owned execution IDs independently of provider call IDs.
+- Account for parent, worker and auxiliary model requests within delegated turns, and process cancellation controls without extra model calls.
+- Snapshot tool payloads before policy checks and asynchronous checkpoints, serialize direct workers when the user requests sequential execution, and persist explicit specialist trust choices.
+
 ## [3.0.1] - 2026-10-28
 
 - Make pending-SSE deadline integration deterministic: retain real HTTP/body closure, but advance the unchanged 100 ms timer only after READY. Production timeouts and all closure/cancellation assertions are unchanged.
