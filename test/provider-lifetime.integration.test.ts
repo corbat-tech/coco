@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { VertexProvider } from "../src/providers/vertex.js";
 import { GeminiProvider } from "../src/providers/gemini.js";
 
@@ -31,6 +31,12 @@ it.each([
     const controller = new AbortController();
     let iterator: AsyncIterator<unknown> | undefined;
     try {
+      // Exercise the 100 ms deadline after the real SSE body is observable.
+      // Cold SDK/HTTP startup on a busy runner must not consume this test's
+      // pending-body interval. Network I/O and server closure remain real.
+      if (mode === "deadline") {
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      }
       const provider = kind === "vertex" ? new VertexProvider() : new GeminiProvider();
       await provider.initialize({
         project: "fixture-project",
@@ -45,7 +51,9 @@ it.each([
         [Symbol.asyncIterator]();
       expect(await iterator.next()).toMatchObject({ value: { type: "text", text: "READY" } });
       if (mode === "deadline") {
-        await expect(iterator.next()).rejects.toMatchObject({ name: "TimeoutError" });
+        const pending = expect(iterator.next()).rejects.toMatchObject({ name: "TimeoutError" });
+        await vi.advanceTimersByTimeAsync(100);
+        await pending;
       } else {
         await iterator.return?.();
       }
@@ -53,10 +61,14 @@ it.each([
       expect(controller.signal.aborted).toBe(false);
       expect(requests).toBe(1);
     } finally {
-      controller.abort();
-      server.closeAllConnections();
-      await iterator?.return?.();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      try {
+        controller.abort();
+        server.closeAllConnections();
+        await iterator?.return?.();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      } finally {
+        vi.useRealTimers();
+      }
     }
   },
   5000,

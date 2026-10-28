@@ -1,6 +1,6 @@
 # Dependency maintenance — 2026-10-28
 
-Coco 2.43.0 → 3.0.0; extension 2.42.0 → 2.42.1. Baseline: `5d1dffc`.
+Coco 2.43.0 → 3.0.1; extension 2.42.0 → 2.42.1. Baseline: `5d1dffc`.
 Major release for the published Node minimum: >=22.13.0. Public application APIs remain unchanged. Baseline dependencies already required 22.13 despite root metadata advertising 22.0; a basic smoke on 22.0 did not prove engine compatibility.
 Development/release: Node 24.22.1 LTS, pnpm 12.15.0, release npm 12.2.1.
 Compatibility targets: Node 22.23.4 LTS and 26.12.1 Current.
@@ -104,11 +104,13 @@ The official [2.43.1 run](https://github.com/corbat-tech/coco/actions/runs/40676
 
 The 2.43.2 release was cancelled while its prepublication smoke was running (publish step still pending), and the registry was checked before any further release. Engine inventory found the pre-existing ESLint 10 and eslint-visitor-keys 5 floor of 22.13. Remove unused @typescript-eslint/parser (including its ESLint peer), retain the used ESTree parser, and declare >=22.13.0 with major 3.0.0. No unsupported transitive override or compiler rollback. Add a strict clean installation at exactly Node 22.13.0 to CI and local acceptance.
 
+The [3.0.0 run](https://github.com/corbat-tech/coco/actions/runs/40686139952) stopped in the main suite before packing or publishing: Gemini startup exceeded a pending-body fixture's 100 ms real-time budget on the busy runner (one failed, 8,562 passed). Keep that failure and tag. The 3.0.1 fixture uses a controlled timeout clock until READY, then advances exactly 100 ms while the second read is pending. Real HTTP, server close, TimeoutError, one request, non-aborted host signal and iterator-return assertions remain; production timeouts are untouched. Cleanup restores the clock even on failure. No blind retry or suppressed test.
+
 ## Validation
 
 Baseline: types/lint/format, 413 files / 8,555 tests (15 skipped), REPL 28 tests, build, five apps and extension types/contracts pass. Coverage statements 80.45%, branches 71.59%, functions 82.55%, lines 81.27%. The pre-existing oxlint no-thenable warning in owned-shell.ts remains unchanged; it models an intentionally tracked completion. Baseline Extension Host could not start because the installed dependencies lacked the declared test-electron package; reinstalling the independent lockfile fixed it.
 
-Migrated Node 24 LTS release gate: initial 8,555 + 28 tests pass; the final 3.0.0 gate passes 8,563 + 28 after eight release-format/validation regressions, thresholds unchanged. Coverage statements 80.47%, branches 71.64%, functions 82.67%, lines 81.29%. Five apps typecheck. macOS arm64 Extension Host 1.137.0 passes executable argv, special paths, multiroot, terminal reuse/new/close, missing executable; trust/launch contracts also pass. VSIX inspected with no dependencies or test fixtures. No live paid provider calls were made.
+Migrated Node 24 LTS release gate: initial 8,555 + 28 tests pass; the final 3.0.1 gate passes 8,563 + 28 after eight release-format/validation regressions, thresholds unchanged. Coverage statements 80.47%, branches 71.64%, functions 82.67%, lines 81.29%. Five apps typecheck. macOS arm64 Extension Host 1.137.0 passes executable argv, special paths, multiroot, terminal reuse/new/close, missing executable; trust/launch contracts also pass. VSIX inspected with no dependencies or test fixtures. No live paid provider calls were made.
 
 Installed 2.43.1 prepublication tarball: all six export routes (CLI via --version/--help), real read_file with a scripted provider, file-backed session reopening and continuation pass on macOS arm64 with Node 22.0.0 (declared minimum), 22.23.4, 24.22.1 and 26.12.1. npm resolves one remaining high MSAL advisory in that clean external consumer, matching the documented path; no override is needed to install within declared parent ranges. The package contains only dist (JS, declarations, maps), README, LICENSE and package metadata.
 
