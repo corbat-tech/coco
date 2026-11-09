@@ -101,7 +101,7 @@
     "marked-terminal": "^7.3.0",
     "minimatch": "^11.0.2",
     "openai": "^7.45.1",
-    "ora": "^9.4.1",
+    "ora": "^10.0.0",
     "simple-git": "^4.0.2",
     "string-width": "^8.3.0",
     "tslog": "^4.11.0",
