@@ -98,7 +98,7 @@
     "json5": "^2.2.3",
     "jsonrepair": "^3.15.0",
     "marked": "^15.0.12",
-    "marked-terminal": "^7.3.0",
+    "marked-terminal": "^8.0.0",
     "minimatch": "^11.0.2",
     "openai": "^7.45.1",
     "ora": "^9.4.1",
