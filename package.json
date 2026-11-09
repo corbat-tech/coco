@@ -84,7 +84,7 @@
     "@aws-sdk/credential-providers": "^3.1158.0",
     "@azure/identity": "^4.14.0",
     "@clack/prompts": "^1.8.1",
-    "@google/genai": "2.32.0",
+    "@google/genai": "3.0.0",
     "@typescript-eslint/typescript-estree": "^8.72.1",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
